@@ -1,0 +1,65 @@
+import Foundation
+
+/// availability 唯一持久化边界；禁止业务层直接写 UserDefaults.standard。
+protocol FeatureAvailabilityStoring: AnyObject {
+    func isAvailable(_ feature: AppFeature) -> Bool
+    func setAvailable(_ feature: AppFeature, _ available: Bool) throws
+}
+
+/// 基于 UserDefaults 的 availability 存储。
+final class UserDefaultsFeatureAvailabilityStore: FeatureAvailabilityStoring {
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    func isAvailable(_ feature: AppFeature) -> Bool {
+        // 未写入时默认 true（与 Defaults 注册一致）。
+        if defaults.object(forKey: feature.availabilityKey) == nil {
+            return true
+        }
+        return defaults.bool(forKey: feature.availabilityKey)
+    }
+
+    func setAvailable(_ feature: AppFeature, _ available: Bool) throws {
+        defaults.set(available, forKey: feature.availabilityKey)
+    }
+}
+
+/// 单个 Feature 的 Manager 集合租约：detach 后仍强引用，persist 失败可 reattach。
+@MainActor
+final class FeatureRegistrationLease {
+    let feature: AppFeature
+    private(set) var managers: [String: Any]
+    private(set) var isAttached: Bool
+
+    init(feature: AppFeature, managers: [String: Any], isAttached: Bool) {
+        self.feature = feature
+        self.managers = managers
+        self.isAttached = isAttached
+    }
+
+    func markAttached() {
+        isAttached = true
+    }
+
+    func markDetached() {
+        isAttached = false
+    }
+}
+
+/// Feature 可用性事务 UI 状态。
+enum FeatureAvailabilityPhase: Equatable {
+    case idle
+    case installing
+    case uninstalling
+    case failed(String)
+}
+
+enum FeatureAvailabilityError: Error, Equatable {
+    case operationInProgress
+    case teardownFailed(String)
+    case persistenceFailed(String)
+    case installFailed(String)
+}

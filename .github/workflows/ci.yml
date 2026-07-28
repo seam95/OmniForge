@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Print Xcode version
+        run: xcodebuild -version
+
+      - name: Build
+        run: |
+          xcodebuild build \
+            -project InputLock/InputLock.xcodeproj \
+            -scheme InputLock \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO | xcpretty
+
+      - name: Test
+        run: |
+          xcodebuild test \
+            -project InputLock/InputLock.xcodeproj \
+            -scheme InputLock \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO | xcpretty

@@ -1,0 +1,1635 @@
+import AppKit
+import Foundation
+import os.log
+import QuartzCore
+
+// 注：`EditTool` 枚举位于 `AnnotationCanvasView.swift`（画布交互层），
+// 由控制器与画布共用。
+
+/// 标注编辑器控制器 —— 嵌入 overlay 窗口 SelectionView 的非窗口控制器。
+///
+/// 重构为 capcap 式编排（`EditWindowController`）：
+/// - 不再持有独立 `NSWindow`，而是把 canvas + 工具栏作为子视图注入
+///   `hostSelectionView`（与选区共享 overlay 窗口）。
+/// - 接阶段 2 画布的四个回调：onAnnotationSelected（回填样式+切工具+重建
+///   子工具栏）、onMultiSelectionChanged、onHistoryStateChanged（刷新
+///   undo/redo 按钮态）、onEmojiStamped。
+/// - 工具切换链路：selectTool → canvasView.activeTool + pushCurrentStyleToCanvas
+///   + showSubToolbar（参照 capcap L407-462, 538-718）。
+/// - 输出动作（阶段 5 已接入输出子系统）：confirm(复制)/save/pin/close 统一走
+///   commitActiveTextEditing → compositeImage → 编码/写入/钉图 → tearDown →
+///   onComplete（参照 capcap L1662-1896）。
+///   - confirm：compositeImage → encoder.encode(.original) → clipboardWriter，
+///     失败显示错误（保留编辑器状态，不静默关闭），成功 onComplete(image)。
+///   - save：compositeImage → saver.save（静默），失败显示错误，成功 onComplete(nil)。
+///   - pin：compositeImage → pinResultBuilder → pinService.pinFromPipeline，
+///     失败显示错误，成功 onComplete(nil)。
+///   错误反馈用 NSAlert（capcap 用 ToastWindow，OmniForge 暂用 NSAlert）。
+@MainActor
+final class AnnotationEditorController {
+    private static let logger = Logger(subsystem: "com.omniforge.app", category: "ScreenshotEditor")
+
+    /// 当前编辑底图；选区变更时可由 `updateLayout` 替换为重裁切结果。
+    private var baseImage: NSImage
+    private let document: AnnotationDocument
+    private let stringsProvider: () -> Strings
+    private let onComplete: (NSImage?) -> Void
+
+    /// 捕获上下文：预抓快照与当前 captureRect（CG 全局坐标），供选区变更重裁切。
+    private(set) var preSnapshot: CGImage?
+    private(set) var captureRect: CGRect = .zero
+    private(set) var sourceDisplayID: CGDirectDisplayID?
+    /// 源屏引用：draw 时现裁底图所需（对齐 CapCap `captureScreen`）。
+    private(set) var screen: NSScreen?
+
+    // 阶段 5 输出依赖（注入边界）
+    private let encoder: ImageOutputEncoding
+    private let clipboardWriter: ClipboardImageWriting
+    private let saver: ScreenshotSaving
+    /// 保存时现场读取，保证设置页改动立即生效。
+    private let outputConfigurationProvider: () -> ScreenshotOutputConfigurationSnapshot
+    private weak var pinService: ScreenshotPinning?
+    /// 由 overlay/factory 注入：把合成图包装成 `ScreenshotResult`（含目标屏上下文），
+    /// 供 `pinService.pinFromPipeline` 使用。
+    private let pinResultBuilder: (NSImage) -> ScreenshotResult?
+
+    /// 截图源屏的点→像素比例。合成图必须按此密度建位图，否则多屏 backingScaleFactor
+    /// 不一致时（如主屏 2×、副屏 1×）钉住显示尺寸会被放大/缩小（参见 compositeImage）。
+    /// 必须与 pin 的 `pointPixelScale` 同源，二者自洽即可保证钉住尺寸正确。
+    private let sourceBackingScaleFactor: CGFloat
+
+    /// 选区录屏回调：参数为 AppKit screen rect + 目标屏。
+    /// 由 overlay/manager 注入；为 nil 时工具栏 record 不响应。
+    var onRecordingSelection: ((NSRect, NSScreen) -> Void)?
+
+    /// 最近一次输出错误（供测试与外部观察；阶段 6 可换 Toast 展示）。
+    private(set) var lastError: Error?
+
+    private weak var hostSelectionView: SelectionView?
+    private(set) var canvasView: AnnotationCanvasView?
+    private var canvasScrollView: EditorScrollView?
+    private var selectionChromeOverlay: SelectionChromeOverlay?
+    private var toolbarView: AnnotationToolbarView?
+    private var subToolbarView: NSView?
+
+    private(set) var activeTool: EditTool = .none
+
+    // MARK: - 长截图状态
+
+    private var isScrollCapturing = false
+    private var isScrollCaptureFinalizing = false
+    private var isCropping = false
+    private var scrollCapturer: ScrollCapturer?
+    private var scrollCaptureControlWindow: ScrollCaptureControlWindow?
+    private var scrollPreviewWindow: ScrollPreviewWindow?
+    private var scrollCaptureHintWindow: ScrollCaptureHintWindow?
+    private var scrollCropView: ScrollCropView?
+    private var scrollCropControlWindow: ScrollCropControlWindow?
+    private var infoToastWindow: EditorInfoToastWindow?
+    private var manualScrollCaptureTimer: DispatchSourceTimer?
+    private var scrollCaptureKeyMonitor: Any?
+
+    private var isScrollCaptureBusy: Bool { isScrollCapturing || isScrollCaptureFinalizing }
+
+    /// 活屏会话且有预抓快照；长截图完成后（preview 已加载）禁止再次滚动捕获。
+    private var isScrollCaptureAllowed: Bool {
+        canvasView?.hasPreviewImage != true && preSnapshot != nil && captureRect.width > 0 && captureRect.height > 0
+    }
+
+    // 当前绘制样式槽位（参照 capcap L133-156）
+    private var currentColor: NSColor = EditorStyleDefaults.primaryColor
+    private var currentLineWidth: CGFloat = EditorStyleDefaults.standardLineWidth
+    private var currentArrowStyle: ArrowStyle = .tapered
+    private var currentMosaicBlockSize: CGFloat = EditorStyleDefaults.mosaicBlockSize
+    private var currentFontSize: CGFloat = EditorStyleDefaults.fontSize
+    private var currentTextStroke: Bool = false
+    private var currentTextCallout: Bool = false
+    private var currentShapeFillMode: ShapeFillMode = .none
+    private var currentShapeStrokeStyle: ShapeStrokeStyle = .standard
+    private var currentMarkerColor: NSColor = EditorStyleDefaults.markerColor
+    private var currentMarkerLineWidth: CGFloat = EditorStyleDefaults.markerLineWidth
+    private var currentEmoji: String?
+    private var emojiPopover: NSPopover?
+    private var recentEmojis: [String] = Defaults.recentEmojis()
+
+    /// 美化开关与预设（参照 capcap）。启用时 compositeImage 末尾应用
+    /// BeautifyRenderer.render（背景 + 圆角 + 双层阴影 + padding）。
+    private var beautifyEnabled: Bool = false
+    private var beautifyPreset: BeautifyPreset = .defaultPreset
+    /// 美化壁纸位图（wallpaper 预设时异步加载）。
+    private var beautifyWallpaper: NSImage?
+
+    /// 编辑器嵌入区域（选区视图坐标）。
+    private var selectionViewRect: NSRect
+
+    /// 测试钩子：当前选区视图矩形。
+    var selectionViewRectForTesting: NSRect { selectionViewRect }
+
+    private var keyMonitor: Any?
+
+    // MARK: - 初始化
+
+    init(baseImage: NSImage,
+         document: AnnotationDocument,
+         stringsProvider: @escaping () -> Strings = { .en },
+         encoder: ImageOutputEncoding = ImageOutputEncoder(),
+         clipboardWriter: ClipboardImageWriting = ClipboardImageWriter(),
+         saver: ScreenshotSaving = ScreenshotSaver(),
+         outputConfigurationProvider: @escaping () -> ScreenshotOutputConfigurationSnapshot = {
+             ScreenshotOutputConfiguration().load()
+         },
+         pinService: ScreenshotPinning? = nil,
+         pinResultBuilder: @escaping (NSImage) -> ScreenshotResult? = { _ in nil },
+         sourceBackingScaleFactor: CGFloat = NSScreen.main?.backingScaleFactor ?? 1,
+         onComplete: @escaping (NSImage?) -> Void) {
+        self.baseImage = baseImage
+        self.document = document
+        self.stringsProvider = stringsProvider
+        self.encoder = encoder
+        self.clipboardWriter = clipboardWriter
+        self.saver = saver
+        self.outputConfigurationProvider = outputConfigurationProvider
+        self.pinService = pinService
+        self.pinResultBuilder = pinResultBuilder
+        // 合法性夹取：< 1 或非有限时回退 1（与无屏环境一致）。
+        self.sourceBackingScaleFactor = (sourceBackingScaleFactor >= 1 && sourceBackingScaleFactor.isFinite)
+            ? sourceBackingScaleFactor
+            : 1
+        self.onComplete = onComplete
+        self.selectionViewRect = NSRect(origin: .zero, size: baseImage.size)
+    }
+
+    // MARK: - 展示
+
+    /// 在选区视图内嵌入编辑器。参照 capcap `EditWindowController.show`。
+    /// - Parameters:
+    ///   - captureRect: 选区对应的 CG 全局坐标矩形（重裁切用）。
+    ///   - preSnapshot: 预抓整屏快照；二次选区从中重裁切底图。
+    ///   - displayID: 源屏 displayID。
+    func show(
+        in hostSelectionView: SelectionView,
+        selectionRect: NSRect,
+        captureRect: CGRect = .zero,
+        preSnapshot: CGImage? = nil,
+        displayID: CGDirectDisplayID? = nil
+    ) {
+        self.hostSelectionView = hostSelectionView
+        self.selectionViewRect = selectionRect
+        self.captureRect = captureRect
+        self.preSnapshot = preSnapshot
+        self.sourceDisplayID = displayID
+        self.screen = hostSelectionView.window?.screen
+
+        let canvasSize = selectionRect.size
+
+        // 画布
+        let canvas = AnnotationCanvasView(frame: NSRect(origin: .zero, size: canvasSize))
+        canvas.baseImage = baseImage
+        canvas.captureRect = captureRect
+        canvas.preSnapshot = preSnapshot
+        canvas.sourceDisplayID = displayID
+        canvas.captureScreen = self.screen
+        canvas.controller = self
+        canvas.document = document
+        canvas.autoresizingMask = []
+        canvas.onAnnotationSelected = { [weak self] annotation in
+            self?.handleAnnotationSelectionChanged(annotation)
+        }
+        canvas.onMultiSelectionChanged = { [weak self] isMultiSelecting in
+            if isMultiSelecting {
+                self?.selectTool(.none)
+            }
+        }
+        canvas.onHistoryStateChanged = { [weak self] canUndo, canRedo in
+            self?.updateHistoryButtons(canUndo: canUndo, canRedo: canRedo)
+        }
+        canvas.onEmojiStamped = { [weak self] in
+            self?.handleEmojiStamped()
+        }
+        self.canvasView = canvas
+
+        // 滚动视图（选区大时纵向滚动）；透传 hitTest 见 EditorScrollView。
+        let scrollView = EditorScrollView(frame: selectionRect)
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasHorizontalScroller = false
+        scrollView.hasVerticalScroller = canvasSize.height > selectionRect.height + 0.5
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.documentView = canvas
+        scrollView.editorCanvasView = canvas
+        scrollView.automaticallyAdjustsContentInsets = false
+        hostSelectionView.addSubview(scrollView)
+        self.canvasScrollView = scrollView
+
+        // 选区 chrome 叠在 scrollView 之上：仅 handle 命中，空白透传。
+        let overlay = SelectionChromeOverlay(frame: hostSelectionView.bounds)
+        overlay.autoresizingMask = [.width, .height]
+        overlay.selectionView = hostSelectionView
+        hostSelectionView.addSubview(overlay)
+        self.selectionChromeOverlay = overlay
+
+        // 工具栏
+        showToolbar()
+        updateHistoryButtons(canUndo: document.canUndo, canRedo: document.canRedo)
+
+        // 默认无标注工具：空白拖动不移动选区，移动仅靠工具栏手柄。
+        updateEditorInteractionState()
+        bringEditorToFront()
+        installKeyboardShortcuts()
+    }
+
+    /// 选区移动/缩放后重排编辑器布局（不重建控制器、不清空标注）。
+    /// 参照 capcap `EditWindowController.updateLayout`：只更新 `captureRect`，
+    /// 不替换底图数据；底图由 canvas 在 draw 时按 `captureRect` 从 `preSnapshot` 现裁。
+    func updateLayout(selectionViewRect: NSRect, captureRect: CGRect) {
+        self.selectionViewRect = selectionViewRect
+        self.captureRect = captureRect
+        canvasView?.captureRect = captureRect
+        canvasView?.captureScreen = screen
+
+        canvasScrollView?.frame = selectionViewRect
+        if canvasView?.hasPreviewImage != true {
+            // 无长截图预览时 canvas 尺寸 = 选区尺寸。
+            canvasView?.setFrameSize(selectionViewRect.size)
+            canvasScrollView?.hasVerticalScroller = false
+        }
+
+        repositionToolbars()
+        selectionChromeOverlay?.update(
+            rect: selectionViewRect,
+            active: hostSelectionView?.selectionInteractionEnabled == true
+        )
+        updateEditorInteractionState()
+        canvasView?.needsDisplay = true
+    }
+
+    /// 按当前 `selectionViewRect` 重放主/子工具栏位置。
+    private func repositionToolbars() {
+        guard let host = hostSelectionView else { return }
+        if let primary = toolbarView {
+            primary.frame = toolbarRect(in: host.bounds, size: primary.preferredSize)
+        }
+        if let sub = subToolbarView, let anchor = subToolbarAnchorFrame {
+            sub.frame = subToolbarRect(
+                width: sub.frame.width,
+                height: sub.frame.height,
+                toolbarFrame: anchor,
+                in: host.bounds
+            )
+        }
+    }
+
+    // MARK: - 工具栏
+
+    private func showToolbar() {
+        guard let host = hostSelectionView else { return }
+
+        let primary = AnnotationToolbarView(
+            items: AnnotationToolbarLayout.primary,
+            orientation: .horizontal,
+            stringsProvider: stringsProvider
+        )
+        wireToolbar(primary)
+        primary.frame = toolbarRect(in: host.bounds, size: primary.preferredSize)
+        styleFloatingHUD(primary)
+        host.addSubview(primary)
+        toolbarView = primary
+    }
+
+    private func wireToolbar(_ tv: AnnotationToolbarView) {
+        tv.onToolSelected = { [weak self] tool in self?.selectTool(tool) }
+        tv.onColorPicker = { [weak self] in self?.runColorPicker() }
+        tv.onUndo = { [weak self] in _ = self?.document.undo(); self?.canvasView?.needsDisplay = true }
+        tv.onRedo = { [weak self] in _ = self?.document.redo(); self?.canvasView?.needsDisplay = true }
+        tv.onSave = { [weak self] in self?.save() }
+        tv.onPin = { [weak self] in self?.pin() }
+        tv.onClose = { [weak self] in self?.close() }
+        tv.onConfirm = { [weak self] in self?.confirm() }
+        tv.onMoveSelectionStart = { [weak self] in self?.handleMoveSelectionStart() }
+        tv.onMoveSelectionDrag = { [weak self] delta in self?.handleMoveSelectionDrag(delta: delta) }
+        tv.onMoveSelectionEnd = { [weak self] in self?.handleMoveSelectionEnd() }
+        tv.onScrollCapture = { [weak self] in self?.toggleScrollCapture() }
+        tv.onRecord = { [weak self] in self?.record() }
+        refreshScrollCaptureAvailability()
+    }
+
+    // MARK: - 录屏
+
+    /// 结束编辑器并回调选区的 AppKit 屏幕坐标，供录屏会话使用。
+    /// 顺序：提交文本 → 取 screen rect → tearDown → onComplete(nil) → 回调。
+    private func record() {
+        guard let onRecordingSelection,
+              let host = hostSelectionView,
+              let window = host.window,
+              let screen = window.screen else { return }
+        canvasView?.commitActiveTextEditing()
+        let windowRect = host.convert(selectionViewRect, to: nil)
+        let screenRect = window.convertToScreen(windowRect)
+        let callback = onRecordingSelection
+        tearDown()
+        onComplete(nil)
+        callback(screenRect, screen)
+    }
+
+    // MARK: - 移动选区手柄
+
+    private var moveSelectionStartRect: NSRect = .zero
+
+    private func handleMoveSelectionStart() {
+        canvasView?.commitActiveTextEditing()
+        moveSelectionStartRect = hostSelectionView?.currentSelectionRect ?? selectionViewRect
+    }
+
+    private func handleMoveSelectionDrag(delta: CGSize) {
+        hostSelectionView?.moveByExternalDrag(
+            deltaFromOriginal: delta,
+            originalRect: moveSelectionStartRect
+        )
+        if let rect = hostSelectionView?.currentSelectionRect {
+            selectionViewRect = rect
+            selectionChromeOverlay?.update(
+                rect: rect,
+                active: hostSelectionView?.selectionInteractionEnabled == true
+            )
+        }
+    }
+
+    private func handleMoveSelectionEnd() {
+        hostSelectionView?.finalizeExternalDrag()
+        if let rect = hostSelectionView?.currentSelectionRect {
+            selectionViewRect = rect
+        }
+        moveSelectionStartRect = .zero
+        updateEditorInteractionState()
+    }
+
+    private var toolbars: [AnnotationToolbarView] {
+        [toolbarView].compactMap { $0 }
+    }
+
+    private var subToolbarAnchorFrame: NSRect? {
+        toolbarView?.frame
+    }
+
+    private func updateHistoryButtons(canUndo: Bool, canRedo: Bool) {
+        toolbars.forEach {
+            $0.setUndoEnabled(canUndo)
+            $0.setRedoEnabled(canRedo)
+        }
+    }
+
+    // MARK: - 工具切换
+
+    /// 切换工具：提交文字 → 清多选 → 推样式 → 刷工具栏 → 子工具栏。
+    /// 参照 capcap L407-427。
+    func selectTool(_ tool: EditTool) {
+        if tool != .none {
+            canvasView?.clearMultiSelection()
+        }
+        activeTool = tool
+        canvasView?.activeTool = tool
+        normalizeShapeStrokeStyle(for: tool)
+        pushCurrentStyleToCanvas()
+        toolbars.forEach { $0.updateSelection(tool: tool) }
+        showSubToolbar(for: tool)
+        updateEditorInteractionState()
+        bringEditorToFront()
+    }
+
+    /// 同步选区交互标志、scroll 透传与 chrome 显隐（对齐 CapCap）。
+    private func updateEditorInteractionState() {
+        let hasPreview = canvasView?.hasPreviewImage == true
+        let isBlocked = isScrollCaptureBusy || isCropping
+        hostSelectionView?.annotationToolActive = !isBlocked
+        // 长截图 preview 后禁止再移动/缩放选区。
+        hostSelectionView?.selectionInteractionEnabled = !(isBlocked || hasPreview)
+        canvasScrollView?.isInteractionEnabled = (activeTool != .none) || hasPreview
+        selectionChromeOverlay?.update(
+            rect: selectionViewRect,
+            active: hostSelectionView?.selectionInteractionEnabled == true
+        )
+        hostSelectionView?.needsDisplay = true
+        refreshScrollCaptureAvailability()
+    }
+
+    private func refreshScrollCaptureAvailability() {
+        let enabled = isScrollCaptureAllowed && !isScrollCaptureBusy && canvasView?.hasPreviewImage != true
+        toolbars.forEach { $0.setScrollCaptureEnabled(enabled) }
+    }
+
+    private func normalizeShapeStrokeStyle(for tool: EditTool) {
+        guard tool == .ellipse, currentShapeStrokeStyle == .rounded else { return }
+        currentShapeStrokeStyle = .standard
+    }
+
+    /// 把当前样式槽位同步到画布。参照 capcap L449-462。
+    private func pushCurrentStyleToCanvas() {
+        guard let canvas = canvasView else { return }
+        canvas.currentColor = currentColor
+        canvas.currentLineWidth = currentLineWidth
+        canvas.currentArrowStyle = currentArrowStyle
+        canvas.currentMosaicBlockSize = currentMosaicBlockSize
+        canvas.currentFontSize = currentFontSize
+        canvas.currentTextStroke = currentTextStroke
+        canvas.currentTextCallout = currentTextCallout
+        canvas.currentShapeFillMode = currentShapeFillMode
+        canvas.currentShapeStrokeStyle = currentShapeStrokeStyle
+        canvas.currentEmoji = currentEmoji
+        canvas.currentMarkerColor = currentMarkerColor
+        canvas.currentMarkerLineWidth = currentMarkerLineWidth
+    }
+
+    // MARK: - 选中回填
+
+    /// 选中标注变化时，按其样式种子化当前槽位并切换工具/重建子工具栏。
+    /// 参照 capcap `handleAnnotationSelectionChanged`（L433-447）。
+    private func handleAnnotationSelectionChanged(_ annotation: Annotation?) {
+        guard let annotation else { return }
+        guard let tool = tool(for: annotation), tool != .none else { return }
+        seedCurrentValues(from: annotation)
+        pushCurrentStyleToCanvas()
+        if activeTool != tool {
+            selectTool(tool)
+        } else {
+            showSubToolbar(for: tool)
+        }
+    }
+
+    private func tool(for annotation: Annotation) -> EditTool? {
+        switch annotation {
+        case is TextAnnotation: return .text
+        case is RectAnnotation: return .rectangle
+        case is EllipseAnnotation: return .ellipse
+        case is ArrowAnnotation: return .arrow
+        case is LineAnnotation: return .line
+        case is PenAnnotation: return .pen
+        case is MarkerAnnotation: return .marker
+        case is MosaicAnnotation: return .mosaic
+        case is MagnifierAnnotation: return .magnifier
+        case is NumberAnnotation: return .number
+        case is EmojiAnnotation: return .emoji
+        default: return nil
+        }
+    }
+
+    /// 从选中标注回填样式槽位。参照 capcap `seedCurrentValues`（L484-531）。
+    private func seedCurrentValues(from annotation: Annotation) {
+        switch annotation {
+        case let t as TextAnnotation:
+            currentColor = t.color
+            currentFontSize = t.fontSize
+            currentTextStroke = t.hasStroke
+            currentTextCallout = t.hasCallout
+        case let p as PenAnnotation:
+            currentColor = p.color
+            currentLineWidth = p.lineWidth
+        case let m as MarkerAnnotation:
+            currentMarkerColor = m.color
+            currentMarkerLineWidth = m.lineWidth
+        case let mosaic as MosaicAnnotation:
+            currentMosaicBlockSize = mosaic.blockSize
+            canvasView?.currentMosaicBlockSize = mosaic.blockSize
+        case let magnifier as MagnifierAnnotation:
+            currentColor = magnifier.color
+            currentLineWidth = magnifier.lineWidth
+        case let r as RectAnnotation:
+            currentColor = r.color
+            currentLineWidth = r.lineWidth
+            currentShapeFillMode = r.fillMode
+            currentShapeStrokeStyle = r.strokeStyle
+        case let e as EllipseAnnotation:
+            currentColor = e.color
+            currentLineWidth = e.lineWidth
+            currentShapeFillMode = e.fillMode
+            currentShapeStrokeStyle = e.strokeStyle == .rounded ? .standard : e.strokeStyle
+        case let a as ArrowAnnotation:
+            currentColor = a.color
+            currentLineWidth = a.lineWidth
+            currentArrowStyle = a.style
+        case let l as LineAnnotation:
+            currentColor = l.color
+            currentLineWidth = l.lineWidth
+        case let n as NumberAnnotation:
+            currentColor = n.color
+        case is EmojiAnnotation:
+            currentEmoji = nil
+            canvasView?.currentEmoji = nil
+        default:
+            break
+        }
+    }
+
+    // MARK: - 子工具栏
+
+    private func showSubToolbar(for tool: EditTool) {
+        subToolbarView?.removeFromSuperview()
+        subToolbarView = nil
+
+        switch tool {
+        case .pen, .line:
+            installColorSizeSubToolbar(sizes: EditorStyleDefaults.standardLineSizes,
+                                       onSize: { [weak self] size in self?.setCurrentDrawingLineWidth(size) })
+        case .arrow:
+            installColorSizeSubToolbar(
+                sizes: EditorStyleDefaults.standardLineSizes,
+                arrowStyle: currentArrowStyle,
+                onSize: { [weak self] size in self?.setCurrentDrawingLineWidth(size) },
+                onArrowStyle: { [weak self] style in self?.setArrowStyle(style) }
+            )
+        case .rectangle, .ellipse:
+            installColorSizeSubToolbar(
+                sizes: EditorStyleDefaults.standardLineSizes,
+                shapeFillMode: currentShapeFillMode,
+                shapeStrokeStyle: currentShapeStrokeStyle,
+                onSize: { [weak self] size in self?.setCurrentDrawingLineWidth(size) },
+                onShapeFillMode: { [weak self] mode in self?.setShapeFillMode(mode) },
+                onShapeStrokeStyle: { [weak self] style in self?.setShapeStrokeStyle(style) }
+            )
+        case .marker:
+            installColorSizeSubToolbar(sizes: EditorStyleDefaults.markerLineSizes,
+                                       initialColor: currentMarkerColor,
+                                       initialSize: currentMarkerLineWidth,
+                                       isMarker: true,
+                                       onColor: { [weak self] c in self?.setCurrentMarkerColor(c) },
+                                       onSize: { [weak self] size in self?.setCurrentMarkerLineWidth(size) })
+        case .number:
+            installColorSizeSubToolbar(sizes: [],
+                                       initialColor: currentColor,
+                                       onColor: { [weak self] c in self?.setCurrentDrawingColor(c) })
+        case .mosaic:
+            installMosaicSubToolbar()
+        case .text:
+            installTextSubToolbar()
+        case .emoji:
+            showEmojiPopover()
+        case .none, .eraser, .magnifier, .image:
+            break
+        }
+    }
+
+    private func installColorSizeSubToolbar(
+        sizes: [CGFloat],
+        initialColor: NSColor? = nil,
+        initialSize: CGFloat? = nil,
+        isMarker: Bool = false,
+        arrowStyle: ArrowStyle? = nil,
+        shapeFillMode: ShapeFillMode? = nil,
+        shapeStrokeStyle: ShapeStrokeStyle? = nil,
+        onColor: ((NSColor) -> Void)? = nil,
+        onSize: ((CGFloat) -> Void)? = nil,
+        onArrowStyle: ((ArrowStyle) -> Void)? = nil,
+        onShapeFillMode: ((ShapeFillMode) -> Void)? = nil,
+        onShapeStrokeStyle: ((ShapeStrokeStyle) -> Void)? = nil
+    ) {
+        guard let host = hostSelectionView else { return }
+        let color = initialColor ?? currentColor
+        let size = initialSize ?? currentLineWidth
+
+        let width = ColorSizeSubToolbar.preferredWidth(
+            sizes: sizes,
+            dynamicColor: nil,
+            showsArrowStyle: arrowStyle != nil,
+            showsShapeFill: shapeFillMode != nil,
+            showsShapeStroke: shapeStrokeStyle != nil
+        )
+        // 滑块范围：荧光笔走荧光笔线宽范围，其余走标准线宽范围。
+        let sizeMin = isMarker ? EditorStyleDefaults.markerLineWidthMin
+                               : EditorStyleDefaults.standardLineWidthMin
+        let sizeMax = isMarker ? EditorStyleDefaults.markerLineWidthMax
+                               : EditorStyleDefaults.standardLineWidthMax
+        let frame = NSRect(x: 0, y: 0, width: width, height: 44)
+        let sub = ColorSizeSubToolbar(
+            frame: frame,
+            sizes: sizes,
+            currentColor: color,
+            currentSize: size,
+            sizeMin: sizeMin,
+            sizeMax: sizeMax,
+            arrowStyle: arrowStyle,
+            shapeFillMode: shapeFillMode,
+            shapeStrokeStyle: shapeStrokeStyle
+        )
+        sub.onColorChanged = { c in
+            onColor?(c)
+        }
+        sub.onSizeBegan = { [weak self] in self?.canvasView?.beginSelectionAdjustment() }
+        sub.onSizeChanged = { size in onSize?(size) }
+        sub.onSizeEnded = { [weak self] in self?.canvasView?.commitSelectionAdjustment() }
+        sub.onArrowStyleChanged = { style in onArrowStyle?(style) }
+        sub.onShapeFillModeChanged = { mode in onShapeFillMode?(mode) }
+        sub.onShapeStrokeStyleChanged = { style in onShapeStrokeStyle?(style) }
+        placeSubToolbar(sub, in: host)
+        subToolbarView = sub
+    }
+
+    private func installMosaicSubToolbar() {
+        guard let host = hostSelectionView else { return }
+        let frame = NSRect(x: 0, y: 0, width: MosaicSubToolbar.preferredWidth, height: 44)
+        let sub = MosaicSubToolbar(frame: frame, currentBlockSize: currentMosaicBlockSize)
+        sub.onBlockSizeBegan = { [weak self] in self?.canvasView?.beginSelectionAdjustment() }
+        sub.onBlockSizeChanged = { [weak self] size in
+            self?.currentMosaicBlockSize = size
+            self?.canvasView?.currentMosaicBlockSize = size
+            self?.canvasView?.mutateSelectedMosaicBlockSizeLive(size)
+        }
+        sub.onBlockSizeEnded = { [weak self] in self?.canvasView?.commitSelectionAdjustment() }
+        placeSubToolbar(sub, in: host)
+        subToolbarView = sub
+    }
+
+    private func installTextSubToolbar() {
+        guard let host = hostSelectionView else { return }
+        let strings = stringsProvider()
+        let frame = NSRect(x: 0, y: 0, width: 420, height: 44)
+        let sub = TextSubToolbar(
+            frame: frame,
+            currentColor: currentColor,
+            currentFontSize: currentFontSize,
+            strokeEnabled: currentTextStroke,
+            calloutEnabled: currentTextCallout,
+            strokeLabel: strings.annotationTextOutline,
+            calloutLabel: strings.annotationTextFill
+        )
+        sub.onColorChanged = { [weak self] c in self?.setCurrentDrawingColor(c) }
+        sub.onFontSizeBegan = { [weak self] in self?.canvasView?.beginSelectionAdjustment() }
+        sub.onFontSizeChanged = { [weak self] size in self?.setCurrentFontSize(size) }
+        sub.onFontSizeEnded = { [weak self] in self?.canvasView?.commitSelectionAdjustment() }
+        sub.onStrokeChanged = { [weak self] on in self?.setCurrentTextStroke(on) }
+        sub.onCalloutChanged = { [weak self] on in self?.setCurrentTextCallout(on) }
+        placeSubToolbar(sub, in: host)
+        subToolbarView = sub
+    }
+
+    private func placeSubToolbar(_ sub: NSView, in host: NSView) {
+        host.addSubview(sub)
+        guard let anchor = subToolbarAnchorFrame else { return }
+        let rect = subToolbarRect(
+            width: sub.frame.width,
+            height: sub.frame.height,
+            toolbarFrame: anchor,
+            in: host.bounds
+        )
+        sub.frame = rect
+        styleFloatingHUD(sub)
+    }
+
+    // MARK: - 样式设置器（参照 capcap L1907-1985）
+
+    private func setCurrentDrawingColor(_ color: NSColor) {
+        currentColor = color
+        canvasView?.currentColor = color
+        canvasView?.mutateSelectedAnnotationAtomic { $0.withColor(color) }
+    }
+
+    private func setCurrentDrawingLineWidth(_ size: CGFloat) {
+        currentLineWidth = size
+        canvasView?.currentLineWidth = size
+        canvasView?.mutateSelectedAnnotationAtomic { $0.withLineWidth(size) }
+    }
+
+    private func setCurrentMarkerColor(_ color: NSColor) {
+        currentMarkerColor = color
+        canvasView?.currentMarkerColor = color
+    }
+
+    private func setCurrentMarkerLineWidth(_ size: CGFloat) {
+        let clamped = min(max(size, EditorStyleDefaults.markerLineWidthMin),
+                          EditorStyleDefaults.markerLineWidthMax)
+        currentMarkerLineWidth = clamped
+        canvasView?.currentMarkerLineWidth = clamped
+    }
+
+    private func setArrowStyle(_ style: ArrowStyle) {
+        currentArrowStyle = style
+        canvasView?.currentArrowStyle = style
+        canvasView?.mutateSelectedAnnotationAtomic { annotation in
+            guard let arrow = annotation as? ArrowAnnotation else { return annotation }
+            return arrow.withStyle(style)
+        }
+    }
+
+    private func setShapeFillMode(_ mode: ShapeFillMode) {
+        currentShapeFillMode = mode
+        canvasView?.currentShapeFillMode = mode
+        canvasView?.mutateSelectedAnnotationAtomic { $0.withShapeFillMode(mode) }
+    }
+
+    private func setShapeStrokeStyle(_ style: ShapeStrokeStyle) {
+        currentShapeStrokeStyle = style
+        canvasView?.currentShapeStrokeStyle = style
+        canvasView?.mutateSelectedAnnotationAtomic { $0.withShapeStrokeStyle(style) }
+    }
+
+    private func setCurrentFontSize(_ size: CGFloat) {
+        currentFontSize = size
+        canvasView?.currentFontSize = size
+        canvasView?.mutateSelectedAnnotationAtomic { $0.withFontSize(size) }
+    }
+
+    private func setCurrentTextStroke(_ on: Bool) {
+        currentTextStroke = on
+        canvasView?.currentTextStroke = on
+        canvasView?.mutateSelectedAnnotationAtomic { annotation in
+            guard let text = annotation as? TextAnnotation else { return annotation }
+            return text.withStroke(on)
+        }
+    }
+
+    private func setCurrentTextCallout(_ on: Bool) {
+        currentTextCallout = on
+        canvasView?.currentTextCallout = on
+        canvasView?.mutateSelectedAnnotationAtomic { annotation in
+            guard let text = annotation as? TextAnnotation else { return annotation }
+            return text.withCallout(on)
+        }
+    }
+
+    // MARK: - 取色
+
+    private func runColorPicker() {
+        canvasView?.commitActiveTextEditing()
+        // 系统取色器（吸管）。阶段 5 可替换为更完整的 ColorPickerRunner。
+        let sampler = NSColorSampler()
+        sampler.show { [weak self] color in
+            guard let color else { return }
+            Task { @MainActor [weak self] in
+                self?.setCurrentDrawingColor(color)
+            }
+        }
+    }
+
+    // MARK: - emoji
+
+    private func showEmojiPopover() {
+        let visible = EmojiRecents.choices(from: recentEmojis)
+        let initial = currentEmoji ?? visible.first ?? EmojiRecents.defaultRecent[0]
+        selectEmoji(initial, promotesToRecent: false)
+        installEmojiSubToolbar(visible: visible, selected: initial)
+    }
+
+    private func installEmojiSubToolbar(visible: [String], selected: String?) {
+        guard let host = hostSelectionView else { return }
+        subToolbarView?.removeFromSuperview()
+        let width = min(EmojiSubToolbar.preferredVisibleWidth,
+                        max(EmojiSubToolbar.minimumVisibleWidth, host.bounds.width - 16))
+        let sub = EmojiSubToolbar(frame: NSRect(x: 0, y: 0, width: width, height: 42),
+                                  emojis: visible, selectedEmoji: selected)
+        sub.onEmojiSelected = { [weak self] emoji in
+            self?.selectEmoji(emoji, promotesToRecent: false)
+            (self?.subToolbarView as? EmojiSubToolbar)?.selectedEmoji = emoji
+        }
+        sub.onMoreRequested = { [weak self, weak sub] anchor in
+            self?.showEmojiPicker(anchoredTo: anchor, subToolbar: sub)
+        }
+        placeSubToolbar(sub, in: host)
+        subToolbarView = sub
+    }
+
+    private func selectEmoji(_ emoji: String, promotesToRecent: Bool) {
+        currentEmoji = emoji
+        canvasView?.currentEmoji = emoji
+        if promotesToRecent, !EmojiRecents.choices(from: recentEmojis).contains(emoji) {
+            recentEmojis = EmojiRecents.promoted(emoji, from: recentEmojis)
+            Defaults.setRecentEmojis(recentEmojis)
+            (subToolbarView as? EmojiSubToolbar)?.emojis = EmojiRecents.choices(from: recentEmojis)
+        }
+        dismissEmojiPopover()
+        bringEditorToFront()
+    }
+
+    private func showEmojiPicker(anchoredTo anchor: NSView, subToolbar: EmojiSubToolbar?) {
+        dismissEmojiPopover()
+        let picker = EmojiPickerView(
+            frame: NSRect(origin: .zero, size: EmojiPickerView.preferredSize),
+            emojis: EmojiRecents.pickerChoices, selectedEmoji: currentEmoji)
+        picker.onEmojiSelected = { [weak self, weak subToolbar] emoji in
+            self?.selectEmoji(emoji, promotesToRecent: true)
+            subToolbar?.selectedEmoji = emoji
+        }
+        let vc = NSViewController(); vc.view = picker
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = true
+        popover.contentSize = EmojiPickerView.preferredSize
+        popover.contentViewController = vc
+        popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
+        emojiPopover = popover
+    }
+
+    private func dismissEmojiPopover() {
+        emojiPopover?.performClose(nil)
+        emojiPopover = nil
+    }
+
+    private func handleEmojiStamped() {
+        currentEmoji = nil
+        canvasView?.currentEmoji = nil
+        (subToolbarView as? EmojiSubToolbar)?.selectedEmoji = nil
+        dismissEmojiPopover()
+        NSCursor.arrow.set()
+    }
+
+    // MARK: - 输出动作（参照 capcap L1662-1896）
+
+    /// 确认（复制到剪贴板）。
+    /// compositeImage → encoder.encode(.original) → clipboardWriter，
+    /// 失败显示错误（保留编辑器状态，不静默关闭），成功 onComplete(image)。
+    func confirm() {
+        Self.logger.info("[SSDBG] editor.confirm 进入")
+        canvasView?.commitActiveTextEditing()
+        guard let image = compositeImage() else {
+            Self.logger.notice("[SSDBG] editor.confirm: compositeImage 失败 → onComplete(nil)")
+            presentError(\.annotationErrorNoImage)
+            tearDown()
+            onComplete(nil)
+            return
+        }
+        do {
+            let output = try encoder.encode(image: image, quality: .original)
+            guard clipboardWriter.writeImage(output) else {
+                Self.logger.notice("[SSDBG] editor.confirm: 剪贴板写入失败 → 保留状态，未 onComplete")
+                presentError(\.annotationErrorPipelineFormat)
+                return
+            }
+            Self.logger.info("[SSDBG] editor.confirm 成功 → onComplete(image)")
+            tearDown()
+            onComplete(image)
+        } catch {
+            Self.logger.notice("[SSDBG] editor.confirm: encode 抛错 → 保留状态，未 onComplete")
+            presentError(error)
+        }
+    }
+
+    /// 静默保存到文件。compositeImage → saver.save，失败显示错误，成功 onComplete(nil)。
+    func save() {
+        Self.logger.info("[SSDBG] editor.save 进入")
+        canvasView?.commitActiveTextEditing()
+        guard let image = compositeImage() else {
+            Self.logger.notice("[SSDBG] editor.save: compositeImage 失败 → 保留状态，未 onComplete")
+            presentError(\.annotationErrorNoImage)
+            return
+        }
+        // 先拆除 UI（参照 capcap L1669-1670，避免编码阻塞主线程造成卡顿）。
+        tearDown()
+        do {
+            let output = try encoder.encode(image: image, quality: .original)
+            let snapshot = outputConfigurationProvider()
+            let fileName = ScreenshotSaver.timestampedFileName(
+                prefix: snapshot.fileNamePrefix,
+                quality: .original,
+                date: Date()
+            )
+            _ = try saver.save(
+                output: output,
+                quality: .original,
+                fileName: fileName,
+                directory: snapshot.saveDirectory
+            )
+            Self.logger.info("[SSDBG] editor.save 成功 → onComplete(nil)")
+            onComplete(nil)
+        } catch {
+            Self.logger.notice("[SSDBG] editor.save 抛错 → onComplete(nil)")
+            presentError(error)
+            onComplete(nil)
+        }
+    }
+
+    /// 钉图。compositeImage → pinResultBuilder → pinService.pinFromPipeline(at:)，
+    /// 失败显示错误，成功 onComplete(nil)。
+    /// 原位钉住（参照 capcap `EditWindowController.pin` → `PinLauncher.pin(at: selectionRect.origin)`）：
+    /// 把选区在屏幕上的左下原点作为钉图窗口原点传入。
+    func pin() {
+        Self.logger.info("[SSDBG] editor.pin 进入")
+        canvasView?.commitActiveTextEditing()
+        guard let image = compositeImage() else {
+            Self.logger.notice("[SSDBG] editor.pin: compositeImage 失败 → 保留状态，未 onComplete")
+            presentError(\.annotationErrorNoImage)
+            return
+        }
+        guard let pinService else {
+            Self.logger.notice("[SSDBG] editor.pin: 无 pinService → 保留状态，未 onComplete")
+            presentError(\.annotationErrorPinNotWired)
+            return
+        }
+        guard let result = pinResultBuilder(image) else {
+            Self.logger.notice("[SSDBG] editor.pin: pinResultBuilder 失败 → 保留状态，未 onComplete")
+            presentError(\.annotationErrorNoResultMetadata)
+            return
+        }
+        do {
+            // 选区视图坐标 → 屏幕坐标（AppKit）。hostSelectionView 缺失（全屏直进编辑器）
+            // 时回退 nil，退回居中。
+            let origin = selectionScreenOrigin()
+            _ = try pinService.pinFromPipeline(result: result, at: origin)
+            Self.logger.info("[SSDBG] editor.pin 成功 → onComplete(nil)")
+            tearDown()
+            onComplete(nil)
+        } catch {
+            Self.logger.notice("[SSDBG] editor.pin 抛错 → 保留状态，未 onComplete")
+            presentError(error)
+        }
+    }
+
+    /// 选区左下原点的屏幕坐标（AppKit）。无法计算时返回 nil。
+    private func selectionScreenOrigin() -> NSPoint? {
+        guard let host = hostSelectionView, let window = host.window else { return nil }
+        let windowPoint = host.convert(selectionViewRect.origin, to: nil)
+        return window.convertPoint(toScreen: windowPoint)
+    }
+
+    /// 取消/关闭。
+    func close() {
+        Self.logger.info("[SSDBG] editor.close 被调用 → onComplete(nil)")
+        tearDown()
+        onComplete(nil)
+    }
+
+    /// 渲染最终图像（底图 + 全部标注）。
+    ///
+    /// 合成位图按 `sourceBackingScaleFactor` 显式指定像素密度：若用
+    /// `NSImage.lockFocus`，其后端密度会跟随隐式主屏 backingScaleFactor，
+    /// 与钉住时用的源屏 `pointPixelScale` 不一致，导致多屏 DPI 不同时钉住尺寸
+    /// 被放大/缩小。此处与 `BeautifyRenderer.render` 用同一范式：显式建 rep。
+    /// 长截图 `previewImage` 优先于 `baseImage`。
+    func compositeImage() -> NSImage? {
+        let sourceImage = canvasView?.resolveBaseImageForEditing() ?? baseImage
+        let size = sourceImage.size
+        guard size.width > 0, size.height > 0 else { return sourceImage }
+
+        let pixelsWide = Int((size.width * sourceBackingScaleFactor).rounded())
+        let pixelsHigh = Int((size.height * sourceBackingScaleFactor).rounded())
+        guard pixelsWide > 0, pixelsHigh > 0 else { return sourceImage }
+
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: pixelsWide,
+            pixelsHigh: pixelsHigh,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 32
+        ) else {
+            return sourceImage
+        }
+        rep.size = size
+
+        guard let ctx = NSGraphicsContext(bitmapImageRep: rep) else {
+            return sourceImage
+        }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = ctx
+        defer { NSGraphicsContext.restoreGraphicsState() }
+
+        let bounds = NSRect(origin: .zero, size: size)
+        sourceImage.draw(in: bounds)
+        for annotation in document.annotations {
+            annotation.annotation.drawApplyingTransforms(in: ctx.cgContext, bounds: bounds)
+        }
+
+        let composite = NSImage(size: size)
+        composite.addRepresentation(rep)
+
+        // 美化（参照 capcap）：底图 + 标注合成后，应用背景/圆角/双层阴影/padding。
+        // composite 的 representation 已携带正确 pixelsWide，BeautifyRenderer 据此算对密度。
+        if beautifyEnabled {
+            let wallpaper = beautifyPreset.isWallpaper ? beautifyWallpaper : nil
+            return BeautifyRenderer.render(innerImage: composite, preset: beautifyPreset, wallpaperImage: wallpaper)
+        }
+        return composite
+    }
+
+    // MARK: - 美化（参照 capcap toggleBeautify/applyBeautifyPreset）
+
+    /// 切换美化开关。
+    func toggleBeautify() {
+        beautifyEnabled.toggle()
+        if beautifyEnabled, beautifyPreset.isWallpaper, beautifyWallpaper == nil {
+            loadBeautifyWallpaper()
+        }
+        canvasView?.needsDisplay = true
+    }
+
+    /// 切换美化预设。
+    func applyBeautifyPreset(_ preset: BeautifyPreset) {
+        beautifyPreset = preset
+        beautifyEnabled = true
+        if preset.isWallpaper, beautifyWallpaper == nil {
+            loadBeautifyWallpaper()
+        }
+        canvasView?.needsDisplay = true
+    }
+
+    /// 异步加载当前屏幕桌面壁纸（wallpaper 预设用）。参照 capcap loadBeautifyWallpaper。
+    private func loadBeautifyWallpaper() {
+        guard let screen = NSScreen.main else { return }
+        BeautifyRenderer.loadWallpaperImage(for: screen) { [weak self] image in
+            self?.beautifyWallpaper = image
+            self?.canvasView?.needsDisplay = true
+        }
+    }
+
+    // MARK: - 错误反馈
+
+    /// 输出动作失败反馈。记录到 `lastError` 并弹 NSAlert（不关闭编辑器，
+    /// 保留状态供用户重试或调整）。参照 capcap ToastWindow，OmniForge 暂用 NSAlert。
+    private func presentError(_ error: Error) {
+        lastError = error
+        showAlert(message: error.localizedDescription)
+    }
+
+    /// 用预置的错误文案反馈（避免散落硬编码 key）。
+    private func presentError(_ messageKey: KeyPath<Strings, String>) {
+        let message = stringsProvider()[keyPath: messageKey]
+        lastError = NSError(
+            domain: "com.omniforge.annotation-output",
+            code: -1,
+            userInfo: [NSLocalizedDescriptionKey: message]
+        )
+        showAlert(message: message)
+    }
+
+    private func showAlert(message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Error"
+        alert.informativeText = message
+        alert.addButton(withTitle: "OK")
+        if let window = hostSelectionView?.window {
+            alert.beginSheetModal(for: window, completionHandler: nil)
+        }
+    }
+
+    // MARK: - 拆除
+
+    func tearDown() {
+        Self.logger.info("[SSDBG] editor.tearDown 执行")
+        // 停止进行中的长截图，避免回调落到已拆除控制器。
+        if isScrollCapturing || isScrollCaptureFinalizing {
+            stopManualScrollCapture()
+            removeScrollCaptureKeyMonitor()
+            scrollCapturer?.onPreviewUpdated = nil
+            scrollCapturer = nil
+            isScrollCapturing = false
+            isScrollCaptureFinalizing = false
+        }
+        dismissScrollCaptureChrome()
+        exitCropMode(restoreToolbars: false)
+        dismissInfoToast()
+        dismissEmojiPopover()
+        removeKeyboardShortcuts()
+        selectionChromeOverlay?.removeFromSuperview()
+        selectionChromeOverlay = nil
+        canvasScrollView?.removeFromSuperview()
+        canvasScrollView = nil
+        canvasView = nil
+        toolbars.forEach { $0.removeFromSuperview() }
+        toolbarView = nil
+        subToolbarView?.removeFromSuperview()
+        subToolbarView = nil
+    }
+
+    // MARK: - 几何
+
+    private func bringEditorToFront() {
+        guard let host = hostSelectionView, let window = host.window else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        if activeTool == .none {
+            window.makeFirstResponder(host)
+        } else {
+            window.makeFirstResponder(canvasView)
+        }
+    }
+
+    /// 主工具栏位置：选区外缘下方（不够则上方）。参照 capcap
+    /// `EditorToolbarPlacement.primaryToolbarRect`。
+    private func toolbarRect(in bounds: NSRect, size: NSSize) -> NSRect {
+        let reference = selectionViewRect
+        let width = size.width
+        let height = size.height
+        let margin: CGFloat = 8
+        let x = max(margin, min(bounds.maxX - width - margin, reference.midX - width / 2))
+        var y = reference.minY - height - margin
+        if y < margin {
+            y = min(reference.maxY + margin, bounds.maxY - height - margin)
+        }
+        y = max(margin, min(bounds.maxY - height - margin, y))
+        return NSRect(x: x, y: y, width: width, height: height)
+    }
+
+    /// 子工具栏位置：主工具栏下方（不够则上方）。参照 capcap `subToolbarRect`。
+    private func subToolbarRect(width: CGFloat, height: CGFloat,
+                                toolbarFrame: NSRect, in bounds: NSRect) -> NSRect {
+        let margin: CGFloat = 8
+        let x = max(margin, min(bounds.maxX - width - margin, toolbarFrame.midX - width / 2))
+        var y = toolbarFrame.minY - height - 4
+        if y < margin {
+            y = min(toolbarFrame.maxY + 4, bounds.maxY - height - margin)
+        }
+        y = max(margin, min(bounds.maxY - height - margin, y))
+        return NSRect(x: x, y: y, width: width, height: height)
+    }
+
+    private func styleFloatingHUD(_ view: NSView) {
+        view.wantsLayer = true
+        view.layer?.shadowColor = NSColor.black.cgColor
+        view.layer?.shadowOpacity = EditorHUD.shadowOpacity
+        view.layer?.shadowRadius = EditorHUD.shadowRadius
+        view.layer?.shadowOffset = EditorHUD.shadowOffset
+    }
+
+    // MARK: - 键盘快捷键
+
+    private func installKeyboardShortcuts() {
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            return self.handleKeyEvent(event)
+        }
+    }
+
+    private func removeKeyboardShortcuts() {
+        if let monitor = keyMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyMonitor = nil
+        }
+    }
+
+    private func handleKeyEvent(_ event: NSEvent) -> NSEvent? {
+        // 文字编辑态让出
+        if canvasView?.isEditingText == true { return event }
+
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let key = event.charactersIgnoringModifiers?.lowercased()
+
+        // 带 command 的快捷键
+        switch (key, flags) {
+        case ("z", [.command]):
+            _ = document.undo()
+            canvasView?.needsDisplay = true
+            return nil
+        case ("z", [.command, .shift]):
+            _ = document.redo()
+            canvasView?.needsDisplay = true
+            return nil
+        case ("s", [.command]):
+            save()
+            return nil
+        case ("c", [.command]):
+            confirm()
+            return nil
+        default:
+            break
+        }
+
+        // 单字母工具快捷键（无修饰）。参照 capcap `EditorKeyboardShortcut`。
+        if flags.intersection([.command, .control, .option]).isEmpty,
+           let key, key.count == 1 {
+            switch key {
+            case "v": selectTool(.none); return nil
+            case "r": selectTool(.rectangle); return nil
+            case "o": selectTool(.ellipse); return nil
+            case "l": selectTool(.line); return nil
+            case "a": selectTool(.arrow); return nil
+            case "d": selectTool(.pen); return nil
+            case "h": selectTool(.marker); return nil
+            case "m": selectTool(.mosaic); return nil
+            case "e": selectTool(.eraser); return nil
+            case "t": selectTool(.text); return nil
+            case "n": selectTool(.number); return nil
+            case "p": pin(); return nil
+            case "x": close(); return nil
+            default: break
+            }
+        }
+
+        // 回车确认（裁剪模式优先）
+        if event.keyCode == 36 { // Return
+            if isCropping {
+                confirmCrop()
+            } else {
+                confirm()
+            }
+            return nil
+        }
+        // ESC 取消
+        if event.keyCode == 53 {
+            if isCropping {
+                // 裁剪中 ESC：与对号一致，确认当前裁切框并完成（复制+关闭）。
+                confirmCrop()
+                return nil
+            }
+            if isScrollCapturing {
+                stopScrollCapture(reason: "escape")
+                return nil
+            }
+            close()
+            return nil
+        }
+        return event
+    }
+
+    // MARK: - 长截图编排（仅手动滚动）
+
+    func toggleScrollCapture() {
+        guard isScrollCaptureAllowed else { return }
+        guard !isScrollCaptureFinalizing else { return }
+        if canvasView?.hasPreviewImage == true { return }
+        if isScrollCapturing {
+            stopScrollCapture(reason: "toolbar")
+        } else {
+            startScrollCapture()
+        }
+    }
+
+    /// 点击工具栏长截图后直接进入手动滚动捕获（无自动/手动菜单）。
+    func startScrollCapture() {
+        guard isScrollCaptureAllowed else { return }
+        guard !isScrollCaptureBusy else { return }
+        guard canvasView?.hasPreviewImage != true else { return }
+
+        canvasView?.commitActiveTextEditing()
+
+        // 1. selectTool none + flags + toolbar active
+        selectTool(.none)
+        isScrollCapturing = true
+        dismissEmojiPopover()
+        subToolbarView?.removeFromSuperview()
+        subToolbarView = nil
+        toolbars.forEach { $0.setScrollCaptureActive(true) }
+        hostSelectionView?.scrollCaptureActive = true
+        // 画布底图与选区 chrome 会盖住选区；滚动期隐藏，让 dig-out 透出底层实时页面
+        //（SelectionView 在 scrollCaptureActive 时已跳过冻结快照，对齐 CapCap 视觉）。
+        canvasScrollView?.isHidden = true
+        selectionChromeOverlay?.isHidden = true
+        updateEditorInteractionState()
+
+        // 2. display + flush so chrome is not baked into first frame
+        hostSelectionView?.display()
+        CATransaction.flush()
+
+        // 3. chrome first so we can exclude their window IDs from capture
+        // BEFORE ScrollCapturer.init (which takes the first frame synchronously).
+        let strings = stringsProvider()
+        let hintWindow = ScrollCaptureHintWindow(text: strings.scrollCaptureManualHint)
+        hintWindow.present(in: selectionScreenRect())
+        scrollCaptureHintWindow = hintWindow
+        showScrollCaptureControl()
+        // Side preview is normally lazy; seed + place it now so its CGWindowID
+        // is in the capturer exclusion list before the first frame.
+        if scrollPreviewWindow == nil {
+            scrollPreviewWindow = ScrollPreviewWindow()
+        }
+        scrollPreviewWindow?.updatePreview(
+            NSImage(size: NSSize(width: 1, height: 1)),
+            anchorRect: selectionScreenRect()
+        )
+        toolbars.forEach { $0.isHidden = true }
+
+        // Host overlay + all scroll chrome must be excluded before init-time capture.
+        // Host panel dig-out 露出实时页面；SCK 排除 host/chrome 后只采底层内容。
+        let excluding = scrollCaptureExcludedWindowIDs()
+        Self.logger.info(
+            "scroll-capture exclude windows=\(excluding.map(String.init).joined(separator: ","), privacy: .public)"
+        )
+        let displayID = sourceDisplayID
+            ?? hostSelectionView?.window?.screen?.displayID
+            ?? CGMainDisplayID()
+        let scale = sourceBackingScaleFactor
+        let capturer = ScrollCapturer(
+            rect: captureRect,
+            displayID: displayID,
+            scaleFactor: scale,
+            excludingWindowIDs: excluding
+        )
+        capturer.onPreviewUpdated = { [weak self] image in
+            DispatchQueue.main.async {
+                self?.updateScrollPreview(image)
+            }
+        }
+        scrollCapturer = capturer
+        installScrollCaptureKeyMonitor()
+
+        // 4. ignore mouse + deactivate so page under receives scroll
+        hostSelectionView?.window?.ignoresMouseEvents = true
+        NSApp.deactivate()
+
+        startManualScrollCapture(capturer: capturer)
+    }
+
+    private func startManualScrollCapture(capturer: ScrollCapturer) {
+        let timer = DispatchSource.makeTimerSource(
+            queue: DispatchQueue(label: "com.omniforge.manual-scroll-capture", qos: .userInitiated)
+        )
+        manualScrollCaptureTimer = timer
+        timer.schedule(deadline: .now() + 0.25, repeating: 0.25, leeway: .milliseconds(80))
+        timer.setEventHandler { [weak capturer] in
+            _ = capturer?.captureSynchronously(expectedShiftPoints: 0)
+        }
+        timer.resume()
+    }
+
+    private func stopManualScrollCapture() {
+        manualScrollCaptureTimer?.setEventHandler {}
+        manualScrollCaptureTimer?.cancel()
+        manualScrollCaptureTimer = nil
+    }
+
+    func stopScrollCapture(reason: String = "unknown") {
+        guard isScrollCapturing else { return }
+        isScrollCapturing = false
+        isScrollCaptureFinalizing = true
+        stopManualScrollCapture()
+        removeScrollCaptureKeyMonitor()
+        let finishingCapturer = scrollCapturer
+        finishingCapturer?.onPreviewUpdated = nil
+        scrollCapturer = nil
+        scrollCaptureControlWindow?.dismiss()
+        scrollCaptureControlWindow = nil
+        scrollPreviewWindow?.dismiss()
+        scrollPreviewWindow = nil
+        scrollCaptureHintWindow?.dismiss()
+        scrollCaptureHintWindow = nil
+        hostSelectionView?.window?.ignoresMouseEvents = false
+        hostSelectionView?.scrollCaptureActive = false
+        hostSelectionView?.needsDisplay = true
+        toolbars.forEach { $0.setScrollCaptureActive(false) }
+        // 停止后若无长图结果会恢复编辑器；有结果则 enterCropMode 继续隐藏画布。
+        // 这里先恢复画布/chrome 可见性标志，crop 入口会再盖上。
+        canvasScrollView?.isHidden = false
+        selectionChromeOverlay?.isHidden = false
+        updateEditorInteractionState()
+
+        guard let finishingCapturer else {
+            finishScrollCapture(stitchedImage: nil, reason: reason)
+            return
+        }
+        finishingCapturer.stopAndStitch { [weak self] stitchedImage in
+            DispatchQueue.main.async {
+                self?.finishScrollCapture(stitchedImage: stitchedImage, reason: reason)
+            }
+        }
+    }
+
+    private func finishScrollCapture(stitchedImage: NSImage?, reason: String) {
+        guard isScrollCaptureFinalizing else { return }
+        isScrollCaptureFinalizing = false
+
+        guard let stitchedImage else {
+            canvasScrollView?.isHidden = false
+            selectionChromeOverlay?.isHidden = false
+            toolbars.forEach { $0.isHidden = false }
+            updateEditorInteractionState()
+            bringEditorToFront()
+            return
+        }
+        // Auto-scroll often over-shoots; route through crop mode first.
+        enterCropMode(with: stitchedImage)
+    }
+
+    private func enterCropMode(with image: NSImage) {
+        guard let hostSelectionView else {
+            finishCropFallback(with: image)
+            return
+        }
+
+        isCropping = true
+        selectTool(.none)
+        toolbars.forEach { $0.isHidden = true }
+        selectionChromeOverlay?.isHidden = true
+
+        let cropView = ScrollCropView(frame: hostSelectionView.bounds, image: image)
+        cropView.autoresizingMask = [.width, .height]
+        hostSelectionView.addSubview(cropView)
+        scrollCropView = cropView
+
+        showCropControl()
+        bringEditorToFront()
+        updateEditorInteractionState()
+        presentInfoMessage(stringsProvider().cropLongScreenshotHint)
+    }
+
+    private func finishCropFallback(with image: NSImage) {
+        loadScrollCaptureImageIntoEditor(image)
+        toolbars.forEach { $0.isHidden = false }
+        bringEditorToFront()
+    }
+
+    func confirmCrop() {
+        guard isCropping, let cropView = scrollCropView else {
+            exitCropMode()
+            return
+        }
+        let cropped = cropView.croppedImage()
+        // 裁切确认即完成：复制到剪贴板并关闭截图会话，不再回填编辑器二次确认。
+        exitCropMode(restoreToolbars: false)
+        dismissInfoToast()
+        completeScrollCapture(with: cropped)
+    }
+
+    /// 长截图裁切结果：编码 → 剪贴板 → tearDown → onComplete。
+    /// 写入失败时回填编辑器，保留可重试状态（与工具栏 confirm 失败策略一致）。
+    private func completeScrollCapture(with image: NSImage) {
+        do {
+            let output = try encoder.encode(image: image, quality: .original)
+            guard clipboardWriter.writeImage(output) else {
+                Self.logger.notice("[SSDBG] scroll-crop complete: clipboard write failed → keep editor")
+                presentError(\.annotationErrorPipelineFormat)
+                loadScrollCaptureImageIntoEditor(image)
+                toolbars.forEach { $0.isHidden = false }
+                bringEditorToFront()
+                return
+            }
+            Self.logger.info("[SSDBG] scroll-crop complete: clipboard ok → onComplete(image)")
+            tearDown()
+            onComplete(image)
+        } catch {
+            Self.logger.notice("[SSDBG] scroll-crop complete: encode failed → keep editor")
+            presentError(error)
+            loadScrollCaptureImageIntoEditor(image)
+            toolbars.forEach { $0.isHidden = false }
+            bringEditorToFront()
+        }
+    }
+
+    private func loadScrollCaptureImageIntoEditor(_ image: NSImage) {
+        // Preview wins; baseImage kept for layout fallbacks but composite/draw use preview.
+        baseImage = image
+        canvasView?.loadPreviewImage(image)
+        if let scrollView = canvasScrollView {
+            scrollView.hasVerticalScroller = image.size.height > selectionViewRect.height + 0.5
+            // Scroll to top of long image (AppKit bottom-left origin).
+            let topY = max(0, image.size.height - selectionViewRect.height)
+            scrollView.contentView.scroll(to: NSPoint(x: 0, y: topY))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
+        updateEditorInteractionState()
+        bringEditorToFront()
+    }
+
+    private func exitCropMode(restoreToolbars: Bool = true) {
+        isCropping = false
+        scrollCropView?.removeFromSuperview()
+        scrollCropView = nil
+        scrollCropControlWindow?.dismiss()
+        scrollCropControlWindow = nil
+        selectionChromeOverlay?.isHidden = false
+        if restoreToolbars {
+            toolbars.forEach { $0.isHidden = false }
+            bringEditorToFront()
+        }
+        updateEditorInteractionState()
+    }
+
+    private func showCropControl() {
+        let controlWindow = ScrollCropControlWindow(
+            onConfirm: { [weak self] in self?.confirmCrop() },
+            toolTip: stringsProvider().tipScrollCropConfirm
+        )
+        if let screen = hostSelectionView?.window?.screen ?? NSScreen.main {
+            controlWindow.positionAtBottom(of: screen)
+        }
+        scrollCropControlWindow = controlWindow
+        controlWindow.orderFrontRegardless()
+    }
+
+    /// Window numbers for chrome that must never bake into scroll frames.
+    ///
+    /// Critical: the host overlay panel (`hostSelectionView.window`) is full-screen
+    /// and holds the frozen selection snapshot. Without excluding it, every long-
+    /// scroll frame captures the freeze overlay instead of the live page underneath.
+    /// SCKit `excludingWindows` still captures content under the excluded window.
+    private func scrollCaptureExcludedWindowIDs() -> [CGWindowID] {
+        ScrollCaptureExclusion.excludedWindowIDs(
+            hostWindowNumber: hostSelectionView?.window?.windowNumber,
+            hintWindowNumber: scrollCaptureHintWindow?.windowNumber,
+            controlWindowNumber: scrollCaptureControlWindow?.windowNumber,
+            previewWindowNumber: scrollPreviewWindow?.windowNumber,
+            cropWindowNumber: scrollCropControlWindow?.windowNumber,
+            toastWindowNumber: infoToastWindow?.windowNumber
+        )
+    }
+
+    /// Test hook: same exclusion builder used before `ScrollCapturer` init.
+    func scrollCaptureExcludedWindowIDsForTesting(
+        hostWindowNumber: Int?,
+        hintWindowNumber: Int? = nil,
+        controlWindowNumber: Int? = nil,
+        previewWindowNumber: Int? = nil,
+        cropWindowNumber: Int? = nil,
+        toastWindowNumber: Int? = nil
+    ) -> [CGWindowID] {
+        ScrollCaptureExclusion.excludedWindowIDs(
+            hostWindowNumber: hostWindowNumber,
+            hintWindowNumber: hintWindowNumber,
+            controlWindowNumber: controlWindowNumber,
+            previewWindowNumber: previewWindowNumber,
+            cropWindowNumber: cropWindowNumber,
+            toastWindowNumber: toastWindowNumber
+        )
+    }
+
+    private func updateScrollPreview(_ image: NSImage) {
+        guard isScrollCapturing else { return }
+        if scrollPreviewWindow == nil {
+            scrollPreviewWindow = ScrollPreviewWindow()
+        }
+        scrollPreviewWindow?.updatePreview(image, anchorRect: selectionScreenRect())
+    }
+
+    private func showScrollCaptureControl() {
+        guard
+            let hostSelectionView,
+            let hostWindow = hostSelectionView.window,
+            let scrollToolbar = toolbars.first(where: { $0.contains(.scrollCapture) }),
+            let buttonFrame = scrollToolbar.scrollCaptureButtonFrame
+        else {
+            // Fallback: place near selection bottom-center.
+            let screenRect = selectionScreenRect()
+            let fallback = NSRect(
+                x: screenRect.midX - 16,
+                y: screenRect.minY - 48,
+                width: 32,
+                height: 32
+            )
+            let controlWindow = ScrollCaptureControlWindow(buttonFrame: fallback) { [weak self] in
+                self?.toggleScrollCapture()
+            }
+            scrollCaptureControlWindow = controlWindow
+            controlWindow.orderFrontRegardless()
+            return
+        }
+
+        let frameInSelectionView = scrollToolbar.convert(buttonFrame, to: hostSelectionView)
+        let frameInWindow = hostSelectionView.convert(frameInSelectionView, to: nil)
+        let frameOnScreen = hostWindow.convertToScreen(frameInWindow)
+
+        let controlWindow = ScrollCaptureControlWindow(buttonFrame: frameOnScreen) { [weak self] in
+            self?.toggleScrollCapture()
+        }
+        scrollCaptureControlWindow = controlWindow
+        controlWindow.orderFrontRegardless()
+    }
+
+    private func installScrollCaptureKeyMonitor() {
+        removeScrollCaptureKeyMonitor()
+        scrollCaptureKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] _ in
+            guard let self, self.isScrollCapturing else { return }
+            DispatchQueue.main.async {
+                self.stopScrollCapture(reason: "global-key")
+            }
+        }
+    }
+
+    private func removeScrollCaptureKeyMonitor() {
+        if let scrollCaptureKeyMonitor {
+            NSEvent.removeMonitor(scrollCaptureKeyMonitor)
+            self.scrollCaptureKeyMonitor = nil
+        }
+    }
+
+    private func dismissScrollCaptureChrome() {
+        scrollCaptureControlWindow?.dismiss()
+        scrollCaptureControlWindow = nil
+        scrollPreviewWindow?.dismiss()
+        scrollPreviewWindow = nil
+        scrollCaptureHintWindow?.dismiss()
+        scrollCaptureHintWindow = nil
+        hostSelectionView?.window?.ignoresMouseEvents = false
+        hostSelectionView?.scrollCaptureActive = false
+        canvasScrollView?.isHidden = false
+        // crop 模式自管 chrome 显隐；非 crop 时恢复。
+        if !isCropping {
+            selectionChromeOverlay?.isHidden = false
+        }
+        toolbars.forEach { $0.setScrollCaptureActive(false) }
+        toolbars.forEach { $0.isHidden = false }
+    }
+
+    private func dismissInfoToast() {
+        infoToastWindow?.dismiss()
+        infoToastWindow = nil
+    }
+
+    /// Selection rect in AppKit screen coordinates.
+    private func selectionScreenRect() -> NSRect {
+        guard let host = hostSelectionView, let window = host.window else {
+            return selectionViewRect
+        }
+        let windowRect = host.convert(selectionViewRect, to: nil)
+        return window.convertToScreen(windowRect)
+    }
+
+    private func presentInfoMessage(_ message: String) {
+        // Non-blocking toast (permission / hard errors stay on NSAlert).
+        Self.logger.info("scroll-capture: \(message, privacy: .public)")
+        let toast = infoToastWindow ?? EditorInfoToastWindow()
+        infoToastWindow = toast
+        let screen = hostSelectionView?.window?.screen ?? NSScreen.main
+        toast.present(message, near: screen)
+    }
+}
+

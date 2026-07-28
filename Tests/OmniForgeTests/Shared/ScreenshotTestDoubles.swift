@@ -1,0 +1,102 @@
+import AppKit
+import CoreGraphics
+import Foundation
+import KeyboardShortcuts
+@testable import OmniForge
+
+// MARK: - ScreenCaptureClient fake
+
+/// 参照 KeepAwake Fake 范式：副作用计数 + 失败注入。
+/// 用于 ScreenshotFeatureManager / 捕获会话单测；不触碰真实 ScreenCaptureKit。
+final class FakeScreenCaptureClient: ScreenCaptureClient {
+    struct CaptureDisplayCall: Equatable {
+        let displayID: CGDirectDisplayID
+    }
+
+    struct CaptureRegionCall: Equatable {
+        let rect: CGRect
+        let displayID: CGDirectDisplayID
+        let scaleFactor: CGFloat
+        let excludingWindowIDs: [CGWindowID]
+    }
+
+    private(set) var captureDisplayCalls: [CaptureDisplayCall] = []
+    private(set) var captureRegionCalls: [CaptureRegionCall] = []
+    private(set) var captureSnapshotCalls: [CGDirectDisplayID] = []
+
+    /// 控制下次异步捕获抛错；为空则返回占位图像。
+    var captureDisplayError: Error?
+    var captureRegionError: Error?
+    /// captureSnapshot 同步返回值（默认 nil，模拟无预抓快照）。
+    var stubbedSnapshot: CGImage?
+
+    func captureDisplay(displayID: CGDirectDisplayID) async throws -> CGImage {
+        captureDisplayCalls.append(CaptureDisplayCall(displayID: displayID))
+        if let captureDisplayError { throw captureDisplayError }
+        return FakeScreenCaptureClient.placeholderImage()
+    }
+
+    func captureRegion(
+        _ rect: CGRect,
+        displayID: CGDirectDisplayID,
+        scaleFactor: CGFloat,
+        excludingWindowIDs: [CGWindowID]
+    ) async throws -> CGImage {
+        captureRegionCalls.append(
+            CaptureRegionCall(
+                rect: rect,
+                displayID: displayID,
+                scaleFactor: scaleFactor,
+                excludingWindowIDs: excludingWindowIDs
+            )
+        )
+        if let captureRegionError { throw captureRegionError }
+        return FakeScreenCaptureClient.placeholderImage()
+    }
+
+    func captureSnapshot(displayID: CGDirectDisplayID) -> CGImage? {
+        captureSnapshotCalls.append(displayID)
+        return stubbedSnapshot
+    }
+
+    /// 1×1 透明占位图，避免 0 维触发 ScreenshotResult 校验失败。
+    static func placeholderImage() -> CGImage {
+        let context = CGContext(
+            data: nil,
+            width: 1,
+            height: 1,
+            bitsPerComponent: 8,
+            bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )!
+        return context.makeImage()!
+    }
+}
+
+// MARK: - ScreenshotKeyboardShortcutsClient fake
+
+/// 捕获 setShortcut / onKeyUp 调用，避免触碰真实 KeyboardShortcuts 全局状态。
+final class FakeScreenshotKeyboardShortcutsClient: ScreenshotKeyboardShortcutsClient {
+    struct SetShortcutCall: Equatable {
+        let name: String
+        let hasShortcut: Bool
+    }
+
+    private(set) var setShortcutCalls: [SetShortcutCall] = []
+    /// 注册的 onKeyUp 回调，按 name 索引（测试可手动触发）。
+    private(set) var keyUpHandlers: [String: () -> Void] = [:]
+
+    func setShortcut(_ shortcut: KeyboardShortcuts.Shortcut?, for name: KeyboardShortcuts.Name) {
+        setShortcutCalls.append(SetShortcutCall(name: name.rawValue, hasShortcut: shortcut != nil))
+    }
+
+    func onKeyUp(for name: KeyboardShortcuts.Name, action: @escaping () -> Void) {
+        keyUpHandlers[name.rawValue] = action
+    }
+
+    /// 触发已注册的 onKeyUp（模拟用户按键）。
+    func fireKeyUp(for name: KeyboardShortcuts.Name) {
+        keyUpHandlers[name.rawValue]?()
+    }
+}
