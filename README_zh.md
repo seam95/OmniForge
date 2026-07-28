@@ -16,7 +16,15 @@
 
 ## 截图
 
-应用截图与演示 GIF 待补充。
+<p align="center">
+  <img src="Resources/Screenshots/screenshot-annotation.png" width="640" alt="截图标注"><br>
+  <sub>全能截图与标注工具</sub>
+</p>
+
+<p align="center">
+  <img src="Resources/Screenshots/utilities.png" width="320" alt="实用工具"> &nbsp;&nbsp; <img src="Resources/Screenshots/network-diagnostics.png" width="320" alt="网络诊断"><br>
+  <sub>实用工具中心 · 网络诊断（端口监听）</sub>
+</p>
 
 ## 功能
 
