@@ -66,8 +66,6 @@ OmniForge is built around a **Feature Hub**: install only what you need, grant p
 - Onboarding, permission portal, and Feature Hub
 - Languages: Simplified Chinese, English, or follow system
 
-For user-facing behavior changes over time, see [`docs/FEATURE_CHANGES.md`](docs/FEATURE_CHANGES.md).
-
 ## Requirements
 
 - **macOS 14** or later
@@ -78,9 +76,19 @@ For user-facing behavior changes over time, see [`docs/FEATURE_CHANGES.md`](docs
 ### From Releases
 
 1. Open [Releases](https://github.com/seam95/OmniForge/releases).
-2. Download the latest `.dmg` or `.zip`.
-3. Move **OmniForge** into Applications and launch it.
-4. Grant the permissions the app requests for the features you enable (see below).
+2. Download the latest `.dmg`.
+3. Move **OmniForge** into **Applications** — do **not** launch it yet.
+4. Remove the quarantine attribute, then launch it and grant the permissions the app requests for the features you enable (see below).
+
+> ⚠️ **Signing & Gatekeeper notice**
+>
+> Releases are **ad-hoc signed and not Apple-notarized** (this open-source project does not yet hold a Developer ID). macOS will block the first launch. After dragging `OmniForge.app` into `/Applications`, run this in Terminal before opening it:
+>
+> ```bash
+> sudo xattr -dr com.apple.quarantine /Applications/OmniForge.app
+> ```
+>
+> Because it is not notarized, macOS may occasionally require you to re-grant system permissions. This is an inherent limitation of unsigned distribution — please understand before downloading.
 
 ### Build from source
 
@@ -92,8 +100,9 @@ swift build
 open build/stage/OmniForge.app
 ```
 
-- `./build.sh` assembles a signed `.app` (Developer ID when available, otherwise ad-hoc).
+- `./build.sh` assembles a signed `.app` (Developer ID or Apple Development when available, otherwise ad-hoc).
 - `./build.sh --install` installs into `/Applications`.
+- `./build.sh --dmg` produces a distributable `.dmg` under `build/stage/`.
 
 ## Permissions
 

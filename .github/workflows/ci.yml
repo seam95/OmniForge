@@ -14,22 +14,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Print Xcode version
-        run: xcodebuild -version
+      - name: Print Swift version
+        run: swift --version
 
       - name: Build
-        run: |
-          xcodebuild build \
-            -project InputLock/InputLock.xcodeproj \
-            -scheme InputLock \
-            -configuration Debug \
-            -destination 'platform=macOS' \
-            CODE_SIGNING_ALLOWED=NO | xcpretty
+        run: swift build -c release
 
       - name: Test
-        run: |
-          xcodebuild test \
-            -project InputLock/InputLock.xcodeproj \
-            -scheme InputLock \
-            -destination 'platform=macOS' \
-            CODE_SIGNING_ALLOWED=NO | xcpretty
+        # 本项目测试基于 XCTest，需禁用 Swift Testing 运行器以正确发现用例
+        run: swift test --disable-swift-testing

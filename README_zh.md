@@ -66,8 +66,6 @@ OmniForge 以 **功能中心** 为核心：按需安装功能、按功能授予�
 - 首次引导、权限门户与功能中心
 - 语言：简体中文、英文，或跟随系统
 
-面向用户的行为变更记录见 [`docs/FEATURE_CHANGES.md`](docs/FEATURE_CHANGES.md)。
-
 ## 系统要求
 
 - **macOS 14** 或更高版本
@@ -78,9 +76,19 @@ OmniForge 以 **功能中心** 为核心：按需安装功能、按功能授予�
 ### 下载 Release
 
 1. 打开 [Releases](https://github.com/seam95/OmniForge/releases)。
-2. 下载最新的 `.dmg` 或 `.zip`。
-3. 将 **OmniForge** 拖入「应用程序」并启动。
-4. 按所启用功能授予系统权限（见下表）。
+2. 下载最新的 `.dmg`。
+3. 将 **OmniForge** 拖入「应用程序」，**先不要启动**。
+4. 移除隔离标记后再启动，并按所启用功能授予系统权限（见下表）。
+
+> ⚠️ **关于签名与 Gatekeeper**
+>
+> 本项目的 Release 包使用 **ad-hoc 签名**，**未经 Apple 公证**（开源项目暂未购买 Developer ID）。首次打开时 macOS 会拦截。将 `OmniForge.app` 拖入「应用程序」后，请在终端执行以下命令再打开：
+>
+> ```bash
+> sudo xattr -dr com.apple.quarantine /Applications/OmniForge.app
+> ```
+>
+> 由于未公证，macOS 可能在某些情况下需要你重新授予系统权限。这是当前开源分发的固有限制，理解后再下载。
 
 ### 源码构建
 
@@ -92,8 +100,9 @@ swift build
 open build/stage/OmniForge.app
 ```
 
-- `./build.sh` 组装并签名 `.app`（优先 Developer ID，否则 ad-hoc）。
+- `./build.sh` 组装并签名 `.app`（优先 Developer ID / Apple Development，否则 ad-hoc）。
 - `./build.sh --install` 安装到 `/Applications`。
+- `./build.sh --dmg` 生成用于分发的 `.dmg`，输出在 `build/stage/`。
 
 ## 权限说明
 

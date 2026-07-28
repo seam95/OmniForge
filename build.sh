@@ -12,10 +12,12 @@ ENTITLEMENTS="Resources/OmniForge.entitlements"
 # 命令行参数
 INSTALL=0
 TEST=0
+DMG=0
 for arg in "$@"; do
     case "$arg" in
         --install) INSTALL=1 ;;
         --test)    TEST=1 ;;
+        --dmg)     DMG=1 ;;
     esac
 done
 
@@ -136,6 +138,22 @@ if (( INSTALL )); then
     rm -rf "/Applications/$APP_NAME.app"
     ditto --noextattr --noqtn "$STAGE" "/Applications/$APP_NAME.app"
     echo "✓ Installed: /Applications/$APP_NAME.app"
+fi
+
+# Step 9: 打包 .dmg（用于分发；ad-hoc 签名，用户首次打开需 xattr -dr）
+if (( DMG )); then
+    VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
+    DMG_NAME="$APP_NAME-$VERSION-macOS.dmg"
+    DMG_PATH="build/stage/$DMG_NAME"
+    echo "▸ Creating $DMG_NAME …"
+    rm -f "$DMG_PATH"
+    # 无多余文件、UDZO 压缩、保留权限；app 已签名，不再改其内容
+    hdiutil create -volname "$APP_NAME" \
+        -fs HFS+ \
+        -srcfolder "build/stage/$APP_NAME.app" \
+        -ov -format UDZO \
+        "$DMG_PATH" >/dev/null
+    echo "✓ DMG ready: $DMG_PATH"
 fi
 
 # 清理临时目录
