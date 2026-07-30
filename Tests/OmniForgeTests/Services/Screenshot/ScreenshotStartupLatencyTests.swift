@@ -7,8 +7,8 @@ import XCTest
 /// 截图启动延迟优化时序 / apply / 不抓 snapshot 契约（SPEC §9.1 items 2–5）。
 ///
 /// 时序用调用顺序标志（onStartCaptureForTesting + onSnapshot），不 sleep。
-/// headless 下 NSScreen.screens 可能为空：startCapture 仍同步触发钩子；
-/// 冻屏 Task.detached 无屏时不调 captureSnapshot，有屏时在 startCapture 之后。
+/// 冻屏枚举经 `freezeDisplayIDsForTesting` 强制 ≥1 次 captureSnapshot，
+/// 不依赖 headless 下空的 NSScreen.screens。
 @MainActor
 final class ScreenshotStartupLatencyTests: XCTestCase {
     private var userDefaults: UserDefaults!
@@ -72,25 +72,16 @@ final class ScreenshotStartupLatencyTests: XCTestCase {
             startCaptureCalled = true
         }
 
-        let screenCount = NSScreen.screens.compactMap(\.displayID).count
-        let snapshotExpectation: XCTestExpectation?
-        if screenCount > 0 {
-            let exp = expectation(description: "captureSnapshot after startCapture")
-            exp.expectedFulfillmentCount = screenCount
-            captureClient.onSnapshot = { _ in
-                XCTAssertTrue(
-                    startCaptureCalled,
-                    "captureSnapshot 不得在 startCapture 之前调用（生产须先遮罩再 Task.detached 冻屏）"
-                )
-                exp.fulfill()
-            }
-            snapshotExpectation = exp
-        } else {
-            // 无屏：仍断言 start 同步调用 startCapture，且此刻尚未 snapshot
-            captureClient.onSnapshot = { _ in
-                XCTFail("headless 无屏时不应调用 captureSnapshot")
-            }
-            snapshotExpectation = nil
+        // 强制 ≥1 次冻屏 captureSnapshot，不依赖 NSScreen.screens（CI headless 常为空）。
+        let forcedDisplayIDs: [CGDirectDisplayID] = [1]
+        let exp = expectation(description: "captureSnapshot after startCapture")
+        exp.expectedFulfillmentCount = forcedDisplayIDs.count
+        captureClient.onSnapshot = { _ in
+            XCTAssertTrue(
+                startCaptureCalled,
+                "captureSnapshot 不得在 startCapture 之前调用（生产须先遮罩再 Task.detached 冻屏）"
+            )
+            exp.fulfill()
         }
 
         let session = AllInOneCaptureSession(
@@ -98,16 +89,16 @@ final class ScreenshotStartupLatencyTests: XCTestCase {
             overlayController: overlay,
             onComplete: { _ in }
         )
+        session.freezeDisplayIDsForTesting = forcedDisplayIDs
         session.start()
 
+        // startCapture 在 start() 内同步触发钩子；冻屏在 Task.detached，可能已并发开始。
+        // 顺序契约由 onSnapshot 内 XCTAssertTrue(startCaptureCalled) 保证（非 wall clock）。
         XCTAssertTrue(startCaptureCalled, "start() 必须同步先调用 startCapture")
 
-        if let snapshotExpectation {
-            await fulfillment(of: [snapshotExpectation], timeout: 2.0)
-            XCTAssertEqual(captureClient.captureSnapshotCalls.count, screenCount)
-        } else {
-            XCTAssertTrue(captureClient.captureSnapshotCalls.isEmpty)
-        }
+        await fulfillment(of: [exp], timeout: 2.0)
+        XCTAssertEqual(captureClient.captureSnapshotCalls.count, forcedDisplayIDs.count)
+        XCTAssertEqual(captureClient.captureSnapshotCalls, forcedDisplayIDs)
 
         overlay.tearDown()
     }

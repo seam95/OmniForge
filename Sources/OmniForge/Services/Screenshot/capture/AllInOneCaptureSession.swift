@@ -10,6 +10,10 @@ final class AllInOneCaptureSession: ScreenshotCaptureSession {
     private let overlayController: CaptureOverlayController
     private let onComplete: (NSImage?) -> Void
 
+    /// 测试钩子：覆盖冻屏枚举用的 display ID 列表。nil 时用 `NSScreen.screens`。
+    /// 仅影响 Task.detached 冻屏路径，不改变 startCapture 空预抓行为。
+    var freezeDisplayIDsForTesting: [CGDirectDisplayID]?
+
     init(
         captureClient: ScreenCaptureClient,
         overlayController: CaptureOverlayController,
@@ -31,9 +35,10 @@ final class AllInOneCaptureSession: ScreenshotCaptureSession {
 
         // 2. 后台冻屏；完成后主线程 apply。cancel/tearDown 后 apply 经 isTornDown no-op。
         let client = captureClient
-        let screens = NSScreen.screens.compactMap { screen -> CGDirectDisplayID? in
-            screen.displayID
-        }
+        let screens = freezeDisplayIDsForTesting
+            ?? NSScreen.screens.compactMap { screen -> CGDirectDisplayID? in
+                screen.displayID
+            }
 
         Task.detached(priority: .userInitiated) { [weak overlayController] in
             var snapshots: [CGDirectDisplayID: CGImage] = [:]
