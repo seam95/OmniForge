@@ -29,6 +29,11 @@ final class FakeScreenCaptureClient: ScreenCaptureClient {
     var captureRegionError: Error?
     /// captureSnapshot 同步返回值（默认 nil，模拟无预抓快照）。
     var stubbedSnapshot: CGImage?
+    /// 控制 captureSnapshot 是否模拟后台延迟语义（默认 false=同步）。
+    /// 协议签名同步，无法真正 await；时序测试用 onSnapshot + 调用顺序标志，不依赖 sleep。
+    var captureSnapshotDeferred = false
+    /// 每次 captureSnapshot 被调用时的回调；时序测试在此断言 startCapture 已先发生。
+    var onSnapshot: ((CGDirectDisplayID) -> Void)?
 
     func captureDisplay(displayID: CGDirectDisplayID) async throws -> CGImage {
         captureDisplayCalls.append(CaptureDisplayCall(displayID: displayID))
@@ -56,6 +61,10 @@ final class FakeScreenCaptureClient: ScreenCaptureClient {
 
     func captureSnapshot(displayID: CGDirectDisplayID) -> CGImage? {
         captureSnapshotCalls.append(displayID)
+        onSnapshot?(displayID)
+        // captureSnapshotDeferred 预留给需要阻塞/延迟语义的扩展；
+        // 当前协议为同步签名，时序由调用顺序标志验证。
+        _ = captureSnapshotDeferred
         return stubbedSnapshot
     }
 
