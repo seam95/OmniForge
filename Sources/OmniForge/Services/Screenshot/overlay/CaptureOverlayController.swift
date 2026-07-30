@@ -24,6 +24,8 @@ final class CaptureOverlayController {
     private var panelDisplayIDs: [NSWindow: CGDirectDisplayID] = [:]
     /// tearDown 守卫；startCapture 入口时 overlayPanels 仍为空，不能用集合判活。
     private var isTornDown = true
+    /// 会话代际：startCapture / tearDown 递增，防止复用 controller 时旧 Task.detached 冻屏写入新会话。
+    private(set) var snapshotGeneration: UInt64 = 0
     private var escLocalMonitor: Any?
     private var escGlobalMonitor: Any?
     private var rightMouseMonitor: Any?
@@ -130,6 +132,7 @@ final class CaptureOverlayController {
     ) {
         Self.logger.info("[SSDBG] startCapture: 入口，设置 onComplete")
         self.isTornDown = false
+        self.snapshotGeneration &+= 1
         self.screenSnapshots = preSnapshots
         self.onComplete = completion
 
@@ -180,10 +183,10 @@ final class CaptureOverlayController {
         onStartCaptureForTesting?()
     }
 
-    /// 冻屏完成后注入/更新各屏底图。tearDown 后 no-op。
+    /// 冻屏完成后注入/更新各屏底图。tearDown 后或 generation 不匹配时 no-op。
     /// displayID 取自建 panel 时记录的 `panelDisplayIDs`，不反查 `panel.screen`。
-    func applyScreenSnapshots(_ snapshots: [CGDirectDisplayID: CGImage]) {
-        guard !isTornDown else { return }
+    func applyScreenSnapshots(_ snapshots: [CGDirectDisplayID: CGImage], generation: UInt64) {
+        guard !isTornDown, generation == snapshotGeneration else { return }
         // 合并到内部字典：即便没有匹配 panel（如 headless），selectionDidComplete 仍可裁切
         for (displayID, image) in snapshots {
             screenSnapshots[displayID] = image
@@ -310,6 +313,7 @@ final class CaptureOverlayController {
         screenSnapshots.removeAll()
         panelDisplayIDs.removeAll()
         isTornDown = true
+        snapshotGeneration &+= 1
     }
 
     // MARK: - 遮罩面板创建

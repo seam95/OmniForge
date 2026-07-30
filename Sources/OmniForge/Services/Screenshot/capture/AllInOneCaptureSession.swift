@@ -33,8 +33,10 @@ final class AllInOneCaptureSession: ScreenshotCaptureSession {
             self?.onComplete(finalImage)
         }
 
-        // 2. 后台冻屏；完成后主线程 apply。cancel/tearDown 后 apply 经 isTornDown no-op。
+        // 2. 后台冻屏；完成后主线程 apply。
+        // generation + isTornDown：旧会话 Task 不得写入复用后的新 overlay 会话。
         let client = captureClient
+        let generation = overlayController.snapshotGeneration
         let screens = freezeDisplayIDsForTesting
             ?? NSScreen.screens.compactMap { screen -> CGDirectDisplayID? in
                 screen.displayID
@@ -51,7 +53,7 @@ final class AllInOneCaptureSession: ScreenshotCaptureSession {
             let frozenSnapshots = snapshots
             let overlay = overlayController
             await MainActor.run {
-                overlay?.applyScreenSnapshots(frozenSnapshots)
+                overlay?.applyScreenSnapshots(frozenSnapshots, generation: generation)
             }
         }
     }

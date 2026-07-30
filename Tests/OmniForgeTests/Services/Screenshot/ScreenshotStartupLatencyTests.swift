@@ -116,12 +116,13 @@ final class ScreenshotStartupLatencyTests: XCTestCase {
         XCTAssertFalse(overlay.isTornDownForTesting)
         XCTAssertTrue(overlay.screenSnapshotsForTesting.isEmpty)
 
+        let generation = overlay.snapshotGeneration
         let displayID: CGDirectDisplayID = 42
         let image = FakeScreenCaptureClient.placeholderImage()
         var applied: [CGDirectDisplayID: CGImage]?
         overlay.onApplySnapshotsForTesting = { applied = $0 }
 
-        overlay.applyScreenSnapshots([displayID: image])
+        overlay.applyScreenSnapshots([displayID: image], generation: generation)
 
         XCTAssertNotNil(applied)
         XCTAssertEqual(overlay.screenSnapshotsForTesting.count, 1)
@@ -150,6 +151,7 @@ final class ScreenshotStartupLatencyTests: XCTestCase {
     func test_apply_afterTearDown_isNoOp() {
         let overlay = CaptureOverlayController(captureClient: captureClient, editorEnabled: false)
         overlay.startCapture(screenSnapshots: [:]) { _ in }
+        let generation = overlay.snapshotGeneration
         overlay.tearDown()
         XCTAssertTrue(overlay.isTornDownForTesting)
 
@@ -157,11 +159,51 @@ final class ScreenshotStartupLatencyTests: XCTestCase {
         overlay.onApplySnapshotsForTesting = { _ in applyHookFired = true }
 
         let image = FakeScreenCaptureClient.placeholderImage()
-        overlay.applyScreenSnapshots([99: image])
+        overlay.applyScreenSnapshots([99: image], generation: generation)
 
         XCTAssertFalse(applyHookFired, "tearDown 后 apply 必须 early-return，不得触钩子")
         XCTAssertTrue(overlay.screenSnapshotsForTesting.isEmpty)
         XCTAssertTrue(overlay.isTornDownForTesting)
+    }
+
+    // MARK: - 跨会话 stale generation 不得污染新会话
+
+    func test_apply_staleGeneration_afterNewStartCapture_isNoOp() {
+        let overlay = CaptureOverlayController(captureClient: captureClient, editorEnabled: false)
+
+        // Session A
+        overlay.startCapture(screenSnapshots: [:]) { _ in }
+        let generationA = overlay.snapshotGeneration
+        XCTAssertEqual(generationA, 1)
+        overlay.tearDown()
+
+        // Session B reuses same controller
+        overlay.startCapture(screenSnapshots: [:]) { _ in }
+        let generationB = overlay.snapshotGeneration
+        XCTAssertEqual(generationB, 3) // start A(+1) → tearDown(+1) → start B(+1)
+        XCTAssertTrue(overlay.screenSnapshotsForTesting.isEmpty)
+
+        var applyHookFired = false
+        overlay.onApplySnapshotsForTesting = { _ in applyHookFired = true }
+
+        let image = FakeScreenCaptureClient.placeholderImage()
+        // Late Task A apply with A's generation must not write B
+        overlay.applyScreenSnapshots([7: image], generation: generationA)
+
+        XCTAssertFalse(applyHookFired, "stale generation 不得注入新会话")
+        XCTAssertTrue(
+            overlay.screenSnapshotsForTesting.isEmpty,
+            "Session A 冻屏不得写入 Session B 的 screenSnapshots"
+        )
+        XCTAssertFalse(overlay.isTornDownForTesting)
+
+        // Matching B generation still works
+        overlay.applyScreenSnapshots([7: image], generation: generationB)
+        XCTAssertTrue(applyHookFired)
+        XCTAssertEqual(overlay.screenSnapshotsForTesting.count, 1)
+        XCTAssertTrue(overlay.screenSnapshotsForTesting[7] != nil)
+
+        overlay.tearDown()
     }
 
     // MARK: - helpers
