@@ -19,6 +19,13 @@ final class CaptureOverlayController {
     private var overlayPanels: [NSWindow] = []
     private var selectionViews: [NSWindow: SelectionView] = [:]
     private var screenSnapshots: [CGDirectDisplayID: CGImage] = [:]
+    /// panel → 该屏 CGDirectDisplayID；建 panel 时记录，apply 时直接查，
+    /// 不依赖事后 `panel.screen`（headless/热插拔/tearDown 后不可靠）。
+    private var panelDisplayIDs: [NSWindow: CGDirectDisplayID] = [:]
+    /// tearDown 守卫；startCapture 入口时 overlayPanels 仍为空，不能用集合判活。
+    private var isTornDown = true
+    /// 会话代际：startCapture / tearDown 递增，防止复用 controller 时旧 Task.detached 冻屏写入新会话。
+    private(set) var snapshotGeneration: UInt64 = 0
     private var escLocalMonitor: Any?
     private var escGlobalMonitor: Any?
     private var rightMouseMonitor: Any?
@@ -26,6 +33,11 @@ final class CaptureOverlayController {
     private var hoverMoveLocalMonitor: Any?
     private var hoverMoveGlobalMonitor: Any?
     private var lastHoverPanel: NSWindow?
+
+    /// 测试钩子：`startCapture` 入口调用（生产保持 nil）。
+    var onStartCaptureForTesting: (() -> Void)?
+    /// 测试钩子：`applyScreenSnapshots` 被接受时调用（生产保持 nil）。
+    var onApplySnapshotsForTesting: (([CGDirectDisplayID: CGImage]) -> Void)?
 
     /// 当前嵌入的标注编辑器（编辑器模式下非空）。
     private var editorController: AnnotationEditorController?
@@ -119,6 +131,8 @@ final class CaptureOverlayController {
         completion: @escaping (NSImage?) -> Void
     ) {
         Self.logger.info("[SSDBG] startCapture: 入口，设置 onComplete")
+        self.isTornDown = false
+        self.snapshotGeneration &+= 1
         self.screenSnapshots = preSnapshots
         self.onComplete = completion
 
@@ -141,13 +155,10 @@ final class CaptureOverlayController {
                 NSScreen.screens.first?.frame.maxY
             }
 
-            // 注入底图快照
+            // 注入底图快照（仅用预抓；缺图时保持 nil，暗罩可先出，后续 apply 补图）
             if let displayID = screen.displayID {
+                panelDisplayIDs[panel] = displayID
                 selectionView.backgroundSnapshot = preSnapshots[displayID]
-                // 若无预抓快照，尝试实时捕获
-                if selectionView.backgroundSnapshot == nil {
-                    selectionView.backgroundSnapshot = captureClient?.captureSnapshot(displayID: displayID)
-                }
             }
 
             panel.contentView = selectionView
@@ -168,6 +179,25 @@ final class CaptureOverlayController {
 
         // 启动后立即按当前鼠标位置刷一次 hover（不依赖先收到 mouseMoved）。
         routeHover(to: NSEvent.mouseLocation)
+
+        onStartCaptureForTesting?()
+    }
+
+    /// 冻屏完成后注入/更新各屏底图。tearDown 后或 generation 不匹配时 no-op。
+    /// displayID 取自建 panel 时记录的 `panelDisplayIDs`，不反查 `panel.screen`。
+    func applyScreenSnapshots(_ snapshots: [CGDirectDisplayID: CGImage], generation: UInt64) {
+        guard !isTornDown, generation == snapshotGeneration else { return }
+        // 合并到内部字典：即便没有匹配 panel（如 headless），selectionDidComplete 仍可裁切
+        for (displayID, image) in snapshots {
+            screenSnapshots[displayID] = image
+        }
+        // 仅更新存活 overlay 上能匹配 displayID 的 SelectionView
+        for (panel, view) in selectionViews {
+            guard let displayID = panelDisplayIDs[panel],
+                  let image = snapshots[displayID] else { continue }
+            view.backgroundSnapshot = image  // didSet 触发重绘
+        }
+        onApplySnapshotsForTesting?(snapshots)
     }
 
     /// 直接以一张预捕获图像进入编辑器（全屏截图路径用）。
@@ -281,6 +311,9 @@ final class CaptureOverlayController {
         overlayPanels.removeAll()
         selectionViews.removeAll()
         screenSnapshots.removeAll()
+        panelDisplayIDs.removeAll()
+        isTornDown = true
+        snapshotGeneration &+= 1
     }
 
     // MARK: - 遮罩面板创建
@@ -615,6 +648,16 @@ extension CaptureOverlayController {
     /// 仅用于断言多屏编辑器交互禁用等内部状态。
     var selectionViewsForTesting: [SelectionView] {
         Array(selectionViews.values)
+    }
+
+    /// 测试用：当前已注入的冻屏字典（apply 后可读）。
+    var screenSnapshotsForTesting: [CGDirectDisplayID: CGImage] {
+        screenSnapshots
+    }
+
+    /// 测试用：是否已 tearDown（apply 守卫可读）。
+    var isTornDownForTesting: Bool {
+        isTornDown
     }
 
     /// 测试用：注册一组 SelectionView，使其进入 controller 的内部交互禁用管理范围。

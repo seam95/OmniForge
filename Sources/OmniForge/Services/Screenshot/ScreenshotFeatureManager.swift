@@ -67,7 +67,7 @@ enum ScreenshotHotkeyOutcome: Equatable {
 /// KeyboardShortcuts write surface.
 protocol ScreenshotKeyboardShortcutsClient: AnyObject {
     func setShortcut(_ shortcut: KeyboardShortcuts.Shortcut?, for name: KeyboardShortcuts.Name)
-    func onKeyUp(for name: KeyboardShortcuts.Name, action: @escaping () -> Void)
+    func onKeyDown(for name: KeyboardShortcuts.Name, action: @escaping () -> Void)
 }
 
 /// Production KeyboardShortcuts adapter.
@@ -76,8 +76,8 @@ final class LiveScreenshotKeyboardShortcutsClient: ScreenshotKeyboardShortcutsCl
         KeyboardShortcuts.setShortcut(shortcut, for: name)
     }
 
-    func onKeyUp(for name: KeyboardShortcuts.Name, action: @escaping () -> Void) {
-        KeyboardShortcuts.onKeyUp(for: name, action: action)
+    func onKeyDown(for name: KeyboardShortcuts.Name, action: @escaping () -> Void) {
+        KeyboardShortcuts.onKeyDown(for: name, action: action)
     }
 }
 
@@ -392,10 +392,15 @@ final class ScreenshotFeatureManager: ObservableObject {
 
     private func registerHandlerIfNeeded(for entry: ScreenshotHotkeyEntry) {
         guard !registeredEntries.contains(entry) else { return }
-        keyboardShortcuts.onKeyUp(for: entry.keyboardShortcutsName) { [weak self] in
-            Task { @MainActor in
+        keyboardShortcuts.onKeyDown(for: entry.keyboardShortcutsName) { [weak self] in
+            if Thread.isMainThread {
                 guard let self, self.isListening else { return }
                 self.invokeHotkeyEntry(entry)
+            } else {
+                Task { @MainActor in
+                    guard let self, self.isListening else { return }
+                    self.invokeHotkeyEntry(entry)
+                }
             }
         }
         registeredEntries.insert(entry)
