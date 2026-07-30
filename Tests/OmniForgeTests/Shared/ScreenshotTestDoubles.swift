@@ -76,7 +76,7 @@ final class FakeScreenCaptureClient: ScreenCaptureClient {
 
 // MARK: - ScreenshotKeyboardShortcutsClient fake
 
-/// 捕获 setShortcut / onKeyUp 调用，避免触碰真实 KeyboardShortcuts 全局状态。
+/// 捕获 setShortcut / onKeyDown 调用，避免触碰真实 KeyboardShortcuts 全局状态。
 final class FakeScreenshotKeyboardShortcutsClient: ScreenshotKeyboardShortcutsClient {
     struct SetShortcutCall: Equatable {
         let name: String
@@ -84,19 +84,19 @@ final class FakeScreenshotKeyboardShortcutsClient: ScreenshotKeyboardShortcutsCl
     }
 
     private(set) var setShortcutCalls: [SetShortcutCall] = []
-    /// 注册的 onKeyUp 回调，按 name 索引（测试可手动触发）。
-    private(set) var keyUpHandlers: [String: () -> Void] = [:]
+    /// 注册的 onKeyDown 回调，按 name 索引（测试可手动触发）。
+    private(set) var keyDownHandlers: [String: () -> Void] = [:]
 
     func setShortcut(_ shortcut: KeyboardShortcuts.Shortcut?, for name: KeyboardShortcuts.Name) {
         setShortcutCalls.append(SetShortcutCall(name: name.rawValue, hasShortcut: shortcut != nil))
     }
 
-    func onKeyUp(for name: KeyboardShortcuts.Name, action: @escaping () -> Void) {
-        keyUpHandlers[name.rawValue] = action
+    func onKeyDown(for name: KeyboardShortcuts.Name, action: @escaping () -> Void) {
+        keyDownHandlers[name.rawValue] = action
     }
 
-    /// 触发已注册的 onKeyUp（模拟用户按键）。
-    func fireKeyUp(for name: KeyboardShortcuts.Name) {
-        keyUpHandlers[name.rawValue]?()
+    /// 触发已注册的 onKeyDown（模拟用户按下快捷键）。
+    func fireKeyDown(for name: KeyboardShortcuts.Name) {
+        keyDownHandlers[name.rawValue]?()
     }
 }

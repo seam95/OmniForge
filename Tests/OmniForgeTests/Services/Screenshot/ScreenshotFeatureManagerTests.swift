@@ -77,10 +77,10 @@ final class ScreenshotFeatureManagerTests: XCTestCase {
     }
 
     func test_startListening_注册三入口的快捷键处理器() {
-        // startListening 已在 setUp 调用；校验三个入口都被注册了 onKeyUp
-        XCTAssertNotNil(keyboardShortcuts.keyUpHandlers[KeyboardShortcuts.Name.screenshotAllInOne.rawValue])
-        XCTAssertNotNil(keyboardShortcuts.keyUpHandlers[KeyboardShortcuts.Name.screenshotFullscreen.rawValue])
-        XCTAssertNotNil(keyboardShortcuts.keyUpHandlers[KeyboardShortcuts.Name.screenshotRecord.rawValue])
+        // startListening 已在 setUp 调用；校验三个入口都被注册了 onKeyDown
+        XCTAssertNotNil(keyboardShortcuts.keyDownHandlers[KeyboardShortcuts.Name.screenshotAllInOne.rawValue])
+        XCTAssertNotNil(keyboardShortcuts.keyDownHandlers[KeyboardShortcuts.Name.screenshotFullscreen.rawValue])
+        XCTAssertNotNil(keyboardShortcuts.keyDownHandlers[KeyboardShortcuts.Name.screenshotRecord.rawValue])
     }
 
     func test_stopListening_复位isListening并清空快捷键() {
@@ -261,23 +261,23 @@ final class ScreenshotFeatureManagerTests: XCTestCase {
         XCTAssertEqual(manager.lastError, Strings.zhHans.screenshotHotkeyIgnoredNotListening)
     }
 
-    // MARK: - 快捷键入口分发（invokeHotkeyEntry 经 onKeyUp 触发）
+    // MARK: - 快捷键入口分发（invokeHotkeyEntry 经 onKeyDown 触发）
 
-    func test_onKeyUp_allInOne入口触发handleAllInOne() async {
-        // isListening=true 时 fireKeyUp(.screenshotAllInOne) 应进入 handleAllInOne
-        // onKeyUp 回调包裹在 Task { @MainActor } 内，需 await 其执行
-        keyboardShortcuts.fireKeyUp(for: .screenshotAllInOne)
+    func test_onKeyDown_allInOne入口触发handleAllInOne() async {
+        // isListening=true 时 fireKeyDown(.screenshotAllInOne) 应进入 handleAllInOne
+        // Fake 在主线程同步回调；若走非主线程则 Task { @MainActor }，需 await 排空
+        keyboardShortcuts.fireKeyDown(for: .screenshotAllInOne)
         await waitForMainThreadTasksToDrain()
         // 占住会话后再次 fire 应记录 busy
-        keyboardShortcuts.fireKeyUp(for: .screenshotAllInOne)
+        keyboardShortcuts.fireKeyDown(for: .screenshotAllInOne)
         await waitForMainThreadTasksToDrain()
         XCTAssertEqual(manager.lastError, Strings.en.screenshotSessionAlreadyActive)
     }
 
-    func test_onKeyUp_fullscreen入口分发到FullScreen不记preflight错误() async {
-        // fireKeyUp(.screenshotFullscreen) → invokeHotkeyEntry(.fullscreen)
+    func test_onKeyDown_fullscreen入口分发到FullScreen不记preflight错误() async {
+        // fireKeyDown(.screenshotFullscreen) → invokeHotkeyEntry(.fullscreen)
         // → handleHotkey(.fullScreen, .copy)；preflight 通过即不记错误
-        keyboardShortcuts.fireKeyUp(for: .screenshotFullscreen)
+        keyboardShortcuts.fireKeyDown(for: .screenshotFullscreen)
         await waitForMainThreadTasksToDrain()
         await waitForMainThreadTasksToDrain()
         XCTAssertNil(manager.lastError, "fullscreen 入口 preflight 通过后不应记错误")
@@ -290,11 +290,11 @@ final class ScreenshotFeatureManagerTests: XCTestCase {
         }
     }
 
-    func test_onKeyUp_notListening时入口不触发() async {
+    func test_onKeyDown_notListening时入口不触发() async {
         manager.stopListening()
-        keyboardShortcuts.fireKeyUp(for: .screenshotAllInOne)
+        keyboardShortcuts.fireKeyDown(for: .screenshotAllInOne)
         await waitForMainThreadTasksToDrain()
-        // invokeHotkeyEntry 内有 isListening guard，直接 return；不进 preflight 也不记错误
+        // registerHandler 内 isListening guard 直接 return；不进 preflight 也不记错误
         XCTAssertNil(manager.lastError)
         XCTAssertNil(manager.lastOutcome)
     }
@@ -318,9 +318,8 @@ final class ScreenshotFeatureManagerTests: XCTestCase {
 
     // MARK: - 异步等待辅助
 
-    /// 等待 onKeyUp 回调包裹的 Task { @MainActor } 排空（invokeHotkeyEntry 已执行）。
-    /// onKeyUp → Task{ @MainActor } 只需几次 yield 让挂起任务被调度；
-    /// fullScreen 内部 Task 在无 NSScreen 时走短路径立即 onComplete。
+    /// 等待 keyDown 非主线程路径的 Task { @MainActor } 排空（invokeHotkeyEntry 已执行）。
+    /// 主线程同步回调时此等待为 no-op 安全；fullScreen 内部 Task 在无 NSScreen 时走短路径。
     private func waitForMainThreadTasksToDrain() async {
         for _ in 0..<5 {
             await Task.yield()
