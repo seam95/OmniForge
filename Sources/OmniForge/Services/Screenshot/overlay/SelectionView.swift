@@ -44,8 +44,10 @@ class SelectionView: NSView {
     private var dragOriginalRect: NSRect = .zero
     private var mouseDownPoint: NSPoint = .zero
 
-    /// 底图快照（遮罩出现前预抓）。
-    var backgroundSnapshot: CGImage?
+    /// 底图快照（遮罩出现前预抓；显示后亦可注入，didSet 触发重绘）。
+    var backgroundSnapshot: CGImage? {
+        didSet { needsDisplay = true }
+    }
 
     /// 宽高比约束（nil 为自由）。
     var aspectRatio: CGFloat?
