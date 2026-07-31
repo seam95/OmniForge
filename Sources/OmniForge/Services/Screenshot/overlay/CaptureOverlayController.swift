@@ -78,30 +78,91 @@ final class CaptureOverlayController {
     /// 用于独立录屏快捷键：框选 → 立即 begin recording。
     var onDirectRegionSelection: ((NSRect, NSScreen) -> Void)?
 
-    /// 取得有效的 makeResult：优先用注入的 pinResultBuilder；否则用屏幕上下文
-    /// 构造最小 `ScreenshotResult`（全屏模式），供 confirm/save/pin 共用。
-    private func effectiveMakeResult(for screen: NSScreen?) -> (NSImage) -> ScreenshotResult? {
+    /// 按捕获入口构造 makeResult 闭包。
+    /// - 优先用注入的 `pinResultBuilder`（测试/兼容）。
+    /// - 否则用具体 mode + 目标屏 +（区域路径）选区视图矩形构造 `ScreenshotResult`。
+    private func makeResultBuilder(
+        mode: ScreenshotMode,
+        screen: NSScreen?,
+        selectionViewRect: NSRect?
+    ) -> (NSImage) -> ScreenshotResult? {
         if let pinResultBuilder { return pinResultBuilder }
-        return { image in
-            guard let screen, let displayID = screen.displayID,
-                  let cgImage = image.cgImagePreservingBacking()
-                    ?? (image.representations.first as? NSBitmapImageRep)?.cgImage else {
-                return nil
-            }
-            let target = CaptureTargetScreen(
-                displayID: displayID,
-                frameInAppKitPoints: screen.frame,
-                pointPixelScale: screen.backingScaleFactor
-            )
-            return try? ScreenshotResult(
-                mode: .fullScreen,
-                targetScreen: target,
-                selection: nil,
-                timestamp: Date(),
-                pixelImage: cgImage,
-                windowInfo: nil
+        return { [weak self] image in
+            guard let self else { return nil }
+            return self.buildScreenshotResult(
+                from: image,
+                mode: mode,
+                screen: screen,
+                selectionViewRect: selectionViewRect
             )
         }
+    }
+
+    /// 从合成图与捕获上下文构造 `ScreenshotResult`。
+    /// - selectionViewRect：SelectionView 局部坐标（与屏 frame 同原点时 + frame.origin → AppKit 全局）。
+    ///   全屏路径传 nil；区域 / all-in-one 传选区矩形。
+    private func buildScreenshotResult(
+        from image: NSImage,
+        mode: ScreenshotMode,
+        screen: NSScreen?,
+        selectionViewRect: NSRect?
+    ) -> ScreenshotResult? {
+        guard let screen, let displayID = screen.displayID else { return nil }
+        let target = CaptureTargetScreen(
+            displayID: displayID,
+            frameInAppKitPoints: screen.frame,
+            pointPixelScale: screen.backingScaleFactor
+        )
+        return Self.buildScreenshotResult(
+            from: image,
+            mode: mode,
+            targetScreen: target,
+            selectionViewLocalRect: selectionViewRect
+        )
+    }
+
+    /// 纯上下文构造（可单测，不依赖 live `NSScreen`）。
+    /// selectionViewLocalRect 为选区在目标屏局部（左下原点）的点矩形；nil 表示无选区（全屏）。
+    static func buildScreenshotResult(
+        from image: NSImage,
+        mode: ScreenshotMode,
+        targetScreen: CaptureTargetScreen,
+        selectionViewLocalRect: CGRect?
+    ) -> ScreenshotResult? {
+        guard let cgImage = image.cgImagePreservingBacking()
+                ?? (image.representations.first as? NSBitmapImageRep)?.cgImage else {
+            return nil
+        }
+
+        let selection: CaptureSelection?
+        if let local = selectionViewLocalRect {
+            let frame = targetScreen.frameInAppKitPoints
+            let appKitGlobal = CGRect(
+                x: local.origin.x + frame.minX,
+                y: local.origin.y + frame.minY,
+                width: local.width,
+                height: local.height
+            )
+            selection = try? CaptureSelection(
+                targetScreen: targetScreen,
+                appKitGlobalRect: appKitGlobal
+            )
+            // allInOne 必须有合法 selection；构造失败则整条 makeResult 失败，避免伪造成功。
+            if mode == .allInOne, selection == nil {
+                return nil
+            }
+        } else {
+            selection = nil
+        }
+
+        return try? ScreenshotResult(
+            mode: mode,
+            targetScreen: targetScreen,
+            selection: selection,
+            timestamp: Date(),
+            pixelImage: cgImage,
+            windowInfo: nil
+        )
     }
 
     /// 解析编辑器使用的 pipeline：优先共享实例，否则用本地默认（无 pinService）。
@@ -272,7 +333,11 @@ final class CaptureOverlayController {
             resultRunner: resolvedResultPipeline(),
             encoder: encoder,
             clipboardWriter: clipboard,
-            makeResult: effectiveMakeResult(for: screen),
+            makeResult: makeResultBuilder(
+                mode: .fullScreen,
+                screen: screen,
+                selectionViewRect: nil
+            ),
             sourceBackingScaleFactor: screen.backingScaleFactor,
             onComplete: { [weak self] finalImage in
                 guard let self else { return }
@@ -620,7 +685,11 @@ extension CaptureOverlayController: SelectionViewDelegate {
         // 禁用其余屏的选区交互，避免跨屏点击污染宿主屏编辑器几何。
         disableSelectionInteractionOnOtherScreens(keeping: selectionView)
 
+        // 优先 panel.screen；无 window 时（测试 embed）用 displayID 匹配 NSScreen。
         let pinScreen = selectionView.window?.screen
+            ?? displayID.flatMap { id in
+                NSScreen.screens.first(where: { $0.displayID == id })
+            }
         let encoder = outputEncoder ?? ImageOutputEncoder()
         let clipboard = clipboardWriter ?? ClipboardImageWriter()
         let editor = AnnotationEditorController(
@@ -629,7 +698,12 @@ extension CaptureOverlayController: SelectionViewDelegate {
             resultRunner: resolvedResultPipeline(),
             encoder: encoder,
             clipboardWriter: clipboard,
-            makeResult: effectiveMakeResult(for: pinScreen),
+            // 区域 / all-in-one 入口：mode=.allInOne，selection 来自选区视图矩形。
+            makeResult: makeResultBuilder(
+                mode: .allInOne,
+                screen: pinScreen,
+                selectionViewRect: selectionRect
+            ),
             sourceBackingScaleFactor: pinScreen?.backingScaleFactor ?? 1,
             onComplete: { [weak self] finalImage in
                 guard let self else { return }
