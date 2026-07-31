@@ -6,19 +6,26 @@ import os.log
 
 extension KeyboardShortcuts.Name {
     static let screenshotAllInOne = Self("screenshotAllInOne")
+    static let screenshotCopy = Self("screenshotCopy")
+    static let screenshotPin = Self("screenshotPin")
     static let screenshotFullscreen = Self("screenshotFullscreen")
     static let screenshotRecord = Self("screenshotRecord")
 }
 
-/// Screenshot hotkey entries: all-in-one, fullscreen, and direct record.
+/// 截图快捷键入口：全能 / 复制 / 贴图 / 全屏 / 录屏。
+/// `allCases` 顺序驱动设置页展示，必须为 allInOne → copy → pin → fullscreen → record。
 enum ScreenshotHotkeyEntry: String, CaseIterable, Equatable, Sendable {
     case allInOne
+    case copy
+    case pin
     case fullscreen
     case record
 
     var keyboardShortcutsName: KeyboardShortcuts.Name {
         switch self {
         case .allInOne: return .screenshotAllInOne
+        case .copy: return .screenshotCopy
+        case .pin: return .screenshotPin
         case .fullscreen: return .screenshotFullscreen
         case .record: return .screenshotRecord
         }
@@ -27,6 +34,8 @@ enum ScreenshotHotkeyEntry: String, CaseIterable, Equatable, Sendable {
     var keyCodeDefaultsKey: String {
         switch self {
         case .allInOne: return UserDefaultsKeys.screenshotHotkeyAllInOneKeyCode
+        case .copy: return UserDefaultsKeys.screenshotHotkeyCopyKeyCode
+        case .pin: return UserDefaultsKeys.screenshotHotkeyPinKeyCode
         case .fullscreen: return UserDefaultsKeys.screenshotHotkeyFullscreenKeyCode
         case .record: return UserDefaultsKeys.screenshotHotkeyRecordKeyCode
         }
@@ -35,6 +44,8 @@ enum ScreenshotHotkeyEntry: String, CaseIterable, Equatable, Sendable {
     var modifiersDefaultsKey: String {
         switch self {
         case .allInOne: return UserDefaultsKeys.screenshotHotkeyAllInOneModifiers
+        case .copy: return UserDefaultsKeys.screenshotHotkeyCopyModifiers
+        case .pin: return UserDefaultsKeys.screenshotHotkeyPinModifiers
         case .fullscreen: return UserDefaultsKeys.screenshotHotkeyFullscreenModifiers
         case .record: return UserDefaultsKeys.screenshotHotkeyRecordModifiers
         }
@@ -43,6 +54,8 @@ enum ScreenshotHotkeyEntry: String, CaseIterable, Equatable, Sendable {
     var defaultDefinition: HotkeyDefinition {
         switch self {
         case .allInOne: return .defaultScreenshotAllInOne
+        case .copy: return .defaultScreenshotCopy
+        case .pin: return .defaultScreenshotPin
         case .fullscreen: return .defaultScreenshotFullscreen
         case .record: return .defaultScreenshotRecord
         }
@@ -51,6 +64,8 @@ enum ScreenshotHotkeyEntry: String, CaseIterable, Equatable, Sendable {
     func label(in strings: Strings) -> String {
         switch self {
         case .allInOne: return strings.screenshotHotkeyAllInOne
+        case .copy: return strings.screenshotHotkeyCopy
+        case .pin: return strings.screenshotHotkeyPin
         case .fullscreen: return strings.screenshotHotkeyFullscreen
         case .record: return strings.screenshotHotkeyRecord
         }
@@ -95,6 +110,8 @@ final class ScreenshotFeatureManager: ObservableObject {
     private let captureClient: ScreenCaptureClient
     private let overlayController: CaptureOverlayController
     private let recordingCoordinator: RecordingSessionCoordinating
+    /// 统一结果出口；copy/pin 直出与编辑器共用。可后置注入（FeatureFactory）。
+    private var resultPipeline: ScreenshotResultRunning?
 
     var pinnedScreenshotRegistry: PinnedScreenshotRegistry?
     var pinPipelineBridge: PinnedScreenshotPipelineBridge?
@@ -109,6 +126,9 @@ final class ScreenshotFeatureManager: ObservableObject {
     private var isSessionRunning = false
     /// Active capture session. Kept alive until completion so weak self closures remain valid.
     private var activeSession: ScreenshotCaptureSession?
+    /// True while a copy/pin direct-out session is open and has not yet settled
+    /// (pipeline success/failure via `finishDirectCapture`, or capture/cancel via session completion).
+    private var awaitingDirectCaptureResult = false
 
     /// Busy when a screenshot session or recording session is active.
     var isBusy: Bool { isSessionRunning || recordingCoordinator.isRecording }
@@ -121,7 +141,8 @@ final class ScreenshotFeatureManager: ObservableObject {
         keyboardShortcuts: ScreenshotKeyboardShortcutsClient = LiveScreenshotKeyboardShortcutsClient(),
         captureClient: ScreenCaptureClient = ScreenCaptureKitClient(),
         overlayController: CaptureOverlayController? = nil,
-        recordingCoordinator: RecordingSessionCoordinating? = nil
+        recordingCoordinator: RecordingSessionCoordinating? = nil,
+        resultPipeline: ScreenshotResultRunning? = nil
     ) {
         self.userDefaults = userDefaults
         self.isFeatureAvailable = isFeatureAvailable
@@ -135,8 +156,14 @@ final class ScreenshotFeatureManager: ObservableObject {
                 userDefaults: userDefaults,
                 stringsProvider: stringsProvider
             )
+        self.resultPipeline = resultPipeline
         wireRecordingSelection()
         reloadHotkeysFromDefaults()
+    }
+
+    /// 注入共享结果管线（FeatureFactory 在装配 pinBridge 后设置）。
+    func setResultPipeline(_ pipeline: ScreenshotResultRunning?) {
+        resultPipeline = pipeline
     }
 
     // MARK: - Lifecycle
@@ -171,11 +198,14 @@ final class ScreenshotFeatureManager: ObservableObject {
             recordingCoordinator.cancel()
         }
         overlayController.tearDown()
-        // Defensive: tearDown already clears this; keep manager session end explicit.
+        // Defensive: tearDown already clears these; keep manager session end explicit.
         overlayController.onDirectRegionSelection = nil
+        overlayController.onDirectCaptureResult = nil
+        overlayController.entryIntent = nil
         pinnedScreenshotRegistry?.closeAll()
         isSessionRunning = false
         activeSession = nil
+        awaitingDirectCaptureResult = false
         lastOutcome = nil
         lastError = nil
         lastMenuError = nil
@@ -204,6 +234,10 @@ final class ScreenshotFeatureManager: ObservableObject {
 
         Self.logger.info("[SSDBG] handleAllInOne: start session, isSessionRunning=true")
         isSessionRunning = true
+        // Defensive: all-in-one is editor path; never leave copy/pin direct-out callbacks armed.
+        overlayController.onDirectCaptureResult = nil
+        overlayController.entryIntent = nil
+        awaitingDirectCaptureResult = false
         let session = AllInOneCaptureSession(
             captureClient: captureClient,
             overlayController: overlayController
@@ -280,6 +314,9 @@ final class ScreenshotFeatureManager: ObservableObject {
 
         Self.logger.info("[SSDBG] handleRecord: start region selection session")
         isSessionRunning = true
+        // 与 copy/pin 直出互斥：录屏只走 rect-only 回调。
+        overlayController.entryIntent = nil
+        overlayController.onDirectCaptureResult = nil
         overlayController.onDirectRegionSelection = { [weak self] screenRect, screen in
             self?.beginRecording(rect: screenRect, screen: screen)
         }
@@ -410,11 +447,136 @@ final class ScreenshotFeatureManager: ObservableObject {
         switch entry {
         case .allInOne:
             handleAllInOne()
+        case .copy:
+            handleCopy()
+        case .pin:
+            handlePin()
         case .fullscreen:
             handleHotkey(mode: .fullScreen, intent: .copy)
         case .record:
             handleRecord()
         }
+    }
+
+    /// 截图并复制：全能选区 → 确认一次 → pipeline.copy，不进编辑器。
+    func handleCopy() {
+        startDirectCapture(intent: .copy)
+    }
+
+    /// 截图并贴图：全能选区 → 确认一次 → pipeline.pin（原位钉），不进编辑器。
+    func handlePin() {
+        startDirectCapture(intent: .pin)
+    }
+
+    /// copy/pin 共用入口：preflight + busy 互斥后启动带 entryIntent 的全能选区会话。
+    /// 录屏进行中仅拒绝（不 stopAndSave）；与 `handleAllInOne` / `handleRecord` 语义不同。
+    private func startDirectCapture(intent: ScreenshotEntryIntent) {
+        // copy/pin 不承担 stopAndSave：录屏中一律 busy。
+        if recordingCoordinator.isRecording {
+            Self.logger.notice("[SSDBG] startDirectCapture(\(intent.rawValue)): recording busy")
+            recordBusyError()
+            return
+        }
+        guard preflightCheck() else {
+            Self.logger.notice("[SSDBG] startDirectCapture(\(intent.rawValue)): preflightCheck failed")
+            return
+        }
+        guard !isSessionRunning else {
+            Self.logger.notice("[SSDBG] startDirectCapture(\(intent.rawValue)): blocked (isSessionRunning=true)")
+            recordBusyError()
+            return
+        }
+
+        Self.logger.info("[SSDBG] startDirectCapture(\(intent.rawValue)): start session")
+        isSessionRunning = true
+        // Do not mark `.triggered` until pipeline succeeds — crop/capture/cancel must not look like success.
+        awaitingDirectCaptureResult = true
+
+        // 独立直出回调，严禁复用 onDirectRegionSelection（rect-only 录屏语义）。
+        overlayController.onDirectRegionSelection = nil
+        overlayController.onDirectCaptureResult = { [weak self] result, captureIntent, pinOrigin in
+            self?.finishDirectCapture(result: result, intent: captureIntent, pinOrigin: pinOrigin)
+        }
+
+        let session = AllInOneCaptureSession(
+            captureClient: captureClient,
+            overlayController: overlayController,
+            entryIntent: intent
+        ) { [weak self] _ in
+            guard let self else { return }
+            Self.logger.info("[SSDBG] startDirectCapture(\(intent.rawValue)) completion: isSessionRunning=false")
+            // Capture-path failure / cancel: overlay ends with onComplete(nil) and never calls
+            // onDirectCaptureResult. Settle awaiting before clearing session flags.
+            if self.awaitingDirectCaptureResult {
+                if self.overlayController.endedByUserCancel {
+                    // Match all-in-one cancel: clear session without false "Capture failed" lastError.
+                    self.recordDirectCaptureCancel()
+                } else {
+                    self.recordDirectCaptureFailure()
+                }
+            }
+            self.awaitingDirectCaptureResult = false
+            self.isSessionRunning = false
+            self.activeSession = nil
+            // 防御清空直出状态（overlay.tearDown 已清；manager 侧再清一次）。
+            self.overlayController.onDirectCaptureResult = nil
+            self.overlayController.entryIntent = nil
+        }
+        activeSession = session
+        session.start()
+    }
+
+    /// 选区直出完成后执行 pipeline，更新 lastOutcome / lastError。
+    /// Must run before session `onComplete` so `awaitingDirectCaptureResult` is settled first.
+    private func finishDirectCapture(
+        result: ScreenshotResult,
+        intent: ScreenshotEntryIntent,
+        pinOrigin: NSPoint?
+    ) {
+        // Defensive: cancel/tearDown already settled the session; ignore late success callbacks.
+        guard awaitingDirectCaptureResult else {
+            Self.logger.notice("[SSDBG] finishDirectCapture: ignored (not awaiting)")
+            return
+        }
+        awaitingDirectCaptureResult = false
+        do {
+            let pipeline = resolvedResultPipeline()
+            // pin 用选区左下原点；copy 忽略 pinOrigin。
+            let origin: NSPoint? = (intent == .pin) ? pinOrigin : nil
+            _ = try pipeline.run(result: result, intent: intent, pinOrigin: origin)
+            lastOutcome = .triggered(mode: .allInOne, intent: intent)
+            lastError = nil
+            Self.logger.info("[SSDBG] finishDirectCapture: pipeline \(intent.rawValue) ok")
+        } catch {
+            let message = error.localizedDescription
+            lastError = message
+            lastOutcome = .ignored(message)
+            Self.logger.notice("[SSDBG] finishDirectCapture: pipeline 失败 \(message)")
+        }
+    }
+
+    /// User cancel (ESC/right-click): no Capture failed lastError (all-in-one cancel semantics).
+    private func recordDirectCaptureCancel() {
+        lastError = nil
+        lastOutcome = nil
+        Self.logger.info("[SSDBG] recordDirectCaptureCancel: user cancelled direct capture")
+    }
+
+    /// Crop / captureRegion / buildResult ended without a successful direct-out result.
+    private func recordDirectCaptureFailure() {
+        let detail = "capture ended without result"
+        let message = String(
+            format: stringsProvider().screenshotCaptureFailedFormat,
+            detail
+        )
+        lastError = message
+        lastOutcome = .ignored(message)
+        Self.logger.notice("[SSDBG] recordDirectCaptureFailure: \(message)")
+    }
+
+    private func resolvedResultPipeline() -> ScreenshotResultRunning {
+        if let resultPipeline { return resultPipeline }
+        return ScreenshotResultPipeline(userDefaults: userDefaults)
     }
 
     private static func loadHotkey(

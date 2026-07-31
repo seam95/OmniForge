@@ -80,17 +80,29 @@ struct HotkeyDefinition: Equatable, Codable {
     )
 
     // 截图默认快捷键：统一 ⌃⌥⌘ + 数字，避开 clipboard(⌘⇧V) / shelf(⌃⌥⌘D) / keepAwake(⌃⌥⌘K)
+    // 顺序：全能1 / 复制2 / 贴图3 / 全屏4 / 录屏5（仅影响未自定义用户的注册默认）
     static let defaultScreenshotAllInOne = HotkeyDefinition(
         keyCode: Int(kVK_ANSI_1),
         modifiers: [.control, .option, .command]
     )
-    static let defaultScreenshotFullscreen = HotkeyDefinition(
+    /// 截图并复制默认快捷键：⌃⌥⌘2
+    static let defaultScreenshotCopy = HotkeyDefinition(
         keyCode: Int(kVK_ANSI_2),
         modifiers: [.control, .option, .command]
     )
-    /// 录屏框选默认快捷键：⌃⌥⌘3
-    static let defaultScreenshotRecord = HotkeyDefinition(
+    /// 截图并贴图默认快捷键：⌃⌥⌘3
+    static let defaultScreenshotPin = HotkeyDefinition(
         keyCode: Int(kVK_ANSI_3),
+        modifiers: [.control, .option, .command]
+    )
+    /// 全屏截图默认快捷键：⌃⌥⌘4（原 2）
+    static let defaultScreenshotFullscreen = HotkeyDefinition(
+        keyCode: Int(kVK_ANSI_4),
+        modifiers: [.control, .option, .command]
+    )
+    /// 录屏框选默认快捷键：⌃⌥⌘5（原 3）
+    static let defaultScreenshotRecord = HotkeyDefinition(
+        keyCode: Int(kVK_ANSI_5),
         modifiers: [.control, .option, .command]
     )
 

@@ -26,6 +26,9 @@ final class CaptureOverlayController {
     private var isTornDown = true
     /// 会话代际：startCapture / tearDown 递增，防止复用 controller 时旧 Task.detached 冻屏写入新会话。
     private(set) var snapshotGeneration: UInt64 = 0
+    /// 本次会话是否由用户主动取消（ESC/右键/`selectionDidCancel`）。
+    /// 与 crop/capture/build 失败区分：cancel 不应记成 Capture failed。
+    private(set) var endedByUserCancel = false
     private var escLocalMonitor: Any?
     private var escGlobalMonitor: Any?
     private var rightMouseMonitor: Any?
@@ -54,14 +57,20 @@ final class CaptureOverlayController {
     private let outputEncoder: ImageOutputEncoding?
     private let clipboardWriter: ClipboardImageWriting?
     private let screenshotSaver: ScreenshotSaving?
-    /// 保存时现场读取输出配置（目录/前缀）。
+    /// 保存时现场读取输出配置（目录/前缀）；兼容旧路径 / 默认 pipeline 构造。
     private let outputConfigurationProvider: () -> ScreenshotOutputConfigurationSnapshot
-    private weak var pinService: ScreenshotPinning?
+    /// 与钉图 registry 共享的结果管线；confirm/save/pin 经此出口。
+    private var resultPipeline: ScreenshotResultPipeline?
     private let pinResultBuilder: ((NSImage) -> ScreenshotResult?)?
 
-    /// 注入钉图服务（FeatureFactory 在创建 pinBridge 后设置）。
+    /// 注入共享结果管线（FeatureFactory 在装配 pinBridge 后设置）。
+    func setResultPipeline(_ pipeline: ScreenshotResultPipeline?) {
+        resultPipeline = pipeline
+    }
+
+    /// 兼容旧调用：仅设置 pinService（会落到已注入的 pipeline 上）。
     func setPinService(_ service: ScreenshotPinning?) {
-        pinService = service
+        resultPipeline?.pinService = service
     }
 
     /// 选区录屏回调：编辑器 tearDown 后由 manager/coordinator 启动录屏。
@@ -70,37 +79,119 @@ final class CaptureOverlayController {
 
     /// 选区完成后直接回调 AppKit screen rect（跳过编辑器）。
     /// 用于独立录屏快捷键：框选 → 立即 begin recording。
+    /// **禁止**复用此回调承载 copy/pin（仅 rect，无图像）；见 `onDirectCaptureResult`。
     var onDirectRegionSelection: ((NSRect, NSScreen) -> Void)?
 
-    /// 取得有效的 pinResultBuilder：优先用注入的；否则用屏幕上下文构造一个
-    /// 最小 `ScreenshotResult`（全屏模式），供 pinService.pinFromPipeline 使用。
-    private func effectivePinResultBuilder(for screen: NSScreen?) -> (NSImage) -> ScreenshotResult? {
+    /// 入口意图：`.copy` / `.pin` 时选区确认后直出到 `onDirectCaptureResult`，不进编辑器。
+    /// 与录屏 `onDirectRegionSelection` 语义解耦；会话结束 / tearDown 时清空。
+    var entryIntent: ScreenshotEntryIntent?
+
+    /// copy/pin 选区直出：裁切图 + `ScreenshotResult` + 可选 pinOrigin（选区屏幕左下）。
+    /// 与 `onDirectRegionSelection`（rect-only 录屏）互不覆盖。
+    var onDirectCaptureResult: ((ScreenshotResult, ScreenshotEntryIntent, NSPoint?) -> Void)?
+
+    /// 按捕获入口构造 makeResult 闭包。
+    /// - 优先用注入的 `pinResultBuilder`（测试/兼容）。
+    /// - 否则用具体 mode + 目标屏 +（区域路径）选区视图矩形构造 `ScreenshotResult`。
+    private func makeResultBuilder(
+        mode: ScreenshotMode,
+        screen: NSScreen?,
+        selectionViewRect: NSRect?
+    ) -> (NSImage) -> ScreenshotResult? {
         if let pinResultBuilder { return pinResultBuilder }
         return { [weak self] image in
-            guard let self, let screen, let displayID = screen.displayID,
-                  let cgImage = image.cgImagePreservingBacking() ?? (image.representations.first as? NSBitmapImageRep)?.cgImage else {
-                return nil
-            }
-            let target = CaptureTargetScreen(
-                displayID: displayID,
-                frameInAppKitPoints: screen.frame,
-                pointPixelScale: screen.backingScaleFactor
-            )
-            return try? ScreenshotResult(
-                mode: .fullScreen,
-                targetScreen: target,
-                selection: nil,
-                timestamp: Date(),
-                pixelImage: cgImage,
-                windowInfo: nil
+            guard let self else { return nil }
+            return self.buildScreenshotResult(
+                from: image,
+                mode: mode,
+                screen: screen,
+                selectionViewRect: selectionViewRect
             )
         }
     }
 
+    /// 从合成图与捕获上下文构造 `ScreenshotResult`。
+    /// - selectionViewRect：SelectionView 局部坐标（与屏 frame 同原点时 + frame.origin → AppKit 全局）。
+    ///   全屏路径传 nil；区域 / all-in-one 传选区矩形。
+    private func buildScreenshotResult(
+        from image: NSImage,
+        mode: ScreenshotMode,
+        screen: NSScreen?,
+        selectionViewRect: NSRect?
+    ) -> ScreenshotResult? {
+        guard let screen, let displayID = screen.displayID else { return nil }
+        let target = CaptureTargetScreen(
+            displayID: displayID,
+            frameInAppKitPoints: screen.frame,
+            pointPixelScale: screen.backingScaleFactor
+        )
+        return Self.buildScreenshotResult(
+            from: image,
+            mode: mode,
+            targetScreen: target,
+            selectionViewLocalRect: selectionViewRect
+        )
+    }
+
+    /// 纯上下文构造（可单测，不依赖 live `NSScreen`）。
+    /// selectionViewLocalRect 为选区在目标屏局部（左下原点）的点矩形；nil 表示无选区（全屏）。
+    static func buildScreenshotResult(
+        from image: NSImage,
+        mode: ScreenshotMode,
+        targetScreen: CaptureTargetScreen,
+        selectionViewLocalRect: CGRect?
+    ) -> ScreenshotResult? {
+        guard let cgImage = image.cgImagePreservingBacking()
+                ?? (image.representations.first as? NSBitmapImageRep)?.cgImage else {
+            return nil
+        }
+
+        let selection: CaptureSelection?
+        if let local = selectionViewLocalRect {
+            let frame = targetScreen.frameInAppKitPoints
+            let appKitGlobal = CGRect(
+                x: local.origin.x + frame.minX,
+                y: local.origin.y + frame.minY,
+                width: local.width,
+                height: local.height
+            )
+            selection = try? CaptureSelection(
+                targetScreen: targetScreen,
+                appKitGlobalRect: appKitGlobal
+            )
+            // allInOne 必须有合法 selection；构造失败则整条 makeResult 失败，避免伪造成功。
+            if mode == .allInOne, selection == nil {
+                return nil
+            }
+        } else {
+            selection = nil
+        }
+
+        return try? ScreenshotResult(
+            mode: mode,
+            targetScreen: targetScreen,
+            selection: selection,
+            timestamp: Date(),
+            pixelImage: cgImage,
+            windowInfo: nil
+        )
+    }
+
+    /// 解析编辑器使用的 pipeline：优先共享实例，否则用本地默认（无 pinService）。
+    private func resolvedResultPipeline() -> ScreenshotResultPipeline {
+        if let resultPipeline { return resultPipeline }
+        return ScreenshotResultPipeline(
+            encoder: outputEncoder ?? ImageOutputEncoder(),
+            clipboardWriter: clipboardWriter ?? ClipboardImageWriter(),
+            saver: screenshotSaver ?? ScreenshotSaver(),
+            outputConfigurationProvider: outputConfigurationProvider
+        )
+    }
+
     /// 使用指定的捕获客户端初始化。
     /// - Parameter editorEnabled: 选区完成后是否嵌入标注编辑器。
-    /// - Parameters outputEncoder/clipboardWriter/screenshotSaver/pinService/pinResultBuilder:
-    ///   阶段 5 输出依赖，透传给编辑器；为 nil 时编辑器用默认实现（pin 为 nil 时钉图禁用）。
+    /// - Parameters outputEncoder/clipboardWriter/screenshotSaver/resultPipeline/pinResultBuilder:
+    ///   输出依赖透传给编辑器；`resultPipeline` 可后置 `setResultPipeline`。
     init(captureClient: ScreenCaptureClient? = nil,
          editorEnabled: Bool = true,
          outputEncoder: ImageOutputEncoding? = nil,
@@ -109,7 +200,7 @@ final class CaptureOverlayController {
          outputConfigurationProvider: @escaping () -> ScreenshotOutputConfigurationSnapshot = {
              ScreenshotOutputConfiguration().load()
          },
-         pinService: ScreenshotPinning? = nil,
+         resultPipeline: ScreenshotResultPipeline? = nil,
          pinResultBuilder: ((NSImage) -> ScreenshotResult?)? = nil) {
         self.captureClient = captureClient
         self.editorEnabled = editorEnabled
@@ -117,7 +208,7 @@ final class CaptureOverlayController {
         self.clipboardWriter = clipboardWriter
         self.screenshotSaver = screenshotSaver
         self.outputConfigurationProvider = outputConfigurationProvider
-        self.pinService = pinService
+        self.resultPipeline = resultPipeline
         self.pinResultBuilder = pinResultBuilder
     }
 
@@ -132,6 +223,7 @@ final class CaptureOverlayController {
     ) {
         Self.logger.info("[SSDBG] startCapture: 入口，设置 onComplete")
         self.isTornDown = false
+        self.endedByUserCancel = false
         self.snapshotGeneration &+= 1
         self.screenSnapshots = preSnapshots
         self.onComplete = completion
@@ -214,6 +306,9 @@ final class CaptureOverlayController {
         completion: @escaping (NSImage?) -> Void
     ) {
         Self.logger.info("[SSDBG] startEditor: 入口，设置 onComplete")
+        self.isTornDown = false
+        self.endedByUserCancel = false
+        self.snapshotGeneration &+= 1
         self.onComplete = completion
 
         let panel = createOverlayPanel(for: screen)
@@ -246,15 +341,19 @@ final class CaptureOverlayController {
         // 禁用其余屏的选区交互（当前 startEditor 虽只建单屏 panel，保留防御）。
         disableSelectionInteractionOnOtherScreens(keeping: selectionView)
 
+        let encoder = outputEncoder ?? ImageOutputEncoder()
+        let clipboard = clipboardWriter ?? ClipboardImageWriter()
         let editor = AnnotationEditorController(
             baseImage: baseImage,
             document: AnnotationDocument(),
-            encoder: outputEncoder ?? ImageOutputEncoder(),
-            clipboardWriter: clipboardWriter ?? ClipboardImageWriter(),
-            saver: screenshotSaver ?? ScreenshotSaver(),
-            outputConfigurationProvider: outputConfigurationProvider,
-            pinService: pinService,
-            pinResultBuilder: effectivePinResultBuilder(for: screen),
+            resultRunner: resolvedResultPipeline(),
+            encoder: encoder,
+            clipboardWriter: clipboard,
+            makeResult: makeResultBuilder(
+                mode: .fullScreen,
+                screen: screen,
+                selectionViewRect: nil
+            ),
             sourceBackingScaleFactor: screen.backingScaleFactor,
             onComplete: { [weak self] finalImage in
                 guard let self else { return }
@@ -280,6 +379,9 @@ final class CaptureOverlayController {
         // Always drop direct-record callback so a cancelled dedicated-record
         // selection cannot hijack the next all-in-one region complete.
         onDirectRegionSelection = nil
+        // copy/pin 直出状态同步清空，避免残留劫持后续全能/录屏路径。
+        onDirectCaptureResult = nil
+        entryIntent = nil
 
         // 先拆除编辑器（避免它继续持有画布）
         editorController?.tearDown()
@@ -406,6 +508,8 @@ final class CaptureOverlayController {
 
     private func handleCancel() {
         Self.logger.info("[SSDBG] handleCancel(#2) 被调用")
+        // Mark before tearDown/onComplete so session completion can tell cancel from capture failure.
+        endedByUserCancel = true
         tearDown()
         onComplete?(nil)
         onComplete = nil
@@ -480,6 +584,23 @@ extension CaptureOverlayController: SelectionViewDelegate {
 
         // 视图坐标 → CG 坐标
         let captureRect = convertToCGRect(rect, on: screen)
+        let windowRect = selectionView.convert(rect, to: nil)
+        let screenRect = panel.convertToScreen(windowRect)
+        // pinOrigin：选区屏幕左下原点（AppKit）；无法计算时由 pinService 居中。
+        let pinOrigin = NSPoint(x: screenRect.minX, y: screenRect.minY)
+
+        // copy/pin 直出：裁切图 → ScreenshotResult → 回调 manager，不进编辑器。
+        if let intent = entryIntent, intent == .copy || intent == .pin {
+            deliverDirectCapture(
+                intent: intent,
+                selectionViewRect: rect,
+                captureRect: captureRect,
+                pinOrigin: pinOrigin,
+                screen: screen,
+                displayID: displayID
+            )
+            return
+        }
 
         // 优先从预抓快照裁切
         if let snapshot = screenSnapshots[displayID],
@@ -530,6 +651,134 @@ extension CaptureOverlayController: SelectionViewDelegate {
                 }
             }
         }
+    }
+
+    /// copy/pin 选区直出：裁切图像、组装 `ScreenshotResult`、tearDown 后回调。
+    private func deliverDirectCapture(
+        intent: ScreenshotEntryIntent,
+        selectionViewRect: NSRect,
+        captureRect: CGRect,
+        pinOrigin: NSPoint,
+        screen: NSScreen,
+        displayID: CGDirectDisplayID
+    ) {
+        let callback = onDirectCaptureResult
+        // 先清空直出状态，避免 tearDown 后残留；回调在 tearDown 之后触发。
+        onDirectCaptureResult = nil
+        entryIntent = nil
+        // Capture generation for async fallback: cancel/tearDown must not late-finish into a new session.
+        let generation = snapshotGeneration
+
+        // 优先预抓快照裁切
+        if let snapshot = screenSnapshots[displayID],
+           let cropped = snapshot.croppingToSelection(globalRect: captureRect, displayID: displayID) {
+            let image = NSImage(cgImage: cropped, size: selectionViewRect.size)
+            finishDirectCapture(
+                image: image,
+                intent: intent,
+                selectionViewRect: selectionViewRect,
+                pinOrigin: pinOrigin,
+                screen: screen,
+                expectedGeneration: generation,
+                callback: callback
+            )
+            return
+        }
+
+        // 回退：实时 captureRegion
+        guard let client = captureClient else {
+            Self.logger.notice("[SSDBG] deliverDirectCapture: 无 captureClient")
+            tearDown()
+            onComplete?(nil)
+            onComplete = nil
+            return
+        }
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let cgImage = try await client.captureRegion(
+                    captureRect,
+                    displayID: displayID,
+                    scaleFactor: screen.backingScaleFactor
+                )
+                let image = NSImage(cgImage: cgImage, size: selectionViewRect.size)
+                await MainActor.run {
+                    // Cancel / new session: drop captured callback — no late copy/pin side effects.
+                    guard !self.isTornDown, self.snapshotGeneration == generation else {
+                        Self.logger.info(
+                            "[SSDBG] deliverDirectCapture async success ignored (tornDown/generation)"
+                        )
+                        return
+                    }
+                    self.finishDirectCapture(
+                        image: image,
+                        intent: intent,
+                        selectionViewRect: selectionViewRect,
+                        pinOrigin: pinOrigin,
+                        screen: screen,
+                        expectedGeneration: generation,
+                        callback: callback
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    guard !self.isTornDown, self.snapshotGeneration == generation else {
+                        Self.logger.info(
+                            "[SSDBG] deliverDirectCapture async error ignored (tornDown/generation)"
+                        )
+                        return
+                    }
+                    Self.logger.notice(
+                        "[SSDBG] deliverDirectCapture captureRegion 抛错：\(error.localizedDescription)"
+                    )
+                    self.tearDown()
+                    self.onComplete?(nil)
+                    self.onComplete = nil
+                }
+            }
+        }
+    }
+
+    /// 直出收尾：构造 result → tearDown → 回调 manager（pipeline 由 manager 执行）。
+    private func finishDirectCapture(
+        image: NSImage,
+        intent: ScreenshotEntryIntent,
+        selectionViewRect: NSRect,
+        pinOrigin: NSPoint,
+        screen: NSScreen,
+        expectedGeneration: UInt64,
+        callback: ((ScreenshotResult, ScreenshotEntryIntent, NSPoint?) -> Void)?
+    ) {
+        // Async race: cancel/tearDown (or a newer session) must not invoke success callback.
+        guard !isTornDown, snapshotGeneration == expectedGeneration else {
+            Self.logger.info(
+                "[SSDBG] finishDirectCapture: ignored (tornDown=\(self.isTornDown), gen match=\(self.snapshotGeneration == expectedGeneration))"
+            )
+            return
+        }
+
+        guard let result = buildScreenshotResult(
+            from: image,
+            mode: .allInOne,
+            screen: screen,
+            selectionViewRect: selectionViewRect
+        ) else {
+            Self.logger.notice("[SSDBG] finishDirectCapture: 构造 ScreenshotResult 失败")
+            tearDown()
+            onComplete?(nil)
+            onComplete = nil
+            return
+        }
+
+        Self.logger.info("[SSDBG] finishDirectCapture: intent=\(intent.rawValue)，直出完成")
+        // Callback manager (pipeline) before session completion so awaitingDirectCaptureResult
+        // is settled before onComplete clears the session — avoids false failure on success.
+        // pinOrigin 仅 pin 有意义；copy 也传入无害，manager 可忽略。
+        callback?(result, intent, pinOrigin)
+        tearDown()
+        onComplete?(nil)
+        onComplete = nil
     }
 
     func selectionDidChange(rect: NSRect) {
@@ -602,16 +851,25 @@ extension CaptureOverlayController: SelectionViewDelegate {
         // 禁用其余屏的选区交互，避免跨屏点击污染宿主屏编辑器几何。
         disableSelectionInteractionOnOtherScreens(keeping: selectionView)
 
+        // 优先 panel.screen；无 window 时（测试 embed）用 displayID 匹配 NSScreen。
         let pinScreen = selectionView.window?.screen
+            ?? displayID.flatMap { id in
+                NSScreen.screens.first(where: { $0.displayID == id })
+            }
+        let encoder = outputEncoder ?? ImageOutputEncoder()
+        let clipboard = clipboardWriter ?? ClipboardImageWriter()
         let editor = AnnotationEditorController(
             baseImage: image,
             document: AnnotationDocument(),
-            encoder: outputEncoder ?? ImageOutputEncoder(),
-            clipboardWriter: clipboardWriter ?? ClipboardImageWriter(),
-            saver: screenshotSaver ?? ScreenshotSaver(),
-            outputConfigurationProvider: outputConfigurationProvider,
-            pinService: pinService,
-            pinResultBuilder: effectivePinResultBuilder(for: pinScreen),
+            resultRunner: resolvedResultPipeline(),
+            encoder: encoder,
+            clipboardWriter: clipboard,
+            // 区域 / all-in-one 入口：mode=.allInOne，selection 来自选区视图矩形。
+            makeResult: makeResultBuilder(
+                mode: .allInOne,
+                screen: pinScreen,
+                selectionViewRect: selectionRect
+            ),
             sourceBackingScaleFactor: pinScreen?.backingScaleFactor ?? 1,
             onComplete: { [weak self] finalImage in
                 guard let self else { return }
@@ -658,6 +916,36 @@ extension CaptureOverlayController {
     /// 测试用：是否已 tearDown（apply 守卫可读）。
     var isTornDownForTesting: Bool {
         isTornDown
+    }
+
+    /// 测试用：模拟 async captureRegion 完成后的 `finishDirectCapture`（含 tearDown/generation 守卫）。
+    /// 用于 cancel race：cancel 后旧 generation 不得再回调 copy/pin。
+    func finishDirectCaptureForTesting(
+        image: NSImage,
+        intent: ScreenshotEntryIntent,
+        selectionViewRect: NSRect,
+        pinOrigin: NSPoint,
+        screen: NSScreen,
+        expectedGeneration: UInt64,
+        callback: ((ScreenshotResult, ScreenshotEntryIntent, NSPoint?) -> Void)?
+    ) {
+        finishDirectCapture(
+            image: image,
+            intent: intent,
+            selectionViewRect: selectionViewRect,
+            pinOrigin: pinOrigin,
+            screen: screen,
+            expectedGeneration: expectedGeneration,
+            callback: callback
+        )
+    }
+
+    /// 测试用：以非用户取消路径结束会话（crop/build/capture 失败语义）。
+    /// 不设置 `endedByUserCancel`，调用 `onComplete(nil)`。
+    func completeSessionWithoutResultForTesting() {
+        tearDown()
+        onComplete?(nil)
+        onComplete = nil
     }
 
     /// 测试用：注册一组 SelectionView，使其进入 controller 的内部交互禁用管理范围。

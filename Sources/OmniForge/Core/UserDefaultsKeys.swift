@@ -63,6 +63,10 @@ enum UserDefaultsKeys {
     // 快捷键：UserDefaults 为真源，KeyboardShortcuts 为运行时镜像
     static let screenshotHotkeyAllInOneKeyCode = "screenshot.hotkey.allInOne.keyCode"
     static let screenshotHotkeyAllInOneModifiers = "screenshot.hotkey.allInOne.modifiers"
+    static let screenshotHotkeyCopyKeyCode = "screenshot.hotkey.copy.keyCode"
+    static let screenshotHotkeyCopyModifiers = "screenshot.hotkey.copy.modifiers"
+    static let screenshotHotkeyPinKeyCode = "screenshot.hotkey.pin.keyCode"
+    static let screenshotHotkeyPinModifiers = "screenshot.hotkey.pin.modifiers"
     static let screenshotHotkeyFullscreenKeyCode = "screenshot.hotkey.fullscreen.keyCode"
     static let screenshotHotkeyFullscreenModifiers = "screenshot.hotkey.fullscreen.modifiers"
     // 截图编辑器最近 emoji（持久化字符串必须稳定，不得重命名）

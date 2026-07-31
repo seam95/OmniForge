@@ -128,8 +128,8 @@ final class FakePinService: ScreenshotPinning {
     private(set) var pinnedOrigins: [NSPoint?] = []
     /// 设置后 pinFromPipeline 抛错。
     var errorToThrow: Error?
-    /// 下一个返回的 id（每次自增）。
-    private var nextID = UUID()
+    /// 下一个返回的 id（每次成功调用后换新 UUID；测试可预置）。
+    var nextID = UUID()
 
     @discardableResult
     func pinFromPipeline(result: ScreenshotResult, at origin: NSPoint?) throws -> UUID {

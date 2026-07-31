@@ -34,6 +34,8 @@ final class FakeScreenCaptureClient: ScreenCaptureClient {
     var captureSnapshotDeferred = false
     /// 每次 captureSnapshot 被调用时的回调；时序测试在此断言 startCapture 已先发生。
     var onSnapshot: ((CGDirectDisplayID) -> Void)?
+    /// Optional delay before captureRegion returns (tests async cancel race).
+    var captureRegionDelayNanoseconds: UInt64 = 0
 
     func captureDisplay(displayID: CGDirectDisplayID) async throws -> CGImage {
         captureDisplayCalls.append(CaptureDisplayCall(displayID: displayID))
@@ -55,6 +57,9 @@ final class FakeScreenCaptureClient: ScreenCaptureClient {
                 excludingWindowIDs: excludingWindowIDs
             )
         )
+        if captureRegionDelayNanoseconds > 0 {
+            try await Task.sleep(nanoseconds: captureRegionDelayNanoseconds)
+        }
         if let captureRegionError { throw captureRegionError }
         return FakeScreenCaptureClient.placeholderImage()
     }

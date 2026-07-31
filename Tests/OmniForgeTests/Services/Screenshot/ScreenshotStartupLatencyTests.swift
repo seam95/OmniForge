@@ -43,9 +43,11 @@ final class ScreenshotStartupLatencyTests: XCTestCase {
     // MARK: - keyDown 注册 / 分发（与 ScreenshotFeatureManagerTests 互补）
 
     func test_registerHandlers_usesKeyDown() {
-        // 仅 keyDown：三入口齐全；Fake 无 keyUp API
-        XCTAssertEqual(keyboardShortcuts.keyDownHandlers.count, 3)
+        // 仅 keyDown：五入口齐全；Fake 无 keyUp API
+        XCTAssertEqual(keyboardShortcuts.keyDownHandlers.count, 5)
         XCTAssertNotNil(keyboardShortcuts.keyDownHandlers[KeyboardShortcuts.Name.screenshotAllInOne.rawValue])
+        XCTAssertNotNil(keyboardShortcuts.keyDownHandlers[KeyboardShortcuts.Name.screenshotCopy.rawValue])
+        XCTAssertNotNil(keyboardShortcuts.keyDownHandlers[KeyboardShortcuts.Name.screenshotPin.rawValue])
         XCTAssertNotNil(keyboardShortcuts.keyDownHandlers[KeyboardShortcuts.Name.screenshotFullscreen.rawValue])
         XCTAssertNotNil(keyboardShortcuts.keyDownHandlers[KeyboardShortcuts.Name.screenshotRecord.rawValue])
     }

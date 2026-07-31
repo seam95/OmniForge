@@ -733,6 +733,8 @@ struct Strings: Equatable {
     let screenshotRequestPermission: String
     let screenshotHotkeysSection: String
     let screenshotHotkeyAllInOne: String
+    let screenshotHotkeyCopy: String
+    let screenshotHotkeyPin: String
     let screenshotHotkeyFullscreen: String
     let screenshotHotkeyRecord: String
     let screenshotOutputSection: String

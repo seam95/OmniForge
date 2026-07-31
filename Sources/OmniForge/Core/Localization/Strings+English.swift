@@ -699,6 +699,8 @@ extension Strings {
         screenshotRequestPermission: "Request Screen Recording",
         screenshotHotkeysSection: "Hotkeys",
         screenshotHotkeyAllInOne: "All-in-One Capture",
+        screenshotHotkeyCopy: "Capture and Copy",
+        screenshotHotkeyPin: "Capture and Pin",
         screenshotHotkeyFullscreen: "Fullscreen",
         screenshotHotkeyRecord: "Screen Recording",
         screenshotOutputSection: "Output",

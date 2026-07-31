@@ -56,30 +56,94 @@ extension ScreenshotPinning {
     }
 }
 
-/// 截图结果管线（最小可编译桩，task-5 正式重写）。
-final class ScreenshotResultPipeline {
+/// 截图结果副作用出口（便于编辑器注入 fake 断言 intent）。
+protocol ScreenshotResultRunning: AnyObject {
+    @discardableResult
+    func run(
+        result: ScreenshotResult,
+        intent: ScreenshotEntryIntent,
+        pinOrigin: NSPoint?
+    ) throws -> ScreenshotPipelineOutcome
+}
+
+/// 截图结果管线：统一 copy / save / pin 副作用出口。
+final class ScreenshotResultPipeline: ScreenshotResultRunning {
     private static let logger = Logger(subsystem: "com.omniforge.app", category: "ScreenshotPipeline")
 
     private let pasteboard: PasteboardWriting
     private let userDefaults: UserDefaults
+    private let encoder: ImageOutputEncoding
+    private let clipboardWriter: ClipboardImageWriting
+    private let saver: ScreenshotSaving
+    private let outputConfigurationProvider: () -> ScreenshotOutputConfigurationSnapshot
+
+    /// 弱引用，避免 `PinnedScreenshotRegistry → pipeline → pinBridge → registry` 环。
     weak var pinService: ScreenshotPinning?
 
     init(
         pasteboard: PasteboardWriting = SystemPasteboardWriter(),
-        userDefaults: UserDefaults = .standard
+        userDefaults: UserDefaults = .standard,
+        encoder: ImageOutputEncoding = ImageOutputEncoder(),
+        clipboardWriter: ClipboardImageWriting = ClipboardImageWriter(),
+        saver: ScreenshotSaving = ScreenshotSaver(),
+        outputConfigurationProvider: (() -> ScreenshotOutputConfigurationSnapshot)? = nil
     ) {
         self.pasteboard = pasteboard
         self.userDefaults = userDefaults
+        self.encoder = encoder
+        self.clipboardWriter = clipboardWriter
+        self.saver = saver
+        // 默认从注入的 userDefaults 读输出配置；测试可覆写 provider。
+        if let outputConfigurationProvider {
+            self.outputConfigurationProvider = outputConfigurationProvider
+        } else {
+            let configuration = ScreenshotOutputConfiguration(userDefaults: userDefaults)
+            self.outputConfigurationProvider = { configuration.load() }
+        }
     }
 
     @discardableResult
-    func runAsync(result: ScreenshotResult, intent: ScreenshotEntryIntent) async throws -> ScreenshotPipelineOutcome {
-        throw ScreenshotPipelineError.intentNotImplemented(intent)
+    func runAsync(
+        result: ScreenshotResult,
+        intent: ScreenshotEntryIntent,
+        pinOrigin: NSPoint? = nil
+    ) async throws -> ScreenshotPipelineOutcome {
+        try run(result: result, intent: intent, pinOrigin: pinOrigin)
     }
 
     @discardableResult
-    func run(result: ScreenshotResult, intent: ScreenshotEntryIntent) throws -> ScreenshotPipelineOutcome {
-        throw ScreenshotPipelineError.intentNotImplemented(intent)
+    func run(
+        result: ScreenshotResult,
+        intent: ScreenshotEntryIntent,
+        pinOrigin: NSPoint? = nil
+    ) throws -> ScreenshotPipelineOutcome {
+        let effects = try Self.sideEffects(for: intent)
+        var outcome = ScreenshotPipelineOutcome()
+        // 编码结果缓存：同一 run 内多副作用只编码一次。
+        var encodedOutput: EncodedImageOutput?
+
+        for effect in effects {
+            switch effect {
+            case .copy:
+                let output = try encodedOutput ?? encodeOnce(result: result)
+                encodedOutput = output
+                try performCopy(output: output)
+                outcome.didCopy = true
+
+            case .save:
+                let output = try encodedOutput ?? encodeOnce(result: result)
+                encodedOutput = output
+                let path = try performSave(output: output)
+                outcome.savedFilePath = path
+
+            case .pin:
+                let id = try performPin(result: result, origin: pinOrigin)
+                outcome.didPin = true
+                outcome.pinnedID = id
+            }
+        }
+
+        return outcome
     }
 
     static func sideEffects(for intent: ScreenshotEntryIntent) throws -> [ScreenshotPipelineSideEffect] {
@@ -88,6 +152,78 @@ final class ScreenshotResultPipeline {
         case .save: return [.save]
         case .pin: return [.pin]
         case .drag: throw ScreenshotPipelineError.intentNotImplemented(intent)
+        }
+    }
+
+    // MARK: - 副作用
+
+    /// 将 `CGImage` 转为物理像素尺寸的 `NSImage` 后编码，质量固定 `.original`。
+    private func encodeOnce(result: ScreenshotResult) throws -> EncodedImageOutput {
+        let cgImage = result.pixelImage
+        let pixelSize = NSSize(width: cgImage.width, height: cgImage.height)
+        let nsImage = NSImage(cgImage: cgImage, size: pixelSize)
+        do {
+            return try encoder.encode(image: nsImage, quality: .original)
+        } catch let error as ScreenshotPipelineError {
+            throw error
+        } catch {
+            let message = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+            throw ScreenshotPipelineError.encodingFailed(message)
+        }
+    }
+
+    private func performCopy(output: EncodedImageOutput) throws {
+        guard clipboardWriter.writeImage(output) else {
+            throw ScreenshotPipelineError.pasteboardWriteFailed
+        }
+    }
+
+    private func performSave(output: EncodedImageOutput) throws -> String {
+        let snapshot = outputConfigurationProvider()
+        let fileName = ScreenshotSaver.timestampedFileName(
+            prefix: snapshot.fileNamePrefix,
+            quality: .original,
+            date: Date()
+        )
+        do {
+            let url = try saver.save(
+                output: output,
+                quality: .original,
+                fileName: fileName,
+                directory: snapshot.saveDirectory
+            )
+            return url.path
+        } catch let error as ScreenshotPipelineError {
+            throw error
+        } catch let error as ScreenshotSavingError {
+            throw mapSavingError(error)
+        } catch {
+            throw ScreenshotPipelineError.writeFailed(String(describing: error))
+        }
+    }
+
+    private func performPin(result: ScreenshotResult, origin: NSPoint?) throws -> UUID {
+        guard let pinService else {
+            throw ScreenshotPipelineError.pinServiceUnavailable
+        }
+        do {
+            return try pinService.pinFromPipeline(result: result, at: origin)
+        } catch let error as ScreenshotPipelineError {
+            throw error
+        } catch {
+            let message = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+            throw ScreenshotPipelineError.pinFailed(message)
+        }
+    }
+
+    private func mapSavingError(_ error: ScreenshotSavingError) -> ScreenshotPipelineError {
+        switch error {
+        case let .directoryCreationFailed(path):
+            return .directoryCreationFailed(path)
+        case let .writeFailed(path):
+            return .writeFailed(path)
+        case .emptyPayload:
+            return .pasteboardEmptyPayload
         }
     }
 }
