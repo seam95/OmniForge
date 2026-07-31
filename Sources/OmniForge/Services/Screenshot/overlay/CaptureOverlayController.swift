@@ -54,14 +54,20 @@ final class CaptureOverlayController {
     private let outputEncoder: ImageOutputEncoding?
     private let clipboardWriter: ClipboardImageWriting?
     private let screenshotSaver: ScreenshotSaving?
-    /// 保存时现场读取输出配置（目录/前缀）。
+    /// 保存时现场读取输出配置（目录/前缀）；兼容旧路径 / 默认 pipeline 构造。
     private let outputConfigurationProvider: () -> ScreenshotOutputConfigurationSnapshot
-    private weak var pinService: ScreenshotPinning?
+    /// 与钉图 registry 共享的结果管线；confirm/save/pin 经此出口。
+    private var resultPipeline: ScreenshotResultPipeline?
     private let pinResultBuilder: ((NSImage) -> ScreenshotResult?)?
 
-    /// 注入钉图服务（FeatureFactory 在创建 pinBridge 后设置）。
+    /// 注入共享结果管线（FeatureFactory 在装配 pinBridge 后设置）。
+    func setResultPipeline(_ pipeline: ScreenshotResultPipeline?) {
+        resultPipeline = pipeline
+    }
+
+    /// 兼容旧调用：仅设置 pinService（会落到已注入的 pipeline 上）。
     func setPinService(_ service: ScreenshotPinning?) {
-        pinService = service
+        resultPipeline?.pinService = service
     }
 
     /// 选区录屏回调：编辑器 tearDown 后由 manager/coordinator 启动录屏。
@@ -72,13 +78,14 @@ final class CaptureOverlayController {
     /// 用于独立录屏快捷键：框选 → 立即 begin recording。
     var onDirectRegionSelection: ((NSRect, NSScreen) -> Void)?
 
-    /// 取得有效的 pinResultBuilder：优先用注入的；否则用屏幕上下文构造一个
-    /// 最小 `ScreenshotResult`（全屏模式），供 pinService.pinFromPipeline 使用。
-    private func effectivePinResultBuilder(for screen: NSScreen?) -> (NSImage) -> ScreenshotResult? {
+    /// 取得有效的 makeResult：优先用注入的 pinResultBuilder；否则用屏幕上下文
+    /// 构造最小 `ScreenshotResult`（全屏模式），供 confirm/save/pin 共用。
+    private func effectiveMakeResult(for screen: NSScreen?) -> (NSImage) -> ScreenshotResult? {
         if let pinResultBuilder { return pinResultBuilder }
-        return { [weak self] image in
-            guard let self, let screen, let displayID = screen.displayID,
-                  let cgImage = image.cgImagePreservingBacking() ?? (image.representations.first as? NSBitmapImageRep)?.cgImage else {
+        return { image in
+            guard let screen, let displayID = screen.displayID,
+                  let cgImage = image.cgImagePreservingBacking()
+                    ?? (image.representations.first as? NSBitmapImageRep)?.cgImage else {
                 return nil
             }
             let target = CaptureTargetScreen(
@@ -97,10 +104,21 @@ final class CaptureOverlayController {
         }
     }
 
+    /// 解析编辑器使用的 pipeline：优先共享实例，否则用本地默认（无 pinService）。
+    private func resolvedResultPipeline() -> ScreenshotResultPipeline {
+        if let resultPipeline { return resultPipeline }
+        return ScreenshotResultPipeline(
+            encoder: outputEncoder ?? ImageOutputEncoder(),
+            clipboardWriter: clipboardWriter ?? ClipboardImageWriter(),
+            saver: screenshotSaver ?? ScreenshotSaver(),
+            outputConfigurationProvider: outputConfigurationProvider
+        )
+    }
+
     /// 使用指定的捕获客户端初始化。
     /// - Parameter editorEnabled: 选区完成后是否嵌入标注编辑器。
-    /// - Parameters outputEncoder/clipboardWriter/screenshotSaver/pinService/pinResultBuilder:
-    ///   阶段 5 输出依赖，透传给编辑器；为 nil 时编辑器用默认实现（pin 为 nil 时钉图禁用）。
+    /// - Parameters outputEncoder/clipboardWriter/screenshotSaver/resultPipeline/pinResultBuilder:
+    ///   输出依赖透传给编辑器；`resultPipeline` 可后置 `setResultPipeline`。
     init(captureClient: ScreenCaptureClient? = nil,
          editorEnabled: Bool = true,
          outputEncoder: ImageOutputEncoding? = nil,
@@ -109,7 +127,7 @@ final class CaptureOverlayController {
          outputConfigurationProvider: @escaping () -> ScreenshotOutputConfigurationSnapshot = {
              ScreenshotOutputConfiguration().load()
          },
-         pinService: ScreenshotPinning? = nil,
+         resultPipeline: ScreenshotResultPipeline? = nil,
          pinResultBuilder: ((NSImage) -> ScreenshotResult?)? = nil) {
         self.captureClient = captureClient
         self.editorEnabled = editorEnabled
@@ -117,7 +135,7 @@ final class CaptureOverlayController {
         self.clipboardWriter = clipboardWriter
         self.screenshotSaver = screenshotSaver
         self.outputConfigurationProvider = outputConfigurationProvider
-        self.pinService = pinService
+        self.resultPipeline = resultPipeline
         self.pinResultBuilder = pinResultBuilder
     }
 
@@ -246,15 +264,15 @@ final class CaptureOverlayController {
         // 禁用其余屏的选区交互（当前 startEditor 虽只建单屏 panel，保留防御）。
         disableSelectionInteractionOnOtherScreens(keeping: selectionView)
 
+        let encoder = outputEncoder ?? ImageOutputEncoder()
+        let clipboard = clipboardWriter ?? ClipboardImageWriter()
         let editor = AnnotationEditorController(
             baseImage: baseImage,
             document: AnnotationDocument(),
-            encoder: outputEncoder ?? ImageOutputEncoder(),
-            clipboardWriter: clipboardWriter ?? ClipboardImageWriter(),
-            saver: screenshotSaver ?? ScreenshotSaver(),
-            outputConfigurationProvider: outputConfigurationProvider,
-            pinService: pinService,
-            pinResultBuilder: effectivePinResultBuilder(for: screen),
+            resultRunner: resolvedResultPipeline(),
+            encoder: encoder,
+            clipboardWriter: clipboard,
+            makeResult: effectiveMakeResult(for: screen),
             sourceBackingScaleFactor: screen.backingScaleFactor,
             onComplete: { [weak self] finalImage in
                 guard let self else { return }
@@ -603,15 +621,15 @@ extension CaptureOverlayController: SelectionViewDelegate {
         disableSelectionInteractionOnOtherScreens(keeping: selectionView)
 
         let pinScreen = selectionView.window?.screen
+        let encoder = outputEncoder ?? ImageOutputEncoder()
+        let clipboard = clipboardWriter ?? ClipboardImageWriter()
         let editor = AnnotationEditorController(
             baseImage: image,
             document: AnnotationDocument(),
-            encoder: outputEncoder ?? ImageOutputEncoder(),
-            clipboardWriter: clipboardWriter ?? ClipboardImageWriter(),
-            saver: screenshotSaver ?? ScreenshotSaver(),
-            outputConfigurationProvider: outputConfigurationProvider,
-            pinService: pinService,
-            pinResultBuilder: effectivePinResultBuilder(for: pinScreen),
+            resultRunner: resolvedResultPipeline(),
+            encoder: encoder,
+            clipboardWriter: clipboard,
+            makeResult: effectiveMakeResult(for: pinScreen),
             sourceBackingScaleFactor: pinScreen?.backingScaleFactor ?? 1,
             onComplete: { [weak self] finalImage in
                 guard let self else { return }

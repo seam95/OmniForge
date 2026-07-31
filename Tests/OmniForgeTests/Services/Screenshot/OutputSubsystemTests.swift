@@ -260,9 +260,32 @@ final class OutputSubsystemTests: XCTestCase {
         XCTAssertEqual(ScreenshotSaver.cleanFileName("has.png"), "has.png")
     }
 
-    // MARK: - 编辑器输出动作（Fake 驱动）
+    // MARK: - 编辑器输出动作（Fake 驱动；副作用经 pipeline）
 
-    /// confirm 成功：编码 + 剪贴板各一次，回调 image。
+    /// 合成图 → 最小全屏 `ScreenshotResult`（confirm/save/pin 共用）。
+    private func makeResultBuilder() -> (NSImage) -> ScreenshotResult? {
+        { image in
+            guard let cg = image.cgImagePreservingBacking()
+                    ?? (image.representations.first as? NSBitmapImageRep)?.cgImage else {
+                return nil
+            }
+            let target = CaptureTargetScreen(
+                displayID: 1,
+                frameInAppKitPoints: CGRect(x: 0, y: 0, width: max(image.size.width, 1), height: max(image.size.height, 1)),
+                pointPixelScale: 1
+            )
+            return try? ScreenshotResult(
+                mode: .fullScreen,
+                targetScreen: target,
+                selection: nil,
+                timestamp: Date(),
+                pixelImage: cg,
+                windowInfo: nil
+            )
+        }
+    }
+
+    /// confirm 成功：pipeline 编码 + 剪贴板各一次，回调 image。
     @MainActor
     func test_editor_confirm_success_encodesAndWritesClipboard() throws {
         let encoder = FakeImageOutputEncoder()
@@ -279,7 +302,7 @@ final class OutputSubsystemTests: XCTestCase {
             clipboardWriter: writer,
             saver: saver,
             pinService: pin,
-            pinResultBuilder: { _ in nil },
+            pinResultBuilder: makeResultBuilder(),
             onComplete: { completed = $0 }
         )
 
@@ -308,7 +331,7 @@ final class OutputSubsystemTests: XCTestCase {
             clipboardWriter: writer,
             saver: FakeScreenshotSaver(),
             pinService: FakePinService(),
-            pinResultBuilder: { _ in nil },
+            pinResultBuilder: makeResultBuilder(),
             onComplete: { completed = $0 }
         )
 
@@ -332,7 +355,7 @@ final class OutputSubsystemTests: XCTestCase {
             clipboardWriter: FakeClipboardImageWriter(),
             saver: FakeScreenshotSaver(),
             pinService: FakePinService(),
-            pinResultBuilder: { _ in nil },
+            pinResultBuilder: makeResultBuilder(),
             onComplete: { completed = $0 }
         )
 
@@ -346,9 +369,9 @@ final class OutputSubsystemTests: XCTestCase {
     /// 合成像素密度须等于点尺寸 × sourceBackingScaleFactor（多屏 DPI 不一致时
     /// 钉住尺寸不被放大/缩小的回归）：像素 200×160、点尺寸 100×80、scale=2 →
     /// 合成图 pixelsWide=200。证明用了源屏 scale，而非 lockFocus 的隐式主屏密度。
+    /// 编码已迁入 pipeline，本断言直接检查 compositeImage 的物理像素宽。
     @MainActor
     func test_editor_confirm_compositePixelDensityMatchesSourceBackingScale() throws {
-        let encoder = FakeImageOutputEncoder()
         // 像素 200×160 的底图，手动把点尺寸调成 100×80（模拟 2× 截图源屏产物）。
         let baseImage = makeImage(width: 200, height: 160)
         baseImage.size = NSSize(width: 100, height: 80)
@@ -356,27 +379,22 @@ final class OutputSubsystemTests: XCTestCase {
             rep.size = NSSize(width: 100, height: 80)
         }
 
-        var completed: NSImage?
         let editor = AnnotationEditorController(
             baseImage: baseImage,
             document: AnnotationDocument(),
-            encoder: encoder,
-            clipboardWriter: FakeClipboardImageWriter(),
-            saver: FakeScreenshotSaver(),
-            pinService: FakePinService(),
-            pinResultBuilder: { _ in nil },
+            pinResultBuilder: makeResultBuilder(),
             sourceBackingScaleFactor: 2,
-            onComplete: { completed = $0 }
+            onComplete: { _ in }
         )
 
-        editor.confirm()
-
-        XCTAssertEqual(encoder.syncCalls.count, 1)
+        let composite = try XCTUnwrap(editor.compositeImage())
         // 点尺寸保持源底图尺寸；像素宽 = 100(点) × 2(scale) = 200
-        XCTAssertEqual(encoder.syncCalls[0].pixelSize.width, 100, accuracy: 0.001)
-        XCTAssertEqual(encoder.syncCalls[0].pixelsWide, 200)
-        XCTAssertNotNil(completed)
-        XCTAssertNil(editor.lastError)
+        XCTAssertEqual(composite.size.width, 100, accuracy: 0.001)
+        let pixelsWide = composite.representations
+            .compactMap { $0 as? NSBitmapImageRep }
+            .map(\.pixelsWide)
+            .max() ?? 0
+        XCTAssertEqual(pixelsWide, 200)
     }
 
     /// save 成功：只调 saver（不写剪贴板、不钉图），回调 nil；透传目录与前缀文件名。
@@ -400,7 +418,7 @@ final class OutputSubsystemTests: XCTestCase {
                 )
             },
             pinService: FakePinService(),
-            pinResultBuilder: { _ in nil },
+            pinResultBuilder: makeResultBuilder(),
             onComplete: { completed = $0 }
         )
 
@@ -427,6 +445,7 @@ final class OutputSubsystemTests: XCTestCase {
             baseImage: makeImage(width: 2, height: 2),
             document: AnnotationDocument(),
             saver: saver,
+            pinResultBuilder: makeResultBuilder(),
             onComplete: { completed = $0 }
         )
 
@@ -448,22 +467,7 @@ final class OutputSubsystemTests: XCTestCase {
             clipboardWriter: FakeClipboardImageWriter(),
             saver: FakeScreenshotSaver(),
             pinService: pin,
-            pinResultBuilder: { image in
-                guard let cg = image.cgImagePreservingBacking() else { return nil }
-                let target = CaptureTargetScreen(
-                    displayID: 1,
-                    frameInAppKitPoints: CGRect(x: 0, y: 0, width: 2, height: 2),
-                    pointPixelScale: 1
-                )
-                return try? ScreenshotResult(
-                    mode: .fullScreen,
-                    targetScreen: target,
-                    selection: nil,
-                    timestamp: Date(),
-                    pixelImage: cg,
-                    windowInfo: nil
-                )
-            },
+            pinResultBuilder: makeResultBuilder(),
             onComplete: { completed = $0 }
         )
 
@@ -474,7 +478,7 @@ final class OutputSubsystemTests: XCTestCase {
         XCTAssertNil(editor.lastError)
     }
 
-    /// pin 无 pinService：记录错误（annotationErrorPinNotWired），保留状态。
+    /// pin 无 pinService：pipeline 抛 pinServiceUnavailable，保留状态。
     @MainActor
     func test_editor_pin_withoutService_recordsError() {
         var completed: NSImage?
@@ -482,6 +486,7 @@ final class OutputSubsystemTests: XCTestCase {
             baseImage: makeImage(width: 2, height: 2),
             document: AnnotationDocument(),
             pinService: nil,
+            pinResultBuilder: makeResultBuilder(),
             onComplete: { completed = $0 }
         )
 
@@ -521,22 +526,7 @@ final class OutputSubsystemTests: XCTestCase {
             baseImage: makeImage(width: 2, height: 2),
             document: AnnotationDocument(),
             pinService: pin,
-            pinResultBuilder: { image in
-                guard let cg = image.cgImagePreservingBacking() else { return nil }
-                let target = CaptureTargetScreen(
-                    displayID: 1,
-                    frameInAppKitPoints: CGRect(x: 0, y: 0, width: 2, height: 2),
-                    pointPixelScale: 1
-                )
-                return try? ScreenshotResult(
-                    mode: .fullScreen,
-                    targetScreen: target,
-                    selection: nil,
-                    timestamp: Date(),
-                    pixelImage: cg,
-                    windowInfo: nil
-                )
-            },
+            pinResultBuilder: makeResultBuilder(),
             onComplete: { completed = $0 }
         )
 

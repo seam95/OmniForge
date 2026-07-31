@@ -166,12 +166,20 @@ struct FeatureFactory {
                 let clipboardWriter = ClipboardImageWriter()
                 let screenshotSaver = ScreenshotSaver()
                 let outputConfiguration = ScreenshotOutputConfiguration(userDefaults: userDefaults)
+                let pipeline = ScreenshotResultPipeline(
+                    userDefaults: userDefaults,
+                    encoder: outputEncoder,
+                    clipboardWriter: clipboardWriter,
+                    saver: screenshotSaver,
+                    outputConfigurationProvider: { outputConfiguration.load() }
+                )
                 let overlayController = CaptureOverlayController(
                     captureClient: captureClient,
                     outputEncoder: outputEncoder,
                     clipboardWriter: clipboardWriter,
                     screenshotSaver: screenshotSaver,
-                    outputConfigurationProvider: { outputConfiguration.load() }
+                    outputConfigurationProvider: { outputConfiguration.load() },
+                    resultPipeline: pipeline
                 )
                 let recordingCoordinator = RecordingSessionCoordinator(
                     userDefaults: userDefaults,
@@ -186,20 +194,12 @@ struct FeatureFactory {
                     overlayController: overlayController,
                     recordingCoordinator: recordingCoordinator
                 )
-                let pipeline = ScreenshotResultPipeline(
-                    userDefaults: userDefaults,
-                    encoder: outputEncoder,
-                    clipboardWriter: clipboardWriter,
-                    saver: screenshotSaver,
-                    outputConfigurationProvider: { outputConfiguration.load() }
-                )
                 let pinRegistry = PinnedScreenshotRegistry(pipeline: pipeline)
                 pinRegistry.stringsProvider = { L10n(userDefaults: userDefaults).s }
                 let pinBridge = PinnedScreenshotPipelineBridge(registry: pinRegistry)
                 pipeline.pinService = pinBridge
-                // 阶段 5：把钉图服务透传给编辑器（pinResultBuilder 由 overlay
-                // 用屏幕上下文构造，阶段 6 美化接线点在此）。
-                overlayController.setPinService(pinBridge)
+                // 编辑器与钉图菜单共用同一 pipeline 实例（pinService 已挂接）。
+                overlayController.setResultPipeline(pipeline)
                 manager.pinnedScreenshotRegistry = pinRegistry
                 manager.pinPipelineBridge = pinBridge
                 runtime.register(.screenshot, manager: manager)

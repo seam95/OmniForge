@@ -56,8 +56,18 @@ extension ScreenshotPinning {
     }
 }
 
+/// 截图结果副作用出口（便于编辑器注入 fake 断言 intent）。
+protocol ScreenshotResultRunning: AnyObject {
+    @discardableResult
+    func run(
+        result: ScreenshotResult,
+        intent: ScreenshotEntryIntent,
+        pinOrigin: NSPoint?
+    ) throws -> ScreenshotPipelineOutcome
+}
+
 /// 截图结果管线：统一 copy / save / pin 副作用出口。
-final class ScreenshotResultPipeline {
+final class ScreenshotResultPipeline: ScreenshotResultRunning {
     private static let logger = Logger(subsystem: "com.omniforge.app", category: "ScreenshotPipeline")
 
     private let pasteboard: PasteboardWriting

@@ -16,15 +16,13 @@ import QuartzCore
 ///   undo/redo 按钮态）、onEmojiStamped。
 /// - 工具切换链路：selectTool → canvasView.activeTool + pushCurrentStyleToCanvas
 ///   + showSubToolbar（参照 capcap L407-462, 538-718）。
-/// - 输出动作（阶段 5 已接入输出子系统）：confirm(复制)/save/pin/close 统一走
-///   commitActiveTextEditing → compositeImage → 编码/写入/钉图 → tearDown →
-///   onComplete（参照 capcap L1662-1896）。
-///   - confirm：compositeImage → encoder.encode(.original) → clipboardWriter，
-///     失败显示错误（保留编辑器状态，不静默关闭），成功 onComplete(image)。
-///   - save：compositeImage → saver.save（静默），失败显示错误，成功 onComplete(nil)。
-///   - pin：compositeImage → pinResultBuilder → pinService.pinFromPipeline，
-///     失败显示错误，成功 onComplete(nil)。
+/// - 输出动作：confirm(复制)/save/pin 经 `ScreenshotResultRunning` 统一副作用；
+///   编辑器负责合成图、`makeResult` 构造 `ScreenshotResult`、成功/失败 UI。
+///   - confirm：composite → makeResult → `run(.copy)`；失败保留 UI，成功 onComplete(image)。
+///   - save：先 tearDown，再 `run(.save)`；失败仍呈现错误并 onComplete(nil)。
+///   - pin：composite → makeResult → `run(.pin, pinOrigin:)`；失败保留 UI。
 ///   错误反馈用 NSAlert（capcap 用 ToastWindow，OmniForge 暂用 NSAlert）。
+///   长截图裁切直出仍暂走 encoder/clipboard（不在本期 pipeline 迁入范围）。
 @MainActor
 final class AnnotationEditorController {
     private static let logger = Logger(subsystem: "com.omniforge.app", category: "ScreenshotEditor")
@@ -42,16 +40,14 @@ final class AnnotationEditorController {
     /// 源屏引用：draw 时现裁底图所需（对齐 CapCap `captureScreen`）。
     private(set) var screen: NSScreen?
 
-    // 阶段 5 输出依赖（注入边界）
+    /// 统一 copy/save/pin 副作用出口（生产为共享 `ScreenshotResultPipeline`）。
+    private let resultRunner: ScreenshotResultRunning
+    /// 长截图裁切直出仍用 encoder/clipboard（非 confirm/save/pin 路径）。
     private let encoder: ImageOutputEncoding
     private let clipboardWriter: ClipboardImageWriting
-    private let saver: ScreenshotSaving
-    /// 保存时现场读取，保证设置页改动立即生效。
-    private let outputConfigurationProvider: () -> ScreenshotOutputConfigurationSnapshot
-    private weak var pinService: ScreenshotPinning?
-    /// 由 overlay/factory 注入：把合成图包装成 `ScreenshotResult`（含目标屏上下文），
-    /// 供 `pinService.pinFromPipeline` 使用。
-    private let pinResultBuilder: (NSImage) -> ScreenshotResult?
+    /// 由 overlay/factory 注入：合成图 → `ScreenshotResult`（含目标屏上下文）；
+    /// confirm / save / pin 共用，避免三处构造分歧。
+    private let makeResult: (NSImage) -> ScreenshotResult?
 
     /// 截图源屏的点→像素比例。合成图必须按此密度建位图，否则多屏 backingScaleFactor
     /// 不一致时（如主屏 2×、副屏 1×）钉住显示尺寸会被放大/缩小（参见 compositeImage）。
@@ -132,31 +128,62 @@ final class AnnotationEditorController {
     init(baseImage: NSImage,
          document: AnnotationDocument,
          stringsProvider: @escaping () -> Strings = { .en },
+         resultRunner: ScreenshotResultRunning,
          encoder: ImageOutputEncoding = ImageOutputEncoder(),
          clipboardWriter: ClipboardImageWriting = ClipboardImageWriter(),
-         saver: ScreenshotSaving = ScreenshotSaver(),
-         outputConfigurationProvider: @escaping () -> ScreenshotOutputConfigurationSnapshot = {
-             ScreenshotOutputConfiguration().load()
-         },
-         pinService: ScreenshotPinning? = nil,
-         pinResultBuilder: @escaping (NSImage) -> ScreenshotResult? = { _ in nil },
+         makeResult: @escaping (NSImage) -> ScreenshotResult? = { _ in nil },
          sourceBackingScaleFactor: CGFloat = NSScreen.main?.backingScaleFactor ?? 1,
          onComplete: @escaping (NSImage?) -> Void) {
         self.baseImage = baseImage
         self.document = document
         self.stringsProvider = stringsProvider
+        self.resultRunner = resultRunner
         self.encoder = encoder
         self.clipboardWriter = clipboardWriter
-        self.saver = saver
-        self.outputConfigurationProvider = outputConfigurationProvider
-        self.pinService = pinService
-        self.pinResultBuilder = pinResultBuilder
+        self.makeResult = makeResult
         // 合法性夹取：< 1 或非有限时回退 1（与无屏环境一致）。
         self.sourceBackingScaleFactor = (sourceBackingScaleFactor >= 1 && sourceBackingScaleFactor.isFinite)
             ? sourceBackingScaleFactor
             : 1
         self.onComplete = onComplete
         self.selectionViewRect = NSRect(origin: .zero, size: baseImage.size)
+    }
+
+    /// 兼容旧调用：未注入 pipeline 时用默认 `ScreenshotResultPipeline`（无 pinService）。
+    /// 测试/生产应优先显式注入共享 pipeline。
+    convenience init(
+        baseImage: NSImage,
+        document: AnnotationDocument,
+        stringsProvider: @escaping () -> Strings = { .en },
+        encoder: ImageOutputEncoding = ImageOutputEncoder(),
+        clipboardWriter: ClipboardImageWriting = ClipboardImageWriter(),
+        saver: ScreenshotSaving = ScreenshotSaver(),
+        outputConfigurationProvider: @escaping () -> ScreenshotOutputConfigurationSnapshot = {
+            ScreenshotOutputConfiguration().load()
+        },
+        pinService: ScreenshotPinning? = nil,
+        pinResultBuilder: @escaping (NSImage) -> ScreenshotResult? = { _ in nil },
+        sourceBackingScaleFactor: CGFloat = NSScreen.main?.backingScaleFactor ?? 1,
+        onComplete: @escaping (NSImage?) -> Void
+    ) {
+        let pipeline = ScreenshotResultPipeline(
+            encoder: encoder,
+            clipboardWriter: clipboardWriter,
+            saver: saver,
+            outputConfigurationProvider: outputConfigurationProvider
+        )
+        pipeline.pinService = pinService
+        self.init(
+            baseImage: baseImage,
+            document: document,
+            stringsProvider: stringsProvider,
+            resultRunner: pipeline,
+            encoder: encoder,
+            clipboardWriter: clipboardWriter,
+            makeResult: pinResultBuilder,
+            sourceBackingScaleFactor: sourceBackingScaleFactor,
+            onComplete: onComplete
+        )
     }
 
     // MARK: - 展示
@@ -830,10 +857,10 @@ final class AnnotationEditorController {
         NSCursor.arrow.set()
     }
 
-    // MARK: - 输出动作（参照 capcap L1662-1896）
+    // MARK: - 输出动作（参照 capcap L1662-1896；副作用经 pipeline）
 
     /// 确认（复制到剪贴板）。
-    /// compositeImage → encoder.encode(.original) → clipboardWriter，
+    /// compositeImage → makeResult → `resultRunner.run(.copy)`，
     /// 失败显示错误（保留编辑器状态，不静默关闭），成功 onComplete(image)。
     func confirm() {
         Self.logger.info("[SSDBG] editor.confirm 进入")
@@ -845,23 +872,23 @@ final class AnnotationEditorController {
             onComplete(nil)
             return
         }
+        guard let result = makeResult(image) else {
+            Self.logger.notice("[SSDBG] editor.confirm: makeResult 失败 → 保留状态，未 onComplete")
+            presentError(\.annotationErrorNoResultMetadata)
+            return
+        }
         do {
-            let output = try encoder.encode(image: image, quality: .original)
-            guard clipboardWriter.writeImage(output) else {
-                Self.logger.notice("[SSDBG] editor.confirm: 剪贴板写入失败 → 保留状态，未 onComplete")
-                presentError(\.annotationErrorPipelineFormat)
-                return
-            }
+            _ = try resultRunner.run(result: result, intent: .copy, pinOrigin: nil)
             Self.logger.info("[SSDBG] editor.confirm 成功 → onComplete(image)")
             tearDown()
             onComplete(image)
         } catch {
-            Self.logger.notice("[SSDBG] editor.confirm: encode 抛错 → 保留状态，未 onComplete")
+            Self.logger.notice("[SSDBG] editor.confirm: pipeline 抛错 → 保留状态，未 onComplete")
             presentError(error)
         }
     }
 
-    /// 静默保存到文件。compositeImage → saver.save，失败显示错误，成功 onComplete(nil)。
+    /// 静默保存到文件。先 tearDown，再 pipeline `.save`；失败仍呈现错误并 onComplete(nil)。
     func save() {
         Self.logger.info("[SSDBG] editor.save 进入")
         canvasView?.commitActiveTextEditing()
@@ -870,22 +897,15 @@ final class AnnotationEditorController {
             presentError(\.annotationErrorNoImage)
             return
         }
+        guard let result = makeResult(image) else {
+            Self.logger.notice("[SSDBG] editor.save: makeResult 失败 → 保留状态，未 onComplete")
+            presentError(\.annotationErrorNoResultMetadata)
+            return
+        }
         // 先拆除 UI（参照 capcap L1669-1670，避免编码阻塞主线程造成卡顿）。
         tearDown()
         do {
-            let output = try encoder.encode(image: image, quality: .original)
-            let snapshot = outputConfigurationProvider()
-            let fileName = ScreenshotSaver.timestampedFileName(
-                prefix: snapshot.fileNamePrefix,
-                quality: .original,
-                date: Date()
-            )
-            _ = try saver.save(
-                output: output,
-                quality: .original,
-                fileName: fileName,
-                directory: snapshot.saveDirectory
-            )
+            _ = try resultRunner.run(result: result, intent: .save, pinOrigin: nil)
             Self.logger.info("[SSDBG] editor.save 成功 → onComplete(nil)")
             onComplete(nil)
         } catch {
@@ -895,10 +915,9 @@ final class AnnotationEditorController {
         }
     }
 
-    /// 钉图。compositeImage → pinResultBuilder → pinService.pinFromPipeline(at:)，
+    /// 钉图。compositeImage → makeResult → `resultRunner.run(.pin, pinOrigin:)`，
     /// 失败显示错误，成功 onComplete(nil)。
-    /// 原位钉住（参照 capcap `EditWindowController.pin` → `PinLauncher.pin(at: selectionRect.origin)`）：
-    /// 把选区在屏幕上的左下原点作为钉图窗口原点传入。
+    /// 原位钉住：把选区在屏幕上的左下原点作为钉图窗口原点传入。
     func pin() {
         Self.logger.info("[SSDBG] editor.pin 进入")
         canvasView?.commitActiveTextEditing()
@@ -907,21 +926,15 @@ final class AnnotationEditorController {
             presentError(\.annotationErrorNoImage)
             return
         }
-        guard let pinService else {
-            Self.logger.notice("[SSDBG] editor.pin: 无 pinService → 保留状态，未 onComplete")
-            presentError(\.annotationErrorPinNotWired)
-            return
-        }
-        guard let result = pinResultBuilder(image) else {
-            Self.logger.notice("[SSDBG] editor.pin: pinResultBuilder 失败 → 保留状态，未 onComplete")
+        guard let result = makeResult(image) else {
+            Self.logger.notice("[SSDBG] editor.pin: makeResult 失败 → 保留状态，未 onComplete")
             presentError(\.annotationErrorNoResultMetadata)
             return
         }
         do {
-            // 选区视图坐标 → 屏幕坐标（AppKit）。hostSelectionView 缺失（全屏直进编辑器）
-            // 时回退 nil，退回居中。
+            // 选区视图坐标 → 屏幕坐标（AppKit）。hostSelectionView 缺失时回退 nil，退回居中。
             let origin = selectionScreenOrigin()
-            _ = try pinService.pinFromPipeline(result: result, at: origin)
+            _ = try resultRunner.run(result: result, intent: .pin, pinOrigin: origin)
             Self.logger.info("[SSDBG] editor.pin 成功 → onComplete(nil)")
             tearDown()
             onComplete(nil)
