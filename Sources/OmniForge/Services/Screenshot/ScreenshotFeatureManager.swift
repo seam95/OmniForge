@@ -216,23 +216,23 @@ final class ScreenshotFeatureManager: ObservableObject {
     func handleAllInOne() {
         // CapCap: while recording, all-in-one hotkey stops and saves.
         if recordingCoordinator.isRecording {
-            Self.logger.info("[SSDBG] handleAllInOne: recording active -> stopAndSave")
+            Self.logger.info("handleAllInOne: recording active -> stopAndSave")
             recordingCoordinator.stopAndSave()
             lastOutcome = .triggered(mode: .allInOne, intent: .save)
             lastError = nil
             return
         }
         guard preflightCheck() else {
-            Self.logger.notice("[SSDBG] handleAllInOne: preflightCheck failed")
+            Self.logger.notice("handleAllInOne: preflightCheck failed")
             return
         }
         guard !isSessionRunning else {
-            Self.logger.notice("[SSDBG] handleAllInOne: blocked (isSessionRunning=true)")
+            Self.logger.notice("handleAllInOne: blocked (isSessionRunning=true)")
             recordBusyError()
             return
         }
 
-        Self.logger.info("[SSDBG] handleAllInOne: start session, isSessionRunning=true")
+        Self.logger.info("handleAllInOne: start session, isSessionRunning=true")
         isSessionRunning = true
         // Defensive: all-in-one is editor path; never leave copy/pin direct-out callbacks armed.
         overlayController.onDirectCaptureResult = nil
@@ -245,7 +245,7 @@ final class ScreenshotFeatureManager: ObservableObject {
             guard let self else { return }
             // Editor finished inside overlay; only reset session state here.
             // Record-from-editor also completes with nil, then coordinator owns busy.
-            Self.logger.info("[SSDBG] handleAllInOne completion: isSessionRunning=false")
+            Self.logger.info("handleAllInOne completion: isSessionRunning=false")
             self.isSessionRunning = false
             self.activeSession = nil
         }
@@ -260,16 +260,16 @@ final class ScreenshotFeatureManager: ObservableObject {
                 handleAllInOne()
                 return
             }
-            Self.logger.notice("[SSDBG] handleHotkey(\(mode.rawValue)): recording busy")
+            Self.logger.notice("handleHotkey(\(mode.rawValue)): recording busy")
             recordBusyError()
             return
         }
         guard preflightCheck() else {
-            Self.logger.notice("[SSDBG] handleHotkey(\(mode.rawValue)): preflightCheck failed")
+            Self.logger.notice("handleHotkey(\(mode.rawValue)): preflightCheck failed")
             return
         }
         guard !isSessionRunning else {
-            Self.logger.notice("[SSDBG] handleHotkey(\(mode.rawValue)): blocked (isSessionRunning=true)")
+            Self.logger.notice("handleHotkey(\(mode.rawValue)): blocked (isSessionRunning=true)")
             recordBusyError()
             return
         }
@@ -278,14 +278,14 @@ final class ScreenshotFeatureManager: ObservableObject {
         case .allInOne:
             handleAllInOne()
         case .fullScreen:
-            Self.logger.info("[SSDBG] handleHotkey(fullScreen): start session, isSessionRunning=true")
+            Self.logger.info("handleHotkey(fullScreen): start session, isSessionRunning=true")
             isSessionRunning = true
             let session = FullscreenCaptureSession(
                 captureClient: captureClient,
                 overlayController: overlayController
             ) { [weak self] _ in
                 guard let self else { return }
-                Self.logger.info("[SSDBG] handleHotkey(fullScreen) completion: isSessionRunning=false")
+                Self.logger.info("handleHotkey(fullScreen) completion: isSessionRunning=false")
                 self.isSessionRunning = false
                 self.activeSession = nil
             }
@@ -297,22 +297,22 @@ final class ScreenshotFeatureManager: ObservableObject {
     /// Dedicated record entry: region select then begin recording (no editor).
     func handleRecord() {
         if recordingCoordinator.isRecording {
-            Self.logger.info("[SSDBG] handleRecord: recording active -> stopAndSave")
+            Self.logger.info("handleRecord: recording active -> stopAndSave")
             recordingCoordinator.stopAndSave()
             lastError = nil
             return
         }
         guard preflightCheck() else {
-            Self.logger.notice("[SSDBG] handleRecord: preflightCheck failed")
+            Self.logger.notice("handleRecord: preflightCheck failed")
             return
         }
         guard !isSessionRunning else {
-            Self.logger.notice("[SSDBG] handleRecord: blocked (isSessionRunning=true)")
+            Self.logger.notice("handleRecord: blocked (isSessionRunning=true)")
             recordBusyError()
             return
         }
 
-        Self.logger.info("[SSDBG] handleRecord: start region selection session")
+        Self.logger.info("handleRecord: start region selection session")
         isSessionRunning = true
         // 与 copy/pin 直出互斥：录屏只走 rect-only 回调。
         overlayController.entryIntent = nil
@@ -322,7 +322,7 @@ final class ScreenshotFeatureManager: ObservableObject {
         }
         overlayController.startCapture(screenSnapshots: [:]) { [weak self] _ in
             guard let self else { return }
-            Self.logger.info("[SSDBG] handleRecord selection completion: isSessionRunning=false")
+            Self.logger.info("handleRecord selection completion: isSessionRunning=false")
             // Defensive: cancel/tearDown also nils this; clear again when session ends.
             self.overlayController.onDirectRegionSelection = nil
             self.isSessionRunning = false
@@ -473,21 +473,21 @@ final class ScreenshotFeatureManager: ObservableObject {
     private func startDirectCapture(intent: ScreenshotEntryIntent) {
         // copy/pin 不承担 stopAndSave：录屏中一律 busy。
         if recordingCoordinator.isRecording {
-            Self.logger.notice("[SSDBG] startDirectCapture(\(intent.rawValue)): recording busy")
+            Self.logger.notice("startDirectCapture(\(intent.rawValue)): recording busy")
             recordBusyError()
             return
         }
         guard preflightCheck() else {
-            Self.logger.notice("[SSDBG] startDirectCapture(\(intent.rawValue)): preflightCheck failed")
+            Self.logger.notice("startDirectCapture(\(intent.rawValue)): preflightCheck failed")
             return
         }
         guard !isSessionRunning else {
-            Self.logger.notice("[SSDBG] startDirectCapture(\(intent.rawValue)): blocked (isSessionRunning=true)")
+            Self.logger.notice("startDirectCapture(\(intent.rawValue)): blocked (isSessionRunning=true)")
             recordBusyError()
             return
         }
 
-        Self.logger.info("[SSDBG] startDirectCapture(\(intent.rawValue)): start session")
+        Self.logger.info("startDirectCapture(\(intent.rawValue)): start session")
         isSessionRunning = true
         // Do not mark `.triggered` until pipeline succeeds — crop/capture/cancel must not look like success.
         awaitingDirectCaptureResult = true
@@ -504,7 +504,7 @@ final class ScreenshotFeatureManager: ObservableObject {
             entryIntent: intent
         ) { [weak self] _ in
             guard let self else { return }
-            Self.logger.info("[SSDBG] startDirectCapture(\(intent.rawValue)) completion: isSessionRunning=false")
+            Self.logger.info("startDirectCapture(\(intent.rawValue)) completion: isSessionRunning=false")
             // Capture-path failure / cancel: overlay ends with onComplete(nil) and never calls
             // onDirectCaptureResult. Settle awaiting before clearing session flags.
             if self.awaitingDirectCaptureResult {
@@ -535,7 +535,7 @@ final class ScreenshotFeatureManager: ObservableObject {
     ) {
         // Defensive: cancel/tearDown already settled the session; ignore late success callbacks.
         guard awaitingDirectCaptureResult else {
-            Self.logger.notice("[SSDBG] finishDirectCapture: ignored (not awaiting)")
+            Self.logger.notice("finishDirectCapture: ignored (not awaiting)")
             return
         }
         awaitingDirectCaptureResult = false
@@ -546,12 +546,12 @@ final class ScreenshotFeatureManager: ObservableObject {
             _ = try pipeline.run(result: result, intent: intent, pinOrigin: origin)
             lastOutcome = .triggered(mode: .allInOne, intent: intent)
             lastError = nil
-            Self.logger.info("[SSDBG] finishDirectCapture: pipeline \(intent.rawValue) ok")
+            Self.logger.info("finishDirectCapture: pipeline \(intent.rawValue) ok")
         } catch {
             let message = error.localizedDescription
             lastError = message
             lastOutcome = .ignored(message)
-            Self.logger.notice("[SSDBG] finishDirectCapture: pipeline 失败 \(message)")
+            Self.logger.notice("finishDirectCapture: pipeline 失败 \(message)")
         }
     }
 
@@ -559,7 +559,7 @@ final class ScreenshotFeatureManager: ObservableObject {
     private func recordDirectCaptureCancel() {
         lastError = nil
         lastOutcome = nil
-        Self.logger.info("[SSDBG] recordDirectCaptureCancel: user cancelled direct capture")
+        Self.logger.info("recordDirectCaptureCancel: user cancelled direct capture")
     }
 
     /// Crop / captureRegion / buildResult ended without a successful direct-out result.
@@ -571,7 +571,7 @@ final class ScreenshotFeatureManager: ObservableObject {
         )
         lastError = message
         lastOutcome = .ignored(message)
-        Self.logger.notice("[SSDBG] recordDirectCaptureFailure: \(message)")
+        Self.logger.notice("recordDirectCaptureFailure: \(message)")
     }
 
     private func resolvedResultPipeline() -> ScreenshotResultRunning {

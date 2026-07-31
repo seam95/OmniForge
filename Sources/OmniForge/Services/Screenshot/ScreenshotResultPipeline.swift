@@ -15,7 +15,7 @@ enum ScreenshotPipelineError: Error, Equatable {
     case directoryCreationFailed(String)
     case writeFailed(String)
     case invalidFileNamePrefix(String)
-    case pasteboardEmptyPayload
+    case saveEmptyPayload
     case pasteboardWriteFailed
     case unsupportedFormat(String)
     case pinServiceUnavailable
@@ -223,7 +223,7 @@ final class ScreenshotResultPipeline: ScreenshotResultRunning {
         case let .writeFailed(path):
             return .writeFailed(path)
         case .emptyPayload:
-            return .pasteboardEmptyPayload
+            return .saveEmptyPayload
         }
     }
 }

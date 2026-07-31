@@ -221,7 +221,7 @@ final class CaptureOverlayController {
         screenSnapshots preSnapshots: [CGDirectDisplayID: CGImage] = [:],
         completion: @escaping (NSImage?) -> Void
     ) {
-        Self.logger.info("[SSDBG] startCapture: 入口，设置 onComplete")
+        Self.logger.info("startCapture: 入口，设置 onComplete")
         self.isTornDown = false
         self.endedByUserCancel = false
         self.snapshotGeneration &+= 1
@@ -305,7 +305,7 @@ final class CaptureOverlayController {
         on screen: NSScreen,
         completion: @escaping (NSImage?) -> Void
     ) {
-        Self.logger.info("[SSDBG] startEditor: 入口，设置 onComplete")
+        Self.logger.info("startEditor: 入口，设置 onComplete")
         self.isTornDown = false
         self.endedByUserCancel = false
         self.snapshotGeneration &+= 1
@@ -357,7 +357,7 @@ final class CaptureOverlayController {
             sourceBackingScaleFactor: screen.backingScaleFactor,
             onComplete: { [weak self] finalImage in
                 guard let self else { return }
-                Self.logger.info("[SSDBG] startEditor 编辑器 onComplete(#1) 被调用，image=\(finalImage != nil)")
+                Self.logger.info("startEditor 编辑器 onComplete(#1) 被调用，image=\(finalImage != nil)")
                 self.tearDown()
                 self.onComplete?(finalImage)
                 self.onComplete = nil
@@ -507,7 +507,7 @@ final class CaptureOverlayController {
     }
 
     private func handleCancel() {
-        Self.logger.info("[SSDBG] handleCancel(#2) 被调用")
+        Self.logger.info("handleCancel(#2) 被调用")
         // Mark before tearDown/onComplete so session completion can tell cancel from capture failure.
         endedByUserCancel = true
         tearDown()
@@ -562,7 +562,7 @@ extension CaptureOverlayController: SelectionViewDelegate {
               let screen = panel.screen,
               let displayID = screen.displayID,
               let selectionView = selectionViews[panel] else {
-            Self.logger.notice("[SSDBG] selectionDidComplete(#3) guard 失败：找不到选区面板")
+            Self.logger.notice("selectionDidComplete(#3) guard 失败：找不到选区面板")
             tearDown()
             onComplete?(nil)
             onComplete = nil
@@ -590,7 +590,7 @@ extension CaptureOverlayController: SelectionViewDelegate {
         let pinOrigin = NSPoint(x: screenRect.minX, y: screenRect.minY)
 
         // copy/pin 直出：裁切图 → ScreenshotResult → 回调 manager，不进编辑器。
-        if let intent = entryIntent, intent == .copy || intent == .pin {
+        if let intent = entryIntent, [.copy, .pin].contains(intent) {
             deliverDirectCapture(
                 intent: intent,
                 selectionViewRect: rect,
@@ -619,7 +619,7 @@ extension CaptureOverlayController: SelectionViewDelegate {
 
         // 回退：实时捕获
         guard let client = captureClient else {
-            Self.logger.notice("[SSDBG] selectionDidComplete(#4) 无 captureClient")
+            Self.logger.notice("selectionDidComplete(#4) 无 captureClient")
             tearDown()
             onComplete?(nil)
             onComplete = nil
@@ -644,7 +644,7 @@ extension CaptureOverlayController: SelectionViewDelegate {
                 }
             } catch {
                 await MainActor.run {
-                    Self.logger.notice("[SSDBG] captureRegion(#5) 抛错：\(error.localizedDescription)")
+                    Self.logger.notice("captureRegion(#5) 抛错：\(error.localizedDescription)")
                     self.tearDown()
                     self.onComplete?(nil)
                     self.onComplete = nil
@@ -687,7 +687,7 @@ extension CaptureOverlayController: SelectionViewDelegate {
 
         // 回退：实时 captureRegion
         guard let client = captureClient else {
-            Self.logger.notice("[SSDBG] deliverDirectCapture: 无 captureClient")
+            Self.logger.notice("deliverDirectCapture: 无 captureClient")
             tearDown()
             onComplete?(nil)
             onComplete = nil
@@ -707,7 +707,7 @@ extension CaptureOverlayController: SelectionViewDelegate {
                     // Cancel / new session: drop captured callback — no late copy/pin side effects.
                     guard !self.isTornDown, self.snapshotGeneration == generation else {
                         Self.logger.info(
-                            "[SSDBG] deliverDirectCapture async success ignored (tornDown/generation)"
+                            "deliverDirectCapture async success ignored (tornDown/generation)"
                         )
                         return
                     }
@@ -725,12 +725,12 @@ extension CaptureOverlayController: SelectionViewDelegate {
                 await MainActor.run {
                     guard !self.isTornDown, self.snapshotGeneration == generation else {
                         Self.logger.info(
-                            "[SSDBG] deliverDirectCapture async error ignored (tornDown/generation)"
+                            "deliverDirectCapture async error ignored (tornDown/generation)"
                         )
                         return
                     }
                     Self.logger.notice(
-                        "[SSDBG] deliverDirectCapture captureRegion 抛错：\(error.localizedDescription)"
+                        "deliverDirectCapture captureRegion 抛错：\(error.localizedDescription)"
                     )
                     self.tearDown()
                     self.onComplete?(nil)
@@ -753,7 +753,7 @@ extension CaptureOverlayController: SelectionViewDelegate {
         // Async race: cancel/tearDown (or a newer session) must not invoke success callback.
         guard !isTornDown, snapshotGeneration == expectedGeneration else {
             Self.logger.info(
-                "[SSDBG] finishDirectCapture: ignored (tornDown=\(self.isTornDown), gen match=\(self.snapshotGeneration == expectedGeneration))"
+                "finishDirectCapture: ignored (tornDown=\(self.isTornDown), gen match=\(self.snapshotGeneration == expectedGeneration))"
             )
             return
         }
@@ -764,14 +764,14 @@ extension CaptureOverlayController: SelectionViewDelegate {
             screen: screen,
             selectionViewRect: selectionViewRect
         ) else {
-            Self.logger.notice("[SSDBG] finishDirectCapture: 构造 ScreenshotResult 失败")
+            Self.logger.notice("finishDirectCapture: 构造 ScreenshotResult 失败")
             tearDown()
             onComplete?(nil)
             onComplete = nil
             return
         }
 
-        Self.logger.info("[SSDBG] finishDirectCapture: intent=\(intent.rawValue)，直出完成")
+        Self.logger.info("finishDirectCapture: intent=\(intent.rawValue)，直出完成")
         // Callback manager (pipeline) before session completion so awaitingDirectCaptureResult
         // is settled before onComplete clears the session — avoids false failure on success.
         // pinOrigin 仅 pin 有意义；copy 也传入无害，manager 可忽略。
@@ -835,7 +835,7 @@ extension CaptureOverlayController: SelectionViewDelegate {
     ) {
         guard editorEnabled else {
             // 纯捕获模式：直接回调并拆除
-            Self.logger.info("[SSDBG] handleCapturedImage(#6) 纯捕获模式完成")
+            Self.logger.info("handleCapturedImage(#6) 纯捕获模式完成")
             tearDown()
             onComplete?(image)
             onComplete = nil
@@ -843,7 +843,7 @@ extension CaptureOverlayController: SelectionViewDelegate {
         }
 
         // 编辑器模式：在 SelectionView 内嵌入编辑器，与之共享窗口。
-        Self.logger.info("[SSDBG] handleCapturedImage: 进入编辑器模式，等待编辑器 onComplete")
+        Self.logger.info("handleCapturedImage: 进入编辑器模式，等待编辑器 onComplete")
         selectionView.selectionLocked = true
         selectionView.selectionInteractionEnabled = true
         selectionView.annotationToolActive = true
@@ -873,10 +873,10 @@ extension CaptureOverlayController: SelectionViewDelegate {
             sourceBackingScaleFactor: pinScreen?.backingScaleFactor ?? 1,
             onComplete: { [weak self] finalImage in
                 guard let self else { return }
-                Self.logger.info("[SSDBG] handleCapturedImage 编辑器 onComplete(#7) 被调用，image=\(finalImage != nil)")
+                Self.logger.info("handleCapturedImage 编辑器 onComplete(#7) 被调用，image=\(finalImage != nil)")
                 self.tearDown()
                 let hadCompletion = (self.onComplete != nil)
-                Self.logger.info("[SSDBG] #7 调用 self.onComplete 前，self.onComplete != nil = \(hadCompletion)")
+                Self.logger.info("#7 调用 self.onComplete 前，self.onComplete != nil = \(hadCompletion)")
                 self.onComplete?(finalImage)
                 self.onComplete = nil
             }

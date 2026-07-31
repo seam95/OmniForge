@@ -133,6 +133,17 @@ final class ScreenshotResultPipelineTests: XCTestCase {
         }
     }
 
+    func test_run_save_emptyPayload_mapsToSaveEmptyPayload() throws {
+        let saver = FakeScreenshotSaver()
+        saver.errorToThrow = ScreenshotSavingError.emptyPayload
+        let pipeline = makePipeline(saver: saver)
+        let result = try makeResult()
+
+        XCTAssertThrowsError(try pipeline.run(result: result, intent: .save)) { error in
+            XCTAssertEqual(error as? ScreenshotPipelineError, .saveEmptyPayload)
+        }
+    }
+
     // MARK: - pin
 
     func test_run_pin_success_callsPinServiceWithOrigin() throws {

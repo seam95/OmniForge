@@ -863,42 +863,42 @@ final class AnnotationEditorController {
     /// compositeImage → makeResult → `resultRunner.run(.copy)`，
     /// 失败显示错误（保留编辑器状态，不静默关闭），成功 onComplete(image)。
     func confirm() {
-        Self.logger.info("[SSDBG] editor.confirm 进入")
+        Self.logger.info("editor.confirm 进入")
         canvasView?.commitActiveTextEditing()
         guard let image = compositeImage() else {
-            Self.logger.notice("[SSDBG] editor.confirm: compositeImage 失败 → onComplete(nil)")
+            Self.logger.notice("editor.confirm: compositeImage 失败 → onComplete(nil)")
             presentError(\.annotationErrorNoImage)
             tearDown()
             onComplete(nil)
             return
         }
         guard let result = makeResult(image) else {
-            Self.logger.notice("[SSDBG] editor.confirm: makeResult 失败 → 保留状态，未 onComplete")
+            Self.logger.notice("editor.confirm: makeResult 失败 → 保留状态，未 onComplete")
             presentError(\.annotationErrorNoResultMetadata)
             return
         }
         do {
             _ = try resultRunner.run(result: result, intent: .copy, pinOrigin: nil)
-            Self.logger.info("[SSDBG] editor.confirm 成功 → onComplete(image)")
+            Self.logger.info("editor.confirm 成功 → onComplete(image)")
             tearDown()
             onComplete(image)
         } catch {
-            Self.logger.notice("[SSDBG] editor.confirm: pipeline 抛错 → 保留状态，未 onComplete")
+            Self.logger.notice("editor.confirm: pipeline 抛错 → 保留状态，未 onComplete")
             presentError(error)
         }
     }
 
     /// 静默保存到文件。先 tearDown，再 pipeline `.save`；失败仍呈现错误并 onComplete(nil)。
     func save() {
-        Self.logger.info("[SSDBG] editor.save 进入")
+        Self.logger.info("editor.save 进入")
         canvasView?.commitActiveTextEditing()
         guard let image = compositeImage() else {
-            Self.logger.notice("[SSDBG] editor.save: compositeImage 失败 → 保留状态，未 onComplete")
+            Self.logger.notice("editor.save: compositeImage 失败 → 保留状态，未 onComplete")
             presentError(\.annotationErrorNoImage)
             return
         }
         guard let result = makeResult(image) else {
-            Self.logger.notice("[SSDBG] editor.save: makeResult 失败 → 保留状态，未 onComplete")
+            Self.logger.notice("editor.save: makeResult 失败 → 保留状态，未 onComplete")
             presentError(\.annotationErrorNoResultMetadata)
             return
         }
@@ -906,10 +906,10 @@ final class AnnotationEditorController {
         tearDown()
         do {
             _ = try resultRunner.run(result: result, intent: .save, pinOrigin: nil)
-            Self.logger.info("[SSDBG] editor.save 成功 → onComplete(nil)")
+            Self.logger.info("editor.save 成功 → onComplete(nil)")
             onComplete(nil)
         } catch {
-            Self.logger.notice("[SSDBG] editor.save 抛错 → onComplete(nil)")
+            Self.logger.notice("editor.save 抛错 → onComplete(nil)")
             presentError(error)
             onComplete(nil)
         }
@@ -919,15 +919,15 @@ final class AnnotationEditorController {
     /// 失败显示错误，成功 onComplete(nil)。
     /// 原位钉住：把选区在屏幕上的左下原点作为钉图窗口原点传入。
     func pin() {
-        Self.logger.info("[SSDBG] editor.pin 进入")
+        Self.logger.info("editor.pin 进入")
         canvasView?.commitActiveTextEditing()
         guard let image = compositeImage() else {
-            Self.logger.notice("[SSDBG] editor.pin: compositeImage 失败 → 保留状态，未 onComplete")
+            Self.logger.notice("editor.pin: compositeImage 失败 → 保留状态，未 onComplete")
             presentError(\.annotationErrorNoImage)
             return
         }
         guard let result = makeResult(image) else {
-            Self.logger.notice("[SSDBG] editor.pin: makeResult 失败 → 保留状态，未 onComplete")
+            Self.logger.notice("editor.pin: makeResult 失败 → 保留状态，未 onComplete")
             presentError(\.annotationErrorNoResultMetadata)
             return
         }
@@ -935,11 +935,11 @@ final class AnnotationEditorController {
             // 选区视图坐标 → 屏幕坐标（AppKit）。hostSelectionView 缺失时回退 nil，退回居中。
             let origin = selectionScreenOrigin()
             _ = try resultRunner.run(result: result, intent: .pin, pinOrigin: origin)
-            Self.logger.info("[SSDBG] editor.pin 成功 → onComplete(nil)")
+            Self.logger.info("editor.pin 成功 → onComplete(nil)")
             tearDown()
             onComplete(nil)
         } catch {
-            Self.logger.notice("[SSDBG] editor.pin 抛错 → 保留状态，未 onComplete")
+            Self.logger.notice("editor.pin 抛错 → 保留状态，未 onComplete")
             presentError(error)
         }
     }
@@ -953,7 +953,7 @@ final class AnnotationEditorController {
 
     /// 取消/关闭。
     func close() {
-        Self.logger.info("[SSDBG] editor.close 被调用 → onComplete(nil)")
+        Self.logger.info("editor.close 被调用 → onComplete(nil)")
         tearDown()
         onComplete(nil)
     }
@@ -1079,7 +1079,7 @@ final class AnnotationEditorController {
     // MARK: - 拆除
 
     func tearDown() {
-        Self.logger.info("[SSDBG] editor.tearDown 执行")
+        Self.logger.info("editor.tearDown 执行")
         // 停止进行中的长截图，避免回调落到已拆除控制器。
         if isScrollCapturing || isScrollCaptureFinalizing {
             stopManualScrollCapture()
@@ -1449,18 +1449,18 @@ final class AnnotationEditorController {
         do {
             let output = try encoder.encode(image: image, quality: .original)
             guard clipboardWriter.writeImage(output) else {
-                Self.logger.notice("[SSDBG] scroll-crop complete: clipboard write failed → keep editor")
+                Self.logger.notice("scroll-crop complete: clipboard write failed → keep editor")
                 presentError(\.annotationErrorPipelineFormat)
                 loadScrollCaptureImageIntoEditor(image)
                 toolbars.forEach { $0.isHidden = false }
                 bringEditorToFront()
                 return
             }
-            Self.logger.info("[SSDBG] scroll-crop complete: clipboard ok → onComplete(image)")
+            Self.logger.info("scroll-crop complete: clipboard ok → onComplete(image)")
             tearDown()
             onComplete(image)
         } catch {
-            Self.logger.notice("[SSDBG] scroll-crop complete: encode failed → keep editor")
+            Self.logger.notice("scroll-crop complete: encode failed → keep editor")
             presentError(error)
             loadScrollCaptureImageIntoEditor(image)
             toolbars.forEach { $0.isHidden = false }
