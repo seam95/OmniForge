@@ -699,6 +699,8 @@ extension Strings {
         screenshotRequestPermission: "请求屏幕录制权限",
         screenshotHotkeysSection: "快捷键",
         screenshotHotkeyAllInOne: "全能截图",
+        screenshotHotkeyCopy: "截图并复制",
+        screenshotHotkeyPin: "截图并贴图",
         screenshotHotkeyFullscreen: "全屏截图",
         screenshotHotkeyRecord: "屏幕录制",
         screenshotOutputSection: "输出",

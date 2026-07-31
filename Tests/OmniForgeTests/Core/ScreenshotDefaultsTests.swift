@@ -37,7 +37,7 @@ final class ScreenshotDefaultsTests: XCTestCase {
         XCTAssertNil(registration["screenshot.includePointer"])
         XCTAssertNil(registration["screenshot.windowShadow"])
 
-        // 其它截图输出与快捷键默认仍保留。
+        // 其它截图输出与快捷键默认仍保留（含 copy/pin 与重排后的 fullscreen/record）。
         XCTAssertEqual(
             registration[UserDefaultsKeys.screenshotSaveDirectoryPath] as? String,
             ScreenshotOutputConfiguration.defaultDirectoryPath
@@ -47,7 +47,26 @@ final class ScreenshotDefaultsTests: XCTestCase {
             ScreenshotOutputConfiguration.defaultPrefix
         )
         XCTAssertNotNil(registration[UserDefaultsKeys.screenshotHotkeyAllInOneKeyCode])
+        XCTAssertNotNil(registration[UserDefaultsKeys.screenshotHotkeyCopyKeyCode])
+        XCTAssertNotNil(registration[UserDefaultsKeys.screenshotHotkeyPinKeyCode])
         XCTAssertNotNil(registration[UserDefaultsKeys.screenshotHotkeyFullscreenKeyCode])
+        XCTAssertNotNil(registration[UserDefaultsKeys.screenshotHotkeyRecordKeyCode])
+        XCTAssertEqual(
+            registration[UserDefaultsKeys.screenshotHotkeyCopyKeyCode] as? Int,
+            HotkeyDefinition.defaultScreenshotCopy.keyCode
+        )
+        XCTAssertEqual(
+            registration[UserDefaultsKeys.screenshotHotkeyPinKeyCode] as? Int,
+            HotkeyDefinition.defaultScreenshotPin.keyCode
+        )
+        XCTAssertEqual(
+            registration[UserDefaultsKeys.screenshotHotkeyFullscreenKeyCode] as? Int,
+            HotkeyDefinition.defaultScreenshotFullscreen.keyCode
+        )
+        XCTAssertEqual(
+            registration[UserDefaultsKeys.screenshotHotkeyRecordKeyCode] as? Int,
+            HotkeyDefinition.defaultScreenshotRecord.keyCode
+        )
     }
 
     /// 设置分段源码不再暴露快速操作分组与死设置项；路径/前缀/快捷键入口保留。

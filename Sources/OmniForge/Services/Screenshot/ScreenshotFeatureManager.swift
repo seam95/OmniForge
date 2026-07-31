@@ -6,19 +6,26 @@ import os.log
 
 extension KeyboardShortcuts.Name {
     static let screenshotAllInOne = Self("screenshotAllInOne")
+    static let screenshotCopy = Self("screenshotCopy")
+    static let screenshotPin = Self("screenshotPin")
     static let screenshotFullscreen = Self("screenshotFullscreen")
     static let screenshotRecord = Self("screenshotRecord")
 }
 
-/// Screenshot hotkey entries: all-in-one, fullscreen, and direct record.
+/// 截图快捷键入口：全能 / 复制 / 贴图 / 全屏 / 录屏。
+/// `allCases` 顺序驱动设置页展示，必须为 allInOne → copy → pin → fullscreen → record。
 enum ScreenshotHotkeyEntry: String, CaseIterable, Equatable, Sendable {
     case allInOne
+    case copy
+    case pin
     case fullscreen
     case record
 
     var keyboardShortcutsName: KeyboardShortcuts.Name {
         switch self {
         case .allInOne: return .screenshotAllInOne
+        case .copy: return .screenshotCopy
+        case .pin: return .screenshotPin
         case .fullscreen: return .screenshotFullscreen
         case .record: return .screenshotRecord
         }
@@ -27,6 +34,8 @@ enum ScreenshotHotkeyEntry: String, CaseIterable, Equatable, Sendable {
     var keyCodeDefaultsKey: String {
         switch self {
         case .allInOne: return UserDefaultsKeys.screenshotHotkeyAllInOneKeyCode
+        case .copy: return UserDefaultsKeys.screenshotHotkeyCopyKeyCode
+        case .pin: return UserDefaultsKeys.screenshotHotkeyPinKeyCode
         case .fullscreen: return UserDefaultsKeys.screenshotHotkeyFullscreenKeyCode
         case .record: return UserDefaultsKeys.screenshotHotkeyRecordKeyCode
         }
@@ -35,6 +44,8 @@ enum ScreenshotHotkeyEntry: String, CaseIterable, Equatable, Sendable {
     var modifiersDefaultsKey: String {
         switch self {
         case .allInOne: return UserDefaultsKeys.screenshotHotkeyAllInOneModifiers
+        case .copy: return UserDefaultsKeys.screenshotHotkeyCopyModifiers
+        case .pin: return UserDefaultsKeys.screenshotHotkeyPinModifiers
         case .fullscreen: return UserDefaultsKeys.screenshotHotkeyFullscreenModifiers
         case .record: return UserDefaultsKeys.screenshotHotkeyRecordModifiers
         }
@@ -43,6 +54,8 @@ enum ScreenshotHotkeyEntry: String, CaseIterable, Equatable, Sendable {
     var defaultDefinition: HotkeyDefinition {
         switch self {
         case .allInOne: return .defaultScreenshotAllInOne
+        case .copy: return .defaultScreenshotCopy
+        case .pin: return .defaultScreenshotPin
         case .fullscreen: return .defaultScreenshotFullscreen
         case .record: return .defaultScreenshotRecord
         }
@@ -51,6 +64,8 @@ enum ScreenshotHotkeyEntry: String, CaseIterable, Equatable, Sendable {
     func label(in strings: Strings) -> String {
         switch self {
         case .allInOne: return strings.screenshotHotkeyAllInOne
+        case .copy: return strings.screenshotHotkeyCopy
+        case .pin: return strings.screenshotHotkeyPin
         case .fullscreen: return strings.screenshotHotkeyFullscreen
         case .record: return strings.screenshotHotkeyRecord
         }
@@ -410,11 +425,27 @@ final class ScreenshotFeatureManager: ObservableObject {
         switch entry {
         case .allInOne:
             handleAllInOne()
+        case .copy:
+            // Task 4：选区确认后直出复制；本期仅完成注册/分发桩
+            handleCopy()
+        case .pin:
+            // Task 4：选区确认后直出贴图；本期仅完成注册/分发桩
+            handlePin()
         case .fullscreen:
             handleHotkey(mode: .fullScreen, intent: .copy)
         case .record:
             handleRecord()
         }
+    }
+
+    /// 截图并复制入口（Task 4 实现选区直出；Task 3 仅占位，不启动捕获）。
+    func handleCopy() {
+        // TODO(Task 4): preflight + busy + 全能选区 + pipeline.copy
+    }
+
+    /// 截图并贴图入口（Task 4 实现选区直出；Task 3 仅占位，不启动捕获）。
+    func handlePin() {
+        // TODO(Task 4): preflight + busy + 全能选区 + pipeline.pin
     }
 
     private static func loadHotkey(

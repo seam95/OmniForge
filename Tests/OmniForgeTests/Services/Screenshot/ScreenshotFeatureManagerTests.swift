@@ -1,3 +1,4 @@
+import Carbon
 import Combine
 import KeyboardShortcuts
 import XCTest
@@ -76,19 +77,48 @@ final class ScreenshotFeatureManagerTests: XCTestCase {
         XCTAssertFalse(manager.isListening)
     }
 
-    func test_startListening_注册三入口的快捷键处理器() {
-        // startListening 已在 setUp 调用；校验三个入口都被注册了 onKeyDown
+    func test_startListening_registersFiveHotkeyEntries() {
+        // startListening 已在 setUp 调用；校验五个入口都被注册了 onKeyDown
+        XCTAssertEqual(ScreenshotHotkeyEntry.allCases.count, 5)
+        XCTAssertEqual(
+            ScreenshotHotkeyEntry.allCases.map(\.rawValue),
+            ["allInOne", "copy", "pin", "fullscreen", "record"]
+        )
         XCTAssertNotNil(keyboardShortcuts.keyDownHandlers[KeyboardShortcuts.Name.screenshotAllInOne.rawValue])
+        XCTAssertNotNil(keyboardShortcuts.keyDownHandlers[KeyboardShortcuts.Name.screenshotCopy.rawValue])
+        XCTAssertNotNil(keyboardShortcuts.keyDownHandlers[KeyboardShortcuts.Name.screenshotPin.rawValue])
         XCTAssertNotNil(keyboardShortcuts.keyDownHandlers[KeyboardShortcuts.Name.screenshotFullscreen.rawValue])
         XCTAssertNotNil(keyboardShortcuts.keyDownHandlers[KeyboardShortcuts.Name.screenshotRecord.rawValue])
+        XCTAssertEqual(keyboardShortcuts.keyDownHandlers.count, 5)
+    }
+
+    func test_defaultHotkeys_copy2_pin3_fullscreen4_record5() {
+        XCTAssertEqual(HotkeyDefinition.defaultScreenshotAllInOne.keyCode, Int(kVK_ANSI_1))
+        XCTAssertEqual(HotkeyDefinition.defaultScreenshotCopy.keyCode, Int(kVK_ANSI_2))
+        XCTAssertEqual(HotkeyDefinition.defaultScreenshotPin.keyCode, Int(kVK_ANSI_3))
+        XCTAssertEqual(HotkeyDefinition.defaultScreenshotFullscreen.keyCode, Int(kVK_ANSI_4))
+        XCTAssertEqual(HotkeyDefinition.defaultScreenshotRecord.keyCode, Int(kVK_ANSI_5))
+
+        let controlOptionCommand = HotkeyModifiers([.control, .option, .command])
+        XCTAssertEqual(HotkeyDefinition.defaultScreenshotCopy.modifiers, controlOptionCommand)
+        XCTAssertEqual(HotkeyDefinition.defaultScreenshotPin.modifiers, controlOptionCommand)
+        XCTAssertEqual(HotkeyDefinition.defaultScreenshotFullscreen.modifiers, controlOptionCommand)
+        XCTAssertEqual(HotkeyDefinition.defaultScreenshotRecord.modifiers, controlOptionCommand)
+
+        // manager 无自定义 defaults 时应回落到新默认键
+        XCTAssertEqual(manager.hotkey(for: .allInOne), .defaultScreenshotAllInOne)
+        XCTAssertEqual(manager.hotkey(for: .copy), .defaultScreenshotCopy)
+        XCTAssertEqual(manager.hotkey(for: .pin), .defaultScreenshotPin)
+        XCTAssertEqual(manager.hotkey(for: .fullscreen), .defaultScreenshotFullscreen)
+        XCTAssertEqual(manager.hotkey(for: .record), .defaultScreenshotRecord)
     }
 
     func test_stopListening_复位isListening并清空快捷键() {
         manager.stopListening()
         XCTAssertFalse(manager.isListening)
-        // clearAllKeyboardShortcuts 对三入口 setShortcut(nil)
+        // clearAllKeyboardShortcuts 对五入口 setShortcut(nil)
         let nilCalls = keyboardShortcuts.setShortcutCalls.filter { !$0.hasShortcut }
-        XCTAssertEqual(nilCalls.count, 3)
+        XCTAssertEqual(nilCalls.count, 5)
     }
 
     // MARK: - preflight 三道闸（按 SPEC 顺序：listening → available → granted）
@@ -238,7 +268,7 @@ final class ScreenshotFeatureManagerTests: XCTestCase {
     func test_teardown_清空所有快捷键绑定() {
         manager.teardown()
         let nilCalls = keyboardShortcuts.setShortcutCalls.filter { !$0.hasShortcut }
-        XCTAssertEqual(nilCalls.count, 3, "teardown 应清空三入口快捷键")
+        XCTAssertEqual(nilCalls.count, 5, "teardown 应清空五入口快捷键")
     }
 
     // MARK: - lastError / lastOutcome 传播
