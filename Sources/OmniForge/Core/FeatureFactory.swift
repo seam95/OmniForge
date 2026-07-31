@@ -186,7 +186,13 @@ struct FeatureFactory {
                     overlayController: overlayController,
                     recordingCoordinator: recordingCoordinator
                 )
-                let pipeline = ScreenshotResultPipeline(userDefaults: userDefaults)
+                let pipeline = ScreenshotResultPipeline(
+                    userDefaults: userDefaults,
+                    encoder: outputEncoder,
+                    clipboardWriter: clipboardWriter,
+                    saver: screenshotSaver,
+                    outputConfigurationProvider: { outputConfiguration.load() }
+                )
                 let pinRegistry = PinnedScreenshotRegistry(pipeline: pipeline)
                 pinRegistry.stringsProvider = { L10n(userDefaults: userDefaults).s }
                 let pinBridge = PinnedScreenshotPipelineBridge(registry: pinRegistry)
