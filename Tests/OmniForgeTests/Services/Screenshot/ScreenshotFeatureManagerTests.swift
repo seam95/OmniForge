@@ -456,16 +456,13 @@ final class ScreenshotFeatureManagerTests: XCTestCase {
         manager.handleCopy()
 
         // headless 下会话占住 busy；直出 intent 透传，且不走录屏 rect-only 回调
+        // Outcome stays unset until pipeline succeeds — no false `.triggered` on session start.
         XCTAssertTrue(manager.isBusy)
         XCTAssertEqual(overlay.entryIntent, .copy)
         XCTAssertNotNil(overlay.onDirectCaptureResult)
         XCTAssertNil(overlay.onDirectRegionSelection)
         XCTAssertNil(manager.lastError)
-        guard case let .triggered(mode, intent) = manager.lastOutcome else {
-            return XCTFail("expected triggered copy, got \(String(describing: manager.lastOutcome))")
-        }
-        XCTAssertEqual(mode, .allInOne)
-        XCTAssertEqual(intent, .copy)
+        XCTAssertNil(manager.lastOutcome)
 
         // busy 互斥：二次 copy 被拒
         manager.handleCopy()
@@ -492,11 +489,7 @@ final class ScreenshotFeatureManagerTests: XCTestCase {
         XCTAssertNotNil(overlay.onDirectCaptureResult)
         XCTAssertNil(overlay.onDirectRegionSelection)
         XCTAssertNil(manager.lastError)
-        guard case let .triggered(mode, intent) = manager.lastOutcome else {
-            return XCTFail("expected triggered pin, got \(String(describing: manager.lastOutcome))")
-        }
-        XCTAssertEqual(mode, .allInOne)
-        XCTAssertEqual(intent, .pin)
+        XCTAssertNil(manager.lastOutcome)
     }
 
     func test_onKeyDown_copy入口分发到handleCopy() async {
@@ -670,6 +663,120 @@ final class ScreenshotFeatureManagerTests: XCTestCase {
         guard case .ignored = manager.lastOutcome else {
             return XCTFail("expected ignored on pipeline failure")
         }
+    }
+
+    /// Overlay crop/capture/build failure (or cancel) ends with onComplete(nil) and never
+    /// invokes onDirectCaptureResult — manager must not leave pure `.triggered` success.
+    func test_directCapture_sessionEndsWithoutResult_recordsCaptureFailure() {
+        let overlay = CaptureOverlayController(captureClient: captureClient)
+        let runner = FakeScreenshotResultRunner()
+        manager = ScreenshotFeatureManager(
+            userDefaults: userDefaults,
+            isFeatureAvailable: { true },
+            isScreenRecordingGranted: { true },
+            stringsProvider: { .en },
+            keyboardShortcuts: keyboardShortcuts,
+            captureClient: captureClient,
+            overlayController: overlay,
+            resultPipeline: runner
+        )
+        manager.startListening()
+        manager.handleCopy()
+
+        XCTAssertTrue(manager.isBusy)
+        XCTAssertNil(manager.lastOutcome, "must not mark triggered before result settles")
+        XCTAssertNil(manager.lastError)
+
+        // Simulate overlay capture-path failure / cancel: tearDown + onComplete(nil)
+        // without onDirectCaptureResult (same end state as crop/build failure).
+        overlay.selectionDidCancel()
+
+        XCTAssertFalse(manager.isBusy)
+        XCTAssertEqual(runner.calls.count, 0, "pipeline must not run without a result")
+        XCTAssertNotNil(manager.lastError)
+        let expected = String(format: Strings.en.screenshotCaptureFailedFormat, "capture ended without result")
+        XCTAssertEqual(manager.lastError, expected)
+        guard case let .ignored(reason) = manager.lastOutcome else {
+            return XCTFail("expected ignored, got \(String(describing: manager.lastOutcome))")
+        }
+        XCTAssertEqual(reason, expected)
+        if case .triggered = manager.lastOutcome {
+            XCTFail("must not leave pure .triggered after capture-path failure")
+        }
+    }
+
+    func test_directCapture_pinSessionEndsWithoutResult_recordsCaptureFailure() {
+        let overlay = CaptureOverlayController(captureClient: captureClient)
+        manager = ScreenshotFeatureManager(
+            userDefaults: userDefaults,
+            isFeatureAvailable: { true },
+            isScreenRecordingGranted: { true },
+            stringsProvider: { .en },
+            keyboardShortcuts: keyboardShortcuts,
+            captureClient: captureClient,
+            overlayController: overlay
+        )
+        manager.startListening()
+        manager.handlePin()
+        XCTAssertNil(manager.lastOutcome)
+
+        overlay.selectionDidCancel()
+
+        XCTAssertFalse(manager.isBusy)
+        XCTAssertNotNil(manager.lastError)
+        guard case .ignored = manager.lastOutcome else {
+            return XCTFail("expected ignored after pin capture-path failure")
+        }
+        if case .triggered = manager.lastOutcome {
+            XCTFail("must not leave pure .triggered after pin capture-path failure")
+        }
+    }
+
+    func test_finishDirectCapture_successStillMarksTriggeredAfterPipeline() {
+        let overlay = CaptureOverlayController(captureClient: captureClient)
+        let runner = FakeScreenshotResultRunner()
+        manager = ScreenshotFeatureManager(
+            userDefaults: userDefaults,
+            isFeatureAvailable: { true },
+            isScreenRecordingGranted: { true },
+            stringsProvider: { .en },
+            keyboardShortcuts: keyboardShortcuts,
+            captureClient: captureClient,
+            overlayController: overlay,
+            resultPipeline: runner
+        )
+        manager.startListening()
+        manager.handleCopy()
+        XCTAssertNil(manager.lastOutcome, "pre-pipeline: no triggered")
+
+        let target = CaptureTargetScreen(
+            displayID: 1,
+            frameInAppKitPoints: CGRect(x: 0, y: 0, width: 100, height: 100),
+            pointPixelScale: 1
+        )
+        let selection = try! CaptureSelection(
+            targetScreen: target,
+            appKitGlobalRect: CGRect(x: 10, y: 20, width: 40, height: 30)
+        )
+        let result = try! ScreenshotResult(
+            mode: .allInOne,
+            targetScreen: target,
+            selection: selection,
+            timestamp: Date(),
+            pixelImage: FakeScreenCaptureClient.placeholderImage(),
+            windowInfo: nil
+        )
+        overlay.onDirectCaptureResult?(result, .copy, nil)
+        // Session completion after successful direct callback must not overwrite success.
+        overlay.selectionDidCancel()
+
+        XCTAssertEqual(runner.calls.count, 1)
+        XCTAssertNil(manager.lastError)
+        guard case let .triggered(mode, intent) = manager.lastOutcome else {
+            return XCTFail("expected triggered after pipeline ok, got \(String(describing: manager.lastOutcome))")
+        }
+        XCTAssertEqual(mode, .allInOne)
+        XCTAssertEqual(intent, .copy)
     }
 
     // MARK: - 异步等待辅助

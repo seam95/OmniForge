@@ -126,6 +126,9 @@ final class ScreenshotFeatureManager: ObservableObject {
     private var isSessionRunning = false
     /// Active capture session. Kept alive until completion so weak self closures remain valid.
     private var activeSession: ScreenshotCaptureSession?
+    /// True while a copy/pin direct-out session is open and has not yet settled
+    /// (pipeline success/failure via `finishDirectCapture`, or capture/cancel via session completion).
+    private var awaitingDirectCaptureResult = false
 
     /// Busy when a screenshot session or recording session is active.
     var isBusy: Bool { isSessionRunning || recordingCoordinator.isRecording }
@@ -202,6 +205,7 @@ final class ScreenshotFeatureManager: ObservableObject {
         pinnedScreenshotRegistry?.closeAll()
         isSessionRunning = false
         activeSession = nil
+        awaitingDirectCaptureResult = false
         lastOutcome = nil
         lastError = nil
         lastMenuError = nil
@@ -230,6 +234,10 @@ final class ScreenshotFeatureManager: ObservableObject {
 
         Self.logger.info("[SSDBG] handleAllInOne: start session, isSessionRunning=true")
         isSessionRunning = true
+        // Defensive: all-in-one is editor path; never leave copy/pin direct-out callbacks armed.
+        overlayController.onDirectCaptureResult = nil
+        overlayController.entryIntent = nil
+        awaitingDirectCaptureResult = false
         let session = AllInOneCaptureSession(
             captureClient: captureClient,
             overlayController: overlayController
@@ -481,8 +489,8 @@ final class ScreenshotFeatureManager: ObservableObject {
 
         Self.logger.info("[SSDBG] startDirectCapture(\(intent.rawValue)): start session")
         isSessionRunning = true
-        lastOutcome = .triggered(mode: .allInOne, intent: intent)
-        lastError = nil
+        // Do not mark `.triggered` until pipeline succeeds — crop/capture/cancel must not look like success.
+        awaitingDirectCaptureResult = true
 
         // 独立直出回调，严禁复用 onDirectRegionSelection（rect-only 录屏语义）。
         overlayController.onDirectRegionSelection = nil
@@ -497,6 +505,12 @@ final class ScreenshotFeatureManager: ObservableObject {
         ) { [weak self] _ in
             guard let self else { return }
             Self.logger.info("[SSDBG] startDirectCapture(\(intent.rawValue)) completion: isSessionRunning=false")
+            // Capture-path failure / cancel: overlay ends with onComplete(nil) and never calls
+            // onDirectCaptureResult. Record non-success before clearing session flags.
+            if self.awaitingDirectCaptureResult {
+                self.recordDirectCaptureFailure()
+            }
+            self.awaitingDirectCaptureResult = false
             self.isSessionRunning = false
             self.activeSession = nil
             // 防御清空直出状态（overlay.tearDown 已清；manager 侧再清一次）。
@@ -508,11 +522,13 @@ final class ScreenshotFeatureManager: ObservableObject {
     }
 
     /// 选区直出完成后执行 pipeline，更新 lastOutcome / lastError。
+    /// Must run before session `onComplete` so `awaitingDirectCaptureResult` is settled first.
     private func finishDirectCapture(
         result: ScreenshotResult,
         intent: ScreenshotEntryIntent,
         pinOrigin: NSPoint?
     ) {
+        awaitingDirectCaptureResult = false
         do {
             let pipeline = resolvedResultPipeline()
             // pin 用选区左下原点；copy 忽略 pinOrigin。
@@ -527,6 +543,18 @@ final class ScreenshotFeatureManager: ObservableObject {
             lastOutcome = .ignored(message)
             Self.logger.notice("[SSDBG] finishDirectCapture: pipeline 失败 \(message)")
         }
+    }
+
+    /// Crop / captureRegion / buildResult / cancel ended without a successful direct-out result.
+    private func recordDirectCaptureFailure() {
+        let detail = "capture ended without result"
+        let message = String(
+            format: stringsProvider().screenshotCaptureFailedFormat,
+            detail
+        )
+        lastError = message
+        lastOutcome = .ignored(message)
+        Self.logger.notice("[SSDBG] recordDirectCaptureFailure: \(message)")
     }
 
     private func resolvedResultPipeline() -> ScreenshotResultRunning {

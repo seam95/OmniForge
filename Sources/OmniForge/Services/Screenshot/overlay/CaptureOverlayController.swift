@@ -737,11 +737,13 @@ extension CaptureOverlayController: SelectionViewDelegate {
         }
 
         Self.logger.info("[SSDBG] finishDirectCapture: intent=\(intent.rawValue)，直出完成")
+        // Callback manager (pipeline) before session completion so awaitingDirectCaptureResult
+        // is settled before onComplete clears the session — avoids false failure on success.
+        // pinOrigin 仅 pin 有意义；copy 也传入无害，manager 可忽略。
+        callback?(result, intent, pinOrigin)
         tearDown()
         onComplete?(nil)
         onComplete = nil
-        // pinOrigin 仅 pin 有意义；copy 也传入无害，manager 可忽略。
-        callback?(result, intent, pinOrigin)
     }
 
     func selectionDidChange(rect: NSRect) {
