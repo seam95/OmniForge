@@ -26,6 +26,9 @@ final class CaptureOverlayController {
     private var isTornDown = true
     /// 会话代际：startCapture / tearDown 递增，防止复用 controller 时旧 Task.detached 冻屏写入新会话。
     private(set) var snapshotGeneration: UInt64 = 0
+    /// 本次会话是否由用户主动取消（ESC/右键/`selectionDidCancel`）。
+    /// 与 crop/capture/build 失败区分：cancel 不应记成 Capture failed。
+    private(set) var endedByUserCancel = false
     private var escLocalMonitor: Any?
     private var escGlobalMonitor: Any?
     private var rightMouseMonitor: Any?
@@ -220,6 +223,7 @@ final class CaptureOverlayController {
     ) {
         Self.logger.info("[SSDBG] startCapture: 入口，设置 onComplete")
         self.isTornDown = false
+        self.endedByUserCancel = false
         self.snapshotGeneration &+= 1
         self.screenSnapshots = preSnapshots
         self.onComplete = completion
@@ -302,6 +306,9 @@ final class CaptureOverlayController {
         completion: @escaping (NSImage?) -> Void
     ) {
         Self.logger.info("[SSDBG] startEditor: 入口，设置 onComplete")
+        self.isTornDown = false
+        self.endedByUserCancel = false
+        self.snapshotGeneration &+= 1
         self.onComplete = completion
 
         let panel = createOverlayPanel(for: screen)
@@ -501,6 +508,8 @@ final class CaptureOverlayController {
 
     private func handleCancel() {
         Self.logger.info("[SSDBG] handleCancel(#2) 被调用")
+        // Mark before tearDown/onComplete so session completion can tell cancel from capture failure.
+        endedByUserCancel = true
         tearDown()
         onComplete?(nil)
         onComplete = nil
@@ -657,6 +666,8 @@ extension CaptureOverlayController: SelectionViewDelegate {
         // 先清空直出状态，避免 tearDown 后残留；回调在 tearDown 之后触发。
         onDirectCaptureResult = nil
         entryIntent = nil
+        // Capture generation for async fallback: cancel/tearDown must not late-finish into a new session.
+        let generation = snapshotGeneration
 
         // 优先预抓快照裁切
         if let snapshot = screenSnapshots[displayID],
@@ -668,6 +679,7 @@ extension CaptureOverlayController: SelectionViewDelegate {
                 selectionViewRect: selectionViewRect,
                 pinOrigin: pinOrigin,
                 screen: screen,
+                expectedGeneration: generation,
                 callback: callback
             )
             return
@@ -692,17 +704,31 @@ extension CaptureOverlayController: SelectionViewDelegate {
                 )
                 let image = NSImage(cgImage: cgImage, size: selectionViewRect.size)
                 await MainActor.run {
+                    // Cancel / new session: drop captured callback — no late copy/pin side effects.
+                    guard !self.isTornDown, self.snapshotGeneration == generation else {
+                        Self.logger.info(
+                            "[SSDBG] deliverDirectCapture async success ignored (tornDown/generation)"
+                        )
+                        return
+                    }
                     self.finishDirectCapture(
                         image: image,
                         intent: intent,
                         selectionViewRect: selectionViewRect,
                         pinOrigin: pinOrigin,
                         screen: screen,
+                        expectedGeneration: generation,
                         callback: callback
                     )
                 }
             } catch {
                 await MainActor.run {
+                    guard !self.isTornDown, self.snapshotGeneration == generation else {
+                        Self.logger.info(
+                            "[SSDBG] deliverDirectCapture async error ignored (tornDown/generation)"
+                        )
+                        return
+                    }
                     Self.logger.notice(
                         "[SSDBG] deliverDirectCapture captureRegion 抛错：\(error.localizedDescription)"
                     )
@@ -721,8 +747,17 @@ extension CaptureOverlayController: SelectionViewDelegate {
         selectionViewRect: NSRect,
         pinOrigin: NSPoint,
         screen: NSScreen,
+        expectedGeneration: UInt64,
         callback: ((ScreenshotResult, ScreenshotEntryIntent, NSPoint?) -> Void)?
     ) {
+        // Async race: cancel/tearDown (or a newer session) must not invoke success callback.
+        guard !isTornDown, snapshotGeneration == expectedGeneration else {
+            Self.logger.info(
+                "[SSDBG] finishDirectCapture: ignored (tornDown=\(self.isTornDown), gen match=\(self.snapshotGeneration == expectedGeneration))"
+            )
+            return
+        }
+
         guard let result = buildScreenshotResult(
             from: image,
             mode: .allInOne,
@@ -881,6 +916,36 @@ extension CaptureOverlayController {
     /// 测试用：是否已 tearDown（apply 守卫可读）。
     var isTornDownForTesting: Bool {
         isTornDown
+    }
+
+    /// 测试用：模拟 async captureRegion 完成后的 `finishDirectCapture`（含 tearDown/generation 守卫）。
+    /// 用于 cancel race：cancel 后旧 generation 不得再回调 copy/pin。
+    func finishDirectCaptureForTesting(
+        image: NSImage,
+        intent: ScreenshotEntryIntent,
+        selectionViewRect: NSRect,
+        pinOrigin: NSPoint,
+        screen: NSScreen,
+        expectedGeneration: UInt64,
+        callback: ((ScreenshotResult, ScreenshotEntryIntent, NSPoint?) -> Void)?
+    ) {
+        finishDirectCapture(
+            image: image,
+            intent: intent,
+            selectionViewRect: selectionViewRect,
+            pinOrigin: pinOrigin,
+            screen: screen,
+            expectedGeneration: expectedGeneration,
+            callback: callback
+        )
+    }
+
+    /// 测试用：以非用户取消路径结束会话（crop/build/capture 失败语义）。
+    /// 不设置 `endedByUserCancel`，调用 `onComplete(nil)`。
+    func completeSessionWithoutResultForTesting() {
+        tearDown()
+        onComplete?(nil)
+        onComplete = nil
     }
 
     /// 测试用：注册一组 SelectionView，使其进入 controller 的内部交互禁用管理范围。

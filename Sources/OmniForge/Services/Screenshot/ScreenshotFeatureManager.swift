@@ -506,9 +506,14 @@ final class ScreenshotFeatureManager: ObservableObject {
             guard let self else { return }
             Self.logger.info("[SSDBG] startDirectCapture(\(intent.rawValue)) completion: isSessionRunning=false")
             // Capture-path failure / cancel: overlay ends with onComplete(nil) and never calls
-            // onDirectCaptureResult. Record non-success before clearing session flags.
+            // onDirectCaptureResult. Settle awaiting before clearing session flags.
             if self.awaitingDirectCaptureResult {
-                self.recordDirectCaptureFailure()
+                if self.overlayController.endedByUserCancel {
+                    // Match all-in-one cancel: clear session without false "Capture failed" lastError.
+                    self.recordDirectCaptureCancel()
+                } else {
+                    self.recordDirectCaptureFailure()
+                }
             }
             self.awaitingDirectCaptureResult = false
             self.isSessionRunning = false
@@ -528,6 +533,11 @@ final class ScreenshotFeatureManager: ObservableObject {
         intent: ScreenshotEntryIntent,
         pinOrigin: NSPoint?
     ) {
+        // Defensive: cancel/tearDown already settled the session; ignore late success callbacks.
+        guard awaitingDirectCaptureResult else {
+            Self.logger.notice("[SSDBG] finishDirectCapture: ignored (not awaiting)")
+            return
+        }
         awaitingDirectCaptureResult = false
         do {
             let pipeline = resolvedResultPipeline()
@@ -545,7 +555,14 @@ final class ScreenshotFeatureManager: ObservableObject {
         }
     }
 
-    /// Crop / captureRegion / buildResult / cancel ended without a successful direct-out result.
+    /// User cancel (ESC/right-click): no Capture failed lastError (all-in-one cancel semantics).
+    private func recordDirectCaptureCancel() {
+        lastError = nil
+        lastOutcome = nil
+        Self.logger.info("[SSDBG] recordDirectCaptureCancel: user cancelled direct capture")
+    }
+
+    /// Crop / captureRegion / buildResult ended without a successful direct-out result.
     private func recordDirectCaptureFailure() {
         let detail = "capture ended without result"
         let message = String(

@@ -665,8 +665,8 @@ final class ScreenshotFeatureManagerTests: XCTestCase {
         }
     }
 
-    /// Overlay crop/capture/build failure (or cancel) ends with onComplete(nil) and never
-    /// invokes onDirectCaptureResult — manager must not leave pure `.triggered` success.
+    /// True capture-path failure (not user cancel): onComplete(nil) without onDirectCaptureResult
+    /// must record Capture failed lastError and must not leave pure `.triggered`.
     func test_directCapture_sessionEndsWithoutResult_recordsCaptureFailure() {
         let overlay = CaptureOverlayController(captureClient: captureClient)
         let runner = FakeScreenshotResultRunner()
@@ -687,9 +687,8 @@ final class ScreenshotFeatureManagerTests: XCTestCase {
         XCTAssertNil(manager.lastOutcome, "must not mark triggered before result settles")
         XCTAssertNil(manager.lastError)
 
-        // Simulate overlay capture-path failure / cancel: tearDown + onComplete(nil)
-        // without onDirectCaptureResult (same end state as crop/build failure).
-        overlay.selectionDidCancel()
+        // Crop/build/capture failure path: end without result and without user-cancel flag.
+        overlay.completeSessionWithoutResultForTesting()
 
         XCTAssertFalse(manager.isBusy)
         XCTAssertEqual(runner.calls.count, 0, "pipeline must not run without a result")
@@ -705,7 +704,36 @@ final class ScreenshotFeatureManagerTests: XCTestCase {
         }
     }
 
-    func test_directCapture_pinSessionEndsWithoutResult_recordsCaptureFailure() {
+    /// ESC / selection cancel must not leave orange "Capture failed" lastError (all-in-one cancel semantics).
+    func test_directCapture_userCancel_doesNotRecordCaptureFailedLastError() {
+        let overlay = CaptureOverlayController(captureClient: captureClient)
+        let runner = FakeScreenshotResultRunner()
+        manager = ScreenshotFeatureManager(
+            userDefaults: userDefaults,
+            isFeatureAvailable: { true },
+            isScreenRecordingGranted: { true },
+            stringsProvider: { .en },
+            keyboardShortcuts: keyboardShortcuts,
+            captureClient: captureClient,
+            overlayController: overlay,
+            resultPipeline: runner
+        )
+        manager.startListening()
+        manager.handleCopy()
+
+        XCTAssertTrue(manager.isBusy)
+        XCTAssertNil(manager.lastError)
+
+        overlay.selectionDidCancel()
+
+        XCTAssertFalse(manager.isBusy)
+        XCTAssertEqual(runner.calls.count, 0)
+        XCTAssertNil(manager.lastError, "cancel must not set Capture failed lastError")
+        XCTAssertNil(manager.lastOutcome, "cancel settles without triggered/ignored failure")
+        XCTAssertTrue(overlay.endedByUserCancel)
+    }
+
+    func test_directCapture_pinUserCancel_doesNotRecordCaptureFailedLastError() {
         let overlay = CaptureOverlayController(captureClient: captureClient)
         manager = ScreenshotFeatureManager(
             userDefaults: userDefaults,
@@ -723,12 +751,89 @@ final class ScreenshotFeatureManagerTests: XCTestCase {
         overlay.selectionDidCancel()
 
         XCTAssertFalse(manager.isBusy)
-        XCTAssertNotNil(manager.lastError)
-        guard case .ignored = manager.lastOutcome else {
-            return XCTFail("expected ignored after pin capture-path failure")
-        }
+        XCTAssertNil(manager.lastError, "pin cancel must not set Capture failed lastError")
+        XCTAssertNil(manager.lastOutcome)
         if case .triggered = manager.lastOutcome {
-            XCTFail("must not leave pure .triggered after pin capture-path failure")
+            XCTFail("must not leave pure .triggered after pin cancel")
+        }
+    }
+
+    /// Cancel before async direct-out completion: late finish must not run pipeline or set `.triggered`.
+    func test_directCapture_asyncCancelRace_doesNotLateTriggerPipeline() {
+        let overlay = CaptureOverlayController(captureClient: captureClient)
+        let runner = FakeScreenshotResultRunner()
+        manager = ScreenshotFeatureManager(
+            userDefaults: userDefaults,
+            isFeatureAvailable: { true },
+            isScreenRecordingGranted: { true },
+            stringsProvider: { .en },
+            keyboardShortcuts: keyboardShortcuts,
+            captureClient: captureClient,
+            overlayController: overlay,
+            resultPipeline: runner
+        )
+        manager.startListening()
+        manager.handleCopy()
+
+        let generationAtStart = overlay.snapshotGeneration
+        // Capture the manager callback the way deliverDirectCapture does before async work.
+        let lateCallback = overlay.onDirectCaptureResult
+        XCTAssertNotNil(lateCallback)
+
+        // User cancel while captureRegion would still be in flight.
+        overlay.selectionDidCancel()
+        XCTAssertFalse(manager.isBusy)
+        XCTAssertNil(manager.lastError)
+        XCTAssertEqual(runner.calls.count, 0)
+
+        // Late async success after cancel: must be ignored (tornDown + generation + not awaiting).
+        let image = NSImage(
+            cgImage: FakeScreenCaptureClient.placeholderImage(),
+            size: NSSize(width: 1, height: 1)
+        )
+        // Prefer a real screen when available; finishDirectCapture still generation-guards first.
+        let screen = NSScreen.main ?? NSScreen.screens.first
+        if let screen {
+            overlay.finishDirectCaptureForTesting(
+                image: image,
+                intent: .copy,
+                selectionViewRect: NSRect(x: 0, y: 0, width: 40, height: 30),
+                pinOrigin: .zero,
+                screen: screen,
+                expectedGeneration: generationAtStart,
+                callback: lateCallback
+            )
+        } else {
+            // Headless: still exercise manager guard via late callback after cancel settled awaiting.
+            lateCallback?(
+                try! ScreenshotResult(
+                    mode: .allInOne,
+                    targetScreen: CaptureTargetScreen(
+                        displayID: 1,
+                        frameInAppKitPoints: CGRect(x: 0, y: 0, width: 100, height: 100),
+                        pointPixelScale: 1
+                    ),
+                    selection: try! CaptureSelection(
+                        targetScreen: CaptureTargetScreen(
+                            displayID: 1,
+                            frameInAppKitPoints: CGRect(x: 0, y: 0, width: 100, height: 100),
+                            pointPixelScale: 1
+                        ),
+                        appKitGlobalRect: CGRect(x: 10, y: 20, width: 40, height: 30)
+                    ),
+                    timestamp: Date(),
+                    pixelImage: FakeScreenCaptureClient.placeholderImage(),
+                    windowInfo: nil
+                ),
+                .copy,
+                nil
+            )
+        }
+
+        XCTAssertEqual(runner.calls.count, 0, "late async success must not run pipeline")
+        XCTAssertNil(manager.lastError)
+        if case .triggered = manager.lastOutcome {
+            XCTFail("late async success after cancel must not set .triggered")
         }
     }
 
