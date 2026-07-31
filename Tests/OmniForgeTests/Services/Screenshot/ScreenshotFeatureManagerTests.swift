@@ -346,6 +346,332 @@ final class ScreenshotFeatureManagerTests: XCTestCase {
         XCTAssertGreaterThan(keyboardShortcuts.setShortcutCalls.count, applyCountBefore)
     }
 
+    // MARK: - copy / pin 入口（Task 4）
+
+    func test_handleCopy_notListening被preflight忽略() {
+        manager.stopListening()
+        manager.handleCopy()
+        guard case let .ignored(reason) = manager.lastOutcome else {
+            return XCTFail("expected .ignored, got \(String(describing: manager.lastOutcome))")
+        }
+        XCTAssertEqual(reason, Strings.en.screenshotHotkeyIgnoredNotListening)
+        XCTAssertEqual(manager.lastError, Strings.en.screenshotHotkeyIgnoredNotListening)
+        XCTAssertFalse(manager.isBusy)
+    }
+
+    func test_handlePin_permissionDenied() {
+        manager = makeManager(granted: false)
+        manager.handlePin()
+        guard case let .denied(reason) = manager.lastOutcome else {
+            return XCTFail("expected .denied, got \(String(describing: manager.lastOutcome))")
+        }
+        XCTAssertEqual(reason, Strings.en.screenshotPermissionDenied)
+        XCTAssertFalse(manager.isBusy)
+    }
+
+    func test_handleCopy_featureUnavailable() {
+        manager = makeManager(available: false)
+        manager.handleCopy()
+        guard case let .ignored(reason) = manager.lastOutcome else {
+            return XCTFail("expected .ignored, got \(String(describing: manager.lastOutcome))")
+        }
+        XCTAssertEqual(reason, Strings.en.screenshotHotkeyIgnoredUnavailable)
+    }
+
+    func test_handleCopy_busyWhenSessionRunning() {
+        manager.handleAllInOne()
+        XCTAssertNil(manager.lastError)
+
+        manager.handleCopy()
+        XCTAssertEqual(manager.lastError, Strings.en.screenshotSessionAlreadyActive)
+        guard case .ignored = manager.lastOutcome else {
+            return XCTFail("expected busy .ignored, got \(String(describing: manager.lastOutcome))")
+        }
+    }
+
+    func test_handlePin_busyWhenSessionRunning() {
+        manager.handleAllInOne()
+        manager.handlePin()
+        XCTAssertEqual(manager.lastError, Strings.en.screenshotSessionAlreadyActive)
+    }
+
+    func test_handleCopy_recordingBusy_doesNotStopAndSave() {
+        let fakeCoordinator = FakeRecordingSessionCoordinator()
+        fakeCoordinator.isRecording = true
+        let overlay = CaptureOverlayController(captureClient: captureClient)
+        manager = ScreenshotFeatureManager(
+            userDefaults: userDefaults,
+            isFeatureAvailable: { true },
+            isScreenRecordingGranted: { true },
+            stringsProvider: { .en },
+            keyboardShortcuts: keyboardShortcuts,
+            captureClient: captureClient,
+            overlayController: overlay,
+            recordingCoordinator: fakeCoordinator
+        )
+        manager.startListening()
+
+        manager.handleCopy()
+
+        XCTAssertEqual(fakeCoordinator.stopAndSaveCallCount, 0)
+        XCTAssertEqual(manager.lastError, Strings.en.screenshotSessionAlreadyActive)
+        XCTAssertNil(overlay.entryIntent)
+        XCTAssertNil(overlay.onDirectCaptureResult)
+        XCTAssertNil(overlay.onDirectRegionSelection)
+    }
+
+    func test_handlePin_recordingBusy_doesNotStopAndSave() {
+        let fakeCoordinator = FakeRecordingSessionCoordinator()
+        fakeCoordinator.isRecording = true
+        manager = ScreenshotFeatureManager(
+            userDefaults: userDefaults,
+            isFeatureAvailable: { true },
+            isScreenRecordingGranted: { true },
+            stringsProvider: { .en },
+            keyboardShortcuts: keyboardShortcuts,
+            captureClient: captureClient,
+            recordingCoordinator: fakeCoordinator
+        )
+        manager.startListening()
+
+        manager.handlePin()
+
+        XCTAssertEqual(fakeCoordinator.stopAndSaveCallCount, 0)
+        XCTAssertEqual(manager.lastError, Strings.en.screenshotSessionAlreadyActive)
+    }
+
+    func test_handleCopy_successPath_startsDirectOutSessionWithCopyIntent() {
+        let overlay = CaptureOverlayController(captureClient: captureClient)
+        manager = ScreenshotFeatureManager(
+            userDefaults: userDefaults,
+            isFeatureAvailable: { true },
+            isScreenRecordingGranted: { true },
+            stringsProvider: { .en },
+            keyboardShortcuts: keyboardShortcuts,
+            captureClient: captureClient,
+            overlayController: overlay
+        )
+        manager.startListening()
+
+        manager.handleCopy()
+
+        // headless 下会话占住 busy；直出 intent 透传，且不走录屏 rect-only 回调
+        XCTAssertTrue(manager.isBusy)
+        XCTAssertEqual(overlay.entryIntent, .copy)
+        XCTAssertNotNil(overlay.onDirectCaptureResult)
+        XCTAssertNil(overlay.onDirectRegionSelection)
+        XCTAssertNil(manager.lastError)
+        guard case let .triggered(mode, intent) = manager.lastOutcome else {
+            return XCTFail("expected triggered copy, got \(String(describing: manager.lastOutcome))")
+        }
+        XCTAssertEqual(mode, .allInOne)
+        XCTAssertEqual(intent, .copy)
+
+        // busy 互斥：二次 copy 被拒
+        manager.handleCopy()
+        XCTAssertEqual(manager.lastError, Strings.en.screenshotSessionAlreadyActive)
+    }
+
+    func test_handlePin_successPath_startsDirectOutSessionWithPinIntent() {
+        let overlay = CaptureOverlayController(captureClient: captureClient)
+        manager = ScreenshotFeatureManager(
+            userDefaults: userDefaults,
+            isFeatureAvailable: { true },
+            isScreenRecordingGranted: { true },
+            stringsProvider: { .en },
+            keyboardShortcuts: keyboardShortcuts,
+            captureClient: captureClient,
+            overlayController: overlay
+        )
+        manager.startListening()
+
+        manager.handlePin()
+
+        XCTAssertTrue(manager.isBusy)
+        XCTAssertEqual(overlay.entryIntent, .pin)
+        XCTAssertNotNil(overlay.onDirectCaptureResult)
+        XCTAssertNil(overlay.onDirectRegionSelection)
+        XCTAssertNil(manager.lastError)
+        guard case let .triggered(mode, intent) = manager.lastOutcome else {
+            return XCTFail("expected triggered pin, got \(String(describing: manager.lastOutcome))")
+        }
+        XCTAssertEqual(mode, .allInOne)
+        XCTAssertEqual(intent, .pin)
+    }
+
+    func test_onKeyDown_copy入口分发到handleCopy() async {
+        let overlay = CaptureOverlayController(captureClient: captureClient)
+        manager = ScreenshotFeatureManager(
+            userDefaults: userDefaults,
+            isFeatureAvailable: { true },
+            isScreenRecordingGranted: { true },
+            stringsProvider: { .en },
+            keyboardShortcuts: keyboardShortcuts,
+            captureClient: captureClient,
+            overlayController: overlay
+        )
+        manager.startListening()
+
+        keyboardShortcuts.fireKeyDown(for: .screenshotCopy)
+        await waitForMainThreadTasksToDrain()
+
+        XCTAssertEqual(overlay.entryIntent, .copy)
+        XCTAssertTrue(manager.isBusy)
+    }
+
+    func test_onKeyDown_pin入口分发到handlePin() async {
+        let overlay = CaptureOverlayController(captureClient: captureClient)
+        manager = ScreenshotFeatureManager(
+            userDefaults: userDefaults,
+            isFeatureAvailable: { true },
+            isScreenRecordingGranted: { true },
+            stringsProvider: { .en },
+            keyboardShortcuts: keyboardShortcuts,
+            captureClient: captureClient,
+            overlayController: overlay
+        )
+        manager.startListening()
+
+        keyboardShortcuts.fireKeyDown(for: .screenshotPin)
+        await waitForMainThreadTasksToDrain()
+
+        XCTAssertEqual(overlay.entryIntent, .pin)
+        XCTAssertTrue(manager.isBusy)
+    }
+
+    func test_finishDirectCapture_runsPipelineWithCopyIntent() {
+        let overlay = CaptureOverlayController(captureClient: captureClient)
+        let runner = FakeScreenshotResultRunner()
+        manager = ScreenshotFeatureManager(
+            userDefaults: userDefaults,
+            isFeatureAvailable: { true },
+            isScreenRecordingGranted: { true },
+            stringsProvider: { .en },
+            keyboardShortcuts: keyboardShortcuts,
+            captureClient: captureClient,
+            overlayController: overlay,
+            resultPipeline: runner
+        )
+        manager.startListening()
+        manager.handleCopy()
+        XCTAssertTrue(manager.isBusy)
+
+        // 模拟 overlay 选区直出回调（不依赖真实 NSScreen / 选区交互）
+        let target = CaptureTargetScreen(
+            displayID: 1,
+            frameInAppKitPoints: CGRect(x: 0, y: 0, width: 100, height: 100),
+            pointPixelScale: 1
+        )
+        let selection = try! CaptureSelection(
+            targetScreen: target,
+            appKitGlobalRect: CGRect(x: 10, y: 20, width: 40, height: 30)
+        )
+        let result = try! ScreenshotResult(
+            mode: .allInOne,
+            targetScreen: target,
+            selection: selection,
+            timestamp: Date(),
+            pixelImage: FakeScreenCaptureClient.placeholderImage(),
+            windowInfo: nil
+        )
+        // copy 路径 manager 会把 pinOrigin 置 nil 再交给 pipeline
+        overlay.onDirectCaptureResult?(result, .copy, NSPoint(x: 10, y: 20))
+
+        XCTAssertEqual(runner.calls.count, 1)
+        XCTAssertEqual(runner.calls.first?.intent, .copy)
+        XCTAssertNil(runner.calls.first?.pinOrigin)
+        XCTAssertNil(manager.lastError)
+        guard case let .triggered(_, intent) = manager.lastOutcome else {
+            return XCTFail("expected triggered after pipeline ok")
+        }
+        XCTAssertEqual(intent, .copy)
+    }
+
+    func test_finishDirectCapture_pinPassesPinOrigin() {
+        let overlay = CaptureOverlayController(captureClient: captureClient)
+        let runner = FakeScreenshotResultRunner()
+        manager = ScreenshotFeatureManager(
+            userDefaults: userDefaults,
+            isFeatureAvailable: { true },
+            isScreenRecordingGranted: { true },
+            stringsProvider: { .en },
+            keyboardShortcuts: keyboardShortcuts,
+            captureClient: captureClient,
+            overlayController: overlay,
+            resultPipeline: runner
+        )
+        manager.startListening()
+        manager.handlePin()
+
+        let target = CaptureTargetScreen(
+            displayID: 1,
+            frameInAppKitPoints: CGRect(x: 0, y: 0, width: 100, height: 100),
+            pointPixelScale: 1
+        )
+        let selection = try! CaptureSelection(
+            targetScreen: target,
+            appKitGlobalRect: CGRect(x: 10, y: 20, width: 40, height: 30)
+        )
+        let result = try! ScreenshotResult(
+            mode: .allInOne,
+            targetScreen: target,
+            selection: selection,
+            timestamp: Date(),
+            pixelImage: FakeScreenCaptureClient.placeholderImage(),
+            windowInfo: nil
+        )
+        let pinOrigin = NSPoint(x: 10, y: 20)
+        overlay.onDirectCaptureResult?(result, .pin, pinOrigin)
+
+        XCTAssertEqual(runner.calls.count, 1)
+        XCTAssertEqual(runner.calls.first?.intent, .pin)
+        XCTAssertEqual(runner.calls.first?.pinOrigin, pinOrigin)
+        XCTAssertNil(manager.lastError)
+    }
+
+    func test_finishDirectCapture_pipelineFailureRecordsError() {
+        let overlay = CaptureOverlayController(captureClient: captureClient)
+        let runner = FakeScreenshotResultRunner()
+        runner.errorToThrow = ScreenshotPipelineError.pasteboardWriteFailed
+        manager = ScreenshotFeatureManager(
+            userDefaults: userDefaults,
+            isFeatureAvailable: { true },
+            isScreenRecordingGranted: { true },
+            stringsProvider: { .en },
+            keyboardShortcuts: keyboardShortcuts,
+            captureClient: captureClient,
+            overlayController: overlay,
+            resultPipeline: runner
+        )
+        manager.startListening()
+        manager.handleCopy()
+
+        let target = CaptureTargetScreen(
+            displayID: 1,
+            frameInAppKitPoints: CGRect(x: 0, y: 0, width: 100, height: 100),
+            pointPixelScale: 1
+        )
+        let selection = try! CaptureSelection(
+            targetScreen: target,
+            appKitGlobalRect: CGRect(x: 10, y: 20, width: 40, height: 30)
+        )
+        let result = try! ScreenshotResult(
+            mode: .allInOne,
+            targetScreen: target,
+            selection: selection,
+            timestamp: Date(),
+            pixelImage: FakeScreenCaptureClient.placeholderImage(),
+            windowInfo: nil
+        )
+        overlay.onDirectCaptureResult?(result, .copy, nil)
+
+        XCTAssertEqual(runner.calls.count, 1)
+        XCTAssertNotNil(manager.lastError)
+        guard case .ignored = manager.lastOutcome else {
+            return XCTFail("expected ignored on pipeline failure")
+        }
+    }
+
     // MARK: - 异步等待辅助
 
     /// 等待 keyDown 非主线程路径的 Task { @MainActor } 排空（invokeHotkeyEntry 已执行）。

@@ -76,7 +76,16 @@ final class CaptureOverlayController {
 
     /// 选区完成后直接回调 AppKit screen rect（跳过编辑器）。
     /// 用于独立录屏快捷键：框选 → 立即 begin recording。
+    /// **禁止**复用此回调承载 copy/pin（仅 rect，无图像）；见 `onDirectCaptureResult`。
     var onDirectRegionSelection: ((NSRect, NSScreen) -> Void)?
+
+    /// 入口意图：`.copy` / `.pin` 时选区确认后直出到 `onDirectCaptureResult`，不进编辑器。
+    /// 与录屏 `onDirectRegionSelection` 语义解耦；会话结束 / tearDown 时清空。
+    var entryIntent: ScreenshotEntryIntent?
+
+    /// copy/pin 选区直出：裁切图 + `ScreenshotResult` + 可选 pinOrigin（选区屏幕左下）。
+    /// 与 `onDirectRegionSelection`（rect-only 录屏）互不覆盖。
+    var onDirectCaptureResult: ((ScreenshotResult, ScreenshotEntryIntent, NSPoint?) -> Void)?
 
     /// 按捕获入口构造 makeResult 闭包。
     /// - 优先用注入的 `pinResultBuilder`（测试/兼容）。
@@ -363,6 +372,9 @@ final class CaptureOverlayController {
         // Always drop direct-record callback so a cancelled dedicated-record
         // selection cannot hijack the next all-in-one region complete.
         onDirectRegionSelection = nil
+        // copy/pin 直出状态同步清空，避免残留劫持后续全能/录屏路径。
+        onDirectCaptureResult = nil
+        entryIntent = nil
 
         // 先拆除编辑器（避免它继续持有画布）
         editorController?.tearDown()
@@ -563,6 +575,23 @@ extension CaptureOverlayController: SelectionViewDelegate {
 
         // 视图坐标 → CG 坐标
         let captureRect = convertToCGRect(rect, on: screen)
+        let windowRect = selectionView.convert(rect, to: nil)
+        let screenRect = panel.convertToScreen(windowRect)
+        // pinOrigin：选区屏幕左下原点（AppKit）；无法计算时由 pinService 居中。
+        let pinOrigin = NSPoint(x: screenRect.minX, y: screenRect.minY)
+
+        // copy/pin 直出：裁切图 → ScreenshotResult → 回调 manager，不进编辑器。
+        if let intent = entryIntent, intent == .copy || intent == .pin {
+            deliverDirectCapture(
+                intent: intent,
+                selectionViewRect: rect,
+                captureRect: captureRect,
+                pinOrigin: pinOrigin,
+                screen: screen,
+                displayID: displayID
+            )
+            return
+        }
 
         // 优先从预抓快照裁切
         if let snapshot = screenSnapshots[displayID],
@@ -613,6 +642,106 @@ extension CaptureOverlayController: SelectionViewDelegate {
                 }
             }
         }
+    }
+
+    /// copy/pin 选区直出：裁切图像、组装 `ScreenshotResult`、tearDown 后回调。
+    private func deliverDirectCapture(
+        intent: ScreenshotEntryIntent,
+        selectionViewRect: NSRect,
+        captureRect: CGRect,
+        pinOrigin: NSPoint,
+        screen: NSScreen,
+        displayID: CGDirectDisplayID
+    ) {
+        let callback = onDirectCaptureResult
+        // 先清空直出状态，避免 tearDown 后残留；回调在 tearDown 之后触发。
+        onDirectCaptureResult = nil
+        entryIntent = nil
+
+        // 优先预抓快照裁切
+        if let snapshot = screenSnapshots[displayID],
+           let cropped = snapshot.croppingToSelection(globalRect: captureRect, displayID: displayID) {
+            let image = NSImage(cgImage: cropped, size: selectionViewRect.size)
+            finishDirectCapture(
+                image: image,
+                intent: intent,
+                selectionViewRect: selectionViewRect,
+                pinOrigin: pinOrigin,
+                screen: screen,
+                callback: callback
+            )
+            return
+        }
+
+        // 回退：实时 captureRegion
+        guard let client = captureClient else {
+            Self.logger.notice("[SSDBG] deliverDirectCapture: 无 captureClient")
+            tearDown()
+            onComplete?(nil)
+            onComplete = nil
+            return
+        }
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let cgImage = try await client.captureRegion(
+                    captureRect,
+                    displayID: displayID,
+                    scaleFactor: screen.backingScaleFactor
+                )
+                let image = NSImage(cgImage: cgImage, size: selectionViewRect.size)
+                await MainActor.run {
+                    self.finishDirectCapture(
+                        image: image,
+                        intent: intent,
+                        selectionViewRect: selectionViewRect,
+                        pinOrigin: pinOrigin,
+                        screen: screen,
+                        callback: callback
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    Self.logger.notice(
+                        "[SSDBG] deliverDirectCapture captureRegion 抛错：\(error.localizedDescription)"
+                    )
+                    self.tearDown()
+                    self.onComplete?(nil)
+                    self.onComplete = nil
+                }
+            }
+        }
+    }
+
+    /// 直出收尾：构造 result → tearDown → 回调 manager（pipeline 由 manager 执行）。
+    private func finishDirectCapture(
+        image: NSImage,
+        intent: ScreenshotEntryIntent,
+        selectionViewRect: NSRect,
+        pinOrigin: NSPoint,
+        screen: NSScreen,
+        callback: ((ScreenshotResult, ScreenshotEntryIntent, NSPoint?) -> Void)?
+    ) {
+        guard let result = buildScreenshotResult(
+            from: image,
+            mode: .allInOne,
+            screen: screen,
+            selectionViewRect: selectionViewRect
+        ) else {
+            Self.logger.notice("[SSDBG] finishDirectCapture: 构造 ScreenshotResult 失败")
+            tearDown()
+            onComplete?(nil)
+            onComplete = nil
+            return
+        }
+
+        Self.logger.info("[SSDBG] finishDirectCapture: intent=\(intent.rawValue)，直出完成")
+        tearDown()
+        onComplete?(nil)
+        onComplete = nil
+        // pinOrigin 仅 pin 有意义；copy 也传入无害，manager 可忽略。
+        callback?(result, intent, pinOrigin)
     }
 
     func selectionDidChange(rect: NSRect) {

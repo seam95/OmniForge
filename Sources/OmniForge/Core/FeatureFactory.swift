@@ -192,14 +192,16 @@ struct FeatureFactory {
                     stringsProvider: { L10n(userDefaults: userDefaults).s },
                     captureClient: captureClient,
                     overlayController: overlayController,
-                    recordingCoordinator: recordingCoordinator
+                    recordingCoordinator: recordingCoordinator,
+                    resultPipeline: pipeline
                 )
                 let pinRegistry = PinnedScreenshotRegistry(pipeline: pipeline)
                 pinRegistry.stringsProvider = { L10n(userDefaults: userDefaults).s }
                 let pinBridge = PinnedScreenshotPipelineBridge(registry: pinRegistry)
                 pipeline.pinService = pinBridge
-                // 编辑器与钉图菜单共用同一 pipeline 实例（pinService 已挂接）。
+                // 编辑器 / 钉图菜单 / copy·pin 快捷键共用同一 pipeline 实例（pinService 已挂接）。
                 overlayController.setResultPipeline(pipeline)
+                manager.setResultPipeline(pipeline)
                 manager.pinnedScreenshotRegistry = pinRegistry
                 manager.pinPipelineBridge = pinBridge
                 runtime.register(.screenshot, manager: manager)

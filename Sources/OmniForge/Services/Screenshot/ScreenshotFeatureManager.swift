@@ -110,6 +110,8 @@ final class ScreenshotFeatureManager: ObservableObject {
     private let captureClient: ScreenCaptureClient
     private let overlayController: CaptureOverlayController
     private let recordingCoordinator: RecordingSessionCoordinating
+    /// 统一结果出口；copy/pin 直出与编辑器共用。可后置注入（FeatureFactory）。
+    private var resultPipeline: ScreenshotResultRunning?
 
     var pinnedScreenshotRegistry: PinnedScreenshotRegistry?
     var pinPipelineBridge: PinnedScreenshotPipelineBridge?
@@ -136,7 +138,8 @@ final class ScreenshotFeatureManager: ObservableObject {
         keyboardShortcuts: ScreenshotKeyboardShortcutsClient = LiveScreenshotKeyboardShortcutsClient(),
         captureClient: ScreenCaptureClient = ScreenCaptureKitClient(),
         overlayController: CaptureOverlayController? = nil,
-        recordingCoordinator: RecordingSessionCoordinating? = nil
+        recordingCoordinator: RecordingSessionCoordinating? = nil,
+        resultPipeline: ScreenshotResultRunning? = nil
     ) {
         self.userDefaults = userDefaults
         self.isFeatureAvailable = isFeatureAvailable
@@ -150,8 +153,14 @@ final class ScreenshotFeatureManager: ObservableObject {
                 userDefaults: userDefaults,
                 stringsProvider: stringsProvider
             )
+        self.resultPipeline = resultPipeline
         wireRecordingSelection()
         reloadHotkeysFromDefaults()
+    }
+
+    /// 注入共享结果管线（FeatureFactory 在装配 pinBridge 后设置）。
+    func setResultPipeline(_ pipeline: ScreenshotResultRunning?) {
+        resultPipeline = pipeline
     }
 
     // MARK: - Lifecycle
@@ -186,8 +195,10 @@ final class ScreenshotFeatureManager: ObservableObject {
             recordingCoordinator.cancel()
         }
         overlayController.tearDown()
-        // Defensive: tearDown already clears this; keep manager session end explicit.
+        // Defensive: tearDown already clears these; keep manager session end explicit.
         overlayController.onDirectRegionSelection = nil
+        overlayController.onDirectCaptureResult = nil
+        overlayController.entryIntent = nil
         pinnedScreenshotRegistry?.closeAll()
         isSessionRunning = false
         activeSession = nil
@@ -295,6 +306,9 @@ final class ScreenshotFeatureManager: ObservableObject {
 
         Self.logger.info("[SSDBG] handleRecord: start region selection session")
         isSessionRunning = true
+        // 与 copy/pin 直出互斥：录屏只走 rect-only 回调。
+        overlayController.entryIntent = nil
+        overlayController.onDirectCaptureResult = nil
         overlayController.onDirectRegionSelection = { [weak self] screenRect, screen in
             self?.beginRecording(rect: screenRect, screen: screen)
         }
@@ -426,10 +440,8 @@ final class ScreenshotFeatureManager: ObservableObject {
         case .allInOne:
             handleAllInOne()
         case .copy:
-            // Task 4：选区确认后直出复制；本期仅完成注册/分发桩
             handleCopy()
         case .pin:
-            // Task 4：选区确认后直出贴图；本期仅完成注册/分发桩
             handlePin()
         case .fullscreen:
             handleHotkey(mode: .fullScreen, intent: .copy)
@@ -438,14 +450,88 @@ final class ScreenshotFeatureManager: ObservableObject {
         }
     }
 
-    /// 截图并复制入口（Task 4 实现选区直出；Task 3 仅占位，不启动捕获）。
+    /// 截图并复制：全能选区 → 确认一次 → pipeline.copy，不进编辑器。
     func handleCopy() {
-        // TODO(Task 4): preflight + busy + 全能选区 + pipeline.copy
+        startDirectCapture(intent: .copy)
     }
 
-    /// 截图并贴图入口（Task 4 实现选区直出；Task 3 仅占位，不启动捕获）。
+    /// 截图并贴图：全能选区 → 确认一次 → pipeline.pin（原位钉），不进编辑器。
     func handlePin() {
-        // TODO(Task 4): preflight + busy + 全能选区 + pipeline.pin
+        startDirectCapture(intent: .pin)
+    }
+
+    /// copy/pin 共用入口：preflight + busy 互斥后启动带 entryIntent 的全能选区会话。
+    /// 录屏进行中仅拒绝（不 stopAndSave）；与 `handleAllInOne` / `handleRecord` 语义不同。
+    private func startDirectCapture(intent: ScreenshotEntryIntent) {
+        // copy/pin 不承担 stopAndSave：录屏中一律 busy。
+        if recordingCoordinator.isRecording {
+            Self.logger.notice("[SSDBG] startDirectCapture(\(intent.rawValue)): recording busy")
+            recordBusyError()
+            return
+        }
+        guard preflightCheck() else {
+            Self.logger.notice("[SSDBG] startDirectCapture(\(intent.rawValue)): preflightCheck failed")
+            return
+        }
+        guard !isSessionRunning else {
+            Self.logger.notice("[SSDBG] startDirectCapture(\(intent.rawValue)): blocked (isSessionRunning=true)")
+            recordBusyError()
+            return
+        }
+
+        Self.logger.info("[SSDBG] startDirectCapture(\(intent.rawValue)): start session")
+        isSessionRunning = true
+        lastOutcome = .triggered(mode: .allInOne, intent: intent)
+        lastError = nil
+
+        // 独立直出回调，严禁复用 onDirectRegionSelection（rect-only 录屏语义）。
+        overlayController.onDirectRegionSelection = nil
+        overlayController.onDirectCaptureResult = { [weak self] result, captureIntent, pinOrigin in
+            self?.finishDirectCapture(result: result, intent: captureIntent, pinOrigin: pinOrigin)
+        }
+
+        let session = AllInOneCaptureSession(
+            captureClient: captureClient,
+            overlayController: overlayController,
+            entryIntent: intent
+        ) { [weak self] _ in
+            guard let self else { return }
+            Self.logger.info("[SSDBG] startDirectCapture(\(intent.rawValue)) completion: isSessionRunning=false")
+            self.isSessionRunning = false
+            self.activeSession = nil
+            // 防御清空直出状态（overlay.tearDown 已清；manager 侧再清一次）。
+            self.overlayController.onDirectCaptureResult = nil
+            self.overlayController.entryIntent = nil
+        }
+        activeSession = session
+        session.start()
+    }
+
+    /// 选区直出完成后执行 pipeline，更新 lastOutcome / lastError。
+    private func finishDirectCapture(
+        result: ScreenshotResult,
+        intent: ScreenshotEntryIntent,
+        pinOrigin: NSPoint?
+    ) {
+        do {
+            let pipeline = resolvedResultPipeline()
+            // pin 用选区左下原点；copy 忽略 pinOrigin。
+            let origin: NSPoint? = (intent == .pin) ? pinOrigin : nil
+            _ = try pipeline.run(result: result, intent: intent, pinOrigin: origin)
+            lastOutcome = .triggered(mode: .allInOne, intent: intent)
+            lastError = nil
+            Self.logger.info("[SSDBG] finishDirectCapture: pipeline \(intent.rawValue) ok")
+        } catch {
+            let message = error.localizedDescription
+            lastError = message
+            lastOutcome = .ignored(message)
+            Self.logger.notice("[SSDBG] finishDirectCapture: pipeline 失败 \(message)")
+        }
+    }
+
+    private func resolvedResultPipeline() -> ScreenshotResultRunning {
+        if let resultPipeline { return resultPipeline }
+        return ScreenshotResultPipeline(userDefaults: userDefaults)
     }
 
     private static func loadHotkey(
