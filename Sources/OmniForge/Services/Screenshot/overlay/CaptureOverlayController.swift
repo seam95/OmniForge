@@ -42,6 +42,12 @@ final class CaptureOverlayController {
     /// 测试钩子：`applyScreenSnapshots` 被接受时调用（生产保持 nil）。
     var onApplySnapshotsForTesting: (([CGDirectDisplayID: CGImage]) -> Void)?
 
+    /// 当前所有 overlay 面板的窗口 ID（供冻屏排除自身遮罩用）。
+    /// 冻屏在遮罩显示后发起，必须把这些窗口排除，否则暗化遮罩会被烤进底图。
+    var overlayWindowIDs: [CGWindowID] {
+        overlayPanels.map { CGWindowID($0.windowNumber) }
+    }
+
     /// 当前嵌入的标注编辑器（编辑器模式下非空）。
     private var editorController: AnnotationEditorController?
     /// 编辑器嵌入所在的 SelectionView（编辑器模式下非空）。

@@ -42,8 +42,11 @@ final class AllInOneCaptureSession: ScreenshotCaptureSession {
 
         // 2. 后台冻屏；完成后主线程 apply。
         // generation + isTornDown：旧会话 Task 不得写入复用后的新 overlay 会话。
+        // 排除 overlay 自身窗口：遮罩已 orderFront，不排除会把暗化遮罩烤进底图，
+        // 导致选区内部永久蒙灰（即使 even-odd 挖洞透出的也是已暗化的画面）。
         let client = captureClient
         let generation = overlayController.snapshotGeneration
+        let excludedWindowIDs = overlayController.overlayWindowIDs
         let screens = freezeDisplayIDsForTesting
             ?? NSScreen.screens.compactMap { screen -> CGDirectDisplayID? in
                 screen.displayID
@@ -52,7 +55,10 @@ final class AllInOneCaptureSession: ScreenshotCaptureSession {
         Task.detached(priority: .userInitiated) { [weak overlayController] in
             var snapshots: [CGDirectDisplayID: CGImage] = [:]
             for displayID in screens {
-                if let image = client.captureSnapshot(displayID: displayID) {
+                if let image = try? await client.captureSnapshot(
+                    displayID: displayID,
+                    excludingWindowIDs: excludedWindowIDs
+                ) {
                     snapshots[displayID] = image
                 }
             }

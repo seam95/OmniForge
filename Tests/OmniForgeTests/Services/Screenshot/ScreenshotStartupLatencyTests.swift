@@ -100,7 +100,51 @@ final class ScreenshotStartupLatencyTests: XCTestCase {
 
         await fulfillment(of: [exp], timeout: 2.0)
         XCTAssertEqual(captureClient.captureSnapshotCalls.count, forcedDisplayIDs.count)
-        XCTAssertEqual(captureClient.captureSnapshotCalls, forcedDisplayIDs)
+        XCTAssertEqual(captureClient.captureSnapshotCalls.map(\.displayID), forcedDisplayIDs)
+
+        overlay.tearDown()
+    }
+
+    // MARK: - 全能会话：冻屏必须排除 overlay 自身窗口
+
+    /// 冻屏发生在遮罩 orderFront 之后。若不排除 overlay 窗口，暗化遮罩会被烤进底图，
+    /// 导致选区内部即使挖洞也透出已暗化的画面（回归：选区内蒙灰）。
+    /// 断言：会话把 startCapture 后的 overlayWindowIDs 原样透传给 captureSnapshot。
+    /// headless 无 NSScreen.screens 时退化为空集合一致性，仍验证透传链路。
+    func test_allInOne_freezeExcludesOverlayWindows() async {
+        let captureClient = FakeScreenCaptureClient()
+        captureClient.stubbedSnapshot = FakeScreenCaptureClient.placeholderImage()
+
+        let overlay = CaptureOverlayController(captureClient: captureClient, editorEnabled: false)
+
+        let forcedDisplayIDs: [CGDirectDisplayID] = [1]
+        let exp = expectation(description: "captureSnapshot excludes overlay windows")
+        exp.expectedFulfillmentCount = forcedDisplayIDs.count
+        captureClient.onSnapshot = { _ in exp.fulfill() }
+
+        let session = AllInOneCaptureSession(
+            captureClient: captureClient,
+            overlayController: overlay,
+            onComplete: { _ in }
+        )
+        session.freezeDisplayIDsForTesting = forcedDisplayIDs
+        session.start()
+
+        // session.start() 已同步完成 startCapture，panel 列表定型；
+        // detached Task 读到的 overlayWindowIDs 与此刻读取的完全一致。
+        let expectedExcluded = Set(overlay.overlayWindowIDs)
+
+        await fulfillment(of: [exp], timeout: 2.0)
+        await Task.yield()
+
+        XCTAssertEqual(captureClient.captureSnapshotCalls.count, forcedDisplayIDs.count)
+        for call in captureClient.captureSnapshotCalls {
+            XCTAssertEqual(
+                Set(call.excludingWindowIDs),
+                expectedExcluded,
+                "冻屏必须排除与 startCapture 同一刻的 overlay 窗口"
+            )
+        }
 
         overlay.tearDown()
     }

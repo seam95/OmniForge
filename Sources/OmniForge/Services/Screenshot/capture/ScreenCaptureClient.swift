@@ -16,8 +16,12 @@ protocol ScreenCaptureClient {
         excludingWindowIDs: [CGWindowID]
     ) async throws -> CGImage
 
-    /// 预抓整屏快照（使用 CGWindowListCreateImage）。
-    func captureSnapshot(displayID: CGDirectDisplayID) -> CGImage?
+    /// 预抓整屏快照，可排除指定窗口。
+    /// 冻屏发生在遮罩显示之后，必须排除 overlay 自身窗口，否则快照会把暗化遮罩烤进底图。
+    func captureSnapshot(
+        displayID: CGDirectDisplayID,
+        excludingWindowIDs: [CGWindowID]
+    ) async throws -> CGImage
 }
 
 extension ScreenCaptureClient {

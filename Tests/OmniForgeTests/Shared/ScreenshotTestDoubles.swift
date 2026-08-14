@@ -20,14 +20,20 @@ final class FakeScreenCaptureClient: ScreenCaptureClient {
         let excludingWindowIDs: [CGWindowID]
     }
 
+    struct CaptureSnapshotCall: Equatable {
+        let displayID: CGDirectDisplayID
+        let excludingWindowIDs: [CGWindowID]
+    }
+
     private(set) var captureDisplayCalls: [CaptureDisplayCall] = []
     private(set) var captureRegionCalls: [CaptureRegionCall] = []
-    private(set) var captureSnapshotCalls: [CGDirectDisplayID] = []
+    private(set) var captureSnapshotCalls: [CaptureSnapshotCall] = []
 
     /// 控制下次异步捕获抛错；为空则返回占位图像。
     var captureDisplayError: Error?
     var captureRegionError: Error?
-    /// captureSnapshot 同步返回值（默认 nil，模拟无预抓快照）。
+    var captureSnapshotError: Error?
+    /// captureSnapshot 返回值（默认 nil，模拟无预抓快照）。
     var stubbedSnapshot: CGImage?
     /// 控制 captureSnapshot 是否模拟后台延迟语义（默认 false=同步）。
     /// 协议签名同步，无法真正 await；时序测试用 onSnapshot + 调用顺序标志，不依赖 sleep。
@@ -64,13 +70,19 @@ final class FakeScreenCaptureClient: ScreenCaptureClient {
         return FakeScreenCaptureClient.placeholderImage()
     }
 
-    func captureSnapshot(displayID: CGDirectDisplayID) -> CGImage? {
-        captureSnapshotCalls.append(displayID)
+    func captureSnapshot(
+        displayID: CGDirectDisplayID,
+        excludingWindowIDs: [CGWindowID]
+    ) async throws -> CGImage {
+        captureSnapshotCalls.append(
+            CaptureSnapshotCall(displayID: displayID, excludingWindowIDs: excludingWindowIDs)
+        )
         onSnapshot?(displayID)
         // captureSnapshotDeferred 预留给需要阻塞/延迟语义的扩展；
         // 当前协议为同步签名，时序由调用顺序标志验证。
         _ = captureSnapshotDeferred
-        return stubbedSnapshot
+        if let captureSnapshotError { throw captureSnapshotError }
+        return stubbedSnapshot ?? FakeScreenCaptureClient.placeholderImage()
     }
 
     /// 1×1 透明占位图，避免 0 维触发 ScreenshotResult 校验失败。

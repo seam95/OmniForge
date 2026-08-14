@@ -81,14 +81,39 @@ final class ScreenCaptureKitClient: ScreenCaptureClient {
         return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
     }
 
-    func captureSnapshot(displayID: CGDirectDisplayID) -> CGImage? {
+    func captureSnapshot(
+        displayID: CGDirectDisplayID,
+        excludingWindowIDs: [CGWindowID]
+    ) async throws -> CGImage {
+        guard preflightAccess() else { throw ScreenCaptureError.permissionDenied }
+
+        let content = try await SCShareableContent.current
+        guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
+            throw ScreenCaptureError.invalidDisplay
+        }
+
+        // 排除 overlay 等已显示的遮罩窗口：冻屏发生在遮罩 orderFront 之后，
+        // 不排除会把暗化遮罩烤进底图。与 captureDisplay 排除逻辑一致。
+        let excludedWindows: [SCWindow]
+        if excludingWindowIDs.isEmpty {
+            excludedWindows = []
+        } else {
+            let idSet = Set(excludingWindowIDs)
+            excludedWindows = content.windows.filter { idSet.contains($0.windowID) }
+        }
+
+        let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
+        let config = SCStreamConfiguration()
+        config.capturesAudio = false
+        config.showsCursor = false
+        config.captureResolution = .best
+
         let displayBounds = CGDisplayBounds(displayID)
-        return CGWindowListCreateImage(
-            displayBounds,
-            .optionOnScreenOnly,
-            kCGNullWindowID,
-            .bestResolution
-        )
+        let scale = max(CGFloat(filter.pointPixelScale), 1)
+        config.width = max(Int(ceil(displayBounds.width * scale)), 1)
+        config.height = max(Int(ceil(displayBounds.height * scale)), 1)
+
+        return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
     }
 }
 
