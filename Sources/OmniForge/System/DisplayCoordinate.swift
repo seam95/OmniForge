@@ -155,6 +155,23 @@ enum DisplayCoordinate {
 
     // MARK: - 集中取整
 
+    /// 选区矩形吸附到物理像素网格：origin 与 size 均对齐到 1/scale 的整数倍。
+    ///
+    /// 用于消除 `CGImage.cropping(to:)` 亚像素取整造成的画面偏移与轻微模糊：
+    /// 选区坐标是浮点（鼠标坐标常带 0.5/0.25），若直接裁剪会被 integral
+    /// （floor origin / ceil size）多裁 1 像素并重采样。吸附后裁剪像素、
+    /// 显示点尺寸与选区三者严格对应。
+    static func pixelAlignedRect(_ rect: CGRect, pointPixelScale: CGFloat) -> CGRect {
+        let scale = max(pointPixelScale, 1)
+        guard scale.isFinite, scale > 0 else { return rect }
+        return CGRect(
+            x: (rect.origin.x * scale).rounded() / scale,
+            y: (rect.origin.y * scale).rounded() / scale,
+            width: (rect.width * scale).rounded() / scale,
+            height: (rect.height * scale).rounded() / scale
+        )
+    }
+
     /// 像素矩形取整：origin 向下、max 向上，避免裁切丢边。
     static func integralizedPixelRect(_ rect: CGRect) -> CGRect {
         let minX = floor(rect.minX)

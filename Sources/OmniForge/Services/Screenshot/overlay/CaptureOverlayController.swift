@@ -41,6 +41,8 @@ final class CaptureOverlayController {
     var onStartCaptureForTesting: (() -> Void)?
     /// 测试钩子：`applyScreenSnapshots` 被接受时调用（生产保持 nil）。
     var onApplySnapshotsForTesting: (([CGDirectDisplayID: CGImage]) -> Void)?
+    /// 测试钩子：像素对齐用的点→像素比例；nil 时取选区视图 window 的 backingScaleFactor。
+    var pixelScaleForTesting: CGFloat?
 
     /// 当前所有 overlay 面板的窗口 ID（供冻屏排除自身遮罩用）。
     /// 冻屏在遮罩显示后发起，必须把这些窗口排除，否则暗化遮罩会被烤进底图。
@@ -557,10 +559,26 @@ final class CaptureOverlayController {
 // MARK: - SelectionViewDelegate
 
 extension CaptureOverlayController: SelectionViewDelegate {
+    /// 选区吸附到所在屏的物理像素网格，并同步 SelectionView 内部选区（绿框一致）。
+    /// 找不到选区视图/窗口信息时原样返回（退化为不吸附）。
+    private func pixelAlignedSelectionRect(_ rect: NSRect) -> NSRect {
+        guard let view = selectionViews.values.first(where: { $0.currentSelectionRect != nil }) else {
+            return rect
+        }
+        let scale = pixelScaleForTesting ?? view.window?.backingScaleFactor ?? 1
+        let aligned = DisplayCoordinate.pixelAlignedRect(rect, pointPixelScale: scale)
+        view.updateSelectionRect(aligned)
+        return view.currentSelectionRect ?? aligned
+    }
+
     func selectionDidComplete(rect: NSRect) {
+        // 选区对齐物理像素网格：消除 CGImage.cropping 亚像素取整造成的
+        // 「松手后画面轻微偏移 + 轻微模糊」，绿框/裁剪/编辑器统一到同一像素边界。
+        let alignedRect = pixelAlignedSelectionRect(rect)
+
         // 二次 complete：编辑器已存在 → 仅 updateLayout，不重建。
         if let editor = editorController {
-            applySelectionChange(rect: rect, to: editor)
+            applySelectionChange(rect: alignedRect, to: editor)
             return
         }
 
@@ -577,7 +595,7 @@ extension CaptureOverlayController: SelectionViewDelegate {
 
         // 独立录屏入口：框选后直接交出 AppKit screen rect，不进编辑器。
         if let onDirectRegionSelection {
-            let windowRect = selectionView.convert(rect, to: nil)
+            let windowRect = selectionView.convert(alignedRect, to: nil)
             let screenRect = panel.convertToScreen(windowRect)
             let callback = onDirectRegionSelection
             self.onDirectRegionSelection = nil
@@ -589,8 +607,8 @@ extension CaptureOverlayController: SelectionViewDelegate {
         }
 
         // 视图坐标 → CG 坐标
-        let captureRect = convertToCGRect(rect, on: screen)
-        let windowRect = selectionView.convert(rect, to: nil)
+        let captureRect = convertToCGRect(alignedRect, on: screen)
+        let windowRect = selectionView.convert(alignedRect, to: nil)
         let screenRect = panel.convertToScreen(windowRect)
         // pinOrigin：选区屏幕左下原点（AppKit）；无法计算时由 pinService 居中。
         let pinOrigin = NSPoint(x: screenRect.minX, y: screenRect.minY)
@@ -599,7 +617,7 @@ extension CaptureOverlayController: SelectionViewDelegate {
         if let intent = entryIntent, [.copy, .pin].contains(intent) {
             deliverDirectCapture(
                 intent: intent,
-                selectionViewRect: rect,
+                selectionViewRect: alignedRect,
                 captureRect: captureRect,
                 pinOrigin: pinOrigin,
                 screen: screen,
@@ -611,10 +629,10 @@ extension CaptureOverlayController: SelectionViewDelegate {
         // 优先从预抓快照裁切
         if let snapshot = screenSnapshots[displayID],
            let cropped = snapshot.croppingToSelection(globalRect: captureRect, displayID: displayID) {
-            let image = NSImage(cgImage: cropped, size: rect.size)
+            let image = NSImage(cgImage: cropped, size: alignedRect.size)
             handleCapturedImage(
                 image,
-                selectionRect: rect,
+                selectionRect: alignedRect,
                 selectionView: selectionView,
                 captureRect: captureRect,
                 preSnapshot: snapshot,
@@ -637,11 +655,11 @@ extension CaptureOverlayController: SelectionViewDelegate {
             guard let self else { return }
             do {
                 let cgImage = try await client.captureRegion(captureRect, displayID: displayID, scaleFactor: screen.backingScaleFactor)
-                let image = NSImage(cgImage: cgImage, size: rect.size)
+                let image = NSImage(cgImage: cgImage, size: alignedRect.size)
                 await MainActor.run {
                     self.handleCapturedImage(
                         image,
-                        selectionRect: rect,
+                        selectionRect: alignedRect,
                         selectionView: selectionView,
                         captureRect: captureRect,
                         preSnapshot: preSnapshot,

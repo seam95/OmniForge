@@ -106,6 +106,69 @@ final class CaptureOverlayMultiScreenTests: XCTestCase {
         controller.tearDown()
     }
 
+    // MARK: - 选区像素对齐（框选截图偏移/模糊回归）
+
+    /// 框选完成（selectionDidComplete）时，选区必须吸附到所在屏的物理像素网格，
+    /// 并同步回 SelectionView，消除裁剪亚像素取整造成的画面偏移与轻微模糊。
+    func test_selectionDidComplete_alignsSelectionToPixelGrid() {
+        let controller = CaptureOverlayController(editorEnabled: true)
+        controller.pixelScaleForTesting = 2
+
+        let view = SelectionView(frame: NSRect(x: 0, y: 0, width: 1000, height: 800))
+        // 浮点选区（模拟高 DPI 鼠标产生的 0.25 步进坐标）。
+        view.updateSelectionRect(NSRect(x: 100.25, y: 200.25, width: 300.3, height: 250.7))
+        controller.registerSelectionViewsForTesting([view])
+
+        // 无真实 panel.screen 时后续 guard 会失败 tearDown，但像素对齐发生在 guard 之前。
+        controller.selectionDidComplete(
+            rect: NSRect(x: 100.25, y: 200.25, width: 300.3, height: 250.7)
+        )
+
+        // 2x 屏：吸附到 0.5 点（= 1 物理像素）网格。
+        let aligned = view.currentSelectionRect
+        XCTAssertEqual(aligned?.origin.x ?? 0, 100.5, accuracy: 0.001, "选区 x 必须吸附到物理像素网格")
+        XCTAssertEqual(aligned?.origin.y ?? 0, 200.5, accuracy: 0.001, "选区 y 必须吸附到物理像素网格")
+        XCTAssertEqual(aligned?.width ?? 0, 300.5, accuracy: 0.001, "选区宽必须吸附到物理像素网格")
+        XCTAssertEqual(aligned?.height ?? 0, 250.5, accuracy: 0.001, "选区高必须吸附到物理像素网格")
+
+        controller.tearDown()
+    }
+
+    /// 编辑器态移动/缩放选区结束（二次 complete）时同样要吸附，
+    /// 且编辑器布局使用吸附后的矩形。
+    func test_selectionDidComplete_editorModeAlignsRectBeforeUpdateLayout() {
+        let controller = CaptureOverlayController(editorEnabled: true)
+        controller.pixelScaleForTesting = 2
+
+        let view = SelectionView(frame: NSRect(x: 0, y: 0, width: 1000, height: 800))
+        // 模拟框选完成后的选区（编辑器嵌入时选区必须已存在）。
+        view.updateSelectionRect(NSRect(x: 50, y: 50, width: 200, height: 150))
+        controller.registerSelectionViewsForTesting([view])
+
+        let image = NSImage(size: NSSize(width: 100, height: 80))
+        _ = controller.embedEditorForTesting(
+            image: image,
+            selectionRect: NSRect(x: 50, y: 50, width: 200, height: 150),
+            selectionView: view,
+            captureRect: CGRect(x: 50, y: 600, width: 200, height: 150)
+        )
+
+        controller.selectionDidComplete(
+            rect: NSRect(x: 100.25, y: 200.25, width: 300.3, height: 250.7)
+        )
+
+        XCTAssertEqual(
+            view.currentSelectionRect?.origin.x ?? 0, 100.5, accuracy: 0.001,
+            "编辑器态完成选区也必须吸附到像素网格"
+        )
+        XCTAssertEqual(
+            view.currentSelectionRect?.width ?? 0, 300.5, accuracy: 0.001,
+            "编辑器态完成选区也必须吸附到像素网格"
+        )
+
+        controller.tearDown()
+    }
+
     // MARK: - Helpers
 
     private func makeMouseEvent(_ type: NSEvent.EventType, at location: NSPoint, eventNumber: Int) -> NSEvent {

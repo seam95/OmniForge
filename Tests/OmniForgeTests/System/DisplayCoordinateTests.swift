@@ -187,6 +187,64 @@ final class DisplayCoordinateTests: XCTestCase {
         XCTAssertEqual(pixel.height, 200, accuracy: 0.001)
     }
 
+    // MARK: - 选区像素对齐
+
+    func test_pixelAlignedRect_1x吸附到整数点() {
+        let rect = CGRect(x: 100.4, y: 200.6, width: 300.5, height: 250.25)
+        let aligned = DisplayCoordinate.pixelAlignedRect(rect, pointPixelScale: 1)
+        XCTAssertEqual(aligned.origin.x, 100, accuracy: 0.001)
+        XCTAssertEqual(aligned.origin.y, 201, accuracy: 0.001)
+        XCTAssertEqual(aligned.width, 301, accuracy: 0.001)
+        XCTAssertEqual(aligned.height, 250, accuracy: 0.001)
+    }
+
+    func test_pixelAlignedRect_2x吸附到半点即物理像素() {
+        let rect = CGRect(x: 100.25, y: 200.25, width: 300.3, height: 250.7)
+        let aligned = DisplayCoordinate.pixelAlignedRect(rect, pointPixelScale: 2)
+        // ×2 后四舍五入：100.25×2=200.5→201 → 100.5；300.3×2=600.6→601 → 300.5
+        XCTAssertEqual(aligned.origin.x, 100.5, accuracy: 0.001)
+        XCTAssertEqual(aligned.origin.y, 200.5, accuracy: 0.001)
+        XCTAssertEqual(aligned.width, 300.5, accuracy: 0.001)
+        XCTAssertEqual(aligned.height, 250.5, accuracy: 0.001)
+    }
+
+    func test_pixelAlignedRect_对齐后各分量乘scale为整数() {
+        // 关键不变量：吸附后 origin/size × scale 必须是整数，裁剪才无亚像素取整。
+        for scale in [1.0, 2.0, 3.0] {
+            let rect = CGRect(x: 12.34, y: 56.78, width: 123.45, height: 67.89)
+            let aligned = DisplayCoordinate.pixelAlignedRect(rect, pointPixelScale: scale)
+            for value in [aligned.origin.x, aligned.origin.y, aligned.width, aligned.height] {
+                XCTAssertEqual(value * scale, (value * scale).rounded(), accuracy: 0.001,
+                               "scale=\(scale) 时吸附结果 \(aligned) 未对齐物理像素")
+            }
+        }
+    }
+
+    func test_pixelAlignedRect_非有限scale退化返回原值() {
+        let rect = CGRect(x: 100.4, y: 200.6, width: 300.5, height: 250.25)
+        // NaN/∞ 无法定义网格，必须原样返回避免污染结果。
+        XCTAssertEqual(DisplayCoordinate.pixelAlignedRect(rect, pointPixelScale: .infinity), rect)
+        XCTAssertEqual(DisplayCoordinate.pixelAlignedRect(rect, pointPixelScale: .nan), rect)
+    }
+
+    func test_pixelAlignedRect_负无穷按1x处理() {
+        let rect = CGRect(x: 100.4, y: 200.6, width: 300.5, height: 250.25)
+        // -∞ 经 max(scale,1) 提升到 1 → 与 1x 吸附一致。
+        XCTAssertEqual(
+            DisplayCoordinate.pixelAlignedRect(rect, pointPixelScale: -.infinity),
+            DisplayCoordinate.pixelAlignedRect(rect, pointPixelScale: 1)
+        )
+    }
+
+    func test_pixelAlignedRect_过小scale按1x处理() {
+        let rect = CGRect(x: 100.4, y: 200.6, width: 300.5, height: 250.25)
+        // ≤1 的 scale（含 0/负数）统一按 1x 网格吸附。
+        let aligned = DisplayCoordinate.pixelAlignedRect(rect, pointPixelScale: 0.5)
+        XCTAssertEqual(aligned, DisplayCoordinate.pixelAlignedRect(rect, pointPixelScale: 1))
+        XCTAssertEqual(aligned.origin.x, 100, accuracy: 0.001)
+        XCTAssertEqual(aligned.origin.y, 201, accuracy: 0.001)
+    }
+
     // MARK: - 像素矩形取整
 
     func test_integralizedPixelRect_origin向下max向上() {
