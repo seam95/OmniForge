@@ -155,27 +155,48 @@ struct ClipboardHistoryView: View {
     }
 
     private var filterMenu: some View {
-        Picker("", selection: $uiState.filter) {
-            ForEach(ClipboardFilter.allCases) { item in
-                Text(item.label(in: l10n.s)).tag(item)
+        Menu {
+            Picker("", selection: $uiState.filter) {
+                ForEach(ClipboardFilter.allCases) { item in
+                    Text(item.label(in: l10n.s)).tag(item)
+                }
             }
+        } label: {
+            HStack(spacing: 5) {
+                Text(uiState.filter.label(in: l10n.s))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.primary)
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7.5)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                    .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05), lineWidth: 1)
+            )
         }
-        .labelsHidden()
-        .pickerStyle(.menu)
-        .font(.system(size: 13))
-        .controlSize(.small)
-        .frame(width: 100)
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
     }
 
     private var contentArea: some View {
-        HSplitView {
+        HStack(spacing: 0) {
             historyList
-                .frame(minWidth: 220, idealWidth: 260, maxWidth: 320, maxHeight: .infinity)
-                .background(Color.clear)
+                .frame(width: 270)
+
+            Rectangle()
+                .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05))
+                .frame(width: 1)
 
             detailPane
-                .frame(minWidth: 360, maxHeight: .infinity)
-                .background(Color.clear)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -186,18 +207,20 @@ struct ClipboardHistoryView: View {
                     detailPreview(entry)
                         .frame(maxHeight: .infinity)
 
-                    Divider()
+                    Rectangle()
+                        .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05))
+                        .frame(height: 1)
 
                     detailInfo(entry)
-                        .frame(height: 180)
+                        .frame(height: 160)
                 }
             } else {
                 VStack(spacing: 12) {
                     Image(systemName: "clipboard")
-                        .font(.system(size: 48))
+                        .font(.system(size: 44))
                         .foregroundStyle(.tertiary)
                     Text(l10n.s.clipboardEmpty)
-                        .font(.system(size: 16))
+                        .font(.system(size: 15))
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -230,17 +253,21 @@ struct ClipboardHistoryView: View {
 
     private var historyList: some View {
         ScrollViewReader { proxy in
-            List {
-                if groupedEntries.isEmpty {
-                    Text(l10n.s.clipboardEmpty)
-                        .font(.system(size: 15))
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 12)
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
-                } else {
-                    ForEach(groupedEntries, id: \.section) { group in
-                        Section {
+            ScrollView(showsIndicators: false) {
+                LazyVStack(alignment: .leading, spacing: 3) {
+                    if groupedEntries.isEmpty {
+                        Text(l10n.s.clipboardEmpty)
+                            .font(.system(size: 14))
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 28)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    } else {
+                        ForEach(groupedEntries, id: \.section) { group in
+                            sectionHeader(title: group.section.title(in: l10n.s))
+                                .padding(.horizontal, 10)
+                                .padding(.top, 8)
+                                .padding(.bottom, 2)
+
                             ForEach(group.entries) { entry in
                                 ClipboardHistoryRow(
                                     entry: entry,
@@ -258,15 +285,12 @@ struct ClipboardHistoryView: View {
                                 )
                                 .id(entry.id)
                             }
-                        } header: {
-                            sectionHeader(title: group.section.title(in: l10n.s))
                         }
                     }
                 }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
             }
-            .listStyle(.sidebar)
-            .thinScrollIndicators()
-            .scrollContentBackground(.hidden)
             .onAppear {
                 resetLoadedEntriesForNewSession()
                 updateSelectionIfNeeded()
@@ -291,56 +315,94 @@ struct ClipboardHistoryView: View {
 
     private func sectionHeader(title: String) -> some View {
         Text(title)
-            .font(.system(size: 14, weight: .semibold))
+            .font(.system(size: 11.5, weight: .semibold))
             .foregroundStyle(.secondary)
             .textCase(nil)
     }
 
     private func detailPreview(_ entry: ClipboardEntry) -> some View {
         detailContent(entry)
-            .padding(12)
+            .padding(14)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func detailInfo(_ entry: ClipboardEntry) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                detailGroupHeader
-                    .padding(.bottom, 4)
+        VStack(alignment: .leading, spacing: 8) {
+            detailGroupHeader
 
-                VStack(spacing: 8) {
-                    detailRow(
-                        title: l10n.s.clipboardDetailSource,
-                        value: entry.sourceAppName ?? "-"
-                    )
-                    detailRow(
-                        title: l10n.s.clipboardDetailType,
-                        value: entry.type.label(in: l10n.s)
-                    )
-                    if let dimensionLabel = dimensionDescription(for: entry) {
-                        detailRow(
-                            title: l10n.s.clipboardDetailDimensions,
-                            value: dimensionLabel
-                        )
-                    }
-                    if let sizeLabel = sizeDescription(for: entry) {
-                        detailRow(
-                            title: l10n.s.clipboardDetailSize,
-                            value: sizeLabel
-                        )
-                    }
-                    detailRow(
-                        title: l10n.s.clipboardDetailCharacters,
-                        value: metadataDescription(for: entry)
-                    )
-                    detailRow(
-                        title: l10n.s.clipboardDetailTime,
-                        value: formattedTime(entry.createdAt)
+            LazyVGrid(columns: [
+                GridItem(.flexible(), spacing: 8),
+                GridItem(.flexible(), spacing: 8)
+            ], spacing: 8) {
+                infoBadge(
+                    title: l10n.s.clipboardDetailSource,
+                    value: entry.sourceAppName ?? "-",
+                    icon: "app.dashed"
+                )
+                infoBadge(
+                    title: l10n.s.clipboardDetailType,
+                    value: entry.type.label(in: l10n.s),
+                    icon: entry.iconName
+                )
+                if let dimensionLabel = dimensionDescription(for: entry) {
+                    infoBadge(
+                        title: l10n.s.clipboardDetailDimensions,
+                        value: dimensionLabel,
+                        icon: "aspectratio"
                     )
                 }
+                if let sizeLabel = sizeDescription(for: entry) {
+                    infoBadge(
+                        title: l10n.s.clipboardDetailSize,
+                        value: sizeLabel,
+                        icon: "internaldrive"
+                    )
+                }
+                infoBadge(
+                    title: l10n.s.clipboardDetailCharacters,
+                    value: metadataDescription(for: entry),
+                    icon: "text.alignleft"
+                )
+                infoBadge(
+                    title: l10n.s.clipboardDetailTime,
+                    value: formattedTime(entry.createdAt),
+                    icon: "clock"
+                )
             }
-            .padding(16)
         }
+        .padding(14)
+    }
+
+    private func infoBadge(title: String, value: String, icon: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 16)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(.secondary)
+
+                Text(value)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                .fill(Color.primary.opacity(colorScheme == .dark ? 0.05 : 0.03))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.06 : 0.04), lineWidth: 1)
+        )
     }
 
     private func detailContent(_ entry: ClipboardEntry) -> some View {
@@ -627,13 +689,13 @@ private struct ClipboardHistoryRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.preview)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(isSelected ? .white : .primary)
                     .lineLimit(1)
 
                 if let appName = entry.sourceAppName {
                     Text(appName)
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(isSelected ? .white.opacity(0.85) : .secondary)
                         .lineLimit(1)
                 }
             }
@@ -643,10 +705,8 @@ private struct ClipboardHistoryRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.vertical, 7)
         .background(rowBackground)
-        .listRowInsets(EdgeInsets(top: 2, leading: 6, bottom: 2, trailing: 6))
-        .listRowBackground(Color.clear)
         .contextMenu {
             Button(pasteActionTitle) {
                 onPaste()
@@ -668,7 +728,6 @@ private struct ClipboardHistoryRow: View {
         .onAppear {
             onAppear()
         }
-        .listRowSeparator(.hidden)
     }
 
     private var leadingIcon: some View {
@@ -682,12 +741,12 @@ private struct ClipboardHistoryRow: View {
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous))
             } else {
                 RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-                    .fill(Color.primary.opacity(0.05))
+                    .fill(isSelected ? Color.white.opacity(0.22) : Color.primary.opacity(0.05))
                     .frame(width: 32, height: 32)
 
                 Image(systemName: entry.iconName)
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(isSelected ? .white : .secondary)
             }
         }
         .frame(width: 32, height: 32)
@@ -696,7 +755,6 @@ private struct ClipboardHistoryRow: View {
     private var rowBackground: some View {
         RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
             .fill(isSelected ? Color.accentColor : (isHovered ? Color.primary.opacity(0.06) : Color.clear))
-            .padding(.horizontal, 4)
     }
 }
 

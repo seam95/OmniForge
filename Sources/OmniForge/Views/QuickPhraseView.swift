@@ -113,8 +113,8 @@ struct QuickPhraseView: View {
 
     private var phraseList: some View {
         ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: 0) {
+            ScrollView(showsIndicators: false) {
+                LazyVStack(spacing: 3) {
                     ForEach(filteredPhrases) { phrase in
                         PhraseRow(
                             phrase: phrase,
@@ -132,6 +132,8 @@ struct QuickPhraseView: View {
                         emptyState
                     }
                 }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 6)
             }
             .background(listBackground)
             .onChange(of: uiState.selectedPhraseID) { _, newID in
