@@ -12,6 +12,10 @@ struct ClipboardHistoryView: View {
     let pasteTargetPIDProvider: () -> pid_t?
 
     @State private var loadedEntryCount: Int = 15
+    @State private var containerHeight: CGFloat = 0
+    @State private var contentHeight: CGFloat = 0
+    @State private var scrollOffsetY: CGFloat = 0
+    @State private var isListHovered: Bool = false
 
     // 派生数据缓存：避免每次 body 重算都重新过滤/分组（hover、选中变化等都会触发 body 重算）
     @State private var filteredCache: [ClipboardEntry]?
@@ -259,43 +263,86 @@ struct ClipboardHistoryView: View {
 
     private var historyList: some View {
         ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 3) {
-                    if groupedEntries.isEmpty {
-                        Text(l10n.s.clipboardEmpty)
-                            .font(.system(size: 14))
-                            .foregroundStyle(.secondary)
-                            .padding(.top, 28)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                    } else {
-                        ForEach(groupedEntries, id: \.section) { group in
-                            sectionHeader(title: group.section.title(in: l10n.s))
-                                .padding(.horizontal, 10)
-                                .padding(.top, 8)
-                                .padding(.bottom, 2)
+            GeometryReader { containerGeo in
+                ZStack(alignment: .trailing) {
+                    ScrollView(showsIndicators: false) {
+                        GeometryReader { contentGeo in
+                            Color.clear.preference(
+                                key: ScrollOffsetPreferenceKey.self,
+                                value: contentGeo.frame(in: .named("historyScrollSpace")).minY
+                            )
+                        }
+                        .frame(height: 0)
 
-                            ForEach(group.entries) { entry in
-                                ClipboardHistoryRow(
-                                    entry: entry,
-                                    isSelected: uiState.selectedEntryID == entry.id,
-                                    pasteActionTitle: l10n.s.clipboardActionPaste,
-                                    onTap: {
-                                        uiState.selectedEntryID = entry.id
-                                    },
-                                    onPaste: {
-                                        pasteEntry(entry)
-                                    },
-                                    onAppear: {
-                                        loadMoreIfNeeded(currentEntry: entry)
+                        LazyVStack(alignment: .leading, spacing: 3) {
+                            if groupedEntries.isEmpty {
+                                Text(l10n.s.clipboardEmpty)
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.top, 28)
+                                    .frame(maxWidth: .infinity, alignment: .center)
+                            } else {
+                                ForEach(groupedEntries, id: \.section) { group in
+                                    sectionHeader(title: group.section.title(in: l10n.s))
+                                        .padding(.horizontal, 10)
+                                        .padding(.top, 8)
+                                        .padding(.bottom, 2)
+
+                                    ForEach(group.entries) { entry in
+                                        ClipboardHistoryRow(
+                                            entry: entry,
+                                            isSelected: uiState.selectedEntryID == entry.id,
+                                            pasteActionTitle: l10n.s.clipboardActionPaste,
+                                            onTap: {
+                                                uiState.selectedEntryID = entry.id
+                                            },
+                                            onPaste: {
+                                                pasteEntry(entry)
+                                            },
+                                            onAppear: {
+                                                loadMoreIfNeeded(currentEntry: entry)
+                                            }
+                                        )
+                                        .id(entry.id)
                                     }
-                                )
-                                .id(entry.id)
+                                }
                             }
                         }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .background(
+                            GeometryReader { contentGeo in
+                                Color.clear.preference(
+                                    key: ContentHeightPreferenceKey.self,
+                                    value: contentGeo.size.height
+                                )
+                            }
+                        )
+                    }
+                    .coordinateSpace(name: "historyScrollSpace")
+                    .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
+                        scrollOffsetY = value
+                    }
+                    .onPreferenceChange(ContentHeightPreferenceKey.self) { value in
+                        contentHeight = value
+                    }
+
+                    // 纯悬浮胶囊滑块：无白色槽底色、无直角、细腻半透明
+                    if contentHeight > containerHeight && containerHeight > 0 {
+                        floatingScrollbar(containerHeight: containerHeight)
                     }
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
+                .onAppear {
+                    containerHeight = containerGeo.size.height
+                }
+                .onChange(of: containerGeo.size.height) { _, newHeight in
+                    containerHeight = newHeight
+                }
+            }
+            .onHover { hovering in
+                withAnimation(Theme.Animation.hover) {
+                    isListHovered = hovering
+                }
             }
             .onAppear {
                 resetLoadedEntriesForNewSession()
@@ -317,6 +364,23 @@ struct ClipboardHistoryView: View {
                 }
             }
         }
+    }
+
+    private func floatingScrollbar(containerHeight: CGFloat) -> some View {
+        let rawThumbHeight = (containerHeight / max(contentHeight, 1)) * containerHeight
+        let thumbHeight = min(max(rawThumbHeight, 28), containerHeight - 16)
+        let maxScroll = max(contentHeight - containerHeight, 1)
+        let progress = min(max(-scrollOffsetY / maxScroll, 0), 1)
+        let travelDistance = containerHeight - thumbHeight - 8
+        let offsetY = 4 + progress * travelDistance
+
+        return Capsule()
+            .fill(Color.primary.opacity(isListHovered ? 0.32 : 0.18))
+            .frame(width: 3.5, height: thumbHeight)
+            .offset(y: offsetY - containerHeight / 2 + thumbHeight / 2)
+            .padding(.trailing, 2.5)
+            .allowsHitTesting(false)
+            .animation(Theme.Animation.snappy, value: offsetY)
     }
 
     private func sectionHeader(title: String) -> some View {
@@ -810,6 +874,20 @@ struct ClipboardHistoryScrollPlanner {
         guard direction != 0 else { return nil }
 
         return ClipboardHistoryKeyHandler.scrollAnchor(forMoveDirection: direction)
+    }
+}
+
+private struct ContentHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+private struct ScrollOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
