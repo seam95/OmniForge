@@ -24,14 +24,14 @@ struct MonitorDashboardCardChrome<Content: View>: View {
 
     var body: some View {
         content
-            .padding(12)
+            .padding(Theme.Spacing.md)
             .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
                     .fill(cardBackground)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
                     .strokeBorder(cardBorder, lineWidth: 1)
             )
             .shadow(
@@ -40,10 +40,12 @@ struct MonitorDashboardCardChrome<Content: View>: View {
                 x: 0,
                 y: isHovered && isInteractive ? 4 : 2
             )
-            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
             .onHover { hovering in
                 guard isInteractive else { return }
-                isHovered = hovering
+                withAnimation(Theme.Animation.hover) {
+                    isHovered = hovering
+                }
             }
     }
 
@@ -51,7 +53,7 @@ struct MonitorDashboardCardChrome<Content: View>: View {
         if colorScheme == .dark {
             return Color.white.opacity(isHovered && isInteractive ? 0.10 : 0.06)
         }
-        return Color.white.opacity(isHovered && isInteractive ? 0.75 : 0.55)
+        return Color.white.opacity(isHovered && isInteractive ? 0.78 : 0.58)
     }
 
     private var cardBorder: Color {
@@ -68,3 +70,4 @@ struct MonitorDashboardCardChrome<Content: View>: View {
         return isHovered && isInteractive ? 0.08 : 0.04
     }
 }
+

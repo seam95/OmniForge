@@ -2,20 +2,20 @@ import SwiftUI
 
 /// 控制中心通用卡片壳：底/边/阴影对齐系统监控总览卡，不绑定业务 accent 枚举。
 struct PanelCardChrome<Content: View>: View {
-    var cornerRadius: CGFloat = 12
-    var padding: CGFloat = 12
+    var cornerRadius: CGFloat = Theme.Radius.card
+    var padding: CGFloat = Theme.Spacing.md
     var isInteractive: Bool = false
-    var accent: Color = .accentColor
+    var accent: Color = Theme.accentColor
     let content: Content
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered = false
 
     init(
-        cornerRadius: CGFloat = 12,
-        padding: CGFloat = 12,
+        cornerRadius: CGFloat = Theme.Radius.card,
+        padding: CGFloat = Theme.Spacing.md,
         isInteractive: Bool = false,
-        accent: Color = .accentColor,
+        accent: Color = Theme.accentColor,
         @ViewBuilder content: () -> Content
     ) {
         self.cornerRadius = cornerRadius
@@ -45,7 +45,9 @@ struct PanelCardChrome<Content: View>: View {
             .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .onHover { hovering in
                 guard isInteractive else { return }
-                isHovered = hovering
+                withAnimation(Theme.Animation.hover) {
+                    isHovered = hovering
+                }
             }
     }
 
@@ -53,7 +55,7 @@ struct PanelCardChrome<Content: View>: View {
         if colorScheme == .dark {
             return Color.white.opacity(isHovered && isInteractive ? 0.10 : 0.06)
         }
-        return Color.white.opacity(isHovered && isInteractive ? 0.75 : 0.55)
+        return Color.white.opacity(isHovered && isInteractive ? 0.78 : 0.58)
     }
 
     private var cardBorder: Color {
@@ -72,11 +74,11 @@ struct PanelCardChrome<Content: View>: View {
 }
 
 extension View {
-    /// 紧凑行卡：圆角 10、内边距由调用方控制（本修饰只做底/边/轻阴影）。
+    /// 紧凑行卡：圆角 8/10、内边距由调用方控制（本修饰只做底/边/轻阴影）。
     func panelRowCard(
-        cornerRadius: CGFloat = 10,
+        cornerRadius: CGFloat = Theme.Radius.row,
         isInteractive: Bool = false,
-        accent: Color = .accentColor
+        accent: Color = Theme.accentColor
     ) -> some View {
         modifier(
             PanelRowCardModifier(
@@ -115,7 +117,9 @@ private struct PanelRowCardModifier: ViewModifier {
             .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .onHover { hovering in
                 guard isInteractive else { return }
-                isHovered = hovering
+                withAnimation(Theme.Animation.hover) {
+                    isHovered = hovering
+                }
             }
     }
 
@@ -123,7 +127,7 @@ private struct PanelRowCardModifier: ViewModifier {
         if colorScheme == .dark {
             return Color.white.opacity(isHovered && isInteractive ? 0.10 : 0.06)
         }
-        return Color.white.opacity(isHovered && isInteractive ? 0.75 : 0.55)
+        return Color.white.opacity(isHovered && isInteractive ? 0.78 : 0.58)
     }
 
     private var cardBorder: Color {
@@ -140,3 +144,4 @@ private struct PanelRowCardModifier: ViewModifier {
         return isHovered && isInteractive ? 0.06 : 0.03
     }
 }
+

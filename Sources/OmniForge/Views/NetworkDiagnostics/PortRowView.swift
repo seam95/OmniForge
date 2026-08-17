@@ -45,30 +45,50 @@ struct PortRowView: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
-            Text(entry.proto.displayName)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .frame(width: 40, alignment: .leading)
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .center, spacing: 8) {
+                Text(displayProcessName)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(displayProcessName)
 
-            Text(entry.localPortDisplay)
-                .font(.system(size: 13, weight: .bold, design: .monospaced))
-                .foregroundStyle(.primary)
-                .frame(width: 52, alignment: .leading)
-                .help(entry.hostPortCopyText)
+                Spacer(minLength: 4)
 
-            Text(processLabel)
-                .font(.system(size: 12))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .help(processLabel)
+                StatusTintBadge(text: stateLabel, tint: stateTint)
 
-            StatusTintBadge(text: stateLabel, tint: stateTint)
-                .frame(width: 72, alignment: .trailing)
+                trailingMenu
+            }
 
-            trailingMenu
+            HStack(spacing: 6) {
+                Text(entry.proto.displayName)
+                    .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1.5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(Color.primary.opacity(0.06))
+                    )
+
+                Text(":\(entry.localPortDisplay)")
+                    .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.accentColor)
+                    .help(entry.hostPortCopyText)
+
+                if entry.pid > 0 {
+                    Text("•")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.tertiary)
+
+                    Text("PID \(entry.pid)")
+                        .font(.system(size: 10.5, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 0)
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)

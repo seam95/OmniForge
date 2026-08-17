@@ -87,7 +87,7 @@ struct ControlCenterContainerView: View {
                     .padding(.bottom, 6)
 
                 Rectangle()
-                    .fill(Color.primary.opacity(0.06))
+                    .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05))
                     .frame(height: 1)
             }
 
@@ -95,12 +95,12 @@ struct ControlCenterContainerView: View {
                 .frame(maxWidth: .infinity, alignment: .top)
 
             Rectangle()
-                .fill(Color.primary.opacity(0.06))
+                .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05))
                 .frame(height: 1)
 
             footer
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.vertical, Theme.Spacing.xs)
         }
         .frame(width: ControlCenterContentMetrics.panelWidth)
         .background(.ultraThinMaterial)
@@ -115,47 +115,35 @@ struct ControlCenterContainerView: View {
         .idle
     }
 
-    /// 对齐 vorssaint sectionNavigation：紧凑图标单元 + 浅卡片底 + 选中 accent 圆角底。
-    /// 仅 2 个入口时不拉满宽度，避免变成「半屏空白按钮」。
+    /// 对齐 macOS 控制中心分段导航：紧凑单元 + 柔和背景 + 选中 accent 悬浮底块。
     private func panelNavigation(visiblePanels: [MenuPanel]) -> some View {
         HStack {
             Spacer(minLength: 0)
-            HStack(spacing: 2) {
+            HStack(spacing: 3) {
                 ForEach(visiblePanels) { panel in
                     let isActive = selectedPanel == panel
                     let title = panel.title(in: state.l10n.s)
-                    Button {
-                        withAnimation(.snappy(duration: 0.2)) {
+                    ControlCenterNavButton(
+                        panel: panel,
+                        title: title,
+                        isActive: isActive,
+                        activeFill: navigationActiveFill,
+                        colorScheme: colorScheme
+                    ) {
+                        withAnimation(Theme.Animation.spring) {
                             selectedPanelRawValue = panel.rawValue
                         }
-                    } label: {
-                        Image(systemName: panel.symbolName)
-                            .font(.system(size: 13, weight: .semibold))
-                            .frame(width: 64, height: 24)
-                            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
-                    .buttonStyle(.plain)
-                    // popover 打开后焦点常落在首个 Button，系统 focus ring 会叠在选中态上造成误导。
-                    .focusEffectDisabled()
-                    .foregroundStyle(isActive ? Color.accentColor : Color.secondary.opacity(0.86))
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(isActive ? navigationActiveFill : Color.clear)
-                            .shadow(color: Color.black.opacity(isActive && colorScheme == .light ? 0.08 : 0.0), radius: 1.5, x: 0, y: 1)
-                    )
-                    .help(title)
-                    .accessibilityLabel(title)
-                    .accessibilityAddTraits(isActive ? .isSelected : [])
                 }
             }
-            .padding(2)
+            .padding(3)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
                     .fill(navigationTrackFill)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(navigationTrackBorder, lineWidth: 0.7)
+                RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                    .strokeBorder(navigationTrackBorder, lineWidth: 0.8)
             )
             Spacer(minLength: 0)
         }
@@ -372,18 +360,55 @@ struct ControlCenterContainerView: View {
     }
 
     private var navigationActiveFill: Color {
-        colorScheme == .light ? Color.white.opacity(0.85) : Color.white.opacity(0.12)
+        colorScheme == .light ? Color.white.opacity(0.85) : Color.white.opacity(0.14)
     }
 
     /// 不透明 popover 底上，用 controlFill 比半透明 cardFill 更接近截图胶囊轨。
     private var navigationTrackFill: Color {
-        colorScheme == .light ? Color.black.opacity(0.04) : Color.white.opacity(0.05)
+        colorScheme == .light ? Color.black.opacity(0.04) : Color.white.opacity(0.06)
     }
 
     private var navigationTrackBorder: Color {
-        Color.primary.opacity(0.04)
+        Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05)
     }
 }
+
+private struct ControlCenterNavButton: View {
+    let panel: MenuPanel
+    let title: String
+    let isActive: Bool
+    let activeFill: Color
+    let colorScheme: ColorScheme
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: panel.symbolName)
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 64, height: 26)
+                .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .foregroundStyle(isActive ? Color.accentColor : (isHovered ? Color.primary : Color.secondary.opacity(0.85)))
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous)
+                .fill(isActive ? activeFill : (isHovered ? Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04) : Color.clear))
+                .shadow(color: Color.black.opacity(isActive && colorScheme == .light ? 0.08 : 0.0), radius: 1.5, x: 0, y: 1)
+        )
+        .onHover { hovering in
+            withAnimation(Theme.Animation.hover) {
+                isHovered = hovering
+            }
+        }
+        .help(title)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(isActive ? .isSelected : [])
+    }
+}
+
 
 /// Panel demand must not restart sampling when FeatureHub is unavailable or monitoring is disabled.
 enum MonitorPanelDemandGate {

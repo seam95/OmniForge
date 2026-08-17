@@ -22,50 +22,6 @@ struct ClipboardHistoryView: View {
     @Environment(\.displayScale) private var displayScale
     private let pasteService = ClipboardPasteService()
 
-    private var windowBackgroundColor: Color {
-        if colorScheme == .dark {
-            return Color(.sRGB, red: 0.13, green: 0.14, blue: 0.17, opacity: 1)
-        }
-        return Color(.sRGB, red: 0.84, green: 0.85, blue: 0.87, opacity: reduceTransparency ? 1 : 0.98)
-    }
-
-    private var headerBackgroundColor: Color {
-        Color.clear
-    }
-
-    private var footerBackgroundColor: Color {
-        Color.clear
-    }
-
-    private var listPaneBackgroundColor: Color {
-        Color.clear
-    }
-
-    private var detailPaneBackgroundColor: Color {
-        Color.clear
-    }
-
-    private var dividerColor: Color {
-        if colorScheme == .dark {
-            return Color(.sRGB, red: 0.27, green: 0.29, blue: 0.34, opacity: 1)
-        }
-        return Color(.sRGB, red: 0.74, green: 0.76, blue: 0.80, opacity: 1)
-    }
-
-    private var rowSelectedBackgroundColor: Color {
-        if colorScheme == .dark {
-            return Color(.sRGB, red: 0.30, green: 0.33, blue: 0.39, opacity: 0.85)
-        }
-        return Color(.sRGB, red: 0.78, green: 0.80, blue: 0.84, opacity: 0.78)
-    }
-
-    private var rowHoveredBackgroundColor: Color {
-        if colorScheme == .dark {
-            return Color(.sRGB, red: 0.23, green: 0.25, blue: 0.30, opacity: 0.70)
-        }
-        return Color(.sRGB, red: 0.82, green: 0.84, blue: 0.87, opacity: 0.60)
-    }
-
     private static let detailTimeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
@@ -114,13 +70,17 @@ struct ClipboardHistoryView: View {
         VStack(spacing: 0) {
             headerBar
                 .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.vertical, 10)
 
-            Divider()
+            Rectangle()
+                .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05))
+                .frame(height: 1)
 
             contentArea
 
-            Divider()
+            Rectangle()
+                .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05))
+                .frame(height: 1)
 
             footer
         }
@@ -701,7 +661,9 @@ private struct ClipboardHistoryRow: View {
             }
         )
         .onHover { hovering in
-            isHovered = hovering
+            withAnimation(Theme.Animation.hover) {
+                isHovered = hovering
+            }
         }
         .onAppear {
             onAppear()
@@ -717,9 +679,9 @@ private struct ClipboardHistoryRow: View {
                     .resizable()
                     .scaledToFill()
                     .frame(width: 32, height: 32)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous))
             } else {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
                     .fill(Color.primary.opacity(0.05))
                     .frame(width: 32, height: 32)
 
@@ -732,8 +694,8 @@ private struct ClipboardHistoryRow: View {
     }
 
     private var rowBackground: some View {
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .fill(isSelected ? Color.accentColor : (isHovered ? Color.primary.opacity(0.05) : Color.clear))
+        RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+            .fill(isSelected ? Color.accentColor : (isHovered ? Color.primary.opacity(0.06) : Color.clear))
             .padding(.horizontal, 4)
     }
 }

@@ -435,7 +435,7 @@ struct KeepAwakeControlView: View {
                 optionsCard
             }
         }
-        .padding(14)
+        .padding(Theme.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
@@ -491,8 +491,8 @@ struct KeepAwakeControlView: View {
             // 局部 TimelineView 秒级刷新，不重建整页。
             if let endDate = presentation.countdownEndDate {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
-                    VStack(alignment: .leading, spacing: 10) {
-                        settingsRow(title: strings.keepAwakeRemainingLabel) {
+                    VStack(spacing: 8) {
+                        VStack(spacing: 4) {
                             Text(
                                 KeepAwakeControlCountdownFormatter.text(
                                     endDate: endDate,
@@ -500,34 +500,49 @@ struct KeepAwakeControlView: View {
                                     strings: strings
                                 )
                             )
-                            .font(.system(size: 13, weight: .medium).monospacedDigit())
-                            .foregroundStyle(.secondary)
-                        }
-                        settingsRow(title: strings.keepAwakeEndsAtLabel) {
+                            .font(.system(size: 30, weight: .bold, design: .rounded).monospacedDigit())
+                            .foregroundStyle(Color.accentColor)
+
                             Text(
-                                KeepAwakeControlCountdownFormatter.endTimeText(
-                                    endDate: endDate,
-                                    now: context.date
+                                String(
+                                    format: "%@: %@",
+                                    strings.keepAwakeEndsAtLabel,
+                                    KeepAwakeControlCountdownFormatter.endTimeText(
+                                        endDate: endDate,
+                                        now: context.date
+                                    )
                                 )
                             )
-                            .font(.system(size: 13, weight: .medium).monospacedDigit())
+                            .font(.system(size: 11.5, weight: .medium))
                             .foregroundStyle(.secondary)
                         }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                                .fill(Color.accentColor.opacity(colorScheme == .dark ? 0.10 : 0.06))
+                        )
                     }
                 }
             } else if let countdown = presentation.countdownText {
-                settingsRow(title: strings.keepAwakeRemainingLabel) {
+                VStack(spacing: 4) {
                     Text(countdown)
-                        .font(.system(size: 13, weight: .medium).monospacedDigit())
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 30, weight: .bold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(Color.accentColor)
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                        .fill(Color.accentColor.opacity(colorScheme == .dark ? 0.10 : 0.06))
+                )
             }
 
             if presentation.showsExtendButtons {
                 HStack(spacing: 8) {
-                    extendButton("+15") { onExtend(15) }
-                    extendButton("+30") { onExtend(30) }
-                    extendButton("+60") { onExtend(60) }
+                    extendButton("+15m") { onExtend(15) }
+                    extendButton("+30m") { onExtend(30) }
+                    extendButton("+1h") { onExtend(60) }
                 }
             }
 
@@ -551,7 +566,7 @@ struct KeepAwakeControlView: View {
                 }
             }
         }
-        .padding(12)
+        .padding(Theme.Spacing.md)
         .background(sectionCard)
     }
 
@@ -587,7 +602,7 @@ struct KeepAwakeControlView: View {
                 .foregroundStyle(accentColor)
             }
         }
-        .padding(12)
+        .padding(Theme.Spacing.md)
         .background(sectionCard)
     }
 
@@ -596,12 +611,12 @@ struct KeepAwakeControlView: View {
             if colorScheme == .dark {
                 Color.white.opacity(0.06)
             } else {
-                Color.white.opacity(0.55)
+                Color.white.opacity(0.60)
             }
         }
-        .cornerRadius(10)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
                 .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05), lineWidth: 1)
         )
         .shadow(

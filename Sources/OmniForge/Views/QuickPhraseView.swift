@@ -21,17 +21,23 @@ struct QuickPhraseView: View {
         VStack(spacing: 0) {
             searchField
                 .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.vertical, 10)
 
-            Divider()
+            Rectangle()
+                .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05))
+                .frame(height: 1)
 
             groupChips
 
-            Divider()
+            Rectangle()
+                .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05))
+                .frame(height: 1)
 
             phraseList
 
-            Divider()
+            Rectangle()
+                .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05))
+                .frame(height: 1)
 
             footer
         }
@@ -279,39 +285,52 @@ private struct GroupChip: View {
     let action: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
+    @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 12))
+                .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
                 .background(chipBackground)
                 .foregroundColor(chipForeground)
-                .cornerRadius(6)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous)
+                        .strokeBorder(chipBorder, lineWidth: 1)
+                )
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(Theme.Animation.hover) {
+                isHovered = hovering
+            }
+        }
     }
 
     private var chipBackground: Color {
         if isSelected {
-            if colorScheme == .dark {
-                return Color(.sRGB, red: 0.35, green: 0.40, blue: 0.55, opacity: 1)
-            }
-            return Color(.sRGB, red: 0.70, green: 0.75, blue: 0.85, opacity: 1)
+            return Color.accentColor.opacity(colorScheme == .dark ? 0.25 : 0.15)
         } else {
-            if colorScheme == .dark {
-                return Color(.sRGB, red: 0.22, green: 0.24, blue: 0.28, opacity: 1)
-            }
-            return Color.white.opacity(0.6)
+            return isHovered
+                ? Color.primary.opacity(colorScheme == .dark ? 0.10 : 0.06)
+                : Color.primary.opacity(colorScheme == .dark ? 0.05 : 0.03)
         }
+    }
+
+    private var chipBorder: Color {
+        if isSelected {
+            return Color.accentColor.opacity(colorScheme == .dark ? 0.45 : 0.35)
+        }
+        return Color.primary.opacity(colorScheme == .dark ? 0.06 : 0.04)
     }
 
     private var chipForeground: Color {
         if isSelected {
-            return .primary
+            return Color.accentColor
         } else {
-            return .secondary
+            return isHovered ? .primary : .secondary
         }
     }
 }
@@ -412,9 +431,6 @@ private struct PhraseRow: View {
     }
 
     private var actionBg: Color {
-        if colorScheme == .dark {
-            return Color(.sRGB, red: 0.25, green: 0.27, blue: 0.32, opacity: 1)
-        }
-        return Color.white.opacity(0.8)
+        Color.primary.opacity(colorScheme == .dark ? 0.14 : 0.08)
     }
 }

@@ -73,12 +73,18 @@ struct ColorPickerContentView: View {
     private func resultState(_ color: NSColor) -> some View {
         VStack(spacing: 16) {
             // 大色块预览：圆角矩形填满拾取颜色。
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
                 .fill(Color(nsColor: color))
-                .frame(height: layout == .compact ? 120 : 160)
+                .frame(height: layout == .compact ? 120 : 150)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.1), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                )
+                .shadow(
+                    color: Color(nsColor: color).opacity(0.35),
+                    radius: 12,
+                    x: 0,
+                    y: 4
                 )
 
             // 三格式行，每行可点击复制当前格式。
@@ -92,6 +98,7 @@ struct ColorPickerContentView: View {
             Button(strings.colorPickerPickAgain) { service.startPicking() }
                 .controlSize(.regular)
                 .buttonStyle(.borderedProminent)
+                .padding(.top, 4)
         }
     }
 
@@ -99,22 +106,23 @@ struct ColorPickerContentView: View {
     @ViewBuilder
     private func formatRow(_ format: ColorFormat, color: NSColor) -> some View {
         let text = format.string(from: color)
+        let isCopied = copiedFormat == format
         Button {
             service.copy(text)
             showCopiedFeedback(format)
         } label: {
             HStack(spacing: 10) {
                 Text(format.localizedLabel(in: strings))
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
-                    .frame(width: 32, alignment: .leading)
+                    .frame(width: 34, alignment: .leading)
                 Text(text)
                     .font(.system(size: 13, design: .monospaced))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 0)
-                if copiedFormat == format {
+                if isCopied {
                     Image(systemName: "checkmark")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(.green)
@@ -124,12 +132,16 @@ struct ColorPickerContentView: View {
                         .foregroundStyle(.tertiary)
                 }
             }
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.primary.opacity(copiedFormat == format ? 0.06 : 0.03))
+                RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                    .fill(isCopied ? Color.green.opacity(0.12) : Color.primary.opacity(0.04))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                    .strokeBorder(isCopied ? Color.green.opacity(0.35) : Color.primary.opacity(0.05), lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -138,12 +150,12 @@ struct ColorPickerContentView: View {
 
     /// 短暂显示「已复制」对勾，1.2 秒后清除。
     private func showCopiedFeedback(_ format: ColorFormat) {
-        withAnimation { copiedFormat = format }
+        withAnimation(Theme.Animation.snappy) { copiedFormat = format }
         let token = format
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             // 仅当仍是同一格式时清除，避免覆盖更新的反馈。
             if copiedFormat == token {
-                withAnimation { copiedFormat = nil }
+                withAnimation(Theme.Animation.snappy) { copiedFormat = nil }
             }
         }
     }

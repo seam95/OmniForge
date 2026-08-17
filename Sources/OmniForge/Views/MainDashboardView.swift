@@ -9,7 +9,7 @@ struct MainDashboardView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     private var accentColor: Color {
-        Color(.sRGB, red: 0.14, green: 0.45, blue: 0.98, opacity: 1)
+        Theme.accentColor
     }
 
     private var cardBackgroundMaterial: Material {

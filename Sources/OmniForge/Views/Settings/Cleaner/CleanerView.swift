@@ -310,14 +310,14 @@ struct CleanerContentView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(11)
+        .padding(Theme.Spacing.md)
         .frame(maxWidth: layout.dropTargetWidth)
         .background(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color.white.opacity(0.55))
+            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color.white.opacity(0.58))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
                 .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05), lineWidth: 1)
         )
         .shadow(
@@ -474,14 +474,14 @@ struct CleanerContentView: View {
             }
             .controlSize(.small)
         }
-        .padding(11)
+        .padding(Theme.Spacing.md)
         .frame(maxWidth: layout.dropTargetWidth)
         .background(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color.white.opacity(0.55))
+            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color.white.opacity(0.58))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
                 .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05), lineWidth: 1)
         )
         .shadow(

@@ -229,48 +229,21 @@ struct PortSegmentView: View {
                     .frame(maxWidth: .infinity, minHeight: 100, alignment: .center)
             } else {
                 // Outer ControlCenter AdaptiveHeightScroll owns scrolling — no nested ScrollView.
-                VStack(alignment: .leading, spacing: 8) {
-                    columnHeader
-                    VStack(alignment: .leading, spacing: 5) {
-                        ForEach(rows) { entry in
-                            PortRowView(
-                                entry: entry,
-                                processName: service.processDisplayName(for: entry),
-                                canTerminate: service.canTerminate(entry),
-                                strings: strings,
-                                onCopy: { service.copy($0) },
-                                onTerminate: {
-                                    requestTerminate(entry)
-                                }
-                            )
-                        }
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(rows) { entry in
+                        PortRowView(
+                            entry: entry,
+                            processName: service.processDisplayName(for: entry),
+                            canTerminate: service.canTerminate(entry),
+                            strings: strings,
+                            onCopy: { service.copy($0) },
+                            onTerminate: {
+                                requestTerminate(entry)
+                            }
+                        )
                     }
                 }
             }
-        }
-    }
-
-    private var columnHeader: some View {
-        HStack(spacing: 8) {
-            Text(strings.networkDiagnosticsColumnProtocol)
-                .frame(width: 40, alignment: .leading)
-            Text(strings.networkDiagnosticsColumnLocalPort)
-                .frame(width: 52, alignment: .leading)
-            Text(strings.networkDiagnosticsColumnProcess)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Text(strings.networkDiagnosticsColumnStatus)
-                .frame(width: 72, alignment: .trailing)
-            Color.clear.frame(width: 22)
-        }
-        .font(.system(size: 10, weight: .semibold))
-        .foregroundStyle(.secondary)
-        .textCase(.uppercase)
-        .padding(.horizontal, 10)
-        .padding(.bottom, 2)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Color.primary.opacity(0.08))
-                .frame(height: 1)
         }
     }
 

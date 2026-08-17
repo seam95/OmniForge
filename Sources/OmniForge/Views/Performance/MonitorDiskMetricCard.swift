@@ -8,37 +8,17 @@ struct MonitorDiskMetricCard: View {
     let action: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
-    @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 8) {
-                header
-                valueRow
+            MonitorDashboardCardChrome(accent: accent, height: height, isInteractive: true) {
+                VStack(alignment: .leading, spacing: 8) {
+                    header
+                    valueRow
+                }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(cardBackground)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(cardBorder, lineWidth: 1)
-            )
-            .shadow(
-                color: Color.black.opacity(shadowOpacity),
-                radius: isHovered ? 10 : 6,
-                x: 0,
-                y: isHovered ? 4 : 2
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
-        .onHover { hovering in
-            isHovered = hovering
-        }
     }
 
     private var header: some View {
@@ -112,27 +92,6 @@ struct MonitorDiskMetricCard: View {
 
     private var accent: Color {
         MonitorCardAccent.color(for: .disk)
-    }
-
-    private var cardBackground: Color {
-        if colorScheme == .dark {
-            return Color.white.opacity(isHovered ? 0.10 : 0.06)
-        }
-        return Color.white.opacity(isHovered ? 0.75 : 0.55)
-    }
-
-    private var cardBorder: Color {
-        if isHovered {
-            return accent.opacity(colorScheme == .dark ? 0.45 : 0.35)
-        }
-        return Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05)
-    }
-
-    private var shadowOpacity: Double {
-        if colorScheme == .dark {
-            return isHovered ? 0.20 : 0.12
-        }
-        return isHovered ? 0.08 : 0.04
     }
 }
 
