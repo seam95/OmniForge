@@ -113,7 +113,7 @@ struct QuickPhraseView: View {
 
     private var phraseList: some View {
         ScrollViewReader { proxy in
-            ScrollView(showsIndicators: false) {
+            ScrollView {
                 LazyVStack(spacing: 3) {
                     ForEach(filteredPhrases) { phrase in
                         PhraseRow(

@@ -156,9 +156,15 @@ struct ClipboardHistoryView: View {
 
     private var filterMenu: some View {
         Menu {
-            Picker("", selection: $uiState.filter) {
-                ForEach(ClipboardFilter.allCases) { item in
-                    Text(item.label(in: l10n.s)).tag(item)
+            ForEach(ClipboardFilter.allCases) { item in
+                Button {
+                    uiState.filter = item
+                } label: {
+                    if uiState.filter == item {
+                        Text("✓  \(item.label(in: l10n.s))")
+                    } else {
+                        Text("    \(item.label(in: l10n.s))")
+                    }
                 }
             }
         } label: {
@@ -212,7 +218,7 @@ struct ClipboardHistoryView: View {
                         .frame(height: 1)
 
                     detailInfo(entry)
-                        .frame(height: 160)
+                        .frame(height: 170)
                 }
             } else {
                 VStack(spacing: 12) {
@@ -253,7 +259,7 @@ struct ClipboardHistoryView: View {
 
     private var historyList: some View {
         ScrollViewReader { proxy in
-            ScrollView(showsIndicators: false) {
+            ScrollView {
                 LazyVStack(alignment: .leading, spacing: 3) {
                     if groupedEntries.isEmpty {
                         Text(l10n.s.clipboardEmpty)
@@ -329,80 +335,58 @@ struct ClipboardHistoryView: View {
     private func detailInfo(_ entry: ClipboardEntry) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             detailGroupHeader
+                .padding(.bottom, 2)
 
-            LazyVGrid(columns: [
-                GridItem(.flexible(), spacing: 8),
-                GridItem(.flexible(), spacing: 8)
-            ], spacing: 8) {
-                infoBadge(
+            VStack(spacing: 6) {
+                metadataRow(
                     title: l10n.s.clipboardDetailSource,
-                    value: entry.sourceAppName ?? "-",
-                    icon: "app.dashed"
+                    value: entry.sourceAppName ?? "-"
                 )
-                infoBadge(
+                metadataRow(
                     title: l10n.s.clipboardDetailType,
-                    value: entry.type.label(in: l10n.s),
-                    icon: entry.iconName
+                    value: entry.type.label(in: l10n.s)
                 )
                 if let dimensionLabel = dimensionDescription(for: entry) {
-                    infoBadge(
+                    metadataRow(
                         title: l10n.s.clipboardDetailDimensions,
-                        value: dimensionLabel,
-                        icon: "aspectratio"
+                        value: dimensionLabel
                     )
                 }
                 if let sizeLabel = sizeDescription(for: entry) {
-                    infoBadge(
+                    metadataRow(
                         title: l10n.s.clipboardDetailSize,
-                        value: sizeLabel,
-                        icon: "internaldrive"
+                        value: sizeLabel
                     )
                 }
-                infoBadge(
+                metadataRow(
                     title: l10n.s.clipboardDetailCharacters,
-                    value: metadataDescription(for: entry),
-                    icon: "text.alignleft"
+                    value: metadataDescription(for: entry)
                 )
-                infoBadge(
+                metadataRow(
                     title: l10n.s.clipboardDetailTime,
-                    value: formattedTime(entry.createdAt),
-                    icon: "clock"
+                    value: formattedTime(entry.createdAt)
                 )
             }
         }
-        .padding(14)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func infoBadge(title: String, value: String, icon: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 16)
+    private func metadataRow(title: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 14) {
+            Text(title)
+                .font(.system(size: 11.5, weight: .regular))
+                .foregroundStyle(.secondary)
+                .frame(width: 70, alignment: .leading)
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(.system(size: 9.5, weight: .semibold))
-                    .foregroundStyle(.secondary)
-
-                Text(value)
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-            Spacer(minLength: 0)
+            Text(value)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-                .fill(Color.primary.opacity(colorScheme == .dark ? 0.05 : 0.03))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-                .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.06 : 0.04), lineWidth: 1)
-        )
     }
 
     private func detailContent(_ entry: ClipboardEntry) -> some View {
