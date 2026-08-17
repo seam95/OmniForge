@@ -200,7 +200,7 @@ final class NavigationRoutesTests: XCTestCase {
     func test_utilityTools_followFeatureAvailabilityAndStableOrder() {
         XCTAssertEqual(
             UtilityTool.visibleCases(isAvailable: { _ in true }),
-            [.cleaner, .uninstaller, .colorPicker, .networkDiagnostics]
+            [.cleaner, .uninstaller, .colorPicker, .networkDiagnostics, .dshWeb]
         )
         XCTAssertEqual(
             UtilityTool.visibleCases(isAvailable: { $0 == .cleaner }),
