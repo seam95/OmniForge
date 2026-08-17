@@ -8,6 +8,7 @@ enum AppFeature: String, CaseIterable {
     case quickPhrase
     case systemMonitor
     case networkDiagnostics
+    case dshWeb
     case shelf
     case launchAtLogin
     case cleaner
@@ -68,7 +69,7 @@ extension AppFeature {
         case .systemMonitor: return .monitor
         case .shelf: return .productivity
         case .launchAtLogin: return .system
-        case .cleaner, .uninstaller, .colorPicker, .networkDiagnostics: return .productivity
+        case .cleaner, .uninstaller, .colorPicker, .networkDiagnostics, .dshWeb: return .productivity
         case .scrollInverter, .smoothScroll, .mouseNavigation, .dockClick: return .mouse
         case .keepAwake: return .energy
         case .screenshot: return .capture
@@ -91,7 +92,7 @@ extension AppFeature {
         case .systemMonitor, .networkDiagnostics: return []
         case .shelf: return [UserDefaultsKeys.shelfEnabled]
         case .launchAtLogin: return []
-        case .cleaner, .uninstaller, .colorPicker: return []
+        case .cleaner, .uninstaller, .colorPicker, .dshWeb: return []
         case .scrollInverter: return [UserDefaultsKeys.scrollInverterEnabled]
         case .smoothScroll: return [UserDefaultsKeys.smoothScrollEnabled]
         case .mouseNavigation: return [UserDefaultsKeys.mouseNavigationEnabled]
@@ -108,7 +109,7 @@ extension AppFeature {
         case .clipboardHistory: return []
         case .quickPhrase: return []
         case .systemMonitor: return [.notifications]
-        case .networkDiagnostics: return []
+        case .networkDiagnostics, .dshWeb: return []
         case .shelf: return []
         case .launchAtLogin: return []
         case .cleaner, .uninstaller: return [.fullDiskAccess]
@@ -145,7 +146,7 @@ extension AppFeature {
             return permission == .notifications ? .optional : nil
         case .cleaner, .uninstaller:
             return permission == .fullDiskAccess ? .required : nil
-        case .colorPicker, .networkDiagnostics:
+        case .colorPicker, .networkDiagnostics, .dshWeb:
             return nil
         case .screenshot:
             return permission == .screenRecording ? .required : nil
@@ -183,6 +184,7 @@ extension AppFeature {
         case .cleaner: return "sparkles"
         case .uninstaller: return "trash"
         case .colorPicker: return "eyedropper"
+        case .dshWeb: return "globe"
         case .scrollInverter: return "arrow.up.arrow.down"
         case .smoothScroll: return "cursorarrow.motionlines"
         case .mouseNavigation: return "arrow.left.arrow.right"
@@ -205,6 +207,7 @@ extension AppFeature {
         case .cleaner: return strings.cleanerName
         case .uninstaller: return strings.uninstallerName
         case .colorPicker: return strings.colorPickerName
+        case .dshWeb: return strings.featureHubNameDSHWeb
         case .scrollInverter: return strings.featureHubNameScrollInverter
         case .smoothScroll: return strings.featureHubNameSmoothScroll
         case .mouseNavigation: return strings.featureHubNameMouseNavigation
@@ -227,6 +230,7 @@ extension AppFeature {
         case .cleaner: return strings.cleanerIntroCaption
         case .uninstaller: return strings.uninstallerEnableCaption
         case .colorPicker: return strings.colorPickerDescription
+        case .dshWeb: return strings.featureHubDescDSHWeb
         case .scrollInverter: return strings.featureHubDescScrollInverter
         case .smoothScroll: return strings.featureHubDescSmoothScroll
         case .mouseNavigation: return strings.featureHubDescMouseNavigation

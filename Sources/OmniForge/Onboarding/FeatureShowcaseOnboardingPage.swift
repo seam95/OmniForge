@@ -99,7 +99,7 @@ extension AppFeature {
         case .systemMonitor: return "chart.bar"
         case .shelf: return "tray.full"
         case .launchAtLogin: return "power"
-        case .cleaner, .uninstaller, .colorPicker, .networkDiagnostics: return symbolName
+        case .cleaner, .uninstaller, .colorPicker, .networkDiagnostics, .dshWeb: return symbolName
         // 鼠标与触控板特性复用 Hub 图标
         case .scrollInverter, .smoothScroll, .mouseNavigation, .dockClick:
             return symbolName
@@ -116,7 +116,7 @@ extension AppFeature {
         case .systemMonitor: return strings.onboardingFeatureSystemMonitorTitle
         case .shelf: return strings.onboardingFeatureShelfTitle
         case .launchAtLogin: return strings.onboardingFeatureLaunchAtLoginTitle
-        case .cleaner, .uninstaller, .colorPicker, .networkDiagnostics: return hubName(in: strings)
+        case .cleaner, .uninstaller, .colorPicker, .networkDiagnostics, .dshWeb: return hubName(in: strings)
         // 鼠标与触控板特性复用 Hub 名称
         case .scrollInverter, .smoothScroll, .mouseNavigation, .dockClick:
             return hubName(in: strings)
@@ -133,7 +133,7 @@ extension AppFeature {
         case .systemMonitor: return strings.onboardingFeatureSystemMonitorDescription
         case .shelf: return strings.onboardingFeatureShelfDescription
         case .launchAtLogin: return strings.onboardingFeatureLaunchAtLoginDescription
-        case .cleaner, .uninstaller, .colorPicker, .networkDiagnostics: return hubDescription(in: strings)
+        case .cleaner, .uninstaller, .colorPicker, .networkDiagnostics, .dshWeb: return hubDescription(in: strings)
         // 鼠标与触控板特性复用 Hub 描述
         case .scrollInverter, .smoothScroll, .mouseNavigation, .dockClick:
             return hubDescription(in: strings)

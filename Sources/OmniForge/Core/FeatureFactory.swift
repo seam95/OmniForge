@@ -92,6 +92,9 @@ struct FeatureFactory {
         case .networkDiagnostics:
             // 工具型特性：按需采集，无后台 Manager
             break
+        case .dshWeb:
+            // 工具型特性：DSHWebManager 轻量单例，由视图懒加载，无需提前注册
+            break
         case .scrollInverter, .smoothScroll, .mouseNavigation, .dockClick:
             // 进程级单例（系统内只能有一个事件 tap），不进注册表；
             // 启停由 FeatureRuntime bindings 调用各自 syncWithPreferences。
@@ -264,6 +267,9 @@ struct FeatureFactory {
             break
         case .networkDiagnostics:
             break
+        case .dshWeb:
+            // 卸载时终止 dsh web 子进程并清空状态
+            DSHWebManager.shared.shutdown()
         case .scrollInverter, .smoothScroll, .mouseNavigation, .dockClick:
             // 单例自管理：先停 tap 再卸载，避免权限撤销后残留活跃 tap
             switch feature {

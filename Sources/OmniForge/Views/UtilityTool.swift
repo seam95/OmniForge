@@ -5,6 +5,7 @@ enum UtilityTool: String, CaseIterable, Identifiable {
     case uninstaller
     case colorPicker
     case networkDiagnostics
+    case dshWeb
 
     var id: String { rawValue }
 
@@ -19,6 +20,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
                 return isAvailable(.colorPicker)
             case .networkDiagnostics:
                 return isAvailable(.networkDiagnostics)
+            case .dshWeb:
+                return isAvailable(.dshWeb)
             }
         }
     }
@@ -42,6 +45,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
             return strings.colorPickerName
         case .networkDiagnostics:
             return strings.featureHubNameNetworkDiagnostics
+        case .dshWeb:
+            return strings.featureHubNameDSHWeb
         }
     }
 
@@ -56,6 +61,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
             return .colorPicker
         case .networkDiagnostics:
             return .networkDiagnostics
+        case .dshWeb:
+            return .dshWeb
         }
     }
 

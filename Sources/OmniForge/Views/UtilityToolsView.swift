@@ -209,6 +209,8 @@ struct UtilityToolsView: View {
             ColorPickerContentView(strings: strings, layout: .compact)
         case .networkDiagnostics:
             NetworkDiagnosticsView(strings: strings)
+        case .dshWeb:
+            DSHWebView(strings: strings)
         }
     }
 

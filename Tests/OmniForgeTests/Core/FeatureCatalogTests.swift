@@ -278,10 +278,10 @@ final class FeatureCatalogTests: XCTestCase {
     }
 
     func test_productivityGroupContainsTools() {
-        // productivity 组含 networkDiagnostics、shelf 及工具型特性 cleaner/uninstaller/colorPicker
+        // productivity 组含 networkDiagnostics、shelf 及工具型特性 cleaner/uninstaller/colorPicker/dshWeb
         XCTAssertEqual(
             FeatureGroup.features(in: .productivity),
-            [.networkDiagnostics, .shelf, .cleaner, .uninstaller, .colorPicker]
+            [.networkDiagnostics, .dshWeb, .shelf, .cleaner, .uninstaller, .colorPicker]
         )
         XCTAssertTrue(FeatureGroup.features(in: .productivity).contains(.networkDiagnostics))
     }
