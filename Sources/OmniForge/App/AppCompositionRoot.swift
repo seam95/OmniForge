@@ -82,8 +82,10 @@ final class AppCompositionRoot {
         return root
     }
 
-    /// App 退出：优先 KeepAwakeManager.shutdown；无 Manager 时走 Coordinator 恢复。
+    /// App 退出：先终止 dsh web 子进程（独立无依赖），再优先 KeepAwakeManager.shutdown；
+    /// 无 Manager 时走 Coordinator 恢复。
     func prepareForApplicationTermination() async -> Bool {
+        DSHWebManager.shared.shutdown()
         if let manager = FeatureRuntime.shared.manager(for: .keepAwake, as: KeepAwakeManager.self) {
             await manager.shutdown(reason: .applicationTermination)
             if case .cleanupRequired = manager.state {

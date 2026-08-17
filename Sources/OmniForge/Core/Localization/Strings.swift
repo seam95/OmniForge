@@ -300,6 +300,7 @@ struct Strings: Equatable {
     let featureHubNameDockClick: String
     let featureHubNameKeepAwake: String
     let featureHubNameScreenshot: String
+    let featureHubNameDSHWeb: String
     let featureHubDescInputLock: String
     let featureHubDescClipboardHistory: String
     let featureHubDescQuickPhrase: String
@@ -313,6 +314,7 @@ struct Strings: Equatable {
     let featureHubDescDockClick: String
     let featureHubDescKeepAwake: String
     let featureHubDescScreenshot: String
+    let featureHubDescDSHWeb: String
     let featureHubGroupInput: String
     let featureHubGroupClipboard: String
     let featureHubGroupMonitor: String
@@ -535,6 +537,23 @@ struct Strings: Equatable {
     let networkDiagnosticsTerminateFailed: String
     let networkDiagnosticsProtectedProcess: String
     let networkDiagnosticsUnknownProcess: String
+
+    // MARK: - DSH Web
+    let dshWebStart: String
+    let dshWebStop: String
+    let dshWebRestart: String
+    let dshWebOpenBrowser: String
+    let dshWebStateRunning: String
+    let dshWebStateStopped: String
+    let dshWebStateStarting: String
+    let dshWebStateStopping: String
+    let dshWebStateFailed: String     // + failed reason
+    let dshWebPortOccupied: String
+    let dshWebStartTimeout: String
+    let dshWebLaunchFailed: String
+    let dshWebLogTitle: String
+    let dshWebLogEmpty: String
+    let dshWebClearLog: String
     let networkDiagnosticsProcessPIDFormat: String
 
     // MARK: - Cleaner
