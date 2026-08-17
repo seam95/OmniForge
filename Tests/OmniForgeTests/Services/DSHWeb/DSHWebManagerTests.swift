@@ -46,7 +46,8 @@ final class DSHWebManagerTests: XCTestCase {
 
         XCTAssertEqual(manager.state, .running)
         XCTAssertEqual(launcher.launchCount, 1)
-        XCTAssertEqual(launcher.lastCommand, "exec dsh web")
+        XCTAssertEqual(launcher.lastCommand, DSHWebManager.launchCommand)
+        XCTAssertTrue(launcher.lastCommand?.contains("exec dsh web") == true)
         XCTAssertEqual(browser.openedURLs, [URL(string: "http://127.0.0.1:3080")!])
         XCTAssertTrue(manager.logLines.contains { $0.contains("服务就绪") })
     }

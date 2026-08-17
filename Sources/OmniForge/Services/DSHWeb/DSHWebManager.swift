@@ -26,7 +26,9 @@ final class DSHWebManager: ObservableObject {
     static let port: UInt16 = 3080
     static let address = "http://127.0.0.1:3080"
     static let addressURL = URL(string: address)!
-    static let launchCommand = "exec dsh web"
+    /// GUI 进程 PATH 不含 nvm；`zsh -c` 非交互不读 ~/.zshrc（nvm 配置所在），
+    /// 因此显式 source 用户 shell 配置后再 exec，保证 dsh 可达且句柄即 dsh 本体。
+    static let launchCommand = "source ~/.zprofile 2>/dev/null; source ~/.zshrc 2>/dev/null; exec dsh web"
     static let logCapacity = 500
 
     // MARK: Published

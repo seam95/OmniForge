@@ -525,6 +525,7 @@ extension Strings {
         dshWebLaunchFailed: "无法启动 dsh web 进程",
         dshWebLogTitle: "运行日志",
         dshWebLogEmpty: "暂无日志",
+        dshWebCopyLog: "复制",
         dshWebClearLog: "清空",
         networkDiagnosticsProcessPIDFormat: "%@ (%d)",
         // Cleaner

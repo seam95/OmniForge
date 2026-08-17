@@ -116,12 +116,28 @@ struct DSHWebView: View {
 
     // MARK: 日志区
 
+    /// 复制全部日志到剪贴板（保留换行与事件行格式）。
+    private func copyLog() {
+        let text = manager.logLines.joined(separator: "\n")
+        guard !text.isEmpty else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+    }
+
     private var logSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Text(strings.dshWebLogTitle)
                     .font(.system(size: 12, weight: .semibold))
                 Spacer(minLength: 0)
+                Button(strings.dshWebCopyLog) {
+                    copyLog()
+                }
+                .buttonStyle(.borderless)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.accentColor)
+                .disabled(manager.logLines.isEmpty)
                 Button(strings.dshWebClearLog) {
                     manager.clearLog()
                 }
@@ -145,6 +161,7 @@ struct DSHWebView: View {
                                     .font(.system(size: 11, design: .monospaced))
                                     .foregroundStyle(.primary)
                                     .frame(maxWidth: .infinity, alignment: .leading)
+                                    .textSelection(.enabled)
                             }
                             // 滚动锚点：新日志追加后滚到尾部
                             Color.clear

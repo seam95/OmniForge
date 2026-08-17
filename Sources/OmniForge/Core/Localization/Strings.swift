@@ -553,6 +553,7 @@ struct Strings: Equatable {
     let dshWebLaunchFailed: String
     let dshWebLogTitle: String
     let dshWebLogEmpty: String
+    let dshWebCopyLog: String
     let dshWebClearLog: String
     let networkDiagnosticsProcessPIDFormat: String
 

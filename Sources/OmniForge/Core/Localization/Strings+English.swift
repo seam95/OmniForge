@@ -525,6 +525,7 @@ extension Strings {
         dshWebLaunchFailed: "Failed to launch the dsh web process",
         dshWebLogTitle: "Log",
         dshWebLogEmpty: "No log entries yet",
+        dshWebCopyLog: "Copy",
         dshWebClearLog: "Clear",
         networkDiagnosticsProcessPIDFormat: "%@ (%d)",
         // Cleaner
