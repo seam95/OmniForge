@@ -8,6 +8,9 @@ final class DSHWebManagerTests: XCTestCase {
     private var launcher: FakeProcessLauncher!
     private var probe: FakeDSHWebPortProbe!
     private var browser: FakeBrowserOpener!
+    private var serviceDiscoverer: FakeDSHWebServiceDiscoverer!
+    private var signaler: FakeDSHWebServiceSignaler!
+    private var userDefaults: UserDefaults!
     private var manager: DSHWebManager!
     private let strings = Strings.zhHans
 
@@ -16,10 +19,16 @@ final class DSHWebManagerTests: XCTestCase {
         launcher = FakeProcessLauncher()
         probe = FakeDSHWebPortProbe()
         browser = FakeBrowserOpener()
+        serviceDiscoverer = FakeDSHWebServiceDiscoverer()
+        signaler = FakeDSHWebServiceSignaler()
+        userDefaults = UserDefaults(suiteName: "DSHWebManagerTests.\(UUID().uuidString)")!
         manager = DSHWebManager(
             processLauncher: launcher,
             portProbe: probe,
             browserOpener: browser,
+            serviceDiscoverer: serviceDiscoverer,
+            serviceSignaler: signaler,
+            userDefaults: userDefaults,
             stringsProvider: { [strings] in strings },
             pollInterval: .milliseconds(1),
             readyTimeout: .milliseconds(20),
@@ -46,8 +55,8 @@ final class DSHWebManagerTests: XCTestCase {
 
         XCTAssertEqual(manager.state, .running)
         XCTAssertEqual(launcher.launchCount, 1)
-        XCTAssertEqual(launcher.lastCommand, DSHWebManager.launchCommand)
-        XCTAssertTrue(launcher.lastCommand?.contains("exec dsh web") == true)
+        XCTAssertEqual(launcher.lastCommand, DSHWebManager.launchCommand(for: 3080))
+        XCTAssertTrue(launcher.lastCommand?.contains("exec dsh web --port 3080") == true)
         XCTAssertEqual(browser.openedURLs, [URL(string: "http://127.0.0.1:3080")!])
         XCTAssertTrue(manager.logLines.contains { $0.contains("服务就绪") })
     }
@@ -111,6 +120,69 @@ final class DSHWebManagerTests: XCTestCase {
 
         XCTAssertEqual(manager.state, .running)
         XCTAssertEqual(launcher.launchCount, 1)
+    }
+
+    func test_setConfiguredPort_persistsValidPort_andRejectsInvalidValue() {
+        manager.setConfiguredPort(8088)
+
+        XCTAssertEqual(manager.configuredPort, 8088)
+        XCTAssertEqual(userDefaults.integer(forKey: UserDefaultsKeys.dshWebPort), 8088)
+
+        manager.setConfiguredPort(70_000)
+
+        XCTAssertEqual(manager.configuredPort, DSHWebManager.defaultPort)
+    }
+
+    func test_start_customPort_usesPortForCommandAndBrowserURL() async {
+        manager.setConfiguredPort(8088)
+        probe.results = [false, true]
+
+        await manager.start()
+
+        XCTAssertEqual(launcher.lastCommand, DSHWebManager.launchCommand(for: 8088))
+        XCTAssertEqual(browser.openedURLs, [URL(string: "http://127.0.0.1:8088")!])
+    }
+
+    func test_refreshServices_publishesExternallyStartedServices() async {
+        let external = DSHWebService(
+            pid: 8123,
+            port: 8081,
+            command: "node /tmp/@deepseek-ai/dsh/lib/bin.js web --port 8081"
+        )
+        serviceDiscoverer.services = [external]
+
+        await manager.refreshServices()
+
+        XCTAssertEqual(manager.services, [external])
+        XCTAssertFalse(manager.isOwnedByApplication(external))
+    }
+
+    func test_stopExternalService_rechecksIdentity_thenEscalatesAfterTimeout() async {
+        let external = DSHWebService(
+            pid: 8123,
+            port: 8081,
+            command: "node /tmp/@deepseek-ai/dsh/lib/bin.js web --port 8081"
+        )
+        serviceDiscoverer.services = [external]
+
+        await manager.stop(service: external)
+
+        XCTAssertEqual(signaler.terminatedPIDs, [8123])
+        XCTAssertEqual(signaler.forceTerminatedPIDs, [8123])
+        XCTAssertGreaterThanOrEqual(serviceDiscoverer.discoverCount, 2)
+    }
+
+    func test_stopExternalService_whenIdentityNoLongerMatches_doesNotSignal() async {
+        let stale = DSHWebService(
+            pid: 8123,
+            port: 8081,
+            command: "node /tmp/@deepseek-ai/dsh/lib/bin.js web --port 8081"
+        )
+
+        await manager.stop(service: stale)
+
+        XCTAssertTrue(signaler.terminatedPIDs.isEmpty)
+        XCTAssertTrue(signaler.forceTerminatedPIDs.isEmpty)
     }
 
     // MARK: - 停止

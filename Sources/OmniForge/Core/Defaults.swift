@@ -23,6 +23,7 @@ enum Defaults {
             .merging(keepAwakeDefaults, uniquingKeysWith: { _, new in new })
             .merging(screenshotDefaults, uniquingKeysWith: { _, new in new })
             .merging(networkDiagnosticsDefaults, uniquingKeysWith: { _, new in new })
+            .merging(dshWebDefaults, uniquingKeysWith: { _, new in new })
     }
 
     /// Onboarding 相关默认值
@@ -126,6 +127,10 @@ enum Defaults {
         [
             UserDefaultsKeys.networkDiagnosticsSegment: "network",
         ]
+    }
+
+    private static var dshWebDefaults: [String: Any] {
+        [UserDefaultsKeys.dshWebPort: DSHWebManager.defaultPort]
     }
 
     /// Trims, drops empties, and de-duplicates bundle identifiers while preserving order.

@@ -23,24 +23,38 @@ final class DSHWebManager: ObservableObject {
 
     // MARK: 常量
 
-    static let port: UInt16 = 3080
-    static let address = "http://127.0.0.1:3080"
-    static let addressURL = URL(string: address)!
+    nonisolated static let defaultPort = 3080
     /// GUI 进程 PATH 不含 nvm；`zsh -c` 非交互不读 ~/.zshrc（nvm 配置所在），
     /// 因此显式 source 用户 shell 配置后再 exec，保证 dsh 可达且句柄即 dsh 本体。
-    static let launchCommand = "source ~/.zprofile 2>/dev/null; source ~/.zshrc 2>/dev/null; exec dsh web"
     static let logCapacity = 500
+
+    static func sanitizedPort(_ value: Int) -> Int {
+        (1...Int(UInt16.max)).contains(value) ? value : defaultPort
+    }
+
+    static func address(for port: Int) -> String {
+        "http://127.0.0.1:\(sanitizedPort(port))"
+    }
+
+    static func launchCommand(for port: Int) -> String {
+        "source ~/.zprofile 2>/dev/null; source ~/.zshrc 2>/dev/null; exec dsh web --port \(sanitizedPort(port))"
+    }
 
     // MARK: Published
 
     @Published private(set) var state: DSHWebState = .stopped
     @Published private(set) var logLines: [String] = []
+    @Published private(set) var configuredPort: Int
+    @Published private(set) var services: [DSHWebService] = []
 
     // MARK: Dependencies
 
     private let processLauncher: DSHWebProcessLaunching
     private let portProbe: DSHWebPortProbing
     private let browserOpener: BrowserOpening
+    private let serviceDiscoverer: DSHWebServiceDiscovering
+    private let serviceSignaler: DSHWebServiceSignaling
+    private let userDefaults: UserDefaults
     private let stringsProvider: () -> Strings
     private let pollInterval: Duration
     private let readyTimeout: Duration
@@ -56,6 +70,9 @@ final class DSHWebManager: ObservableObject {
         processLauncher: DSHWebProcessLaunching = ZshDSHWebProcessLauncher(),
         portProbe: DSHWebPortProbing = NWConnectionPortProbe(),
         browserOpener: BrowserOpening = WorkspaceBrowserOpener(),
+        serviceDiscoverer: DSHWebServiceDiscovering = SystemDSHWebServiceDiscoverer(),
+        serviceSignaler: DSHWebServiceSignaling = DarwinDSHWebServiceSignaler(),
+        userDefaults: UserDefaults = .standard,
         stringsProvider: @escaping () -> Strings = { L10n(userDefaults: .standard).s },
         pollInterval: Duration = .milliseconds(500),
         readyTimeout: Duration = .seconds(15),
@@ -65,6 +82,13 @@ final class DSHWebManager: ObservableObject {
         self.processLauncher = processLauncher
         self.portProbe = portProbe
         self.browserOpener = browserOpener
+        self.serviceDiscoverer = serviceDiscoverer
+        self.serviceSignaler = serviceSignaler
+        self.userDefaults = userDefaults
+        let storedPort = userDefaults.object(forKey: UserDefaultsKeys.dshWebPort) == nil
+            ? Self.defaultPort
+            : userDefaults.integer(forKey: UserDefaultsKeys.dshWebPort)
+        self.configuredPort = Self.sanitizedPort(storedPort)
         self.stringsProvider = stringsProvider
         self.pollInterval = pollInterval
         self.readyTimeout = readyTimeout
@@ -80,14 +104,15 @@ final class DSHWebManager: ObservableObject {
         guard state == .stopped || isFailed else { return }
 
         // 前置检查：端口已被占用时不启动进程，直接失败。
-        if portProbe.isPortOpen(Self.port) {
-            let reason = stringsProvider().dshWebPortOccupied
+        let port = UInt16(configuredPort)
+        if portProbe.isPortOpen(port) {
+            let reason = String(format: stringsProvider().dshWebPortOccupiedFormat, configuredPort)
             appendEvent(reason)
             state = .failed(reason)
             return
         }
 
-        appendEvent("启动 dsh web")
+        appendEvent("启动 dsh web :\(port)")
         state = .starting
 
         let outPipe = makeOutputPipe()
@@ -95,7 +120,7 @@ final class DSHWebManager: ObservableObject {
         let process: DSHWebProcessControlling
         do {
             process = try processLauncher.launch(
-                command: Self.launchCommand,
+                command: Self.launchCommand(for: configuredPort),
                 workingDirectory: FileManager.default.homeDirectoryForCurrentUser,
                 stdout: outPipe.fileHandleForReading,
                 stderr: errPipe.fileHandleForReading
@@ -107,6 +132,18 @@ final class DSHWebManager: ObservableObject {
             return
         }
         activeProcess = process
+        process.onExit = { [weak self, weak process] in
+            guard let process else { return }
+            Task { @MainActor [weak self] in
+                guard self?.activeProcess?.pid == process.pid else { return }
+                self?.activeProcess = nil
+                if self?.state == .running {
+                    self?.appendEvent("dsh web 进程已退出")
+                    self?.state = .stopped
+                    await self?.refreshServices()
+                }
+            }
+        }
 
         // 轮询端口就绪；超时或进程提前退出视为失败（并终止残留进程）。
         let deadline = Date().addingTimeInterval(seconds(readyTimeout))
@@ -118,10 +155,11 @@ final class DSHWebManager: ObservableObject {
                 state = .failed(reason)
                 return
             }
-            if portProbe.isPortOpen(Self.port) {
-                appendEvent("服务就绪 :\(Self.port)")
+            if portProbe.isPortOpen(port) {
+                appendEvent("服务就绪 :\(port)")
                 state = .running
-                browserOpener.open(Self.addressURL)
+                browserOpener.open(URL(string: Self.address(for: configuredPort))!)
+                await refreshServices()
                 return
             }
             if Date() >= deadline {
@@ -146,6 +184,7 @@ final class DSHWebManager: ObservableObject {
         activeProcess = nil
         appendEvent("服务已停止")
         state = .stopped
+        await refreshServices()
     }
 
     /// 重启：任意状态归一为「先停后启」。
@@ -156,10 +195,68 @@ final class DSHWebManager: ObservableObject {
         await start()
     }
 
-    /// 仅在 running 下打开默认浏览器访问服务地址。
+    /// 仅在本应用启动的服务运行时打开默认浏览器访问其地址。
     func openInBrowser() {
         guard state == .running else { return }
-        browserOpener.open(Self.addressURL)
+        browserOpener.open(URL(string: Self.address(for: configuredPort))!)
+    }
+
+    func openInBrowser(_ service: DSHWebService) {
+        guard let url = URL(string: service.address) else { return }
+        browserOpener.open(url)
+    }
+
+    /// 提交用户端口设置。运行中的本应用子进程保持原端口，直到停止后再启动。
+    func setConfiguredPort(_ port: Int) {
+        guard state != .running, state != .starting, state != .stopping else { return }
+        configuredPort = Self.sanitizedPort(port)
+        userDefaults.set(configuredPort, forKey: UserDefaultsKeys.dshWebPort)
+    }
+
+    /// 刷新由任意入口启动的 DSH Web 实例。发现失败仅记日志，避免影响自有服务状态机。
+    func refreshServices() async {
+        do {
+            services = try await serviceDiscoverer.discover()
+        } catch {
+            appendEvent("DSH Web 服务发现失败：\(error.localizedDescription)")
+        }
+    }
+
+    func isOwnedByApplication(_ service: DSHWebService) -> Bool {
+        activeProcess?.pid == service.pid
+    }
+
+    /// 停止指定实例。外部实例在发送信号前会重新发现并核验身份，避免 PID 复用误杀。
+    func stop(service: DSHWebService) async {
+        if isOwnedByApplication(service) {
+            await stop()
+            await refreshServices()
+            return
+        }
+
+        guard let verified = await verifiedService(matching: service) else {
+            appendEvent("目标 DSH Web 服务已变化，未发送停止信号")
+            await refreshServices()
+            return
+        }
+        guard serviceSignaler.terminate(pid: verified.pid) else {
+            appendEvent("无法向 DSH Web 进程 \(verified.pid) 发送 SIGTERM")
+            return
+        }
+        appendEvent("已向外部 DSH Web 进程 \(verified.pid) 发送 SIGTERM")
+
+        if await waitForServiceExit(verified, timeout: stopTimeout) {
+            await refreshServices()
+            return
+        }
+        guard let stillRunning = await verifiedService(matching: verified) else {
+            await refreshServices()
+            return
+        }
+        if serviceSignaler.forceTerminate(pid: stillRunning.pid) {
+            appendEvent("已向外部 DSH Web 进程 \(stillRunning.pid) 发送 SIGKILL")
+        }
+        await refreshServices()
     }
 
     /// 应用退出快速终止：SIGTERM + 最多 shutdownTimeout 等待；不 SIGKILL（系统即将回收）。
@@ -230,6 +327,23 @@ final class DSHWebManager: ObservableObject {
                 finish(false)
             }
         }
+    }
+
+    /// 再次发现且完整身份相同才允许对外部 PID 操作。
+    private func verifiedService(matching target: DSHWebService) async -> DSHWebService? {
+        guard let services = try? await serviceDiscoverer.discover() else { return nil }
+        return services.first { DSHWebServiceSupport.isSameInstance($0, target) }
+    }
+
+    private func waitForServiceExit(_ service: DSHWebService, timeout: Duration) async -> Bool {
+        let deadline = Date().addingTimeInterval(seconds(timeout))
+        while Date() < deadline {
+            if await verifiedService(matching: service) == nil {
+                return true
+            }
+            try? await Task.sleep(for: pollInterval)
+        }
+        return await verifiedService(matching: service) == nil
     }
 
     // MARK: - 输出采集

@@ -79,4 +79,6 @@ enum UserDefaultsKeys {
     static let screenshotHotkeyRecordModifiers = "screenshot.hotkey.record.modifiers"
     // 网络诊断 — 持久化字符串必须稳定，不得重命名
     static let networkDiagnosticsSegment = "networkDiagnostics.segment"
+    // DSH Web — 持久化字符串必须稳定，不得重命名
+    static let dshWebPort = "dshWeb.port"
 }

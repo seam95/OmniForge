@@ -8,17 +8,53 @@ import SwiftUI
 struct DSHWebView: View {
     let strings: Strings
     @ObservedObject private var manager = DSHWebManager.shared
+    @State private var serviceAwaitingStopConfirmation: DSHWebService?
 
     private static let logAnchorID = "dsh-web-log-bottom"
+    private static let portFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .none
+        formatter.allowsFloats = false
+        return formatter
+    }()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             statusRow
             actionRow
+            servicesSection
             logSection
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
+        .task {
+            while !Task.isCancelled {
+                await manager.refreshServices()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+        .alert(
+            strings.dshWebStopExternalTitle,
+            isPresented: Binding(
+                get: { serviceAwaitingStopConfirmation != nil },
+                set: { if !$0 { serviceAwaitingStopConfirmation = nil } }
+            ),
+            presenting: serviceAwaitingStopConfirmation
+        ) { service in
+            Button(strings.dshWebStop, role: .destructive) {
+                Task { await manager.stop(service: service) }
+                serviceAwaitingStopConfirmation = nil
+            }
+            Button(strings.dshWebCancel, role: .cancel) {
+                serviceAwaitingStopConfirmation = nil
+            }
+        } message: { service in
+            Text(String(
+                format: strings.dshWebStopExternalMessageFormat,
+                Int(service.pid),
+                Int(service.port)
+            ))
+        }
     }
 
     // MARK: 状态徽标行
@@ -71,18 +107,84 @@ struct DSHWebView: View {
 
     private var actionRow: some View {
         HStack(spacing: 10) {
+            Text(strings.dshWebPort)
+                .font(.system(size: 12, weight: .medium))
+            TextField(
+                strings.dshWebPort,
+                value: Binding(
+                    get: { manager.configuredPort },
+                    set: { manager.setConfiguredPort($0) }
+                ),
+                formatter: Self.portFormatter
+            )
+            .textFieldStyle(.roundedBorder)
+            .frame(width: 72)
+            .disabled(manager.state == .running || manager.state == .starting || manager.state == .stopping)
             primaryButton
-            Button(strings.dshWebOpenBrowser) {
-                manager.openInBrowser()
+            Button(strings.dshWebRefresh) {
+                Task { await manager.refreshServices() }
             }
             .buttonStyle(.bordered)
-            .disabled(manager.state != .running)
             Spacer(minLength: 8)
-            Text(DSHWebManager.address)
+            Text(DSHWebManager.address(for: manager.configuredPort))
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
+    }
+
+    // MARK: 已发现服务
+
+    private var servicesSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(strings.dshWebServicesTitle)
+                .font(.system(size: 12, weight: .semibold))
+
+            if manager.services.isEmpty {
+                Text(strings.dshWebNoServices)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 4)
+            } else {
+                ForEach(manager.services) { service in
+                    serviceRow(service)
+                }
+            }
+        }
+    }
+
+    private func serviceRow(_ service: DSHWebService) -> some View {
+        let ownedByApplication = manager.isOwnedByApplication(service)
+        return HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(service.address)
+                    .font(.system(size: 11, design: .monospaced))
+                Text("PID \(service.pid) · \(ownedByApplication ? strings.dshWebManagedService : strings.dshWebExternalService)")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            Button(strings.dshWebOpenBrowser) {
+                manager.openInBrowser(service)
+            }
+            .buttonStyle(.borderless)
+            .font(.system(size: 11))
+            Button(strings.dshWebStop, role: .destructive) {
+                if ownedByApplication {
+                    Task { await manager.stop(service: service) }
+                } else {
+                    serviceAwaitingStopConfirmation = service
+                }
+            }
+            .buttonStyle(.borderless)
+            .font(.system(size: 11))
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
     }
 
     @ViewBuilder

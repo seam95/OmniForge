@@ -216,4 +216,18 @@ final class DefaultsRegistrationTests: XCTestCase {
             "network"
         )
     }
+
+    func test_register_setsDSHWebPortDefault() {
+        let suite = "DefaultsRegistrationTests_dshWeb"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+
+        Defaults.register(in: defaults)
+
+        XCTAssertEqual(defaults.integer(forKey: UserDefaultsKeys.dshWebPort), DSHWebManager.defaultPort)
+        XCTAssertEqual(
+            Defaults.registrationValues[UserDefaultsKeys.dshWebPort] as? Int,
+            DSHWebManager.defaultPort
+        )
+    }
 }

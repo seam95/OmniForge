@@ -549,12 +549,22 @@ struct Strings: Equatable {
     let dshWebStateStopping: String
     let dshWebStateFailed: String     // + failed reason
     let dshWebPortOccupied: String
+    let dshWebPortOccupiedFormat: String
     let dshWebStartTimeout: String
     let dshWebLaunchFailed: String
     let dshWebLogTitle: String
     let dshWebLogEmpty: String
     let dshWebCopyLog: String
     let dshWebClearLog: String
+    let dshWebPort: String
+    let dshWebRefresh: String
+    let dshWebServicesTitle: String
+    let dshWebNoServices: String
+    let dshWebManagedService: String
+    let dshWebExternalService: String
+    let dshWebStopExternalTitle: String
+    let dshWebStopExternalMessageFormat: String
+    let dshWebCancel: String
     let networkDiagnosticsProcessPIDFormat: String
 
     // MARK: - Cleaner

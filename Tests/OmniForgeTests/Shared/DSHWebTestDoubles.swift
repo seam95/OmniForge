@@ -92,6 +92,37 @@ final class FakeDSHWebPortProbe: DSHWebPortProbing {
     }
 }
 
+// MARK: - 服务发现与停止
+
+final class FakeDSHWebServiceDiscoverer: DSHWebServiceDiscovering {
+    var services: [DSHWebService] = []
+    var error: Error?
+    private(set) var discoverCount = 0
+
+    func discover() async throws -> [DSHWebService] {
+        discoverCount += 1
+        if let error { throw error }
+        return services
+    }
+}
+
+final class FakeDSHWebServiceSignaler: DSHWebServiceSignaling {
+    private(set) var terminatedPIDs: [Int32] = []
+    private(set) var forceTerminatedPIDs: [Int32] = []
+    var terminateResult = true
+    var forceTerminateResult = true
+
+    func terminate(pid: Int32) -> Bool {
+        terminatedPIDs.append(pid)
+        return terminateResult
+    }
+
+    func forceTerminate(pid: Int32) -> Bool {
+        forceTerminatedPIDs.append(pid)
+        return forceTerminateResult
+    }
+}
+
 // MARK: - 浏览器
 
 final class FakeBrowserOpener: BrowserOpening {
