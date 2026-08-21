@@ -60,6 +60,8 @@ final class CaptureOverlayController {
     private var captureClient: ScreenCaptureClient?
     /// 是否在选区完成后嵌入标注编辑器。全屏/纯捕获流程可关闭。
     private let editorEnabled: Bool
+    /// 编辑器与截图流程共用的当前语言字符串目录。
+    private let stringsProvider: () -> Strings
 
     // 阶段 5 输出依赖（透传给编辑器）
     private let outputEncoder: ImageOutputEncoding?
@@ -202,6 +204,7 @@ final class CaptureOverlayController {
     ///   输出依赖透传给编辑器；`resultPipeline` 可后置 `setResultPipeline`。
     init(captureClient: ScreenCaptureClient? = nil,
          editorEnabled: Bool = true,
+         stringsProvider: @escaping () -> Strings = { .en },
          outputEncoder: ImageOutputEncoding? = nil,
          clipboardWriter: ClipboardImageWriting? = nil,
          screenshotSaver: ScreenshotSaving? = nil,
@@ -212,6 +215,7 @@ final class CaptureOverlayController {
          pinResultBuilder: ((NSImage) -> ScreenshotResult?)? = nil) {
         self.captureClient = captureClient
         self.editorEnabled = editorEnabled
+        self.stringsProvider = stringsProvider
         self.outputEncoder = outputEncoder
         self.clipboardWriter = clipboardWriter
         self.screenshotSaver = screenshotSaver
@@ -354,6 +358,7 @@ final class CaptureOverlayController {
         let editor = AnnotationEditorController(
             baseImage: baseImage,
             document: AnnotationDocument(),
+            stringsProvider: stringsProvider,
             resultRunner: resolvedResultPipeline(),
             encoder: encoder,
             clipboardWriter: clipboard,
@@ -885,6 +890,7 @@ extension CaptureOverlayController: SelectionViewDelegate {
         let editor = AnnotationEditorController(
             baseImage: image,
             document: AnnotationDocument(),
+            stringsProvider: stringsProvider,
             resultRunner: resolvedResultPipeline(),
             encoder: encoder,
             clipboardWriter: clipboard,
@@ -940,6 +946,11 @@ extension CaptureOverlayController {
     /// 测试用：是否已 tearDown（apply 守卫可读）。
     var isTornDownForTesting: Bool {
         isTornDown
+    }
+
+    /// 测试用：读取当前嵌入编辑器实际使用的字符串目录。
+    var editorStringsForTesting: Strings? {
+        editorController?.stringsForTesting
     }
 
     /// 测试用：模拟 async captureRegion 完成后的 `finishDirectCapture`（含 tearDown/generation 守卫）。
@@ -1009,4 +1020,3 @@ extension CaptureOverlayController {
         return editorHostView
     }
 }
-

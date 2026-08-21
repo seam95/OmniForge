@@ -469,7 +469,7 @@ final class MiniChoiceButton: NSView {
 
 // MARK: - TextSubToolbar
 
-/// 文字子工具栏：字号滑块 + 色板 + 描边/气泡复选框。
+/// 文字子工具栏：字号滑块 + 色板 + 描边/背景填充复选框。
 /// 参照 capcap `TextSubToolbar`（L4196-4450）。
 final class TextSubToolbar: NSView {
     var onColorChanged: ((NSColor) -> Void)?

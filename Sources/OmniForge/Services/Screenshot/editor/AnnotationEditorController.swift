@@ -120,6 +120,8 @@ final class AnnotationEditorController {
 
     /// 测试钩子：当前选区视图矩形。
     var selectionViewRectForTesting: NSRect { selectionViewRect }
+    /// 测试钩子：当前编辑器使用的字符串目录。
+    var stringsForTesting: Strings { stringsProvider() }
 
     private var keyMonitor: Any?
 

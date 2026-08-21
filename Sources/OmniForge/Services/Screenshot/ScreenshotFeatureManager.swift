@@ -150,7 +150,10 @@ final class ScreenshotFeatureManager: ObservableObject {
         self.stringsProvider = stringsProvider
         self.keyboardShortcuts = keyboardShortcuts
         self.captureClient = captureClient
-        self.overlayController = overlayController ?? CaptureOverlayController(captureClient: captureClient)
+        self.overlayController = overlayController ?? CaptureOverlayController(
+            captureClient: captureClient,
+            stringsProvider: stringsProvider
+        )
         self.recordingCoordinator = recordingCoordinator
             ?? RecordingSessionCoordinator(
                 userDefaults: userDefaults,

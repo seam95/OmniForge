@@ -13,6 +13,27 @@ import XCTest
 /// 置 false，mouseDown 直接 return（见 SelectionView.mouseDown 首行 guard）。
 @MainActor
 final class CaptureOverlayMultiScreenTests: XCTestCase {
+    func test_editorEmbedPassesChineseTextToolLabels() {
+        let controller = CaptureOverlayController(
+            editorEnabled: true,
+            stringsProvider: { .zhHans }
+        )
+        let view = SelectionView(frame: NSRect(x: 0, y: 0, width: 500, height: 400))
+
+        _ = controller.embedEditorForTesting(
+            image: NSImage(size: NSSize(width: 100, height: 80)),
+            selectionRect: NSRect(x: 50, y: 50, width: 200, height: 150),
+            selectionView: view
+        )
+
+        XCTAssertEqual(controller.editorStringsForTesting?.annotationTextOutline, "描边")
+        XCTAssertEqual(controller.editorStringsForTesting?.annotationTextFill, "背景填充")
+        XCTAssertEqual(Strings.en.annotationTextOutline, "Outline")
+        XCTAssertEqual(Strings.en.annotationTextFill, "Fill")
+
+        controller.tearDown()
+    }
+
     func test_editorEmbedDisablesInteractionOnOtherScreens() {
         let controller = CaptureOverlayController(editorEnabled: true)
 

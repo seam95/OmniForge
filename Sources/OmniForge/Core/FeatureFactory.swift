@@ -178,6 +178,7 @@ struct FeatureFactory {
                 )
                 let overlayController = CaptureOverlayController(
                     captureClient: captureClient,
+                    stringsProvider: { L10n(userDefaults: userDefaults).s },
                     outputEncoder: outputEncoder,
                     clipboardWriter: clipboardWriter,
                     screenshotSaver: screenshotSaver,
