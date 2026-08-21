@@ -85,59 +85,59 @@ final class PinnedScreenshotRegistryTests: XCTestCase {
         }
     }
 
-    // MARK: - ESC 关闭（最近交互钉图）
+    // MARK: - ESC 关闭（选中钉图）
 
-    func test_newPin_becomesEscapeTarget() throws {
+    func test_newPin_isSelectedAndCanBeClosedWithEscape() throws {
         let h = try registry.pin(result: try makeResult())
         XCTAssertEqual(registry.count, 1)
 
-        registry.closeLastTouched()
+        XCTAssertTrue(registry.closeSelectedPin())
         XCTAssertEqual(registry.count, 0)
         XCTAssertNil(registry.handle(for: h.id))
     }
 
-    func test_markTouched_switchesEscapeTarget() throws {
+    func test_markTouched_switchesSelectedPin() throws {
         let h1 = try registry.pin(result: try makeResult())
         let h2 = try registry.pin(result: try makeResult())
         XCTAssertEqual(registry.count, 2)
 
         registry.markTouched(h1.id)
-        registry.closeLastTouched()
+        XCTAssertTrue(registry.closeSelectedPin())
         XCTAssertEqual(registry.count, 1)
         XCTAssertNil(registry.handle(for: h1.id))
         XCTAssertNotNil(registry.handle(for: h2.id))
     }
 
-    func test_escapeTargetCleared_fallsBackToMostRecent() throws {
+    func test_clearingSelection_keepsPinsWhenEscapeIsPressed() throws {
         let h1 = try registry.pin(result: try makeResult())
         let h2 = try registry.pin(result: try makeResult())
         XCTAssertEqual(registry.count, 2)
 
-        registry.closeLastTouched()
-        XCTAssertEqual(registry.count, 1)
-        XCTAssertNil(registry.handle(for: h2.id))
-
-        registry.closeLastTouched()
-        XCTAssertEqual(registry.count, 0)
-        XCTAssertNil(registry.handle(for: h1.id))
+        registry.clearSelectedPin()
+        XCTAssertFalse(registry.closeSelectedPin())
+        XCTAssertEqual(registry.count, 2)
+        XCTAssertNotNil(registry.handle(for: h1.id))
+        XCTAssertNotNil(registry.handle(for: h2.id))
     }
 
-    func test_markTouched_unknownId_isNoOp() throws {
+    func test_closingSelectedPin_doesNotFallBackToAnotherPin() throws {
         let h1 = try registry.pin(result: try makeResult())
-        registry.markTouched(UUID())
-        registry.closeLastTouched()
-        XCTAssertEqual(registry.count, 0)
-        XCTAssertNil(registry.handle(for: h1.id))
+        let h2 = try registry.pin(result: try makeResult())
+
+        XCTAssertTrue(registry.closeSelectedPin())
+        XCTAssertNil(registry.handle(for: h2.id))
+        XCTAssertNotNil(registry.handle(for: h1.id))
+        XCTAssertFalse(registry.closeSelectedPin())
+        XCTAssertEqual(registry.count, 1)
     }
 
-    func test_closeAll_thenEscape_isNoOp() throws {
-        _ = try registry.pin(result: try makeResult())
-        _ = try registry.pin(result: try makeResult())
-        registry.closeAll()
-        XCTAssertEqual(registry.count, 0)
+    func test_markTouched_unknownId_doesNotReplaceSelection() throws {
+        let h = try registry.pin(result: try makeResult())
+        registry.markTouched(UUID())
 
-        registry.closeLastTouched()
+        XCTAssertTrue(registry.closeSelectedPin())
         XCTAssertEqual(registry.count, 0)
+        XCTAssertNil(registry.handle(for: h.id))
     }
 
     private func makeResult(width: Int = 20, height: Int = 10) throws -> ScreenshotResult {

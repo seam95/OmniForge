@@ -23,7 +23,7 @@ final class PinnedScreenshotWindowController: NSObject, NSWindowDelegate {
     private(set) var lastError: String?
     /// T15 L10n 注入（默认英文，Factory 注入运行时语言）。
     var stringsProvider: () -> Strings = { .en }
-    /// 单击/触摸通知：Registry 据此更新最近交互的钉图，作为 ESC 关闭目标。
+    /// 单击/触摸通知：Registry 据此选中钉图，使其成为唯一的 ESC 关闭目标。
     var onTouch: ((UUID) -> Void)?
 
     private var panel: NSPanel?
@@ -66,6 +66,11 @@ final class PinnedScreenshotWindowController: NSObject, NSWindowDelegate {
     }
 
     var isVisible: Bool { panel?.isVisible == true }
+
+    /// 判断本地鼠标事件是否由当前贴图面板接收，供注册表维护 ESC 选中状态。
+    func owns(_ window: NSWindow?) -> Bool {
+        panel === window
+    }
 
     /// 展示钉图；几何无效时明确失败。
     /// - Parameters:
@@ -470,7 +475,7 @@ final class PinnedScreenshotContentView: NSView {
     var menuProvider: (() -> NSMenu?)?
     /// 双击关闭回调
     var onDoubleClick: (() -> Void)?
-    /// 单击/触摸：用于更新"最近交互"的钉图（ESC 关闭目标）
+    /// 单击/触摸：用于选中钉图（ESC 关闭目标）
     var onTouch: (() -> Void)?
 
     override var isOpaque: Bool { false }
@@ -541,6 +546,7 @@ final class PinnedScreenshotContentView: NSView {
     }
 
     override func rightMouseDown(with event: NSEvent) {
+        onTouch?()
         onRightMouseDown?(event)
     }
 

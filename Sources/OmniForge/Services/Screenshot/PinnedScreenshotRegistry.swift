@@ -14,11 +14,14 @@ final class PinnedScreenshotRegistry {
     private let now: () -> Date
     private var controllers: [UUID: PinnedScreenshotWindowController] = [:]
 
-    /// ESC 关闭目标：最近被点击/钉住的钉图。
-    private var lastTouchedId: UUID?
+    /// 当前选中的钉图；仅它可响应 ESC。新建钉图与直接点击钉图会选中它。
+    private var selectedId: UUID?
     /// ESC 监听：钉图存在期间安装，全部关闭后卸载（零常驻副作用）。
     private var escLocalMonitor: Any?
     private var escGlobalMonitor: Any?
+    /// 指针监听：点击非钉图区域时取消选中，避免 ESC 误删后台贴图。
+    private var pointerLocalMonitor: Any?
+    private var pointerGlobalMonitor: Any?
 
     init(
         pipeline: ScreenshotResultPipeline = ScreenshotResultPipeline(),
@@ -87,9 +90,9 @@ final class PinnedScreenshotRegistry {
         }
         try controller.present(preferredScreenFrame: preferredScreenFrame, preferredOrigin: preferredOrigin)
         controllers[id] = controller
-        // 新钉图默认成为 ESC 关闭目标，并确保监听就位
-        lastTouchedId = id
-        ensureEscMonitor()
+        // 新钉图默认选中，允许用户立即按 ESC 撤销本次贴图。
+        selectedId = id
+        ensureEventMonitors()
         Self.logger.info("pinned screenshot id=\(id.uuidString, privacy: .public)")
         return controller.handle
     }
@@ -153,64 +156,84 @@ final class PinnedScreenshotRegistry {
         return c
     }
 
-    // MARK: - ESC 关闭（最近交互钉图）
+    // MARK: - ESC 关闭（选中钉图）
 
-    /// 标记最近交互的钉图，作为 ESC 关闭目标。
+    /// 标记用户刚交互的钉图，作为唯一的 ESC 关闭目标。
     func markTouched(_ id: UUID) {
         guard controllers[id] != nil else { return }
-        lastTouchedId = id
+        selectedId = id
     }
 
-    /// 统一收尾：移除已关闭的 controller，重置 ESC 目标，必要时卸载监听。
+    /// 取消当前选中状态。点击贴图以外的区域后调用，ESC 不再影响任何贴图。
+    func clearSelectedPin() {
+        selectedId = nil
+    }
+
+    /// 统一收尾：移除已关闭的 controller，清除对应选中状态，必要时卸载监听。
     private func handleControllerClosed(_ closedID: UUID) {
         controllers.removeValue(forKey: closedID)
-        if lastTouchedId == closedID {
-            // 回落到剩余 controllers 中最后创建的一个（保持稳定可预期）
-            lastTouchedId = controllers.isEmpty ? nil : fallbackTouchedId()
+        if selectedId == closedID {
+            selectedId = nil
         }
         if controllers.isEmpty {
-            removeEscMonitor()
+            removeEventMonitors()
         }
     }
 
-    /// 选择剩余钉图中最近交互/最后创建的一个作为 ESC 目标。
-    /// 抽为内部方法以便单测：优先沿用 lastTouchedId，否则取 createdAt 最新者。
-    func fallbackTouchedId() -> UUID? {
-        if let last = lastTouchedId, controllers[last] != nil {
-            return last
-        }
-        return controllers.values
-            .sorted { $0.createdAt < $1.createdAt }
-            .last?
-            .id
-    }
-
-    /// 关闭 ESC 目标钉图；供 ESC 监听与外部测试调用。
-    func closeLastTouched() {
-        guard let id = lastTouchedId, controllers[id] != nil else { return }
+    /// 关闭当前选中的钉图；返回值用于决定本地 ESC 是否需要被吞掉。
+    @discardableResult
+    func closeSelectedPin() -> Bool {
+        guard let id = selectedId, controllers[id] != nil else { return false }
         controllers[id]?.close()
+        return true
     }
 
-    private func ensureEscMonitor() {
-        guard escLocalMonitor == nil, escGlobalMonitor == nil, !controllers.isEmpty else { return }
-        // 本地：本 app 为 key 时吞掉 ESC，避免系统蜂鸣
+    private func ensureEventMonitors() {
+        guard escLocalMonitor == nil,
+              escGlobalMonitor == nil,
+              pointerLocalMonitor == nil,
+              pointerGlobalMonitor == nil,
+              !controllers.isEmpty else {
+            return
+        }
+        // 本地：仅已选中钉图时吞掉 ESC，避免系统蜂鸣或把按键传给其他控件。
         escLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 { // ESC
-                self?.closeLastTouched()
+            if event.keyCode == 53, self?.closeSelectedPin() == true { // ESC
                 return nil
             }
             return event
         }
-        // 全局：焦点在其他应用时仍可关闭（仅观察，不阻止事件传给目标应用）
+        // 全局：仅保留刚创建或已点击选中的钉图可关闭；不会阻止目标应用收到 ESC。
         escGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard event.keyCode == 53 else { return }
             Task { @MainActor in
-                self?.closeLastTouched()
+                self?.closeSelectedPin()
+            }
+        }
+
+        let pointerEvents: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        // 本应用内只有点击钉图面板才保留选中；点击任何其他窗口会取消选中。
+        pointerLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: pointerEvents) { [weak self] event in
+            self?.updateSelection(forLocalPointerDown: event)
+            return event
+        }
+        // 全局点击必定发生在其他应用，故应取消选中。点击穿透的贴图也走这里，不能误选。
+        pointerGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: pointerEvents) { [weak self] _ in
+            Task { @MainActor in
+                self?.clearSelectedPin()
             }
         }
     }
 
-    private func removeEscMonitor() {
+    private func updateSelection(forLocalPointerDown event: NSEvent) {
+        guard let id = controllers.first(where: { $0.value.owns(event.window) })?.key else {
+            clearSelectedPin()
+            return
+        }
+        markTouched(id)
+    }
+
+    private func removeEventMonitors() {
         if let escLocalMonitor {
             NSEvent.removeMonitor(escLocalMonitor)
             self.escLocalMonitor = nil
@@ -218,6 +241,14 @@ final class PinnedScreenshotRegistry {
         if let escGlobalMonitor {
             NSEvent.removeMonitor(escGlobalMonitor)
             self.escGlobalMonitor = nil
+        }
+        if let pointerLocalMonitor {
+            NSEvent.removeMonitor(pointerLocalMonitor)
+            self.pointerLocalMonitor = nil
+        }
+        if let pointerGlobalMonitor {
+            NSEvent.removeMonitor(pointerGlobalMonitor)
+            self.pointerGlobalMonitor = nil
         }
     }
 }
