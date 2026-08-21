@@ -93,9 +93,7 @@ final class DarwinDSHWebServiceSignaler: DSHWebServiceSignaling {
 enum DSHWebServiceSupport {
     static func isDSHWebCommand(_ command: String) -> Bool {
         let tokens = command.split(whereSeparator: \.isWhitespace).map(String.init)
-        guard let executableIndex = tokens.firstIndex(where: {
-            $0.contains("@deepseek-ai/dsh") && $0.hasSuffix("/lib/bin.js")
-        }) else {
+        guard let executableIndex = tokens.firstIndex(where: isDSHExecutablePath) else {
             return false
         }
 
@@ -106,6 +104,12 @@ enum DSHWebServiceSupport {
         return zip(arguments, arguments.dropFirst()).contains { pair in
             pair.0 == "--profile" && pair.1 == "web"
         }
+    }
+
+    /// 既支持 Node 实际脚本路径，也支持 npm 保留在 ps 输出中的全局 `bin/dsh` 符号链接路径。
+    private static func isDSHExecutablePath(_ path: String) -> Bool {
+        (path.contains("@deepseek-ai/dsh") && path.hasSuffix("/lib/bin.js"))
+            || path.hasSuffix("/bin/dsh")
     }
 
     static func isSameInstance(_ lhs: DSHWebService, _ rhs: DSHWebService) -> Bool {

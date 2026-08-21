@@ -8,6 +8,13 @@ final class DSHWebServiceDiscoveryTests: XCTestCase {
         XCTAssertTrue(DSHWebServiceSupport.isDSHWebCommand(command))
     }
 
+    /// npm 全局 bin 是符号链接时，ps 保留用户调用的 `.../bin/dsh` 路径。
+    func test_isDSHWebCommand_acceptsGlobalDSHBinAlias() {
+        let command = "node /Users/test/.nvm/versions/node/v22/bin/dsh web"
+
+        XCTAssertTrue(DSHWebServiceSupport.isDSHWebCommand(command))
+    }
+
     func test_isDSHWebCommand_acceptsExplicitWebProfile() {
         let command = "node /tmp/@deepseek-ai/dsh/lib/bin.js --profile web --port 8080"
 
