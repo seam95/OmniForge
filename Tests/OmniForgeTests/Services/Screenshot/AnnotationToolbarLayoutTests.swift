@@ -52,4 +52,34 @@ final class AnnotationToolbarLayoutTests: XCTestCase {
         XCTAssertFalse(view.contains(.separator))
         XCTAssertNil(view.frame(for: .separator))
     }
+
+    func test_textSubToolbar_preferredWidthContainsAllControlsForEnglishLabels() {
+        let strokeLabel = "Outline"
+        let calloutLabel = "Fill"
+        let width = TextSubToolbar.preferredWidth(
+            strokeLabel: strokeLabel,
+            calloutLabel: calloutLabel
+        )
+        let toolbar = TextSubToolbar(
+            frame: NSRect(x: 0, y: 0, width: width, height: 44),
+            currentColor: EditorStyleDefaults.primaryColor,
+            currentFontSize: EditorStyleDefaults.fontSize,
+            strokeEnabled: false,
+            calloutEnabled: false,
+            strokeLabel: strokeLabel,
+            calloutLabel: calloutLabel
+        )
+
+        XCTAssertTrue(toolbar.subviews.allSatisfy { $0.frame.maxX <= toolbar.bounds.maxX })
+    }
+
+    func test_textSubToolbar_preferredWidthExpandsForLongerLocalizedLabels() {
+        let shortWidth = TextSubToolbar.preferredWidth(strokeLabel: "A", calloutLabel: "B")
+        let longWidth = TextSubToolbar.preferredWidth(
+            strokeLabel: "Longer Outline Label",
+            calloutLabel: "Longer Fill Label"
+        )
+
+        XCTAssertGreaterThan(longWidth, shortWidth)
+    }
 }

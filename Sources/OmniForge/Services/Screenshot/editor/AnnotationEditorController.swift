@@ -668,7 +668,11 @@ final class AnnotationEditorController {
     private func installTextSubToolbar() {
         guard let host = hostSelectionView else { return }
         let strings = stringsProvider()
-        let frame = NSRect(x: 0, y: 0, width: 420, height: 44)
+        let width = TextSubToolbar.preferredWidth(
+            strokeLabel: strings.annotationTextOutline,
+            calloutLabel: strings.annotationTextFill
+        )
+        let frame = NSRect(x: 0, y: 0, width: width, height: 44)
         let sub = TextSubToolbar(
             frame: frame,
             currentColor: currentColor,
@@ -1645,4 +1649,3 @@ final class AnnotationEditorController {
         toast.present(message, near: screen)
     }
 }
-

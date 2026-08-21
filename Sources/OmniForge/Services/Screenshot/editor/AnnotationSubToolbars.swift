@@ -495,6 +495,32 @@ final class TextSubToolbar: NSView {
     private static let swatchGap: CGFloat = 5
     private static let sectionGap: CGFloat = 8
     private static let checkboxGap: CGFloat = 8
+    private static let leadingPad: CGFloat = 12
+    private static let sliderSeparatorGap: CGFloat = 8
+    private static let paletteLeadingGap: CGFloat = 9
+    private static let trailingPad: CGFloat = 12
+
+    /// 根据实际标签宽度计算文字子工具栏所需宽度，避免本地化文案挤出浮层。
+    static func preferredWidth(strokeLabel: String,
+                               calloutLabel: String,
+                               dynamicColor: NSColor? = nil) -> CGFloat {
+        let colorCount = CGFloat(EditorStyleDefaults.paletteColors.count + (dynamicColor == nil ? 0 : 1))
+        let paletteWidth = colorCount * swatchSize + max(colorCount - 1, 0) * swatchGap
+
+        let controlsWidth = sliderWidth
+            + sliderSeparatorGap
+            + 1
+            + paletteLeadingGap
+            + paletteWidth
+            + sectionGap
+            + 1
+            + checkboxGap
+            + Self.checkboxWidth(title: strokeLabel)
+            + checkboxGap
+            + Self.checkboxWidth(title: calloutLabel)
+
+        return ceil(leadingPad + controlsWidth + trailingPad)
+    }
 
     init(frame: NSRect,
          currentColor: NSColor,
@@ -530,7 +556,7 @@ final class TextSubToolbar: NSView {
                        calloutEnabled: Bool,
                        strokeLabel: String,
                        calloutLabel: String) {
-        var x: CGFloat = 12
+        var x = Self.leadingPad
         let midY = bounds.midY
 
         // 字号滑块
@@ -548,13 +574,13 @@ final class TextSubToolbar: NSView {
         slider.onEditingEnded = { [weak self] in self?.onFontSizeEnded?() }
         slider.toolTip = "Font Size"
         addSubview(slider)
-        x += TextSubToolbar.sliderWidth + 8
+        x += Self.sliderWidth + Self.sliderSeparatorGap
 
         // 分隔
         let sep = makeSeparator(in: bounds)
         sep.frame.origin.x = x
         addSubview(sep)
-        x += 1 + 9
+        x += 1 + Self.paletteLeadingGap
 
         // 色板
         let swatchSize = TextSubToolbar.swatchSize
@@ -582,7 +608,7 @@ final class TextSubToolbar: NSView {
         // 描边复选框
         let strokeCheckbox = HUDCheckboxButton(
             frame: NSRect(x: x, y: midY - 10,
-                          width: checkboxWidth(title: strokeLabel), height: 20),
+                          width: Self.checkboxWidth(title: strokeLabel), height: 20),
             title: strokeLabel, target: self, action: #selector(strokeToggled(_:))
         )
         strokeCheckbox.state = strokeEnabled ? .on : .off
@@ -592,14 +618,14 @@ final class TextSubToolbar: NSView {
         // 气泡复选框
         let calloutCheckbox = HUDCheckboxButton(
             frame: NSRect(x: x, y: midY - 10,
-                          width: checkboxWidth(title: calloutLabel), height: 20),
+                          width: Self.checkboxWidth(title: calloutLabel), height: 20),
             title: calloutLabel, target: self, action: #selector(calloutToggled(_:))
         )
         calloutCheckbox.state = calloutEnabled ? .on : .off
         addSubview(calloutCheckbox)
     }
 
-    private func checkboxWidth(title: String) -> CGFloat {
+    private static func checkboxWidth(title: String) -> CGFloat {
         let font = NSFont.systemFont(ofSize: 12, weight: .medium)
         let textWidth = ceil((title as NSString).size(withAttributes: [.font: font]).width)
         return 16 + 8 + textWidth
