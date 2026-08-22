@@ -195,19 +195,20 @@ struct CleanerContentView: View {
     // MARK: Idle
 
     private var idleState: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 16) {
             Spacer()
             SparkleGlyph(size: 46)
             Text(strings.cleanerIntroTitle)
-                .font(.system(size: 17, weight: .semibold))
+                .font(Theme.Stats.font13SemiBold)
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
             Text(strings.cleanerIntroCaption)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                .font(Theme.Stats.font11Regular)
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: 380)
             Button(strings.cleanerScan) { cleaner.scan() }
-                .controlSize(.large)
+                .controlSize(.regular)
                 .buttonStyle(.borderedProminent)
             fullScheduleCard
             if !permissions.fullDiskAccess { fdaNote }
@@ -298,33 +299,26 @@ struct CleanerContentView: View {
     private var fullScheduleCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Image(systemName: "clock").foregroundStyle(.secondary)
-                Text(strings.cleanerScheduleTitle)
+                Image(systemName: "clock")
                     .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
+                Text(strings.cleanerScheduleTitle)
+                    .font(Theme.Stats.font12Medium)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                 Spacer()
                 frequencyPicker
             }
             scheduleDetails
             Text(strings.cleanerScheduleCaption)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+                .font(Theme.Stats.font10Regular)
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(Theme.Spacing.md)
+        .padding(12)
         .frame(maxWidth: layout.dropTargetWidth)
         .background(
-            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color.white.opacity(0.58))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05), lineWidth: 1)
-        )
-        .shadow(
-            color: Color.black.opacity(colorScheme == .dark ? 0.18 : 0.04),
-            radius: 6,
-            x: 0,
-            y: 1.5
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Theme.Stats.cardBackground)
         )
         .modifier(ScheduleChangeSync(notify: $scheduleNotify,
                                      frequency: $scheduleFrequencyRaw,
@@ -474,21 +468,11 @@ struct CleanerContentView: View {
             }
             .controlSize(.small)
         }
-        .padding(Theme.Spacing.md)
+        .padding(12)
         .frame(maxWidth: layout.dropTargetWidth)
         .background(
-            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color.white.opacity(0.58))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05), lineWidth: 1)
-        )
-        .shadow(
-            color: Color.black.opacity(colorScheme == .dark ? 0.18 : 0.04),
-            radius: 6,
-            x: 0,
-            y: 1.5
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.08))
         )
     }
 
@@ -498,18 +482,22 @@ struct CleanerContentView: View {
         VStack(spacing: 16) {
             Spacer()
             SparkleGlyph(animating: true, size: 54)
-            Text(message).foregroundStyle(.secondary)
+            Text(message)
+                .font(Theme.Stats.font13SemiBold)
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
             if let detail {
-                Text(detail).font(.caption).foregroundStyle(.tertiary)
+                Text(detail)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
             }
             if canCancel, let progressText = scanningProgressText {
                 Text(progressText)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Stats.font10Regular.monospacedDigit())
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
                 if let currentName = cleaner.scanProgress?.currentName {
                     Text(currentName)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .font(Theme.Stats.font10Regular)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .frame(maxWidth: 420)
@@ -533,15 +521,16 @@ struct CleanerContentView: View {
         VStack(spacing: 0) {
             resultsHeader
             Divider()
+                .overlay(Theme.Stats.separator)
             if cleaner.items.isEmpty, cleaner.scanFailures.isEmpty {
                 VStack(spacing: 10) {
                     Spacer(minLength: 24)
                     Image(systemName: "checkmark.seal")
                         .font(.system(size: 34, weight: .light))
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Theme.Stats.statusNormal)
                     Text(strings.cleanerNothingFound)
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
+                        .font(Theme.Stats.font13SemiBold)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
                     Spacer(minLength: 24)
                 }
                 .frame(maxWidth: .infinity)
@@ -560,6 +549,7 @@ struct CleanerContentView: View {
                 .listStyle(.inset)
                 .utilityResultsListHeight(layout)
                 Divider()
+                    .overlay(Theme.Stats.separator)
                 resultsFooter
             }
         }
@@ -569,13 +559,18 @@ struct CleanerContentView: View {
         HStack(spacing: 12) {
             SparkleGlyph(size: 22)
             VStack(alignment: .leading, spacing: 2) {
-                Text(strings.cleanerName).font(.system(size: 15, weight: .semibold))
+                Text(strings.cleanerName)
+                    .font(Theme.Stats.font13SemiBold)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                 Text("\(Self.byteString(cleaner.totalSize)) \(strings.uninstallerFoundTitle)")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
             }
             Spacer()
             Button { cleaner.reset() } label: {
-                Image(systemName: "xmark.circle.fill").font(.system(size: 16)).foregroundStyle(.secondary)
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 16))
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
             }
             .buttonStyle(.plain)
         }
@@ -597,13 +592,13 @@ struct CleanerContentView: View {
         return DisclosureGroup {
             if group == .leftovers {
                 Text(strings.cleanerLeftoversNote)
-                    .font(.caption2)
-                    .foregroundStyle(.orange)
+                    .font(Theme.Stats.font10Regular)
+                    .foregroundStyle(Theme.Stats.ram)
             }
             if group == .loginItems {
                 Text(strings.cleanerLoginItemsNote)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Stats.font10Regular)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
             }
             ForEach(groupItems) { item in itemRow(item) }
         } label: {
@@ -615,18 +610,22 @@ struct CleanerContentView: View {
                     .padding(.top, 1)
                 Image(systemName: group.icon)
                     .font(.system(size: 14))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
                     .frame(width: 20)
                     .padding(.top, 1)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(title(for: group)).font(.system(size: 13, weight: .medium))
+                    Text(title(for: group))
+                        .font(Theme.Stats.font12Medium)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                     Text(caption(for: group))
-                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        .font(Theme.Stats.font10Regular)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
                 Text(Self.byteString(groupItems.reduce(0) { $0 + $1.size }))
-                    .font(.system(size: 11.5)).foregroundStyle(.secondary).monospacedDigit()
+                    .font(Theme.Stats.font11Regular.monospacedDigit())
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
                     .padding(.top, 1)
             }
             .padding(.vertical, 3)
@@ -641,15 +640,19 @@ struct CleanerContentView: View {
                 .toggleStyle(.checkbox)
                 .padding(.top, 1)
             VStack(alignment: .leading, spacing: 1) {
-                Text(item.name).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
+                Text(item.name)
+                    .font(Theme.Stats.font12Medium)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                    .lineLimit(1).truncationMode(.middle)
                 Text(prettyPath(item.url))
-                    .font(.system(size: 10)).foregroundStyle(.tertiary)
+                    .font(Theme.Stats.font10Regular)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                     .lineLimit(1).truncationMode(.head)
             }
             Spacer(minLength: 8)
             Text(Self.byteString(item.size))
-                .font(.system(size: 11)).foregroundStyle(.secondary)
-                .monospacedDigit()
+                .font(Theme.Stats.font10Regular.monospacedDigit())
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                 .padding(.top, 1)
         }
         .padding(.leading, 8)
@@ -665,16 +668,18 @@ struct CleanerContentView: View {
         HStack {
             Text(String(format: strings.uninstallerSelectedFormat,
                         cleaner.selectedCount, cleaner.items.count))
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                .font(Theme.Stats.font11Regular)
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
             Spacer()
             Button(strings.uninstallerCancel) { cleaner.reset() }
+                .font(Theme.Stats.font12Medium)
             Button(String(format: strings.cleanerCleanSizeFormat,
                           Self.byteString(cleaner.selectedSize))) {
                 cleaner.cleanSelected()
             }
             .buttonStyle(.borderedProminent)
-            .controlSize(.large)
+            .controlSize(.regular)
+            .font(Theme.Stats.font12Medium)
             .disabled(cleaner.selectedCount == 0)
         }
         .padding(layout == .compact ? 12 : 16)
@@ -687,12 +692,16 @@ struct CleanerContentView: View {
             VStack(spacing: 14) {
                 Image(systemName: failed == 0 ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
                     .font(.system(size: layout == .compact ? 42 : 54))
-                    .foregroundStyle(failed == 0 ? Color.green : Color.orange)
-                Text(strings.uninstallerDoneTitle).font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(failed == 0 ? Theme.Stats.statusNormal : Theme.Stats.ram)
+                Text(strings.uninstallerDoneTitle)
+                    .font(Theme.Stats.font13SemiBold)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                 Text(String(format: strings.uninstallerFreedFormat, Self.byteString(freed)))
-                    .font(.system(size: 13)).foregroundStyle(.secondary)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                 Text(strings.cleanerDoneNote)
-                    .font(.caption).foregroundStyle(.tertiary)
+                    .font(Theme.Stats.font10Regular)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 340)
 
@@ -705,7 +714,8 @@ struct CleanerContentView: View {
                     }
                     Button(strings.cleanerAgain) { cleaner.reset() }
                 }
-                .controlSize(.large)
+                .controlSize(.regular)
+                .font(Theme.Stats.font12Medium)
                 .padding(.top, 4)
             }
             .padding(layout.horizontalPadding)
@@ -719,13 +729,13 @@ struct CleanerContentView: View {
         if !cleaner.succeededItems.isEmpty || !cleaner.failedItems.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 if !cleaner.succeededItems.isEmpty {
-                    resultSectionHeader(strings.toolSucceeded, count: cleaner.succeededItems.count, color: .green)
+                    resultSectionHeader(strings.toolSucceeded, count: cleaner.succeededItems.count, color: Theme.Stats.statusNormal)
                     ForEach(cleaner.succeededItems) { item in
                         resultRow(name: item.name, path: item.url.path, message: nil)
                     }
                 }
                 if !cleaner.failedItems.isEmpty {
-                    resultSectionHeader(strings.toolFailed, count: cleaner.failedItems.count, color: .orange)
+                    resultSectionHeader(strings.toolFailed, count: cleaner.failedItems.count, color: Theme.Stats.ram)
                     ForEach(cleaner.failedItems) { failure in
                         resultRow(
                             name: failure.item.name,
@@ -739,7 +749,7 @@ struct CleanerContentView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.primary.opacity(0.045))
+                    .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.08))
             )
         }
     }

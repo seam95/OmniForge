@@ -2,6 +2,7 @@ import SwiftUI
 
 /// 卸载器的 App 选择器 sheet（搜索 + 列表），复用 InstalledApps 枚举。
 struct UninstallerAppPickerView: View {
+    @Environment(\.colorScheme) private var colorScheme
     let strings: Strings
     let onCancel: () -> Void
     let onSelect: (URL) -> Void
@@ -23,13 +24,16 @@ struct UninstallerAppPickerView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Text(strings.uninstallerPickerTitle)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(Theme.Stats.font13SemiBold)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                 Spacer()
                 Button(strings.uninstallerCancel, action: onCancel)
+                    .font(Theme.Stats.font12Medium)
             }
 
             TextField(strings.uninstallerPickerSearch, text: $query)
                 .textFieldStyle(.roundedBorder)
+                .font(Theme.Stats.font12Medium)
 
             appList
         }
@@ -45,18 +49,18 @@ struct UninstallerAppPickerView: View {
             VStack(spacing: 8) {
                 ProgressView()
                 Text(strings.uninstallerScanning)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if apps.isEmpty {
             VStack(spacing: 8) {
                 Image(systemName: "app.dashed")
                     .font(.system(size: 34, weight: .light))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                 Text(strings.uninstallerPickerEmpty)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -72,11 +76,12 @@ struct UninstallerAppPickerView: View {
                                     .frame(width: 28, height: 28)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(app.name)
-                                        .font(.system(size: 13, weight: .medium))
+                                        .font(Theme.Stats.font12Medium)
+                                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                                         .lineLimit(1)
                                     Text(app.bundleID ?? app.url.path)
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(.secondary)
+                                        .font(Theme.Stats.font10Regular)
+                                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                                         .lineLimit(1)
                                         .truncationMode(.middle)
                                 }
