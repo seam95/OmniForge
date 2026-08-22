@@ -321,18 +321,23 @@ struct FeatureFactory {
         // #03：限额取数外挂弹性缓存（内存 TTL + 磁盘 last-good + 429 冷却持久化）。
         let cache = TokenUsageLimitsCache()
         let claude = LimitsCachingFetcher(inner: ClaudeLimitsFetcher(), cache: cache)
+        // #07：Codex 第二家 provider — 同一缓存/存储，证明协议可插拔。
+        let codex = LimitsCachingFetcher(inner: CodexLimitsFetcher(), cache: cache)
         // #04：用量侧 — GRDB 聚合存储 + Claude JSONL 采集器（目录监听 + 5 分钟兜底回填）。
         let usageStore = GRDBUsageStore(databaseURL: GRDBUsageStore.defaultDatabaseURL)
         let claudeCollector = ClaudeUsageCollector(store: usageStore)
+        let codexCollector = CodexUsageCollector(store: usageStore)
         return TokenUsageManager(
             preferences: preferences,
             fetchers: [
                 .claude: claude,
+                .codex: codex,
             ],
             scheduler: TimerRepeatingScheduler(),
             usageStore: usageStore,
             usageCollectors: [
                 .claude: claudeCollector,
+                .codex: codexCollector,
             ]
         )
     }

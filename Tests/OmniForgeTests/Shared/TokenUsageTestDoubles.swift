@@ -7,6 +7,12 @@ import Combine
 final class URLProtocolStub: URLProtocol {
     /// 待返回的响应（状态码 + 头 + 体）；并发测试各自设置。
     static var stub: Stub?
+    /// 按请求精确编排的响应器（多请求串行场景：刷新/wham/兄弟端点）；优先于 `stub`。
+    static var handler: ((URLRequest) -> Stub)?
+    /// 已处理的请求记录（断言调用序/计数）。
+    private(set) static var recordedRequests: [URLRequest] = []
+    /// 已处理请求的请求体（顺序对应 recordedRequests）。
+    private(set) static var recordedBodies: [Data] = []
 
     struct Stub {
         var statusCode: Int
@@ -16,12 +22,40 @@ final class URLProtocolStub: URLProtocol {
         var error: Error?
     }
 
+    static func reset() {
+        stub = nil
+        handler = nil
+        recordedRequests = []
+        recordedBodies = []
+    }
+
+    /// 读取请求体（httpBody 或尚未消费的 httpBodyStream）。
+    static func requestBody(_ request: URLRequest) -> Data {
+        if let body = request.httpBody { return body }
+        guard let stream = request.httpBodyStream else { return Data() }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 4096)
+        defer { buffer.deallocate() }
+        while stream.hasBytesAvailable {
+            let count = stream.read(buffer, maxLength: 4096)
+            if count <= 0 { break }
+            data.append(buffer, count: count)
+        }
+        return data
+    }
+
     override class func canInit(with request: URLRequest) -> Bool { true }
 
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        guard let stub = Self.stub else {
+        Self.recordedRequests.append(request)
+        Self.recordedBodies.append(Self.requestBody(request))
+        // handler 适用于多请求串行编排（不同 URL 不同响应）；未设置时回落单个 stub。
+        let stub = Self.handler?(request) ?? Self.stub
+        guard let stub else {
             client?.urlProtocol(self, didFailWithError: URLError(.cannotConnectToHost))
             return
         }
@@ -143,5 +177,40 @@ final class AsyncGate {
 
     func open() {
         semaphore.signal()
+    }
+}
+
+/// 测试用 Codex 凭证替身 — 编排 auth.json 读取结果并记录调用次数。
+final class FakeCodexCredentials: CodexCredentialReading {
+    /// 每次调用按序出队；耗尽后重复最后一个。nil 表示「未配置」。
+    var results: [Result<CodexAuthBundle?, Error>] = [.success(nil)]
+    private(set) var readCount = 0
+
+    init(bundle: CodexAuthBundle? = nil) {
+        if let bundle {
+            results = [.success(bundle)]
+        }
+    }
+
+    func readBundle() throws -> CodexAuthBundle? {
+        readCount += 1
+        let result = results[min(readCount - 1, results.count - 1)]
+        return try result.get()
+    }
+}
+
+/// 测试用 Codex 刷新替身 — 记录调用并返回可编排结果。
+final class FakeCodexTokenRefresher: CodexTokenRefreshing {
+    var results: [Result<CodexRefreshedTokens, Error>] = [.success(
+        CodexRefreshedTokens(accessToken: "refreshed-token", refreshToken: "rotated-refresh", idToken: nil)
+    )]
+    private(set) var callCount = 0
+    private(set) var lastRefreshToken: String?
+
+    func refresh(refreshToken: String) async throws -> CodexRefreshedTokens {
+        callCount += 1
+        lastRefreshToken = refreshToken
+        let result = results[min(callCount - 1, results.count - 1)]
+        return try result.get()
     }
 }

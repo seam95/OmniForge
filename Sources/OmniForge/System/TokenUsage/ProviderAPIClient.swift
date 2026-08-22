@@ -29,10 +29,15 @@ final class ProviderAPIClient {
     /// GET 请求，返回 JSON 字典；HTTP 错误映射为 `LimitError`。
     /// - 401/403 → `.reauthRequired`（短路，调用方不回退）
     /// - 429 → `.rateLimited(retryAt:)`（retry-after 头换算，默认 5 分钟冷却）
-    func getJSON(url: URL, headers: [String: String] = [:]) async throws -> [String: Any] {
+    /// - 半私有兄弟端点可用 `timeout` 注入更短的请求级超时（如 Codex reset-credits 3s）。
+    func getJSON(
+        url: URL,
+        headers: [String: String] = [:],
+        timeout: TimeInterval = ProviderAPIClient.defaultRequestTimeout
+    ) async throws -> [String: Any] {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        request.timeoutInterval = ProviderAPIClient.defaultRequestTimeout
+        request.timeoutInterval = timeout
         for (key, value) in headers {
             request.setValue(value, forHTTPHeaderField: key)
         }
