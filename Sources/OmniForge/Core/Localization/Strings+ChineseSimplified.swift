@@ -1047,6 +1047,7 @@ extension Strings {
         tokenSettingsMenuBarToday: "今日 tokens",
         tokenSettingsMenuBarSession: "会话窗用量 %",
         tokenSettingsMenuBarOff: "关闭",
+        tokenMenuBarTodayLabel: "今日",
         tokenSettingsRefreshInterval: "限额刷新间隔",
         tokenSettingsRefreshMinuteFormat: "%d 分钟",
         tokenSettingsLimitsDisplay: "限额显示",

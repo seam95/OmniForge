@@ -21,6 +21,14 @@ enum MenuBarMetricRenderer {
         }
     }
 
+    /// 从任意 MetricBlock 渲染单个指标块（Token 菜单栏等非 monitor 指标复用）。
+    static func attributedTitle(
+        for block: MetricBlock,
+        spacing: MenuBarMetricSpacing = .standard
+    ) -> NSAttributedString {
+        attachment(for: block, spacing: spacing)
+    }
+
     /// 合并模式：按间距将各组拼成单一 attributed title
     static func attributedTitle(
         for snapshot: SystemSnapshot,

@@ -158,6 +158,10 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     private var lastKeepAwakeRender: StatusBarRenderState?
     private var keepAwakeCancellables = Set<AnyCancellable>()
     private var keepAwakeRefreshTimer: AnyCancellable?
+    /// Token 菜单栏贡献（#06）：独立状态项，与 systemMonitor 管线互不干扰。
+    private var tokenMenuItem: NSStatusItem?
+    private var tokenMenuBarCancellables = Set<AnyCancellable>()
+    private var lastTokenMenuBarRender: TokenUsageMenuBarRender?
 
     static func menuBarIcon() -> NSImage? {
         if let image = NSImage(named: "MenuBarIcon") {
@@ -228,6 +232,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
         setupMonitorMetrics()
         setupKeepAwakeStatusBar()
+        setupTokenUsageMenuBar()
     }
 
     private func setupKeepAwakeStatusBar() {
@@ -748,6 +753,92 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         )
     }
 
+    // MARK: - Token 菜单栏贡献（#06，独立于 systemMonitor 管线）
+
+    /// 订阅 token 用量快照 + 菜单栏模式；仅当 tokenUsage 已安装且偏好可读时接线。
+    /// 状态项独立创建/移除，不触碰 monitor metrics 路径。
+    private func setupTokenUsageMenuBar() {
+        tokenMenuBarCancellables.removeAll()
+        lastTokenMenuBarRender = nil
+        guard let prefs = state.tokenUsagePreferences,
+              FeatureRuntime.shared.isAvailable(.tokenUsage),
+              state.tokenUsageManager != nil else {
+            removeTokenMenuItem()
+            return
+        }
+        updateTokenUsageMenuBar(
+            mode: prefs.configuration.menuBarMode,
+            overview: state.tokenUsageManager?.usageOverview
+        )
+
+        // @Published 在 willSet 阶段先发新值再写属性：sink 内不得回读同一属性，
+        // 直接用管线发送的值作为渲染输入（对照值读另一边稳定属性）。
+        prefs.$configuration
+            .map(\.menuBarMode)
+            .removeDuplicates()
+            .sink { [weak self] mode in
+                self?.updateTokenUsageMenuBar(
+                    mode: mode,
+                    overview: self?.state.tokenUsageManager?.usageOverview
+                )
+            }
+            .store(in: &tokenMenuBarCancellables)
+
+        state.tokenUsageManager?.$usageOverview
+            .sink { [weak self] overview in
+                self?.updateTokenUsageMenuBar(
+                    mode: self?.state.tokenUsagePreferences?.configuration.menuBarMode
+                        ?? .hidden,
+                    overview: overview
+                )
+            }
+            .store(in: &tokenMenuBarCancellables)
+    }
+
+    /// 用量快照 / 偏好 / 安装态任意变化后重算渲染状态（相等短路防抖动）。
+    private func updateTokenUsageMenuBar(mode: TokenUsageMenuBarMode, overview: TokenUsageOverview?) {
+        let render = TokenUsageMenuBarRenderer.render(
+            isFeatureAvailable: FeatureRuntime.shared.isAvailable(.tokenUsage),
+            overview: overview,
+            mode: mode,
+            label: state.l10n.s.tokenMenuBarTodayLabel
+        )
+        guard render != lastTokenMenuBarRender else { return }
+        lastTokenMenuBarRender = render
+        applyTokenUsageMenuBar(render)
+    }
+
+    private func applyTokenUsageMenuBar(_ render: TokenUsageMenuBarRender) {
+        guard let block = render.block else {
+            // 无数据/关闭：整体隐藏（不保留 0k 占位）。
+            tokenMenuItem?.isVisible = false
+            return
+        }
+        let item: NSStatusItem
+        if let existing = tokenMenuItem {
+            item = existing
+        } else {
+            let created = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+            tokenMenuItem = created
+            item = created
+        }
+        guard let button = item.button else { return }
+        button.image = nil
+        button.imagePosition = .noImage
+        button.attributedTitle = MenuBarMetricRenderer.attributedTitle(for: block)
+        button.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        button.cell?.lineBreakMode = .byClipping
+        button.cell?.usesSingleLineMode = false
+        item.isVisible = true
+    }
+
+    private func removeTokenMenuItem() {
+        if let item = tokenMenuItem {
+            NSStatusBar.system.removeStatusItem(item)
+            tokenMenuItem = nil
+        }
+    }
+
     /// 根据 availability + isEnabled 应用或清空菜单栏采样需求
     private func applyMenuBarMetricsFromPreferences(
         configuration: MonitorConfiguration? = nil
@@ -802,4 +893,10 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     func invokeOpenKeepAwakeSettingsForTesting() {
         onOpenSettings(.keepAwake)
     }
+
+    /// 测试入口：最近一次 token 菜单栏渲染状态（nil = 未渲染过）。
+    var tokenMenuBarRenderForTesting: TokenUsageMenuBarRender? { lastTokenMenuBarRender }
+
+    /// 测试入口：token 菜单栏状态项是否可见（nil = 状态项不存在）。
+    var tokenMenuBarItemVisibleForTesting: Bool? { tokenMenuItem?.isVisible }
 }

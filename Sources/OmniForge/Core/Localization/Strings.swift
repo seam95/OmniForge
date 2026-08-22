@@ -1125,6 +1125,7 @@ struct Strings: Equatable {
     let tokenSettingsMenuBarToday: String
     let tokenSettingsMenuBarSession: String
     let tokenSettingsMenuBarOff: String
+    let tokenMenuBarTodayLabel: String
     let tokenSettingsRefreshInterval: String
     let tokenSettingsRefreshMinuteFormat: String
     let tokenSettingsLimitsDisplay: String

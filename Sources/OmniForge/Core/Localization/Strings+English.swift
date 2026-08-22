@@ -1047,6 +1047,7 @@ extension Strings {
         tokenSettingsMenuBarToday: "Today's tokens",
         tokenSettingsMenuBarSession: "Session usage %",
         tokenSettingsMenuBarOff: "Off",
+        tokenMenuBarTodayLabel: "Today",
         tokenSettingsRefreshInterval: "Limit refresh interval",
         tokenSettingsRefreshMinuteFormat: "%d min",
         tokenSettingsLimitsDisplay: "Limit display",
