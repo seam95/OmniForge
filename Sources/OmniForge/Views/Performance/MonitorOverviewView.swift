@@ -34,7 +34,7 @@ struct MonitorOverviewView: View {
     }
 
     var body: some View {
-        ScrollView {
+        ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 12) {
                 header
                 cardRows

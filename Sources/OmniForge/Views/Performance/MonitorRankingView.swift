@@ -147,7 +147,7 @@ struct MonitorRankingView: View {
         let accent = accentColor
         return VStack(alignment: .leading, spacing: 4) {
             columnHeader
-            ScrollView {
+            ScrollView(showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(processes) { proc in
                         ProcessUsageRankRow(

@@ -32,7 +32,7 @@ private struct AdaptiveHeightScroll<Content: View>: View {
             contentHeight: contentHeight,
             maxHeight: maxHeight
         )
-        ScrollView {
+        ScrollView(showsIndicators: false) {
             content()
                 .background(
                     GeometryReader { proxy in

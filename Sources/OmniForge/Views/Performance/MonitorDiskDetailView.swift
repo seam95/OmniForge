@@ -56,7 +56,7 @@ struct MonitorDiskDetailView: View {
     // MARK: - Content
 
     private var contentView: some View {
-        ScrollView {
+        ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 12) {
                 header
                 Divider()
