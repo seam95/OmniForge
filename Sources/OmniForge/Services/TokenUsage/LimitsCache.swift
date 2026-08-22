@@ -71,6 +71,9 @@ final class TokenUsageLimitsCache: LimitsCaching {
     private let ttl: TimeInterval
     private let now: () -> Date
     private let fileManager: FileManager
+    /// 内存字典会被多 provider 的并发取数任务同时读写（LimitsCachingFetcher 非隔离），
+    /// 必须加锁；磁盘文件本身是原子写，无需持锁。
+    private let memoryLock = NSLock()
     private var memory: [TokenUsageProvider: MemoryEntry] = [:]
 
     init(
@@ -88,15 +91,20 @@ final class TokenUsageLimitsCache: LimitsCaching {
     // MARK: - LimitsCaching
 
     func memorySnapshot(for provider: TokenUsageProvider) -> ProviderUsageLimits? {
+        memoryLock.lock()
+        defer { memoryLock.unlock() }
         guard let entry = memory[provider], now() < entry.expiresAt else { return nil }
         return entry.limits
     }
 
     func lastGoodSnapshot(for provider: TokenUsageProvider) -> ProviderUsageLimits? {
         var candidate: ProviderUsageLimits?
+        memoryLock.lock()
         if let entry = memory[provider] {
             candidate = entry.limits
-        } else if let disk = loadLastGood(from: lastGoodFileURL(for: provider)) {
+        }
+        memoryLock.unlock()
+        if candidate == nil, let disk = loadLastGood(from: lastGoodFileURL(for: provider)) {
             candidate = disk
         }
         guard var copy = candidate else { return nil }
@@ -111,7 +119,9 @@ final class TokenUsageLimitsCache: LimitsCaching {
             ttl: ttl,
             windows: limits.windows
         )
+        memoryLock.lock()
         memory[limits.provider] = MemoryEntry(limits: limits, expiresAt: expiresAt)
+        memoryLock.unlock()
         if let data = try? JSONEncoder().encode(limits) {
             try? writeAtomically(data, to: lastGoodFileURL(for: limits.provider))
         }
@@ -119,7 +129,9 @@ final class TokenUsageLimitsCache: LimitsCaching {
     }
 
     func storeNotConfigured(_ provider: TokenUsageProvider) {
+        memoryLock.lock()
         memory[provider] = nil
+        memoryLock.unlock()
         try? fileManager.removeItem(at: lastGoodFileURL(for: provider))
         clearCooldown(for: provider)
     }

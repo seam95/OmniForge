@@ -1076,8 +1076,6 @@ struct Strings: Equatable {
     let tokenPeriodToday: String
     let tokenPeriodWeek: String
     let tokenPeriodMonth: String
-    let tokenSectionLimits: String
-    let tokenSectionUsage: String
     let tokenWindowSession5h: String
     let tokenWindowWeekly: String
     let tokenWindowMonthly: String
@@ -1093,12 +1091,8 @@ struct Strings: Equatable {
     let tokenRateLimitedCaptionFormat: String
     let tokenErrorRetryableHint: String
     let tokenBackfilling: String
-    let tokenUsedSuffix: String
-    let tokenRemainingSuffix: String
     let tokenCreditsRemainingFormat: String
     let tokenResetInApproxFormat: String
-    let tokenResetInFormat: String
-    let tokenPaceNormal: String
     let tokenPaceOver: String
     let tokenPaceProjectedFormat: String
     let tokenCreditCaption: String
@@ -1148,7 +1142,6 @@ struct Strings: Equatable {
     let tokenAlertSessionBodyFormat: String
     let tokenAlertPaceTitle: String
     let tokenAlertPaceBodyFormat: String
-    let tokenDurationWeekFormat: String
     let tokenDurationDayFormat: String
     let tokenDurationHourFormat: String
     let tokenDurationMinuteFormat: String

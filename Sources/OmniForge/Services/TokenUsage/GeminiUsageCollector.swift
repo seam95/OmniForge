@@ -198,8 +198,9 @@ final class GeminiUsageCollector: UsageCollecting {
             store.upsertBucket(state)
         }
         guard !newSeen.isEmpty else { return }
-        seen.formUnion(newSeen)
-        store.storeSeenKeys(seen, asOf: Date())
+        // 只写新见 key（seen_at = 首次实际看见时间），避免每次扫描把全量
+        // key 的 seen_at 整体重写（截断退化、LRU 语义失真；参考 #09 评审 H4）。
+        store.storeSeenKeys(newSeen, asOf: Date())
     }
 
     /// 单条消息处理（隐私：只触碰已声明的身份/时间/模型/用量字段）。

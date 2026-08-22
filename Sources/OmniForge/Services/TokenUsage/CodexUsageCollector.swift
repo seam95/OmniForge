@@ -221,7 +221,9 @@ final class CodexUsageCollector: UsageCollecting {
         }
         guard !newSeen.isEmpty else { return }
         seen.formUnion(newSeen)
-        store.storeSeenKeys(seen, asOf: Date())
+        // 只写新见 key（seen_at = 首次实际看见时间），避免每次扫描把全量 10 万级
+        // key 的 seen_at 整体重写——否则截断退化、LRU 语义失真（参考 #09 评审 H4）。
+        store.storeSeenKeys(newSeen, asOf: Date())
     }
 
     /// 单行处理：坏行跳过；身份/用量字段解码；token_count → 增量入桶（去重 + cached 减法）。

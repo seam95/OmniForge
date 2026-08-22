@@ -56,6 +56,27 @@ final class CodexUsageProcessingTests: XCTestCase {
         XCTAssertEqual(delta.totalTokens, 35, "total 按四列重算：25 + 5 + 0 + 5，不信任事件累计字段（40 为未减口径）")
     }
 
+    func test_delta_lastSkipsWhenCumulativeTotalUnchanged() {
+        // 同一轮次的 last 快照重发（时间戳不同 → 去重 key 失效）：累计总量未变，
+        // 该快照已涵盖在既有差值口径中，不得重复计费（参考 consumeUsageDelta 基线命中返 null）。
+        let last = makeCounts(input: 30, cached: 5, creation: 0, output: 5, total: 40)
+        let total = makeCounts(input: 300, cached: 50, creation: 0, output: 40, total: 390)
+        XCTAssertNil(CodexUsageProcessing.delta(
+            last: last, total: total, previousTotal: total, isStreamStart: false
+        ))
+    }
+
+    func test_delta_lastCountsWhenCumulativeAdvanced() throws {
+        // 总量与上次不同 → 是新完成的轮次，正常计数。
+        let last = makeCounts(input: 30, cached: 5, creation: 0, output: 5, total: 40)
+        let previous = makeCounts(input: 200, cached: 40, creation: 0, output: 30, total: 270)
+        let total = makeCounts(input: 300, cached: 50, creation: 0, output: 40, total: 390)
+        let delta = try XCTUnwrap(CodexUsageProcessing.delta(
+            last: last, total: total, previousTotal: previous, isStreamStart: false
+        ))
+        XCTAssertEqual(delta.totalTokens, 35)
+    }
+
     func test_delta_fallsBackToTotalDelta_withPreviousTotal() throws {
         let prev = makeCounts(input: 80, cached: 40, creation: 0, output: 10, total: 130)
         let total = makeCounts(input: 100, cached: 50, creation: 0, output: 20, total: 170)

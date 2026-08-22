@@ -18,14 +18,19 @@ protocol DirectoryWatching: AnyObject {
 /// 而向已有文件追加内容不触发，这正是需要定时兜底的场景（SPEC 5.6）。
 final class DispatchSourceDirectoryWatcher: DirectoryWatching {
     /// path → source（fd 由源持有，取消时关闭）。
+    /// 事件处理器运行在全局队列（.utility），可能与新目录触发「动态 attach」并发；
+    /// 生命周期与字典读写必须持锁（#09 评审 H5：并发变异可崩溃、stop 后残留 source）。
     private var sources: [String: DispatchSourceFileSystemObject] = [:]
     private var onChange: (() -> Void)?
     private var rootURL: URL?
+    private let lock = NSLock()
 
     func startWatching(url: URL, onChange: @escaping () -> Void) {
         stopWatching()
+        lock.lock()
         self.onChange = onChange
         self.rootURL = url
+        lock.unlock()
         attach(url)
         for child in Self.childDirectories(of: url) {
             attach(child)
@@ -33,15 +38,23 @@ final class DispatchSourceDirectoryWatcher: DirectoryWatching {
     }
 
     func stopWatching() {
-        for source in sources.values {
-            source.cancel()
-        }
+        lock.lock()
+        let active = Array(sources.values)
         sources.removeAll()
         onChange = nil
         rootURL = nil
+        lock.unlock()
+        // cancel 放在锁外：cancel handler 关闭 fd，不触碰本对象状态，避免锁内回调风险。
+        for source in active {
+            source.cancel()
+        }
     }
 
     private func attach(_ url: URL) {
+        lock.lock()
+        defer { lock.unlock() }
+        // stop 之后到达的事件处理器不得再挂新 source。
+        guard rootURL != nil else { return }
         let path = url.path
         guard sources[path] == nil else { return }
         let descriptor = open(path, O_EVTONLY)
@@ -62,14 +75,18 @@ final class DispatchSourceDirectoryWatcher: DirectoryWatching {
     }
 
     private func handleEvent(at url: URL) {
-        // 新项目目录出现时补挂一级子目录监听（监听本身就运行在全局队列，安全）。
-        if url == rootURL {
-            guard let root = rootURL else { return }
+        lock.lock()
+        let isRoot = url == rootURL
+        let root = rootURL
+        let handler = onChange
+        lock.unlock()
+        // 新项目目录出现时补挂一级子目录监听。
+        if isRoot, let root {
             for child in Self.childDirectories(of: root) {
                 attach(child)
             }
         }
-        onChange?()
+        handler?()
     }
 
     private static func childDirectories(of url: URL) -> [URL] {

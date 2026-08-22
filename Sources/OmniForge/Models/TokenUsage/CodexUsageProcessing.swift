@@ -129,6 +129,14 @@ enum CodexUsageProcessing {
         isStreamStart: Bool
     ) -> TokenUsage? {
         if let last, last.canonicalized() != nil {
+            // 上次扫描后累计总量未变 → 该 last 快照已涵盖在既有差值口径中（参考
+            // consumeUsageDelta 的基线命中即返 null）：同一轮次重发（时间戳不同 → 去重
+            // key 失效）不得重复计费。
+            if let total, let previousTotal,
+               !isTotalsReset(total: total, previous: previousTotal),
+               total.canonicalized() == previousTotal.canonicalized() {
+                return nil
+            }
             return normalized(from: last)
         }
         guard let total else { return nil }

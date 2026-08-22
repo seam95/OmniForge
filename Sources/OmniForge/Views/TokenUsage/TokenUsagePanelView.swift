@@ -222,22 +222,26 @@ struct TokenUsagePanelView: View {
             .frame(maxWidth: .infinity, alignment: .center)
     }
 
-    /// 来源脚注：「10 分钟前更新 · 官方来源 · 5 家已配置 4 家」。
+    /// 来源脚注：「10 分钟前更新 · 官方来源 · 5 家已配置 4 家」（ⓘ 提示可打开的设置页，参考 UI 稿）。
     private var footerLine: some View {
         let activeCount = manager.configuredProviders.filter { provider in
             guard let limits = manager.limits[provider] else { return false }
             return limits.issue == nil && !limits.windows.isEmpty
         }.count
         let updated = TokenUsageFormat.relativeUpdate(manager.limitUpdateAt, strings: strings)
-        return Text(
-            String(
-                format: strings.tokenFooterFormat,
-                updated,
-                strings.tokenSourceOfficial,
-                manager.configuredProviders.count,
-                activeCount
+        return HStack(spacing: 4) {
+            Image(systemName: "info.circle")
+                .font(.system(size: 10))
+            Text(
+                String(
+                    format: strings.tokenFooterFormat,
+                    updated,
+                    strings.tokenSourceOfficial,
+                    manager.configuredProviders.count,
+                    activeCount
+                )
             )
-        )
+        }
         .font(Theme.Stats.font10Regular)
         .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
         .frame(maxWidth: .infinity, alignment: .center)

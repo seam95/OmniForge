@@ -68,6 +68,9 @@ final class ClaudeUsageCollector: UsageCollecting {
     func start() {
         guard !started else { return }
         started = true
+        // 测试进程（xctest 环境）在生产接线 bootstrap 下不得扫描真实用户目录：
+        // 会与真实应用争用同一 GRDB 库与游标文件（对齐 CodexUsageCollector 守卫）。
+        guard !(isRunningUnitTests && usesRealUserDirectories) else { return }
         watcher.startWatching(url: projectsDirectory) { [weak self] in
             self?.triggerScan()
         }
@@ -83,6 +86,17 @@ final class ClaudeUsageCollector: UsageCollecting {
         watcher.stopWatching()
         timer?.cancel()
         timer = nil
+    }
+
+    /// 测试进程守卫（xctest 或 XCTestConfigurationFilePath 环境）。
+    private var isRunningUnitTests: Bool {
+        let hasXCTestEnvironment = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        return hasXCTestEnvironment || ProcessInfo.processInfo.processName == "xctest"
+    }
+
+    /// 是否以默认（真实用户）目录构造。
+    private var usesRealUserDirectories: Bool {
+        projectsDirectory == ClaudeUsageCollector.defaultProjectsDirectory
     }
 
     /// 线程安全：等待串行队列排空（测试用）。
@@ -179,7 +193,9 @@ final class ClaudeUsageCollector: UsageCollecting {
         }
         guard !newSeen.isEmpty else { return }
         seen.formUnion(newSeen)
-        store.storeSeenKeys(seen, asOf: Date())
+        // 只写新见 key（seen_at = 首次实际看见时间），避免每次扫描把全量 10 万级
+        // key 的 seen_at 整体重写——否则截断退化、LRU 语义失真（参考 #09 评审 H4）。
+        store.storeSeenKeys(newSeen, asOf: Date())
     }
 
     /// 单行处理：坏行跳过；token 行与 user 行共享已见集合去重（参考 02）。

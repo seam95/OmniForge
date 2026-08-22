@@ -56,6 +56,21 @@ enum TokenUsageFormat {
         return String(format: strings.tokenUpdatedHoursFormat, minutes / 60)
     }
 
+    /// 人性化时长（展示层口径）：分钟/小时/天，随语言本地化（LimitPace.durationString
+    /// 保持紧凑内部口径 "45m"/"3h" 供测试与内部投影）。
+    static func duration(_ seconds: TimeInterval, strings: Strings) -> String {
+        let s = Int(max(0, seconds))
+        let days = s / 86400
+        if days > 0 {
+            return String(format: strings.tokenDurationDayFormat, days)
+        }
+        let hours = s / 3600
+        if hours > 0 {
+            return String(format: strings.tokenDurationHourFormat, hours)
+        }
+        return String(format: strings.tokenDurationMinuteFormat, s / 60)
+    }
+
     /// 星期简称（周日前置，配合 `tokenWeekdayNames`）。
     static func weekdayName(for date: Date, strings: Strings) -> String {
         let weekday = Calendar.current.component(.weekday, from: date) // 1 = 周日
@@ -78,7 +93,7 @@ enum TokenUsageFormat {
         var parts: [String] = []
         let secondsUntilReset = window.resetAt?.timeIntervalSince(now) ?? 0
         if let resetAt = window.resetAt, resetAt > now {
-            parts.append(String(format: strings.tokenResetInApproxFormat, LimitPace.durationString(secondsUntilReset)))
+            parts.append(String(format: strings.tokenResetInApproxFormat, duration(secondsUntilReset, strings: strings)))
         }
         if pace.paceOver {
             parts.append(strings.tokenPaceOver)
@@ -95,7 +110,7 @@ enum TokenUsageFormat {
             return strings.tokenReauthHint
         case .rateLimited(let retryAt):
             let seconds = max(0, retryAt.timeIntervalSince(now))
-            return String(format: strings.tokenRateLimitedCaptionFormat, LimitPace.durationString(seconds))
+            return String(format: strings.tokenRateLimitedCaptionFormat, duration(seconds, strings: strings))
         case .network:
             return strings.tokenErrorNetwork + " · " + strings.tokenErrorRetryableHint
         case .decoding:
@@ -199,8 +214,8 @@ enum TokenUsageCardStatus {
             return .normal
         }
         let percent = session.usedPercent
-        if percent > 85 { return .exceeded }
-        if percent > 70 { return .approaching }
+        if percent >= 85 { return .exceeded }
+        if percent >= 70 { return .approaching }
         return .normal
     }
 

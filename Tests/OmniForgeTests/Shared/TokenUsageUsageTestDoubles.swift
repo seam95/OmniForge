@@ -38,7 +38,8 @@ final class FakeUsageStore: UsageStoring {
     }
 
     func storeSeenKeys(_ keys: Set<String>, asOf date: Date) {
-        seenKeys = keys
+        // 镜像 GRDB 语义：按 key 逐条 upsert（合并），不是整体替换。
+        seenKeys.formUnion(keys)
         if seenKeys.count > maxSeenKeys {
             let excess = seenKeys.count - maxSeenKeys
             let dropped = seenKeys.sorted().prefix(excess)

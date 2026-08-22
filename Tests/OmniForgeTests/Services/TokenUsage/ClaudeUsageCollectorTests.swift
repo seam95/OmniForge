@@ -250,6 +250,17 @@ final class ClaudeUsageCollectorTests: XCTestCase {
         XCTAssertEqual(store.totalTokens(), 50, "递归含 subagents 且坏行跳过")
     }
 
+    func test_start_inUnitTestProcess_doesNotScanRealUserDirectory() {
+        // 生产接线（FeatureRuntime bootstrap / AppState）会以默认目录构造并启动采集器；
+        // 测试进程不得扫描真实 ~/.claude/projects（与真实应用争用 GRDB 与游标文件）。
+        // 注入目录的测试不受此限制。
+        let realCollector = ClaudeUsageCollector(store: store)
+        realCollector.start()
+        realCollector.waitForIdle()
+        XCTAssertEqual(realCollector.scanCount, 0, "测试进程下默认目录采集器不启动扫描")
+        realCollector.stop()
+    }
+
     private func expectCursorFor(file: URL, contents: String) -> JSONLCursor? {
         let attrs = try? FileManager.default.attributesOfItem(atPath: file.path)
         let inode = (attrs?[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0

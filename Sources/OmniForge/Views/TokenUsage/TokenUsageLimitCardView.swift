@@ -135,7 +135,8 @@ struct TokenUsageLimitCardView: View {
     }
 
     private func computePace(kind: LimitWindowKind, window: UsageWindow) -> LimitPace.Result {
-        guard kind != .credits else { return LimitPace.Result() }
+        // SPEC：仅窗口秒数可信的会话/周窗画步速刻度；月度/计费周期不画。
+        guard kind == .session || kind == .weekly else { return LimitPace.Result() }
         let secondsUntilReset = window.resetAt?.timeIntervalSince(now) ?? 0
         return LimitPace.compute(
             usedFraction: window.usedPercent / 100,
