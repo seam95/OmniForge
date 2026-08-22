@@ -10,16 +10,19 @@ struct TokenUsageMenuBarRender: Equatable {
     var isVisible: Bool { block != nil }
 }
 
-/// 输入（安装态 + 用量快照 + 菜单栏模式 + label）→ 菜单栏块的纯函数映射。
+/// 输入（安装态 + 用量快照 + 限额快照 + 菜单栏模式 + label）→ 菜单栏块的纯函数映射。
 enum TokenUsageMenuBarRenderer {
     /// 今日 tokens 块的最宽占位：整数 k/m 口径最长 4 字符（"999k"），预留宽度防抖动。
     static let todayMinimumValue = "999k"
+    /// 会话窗 % 块的最宽占位："100%" 最长 4 字符，预留宽度防抖动。
+    static let sessionMinimumValue = "100%"
 
     static func render(
         isFeatureAvailable: Bool,
         overview: TokenUsageOverview?,
         mode: TokenUsageMenuBarMode,
-        label: String
+        label: String,
+        limits: [TokenUsageProvider: ProviderUsageLimits] = [:]
     ) -> TokenUsageMenuBarRender {
         guard isFeatureAvailable else { return TokenUsageMenuBarRender(block: nil) }
         switch mode {
@@ -31,10 +34,30 @@ enum TokenUsageMenuBarRenderer {
                 minimumValue: Self.todayMinimumValue
             ))
         case .sessionPercent:
-            // #10 预留：会话窗用量 % 依赖限额数据，本票不产出块（渲染结构已留开关分支）。
-            return TokenUsageMenuBarRender(block: nil)
+            // #10：消费限额数据；口径不成立（多家已配置 / 无会话窗）时整体隐藏。
+            guard let percent = sessionWindowPercent(limits: limits) else {
+                return TokenUsageMenuBarRender(block: nil)
+            }
+            return TokenUsageMenuBarRender(block: MenuBarMetricRenderer.MetricBlock(
+                label: label,
+                value: TokenUsageFormat.percent(percent),
+                minimumValue: Self.sessionMinimumValue
+            ))
         case .hidden:
             return TokenUsageMenuBarRender(block: nil)
         }
+    }
+
+    // MARK: - 会话窗用量 %
+
+    /// 会话窗用量 %（SPEC 4.4「当前会话窗用量%」）：每家会话窗重置节奏各异，
+    /// 恰有一家已配置且带会话窗时才给出确定口径，否则 nil（多口径无法聚合，整体隐藏）。
+    static func sessionWindowPercent(limits: [TokenUsageProvider: ProviderUsageLimits]) -> Double? {
+        let configured = limits.filter { $0.value.configured }
+        guard configured.count == 1, let entry = configured.first else { return nil }
+        guard let percent = entry.value.windows[.session]?.usedPercent, percent.isFinite else {
+            return nil
+        }
+        return percent
     }
 }

@@ -32,7 +32,9 @@ final class StatusBarControllerTokenUsageTests: XCTestCase {
         super.tearDown()
     }
 
-    private func makeController() -> (
+    private func makeController(
+        fetchers: [TokenUsageProvider: LimitsFetching] = [:]
+    ) -> (
         controller: StatusBarController,
         manager: TokenUsageManager,
         prefs: TokenUsagePreferences,
@@ -46,7 +48,7 @@ final class StatusBarControllerTokenUsageTests: XCTestCase {
         let prefs = TokenUsagePreferences(userDefaults: defaults)
         let manager = TokenUsageManager(
             preferences: prefs,
-            fetchers: [:],
+            fetchers: fetchers,
             scheduler: FakeRepeatingScheduler(),
             usageStore: store,
             usageCollectors: [.claude: collector]
@@ -124,7 +126,75 @@ final class StatusBarControllerTokenUsageTests: XCTestCase {
         XCTAssertNil(controller.tokenMenuBarRenderForTesting?.block)
     }
 
+    // MARK: - 会话窗 %（#10）：限额快照驱动 + 模式切换即时生效
+
+    func test_tokenMenuBar_sessionPercent_showsSingleConfiguredProviderPercent() {
+        let fetcher = StubLimitsFetcher(
+            provider: .claude,
+            results: [.success(sessionWindowLimits(provider: .claude, percent: 82))]
+        )
+        let (controller, manager, prefs, _, _, _) = makeController(
+            fetchers: [.claude: fetcher]
+        )
+        prefs.update { $0.menuBarMode = .sessionPercent }
+        manager.start()
+
+        let shown = runMainLoopUntil { controller.tokenMenuBarRenderForTesting?.block != nil }
+        XCTAssertTrue(shown, "单家已配置时「会话窗 %」应显示")
+        let expectedLabel = L10n(userDefaults: defaults!).s.tokenMenuBarSessionLabel
+        XCTAssertEqual(controller.tokenMenuBarRenderForTesting?.block?.label, expectedLabel)
+        XCTAssertEqual(controller.tokenMenuBarRenderForTesting?.block?.value, "82%")
+        XCTAssertEqual(controller.tokenMenuBarRenderForTesting?.block?.minimumValue, "100%")
+    }
+
+    func test_tokenMenuBar_switchToSessionPercent_afterLimitsArrive_reflectsImmediately() {
+        let fetcher = StubLimitsFetcher(
+            provider: .claude,
+            results: [.success(sessionWindowLimits(provider: .claude, percent: 45))]
+        )
+        let (controller, manager, prefs, _, _, _) = makeController(
+            fetchers: [.claude: fetcher]
+        )
+        manager.start()
+        // 默认 todayTokens 且无用量数据 → 不显示；先等限额快照到达。
+        XCTAssertTrue(runMainLoopUntil {
+            manager.limits[.claude]?.configured == true
+        })
+        XCTAssertNil(controller.tokenMenuBarRenderForTesting?.block)
+
+        prefs.update { $0.menuBarMode = .sessionPercent }
+        let shown = runMainLoopUntil { controller.tokenMenuBarRenderForTesting?.block != nil }
+
+        XCTAssertTrue(shown, "切换到会话窗 % 后应即时显示已到达的限额数据")
+        XCTAssertEqual(controller.tokenMenuBarRenderForTesting?.block?.value, "45%")
+    }
+
     // MARK: - 辅助
+
+    private func sessionWindowLimits(
+        provider: TokenUsageProvider,
+        percent: Double
+    ) -> ProviderUsageLimits {
+        ProviderUsageLimits(
+            provider: provider,
+            configured: true,
+            subscriptionStatus: .active,
+            planLabel: nil,
+            windows: [.session: UsageWindow(
+                usedPercent: percent,
+                resetAt: nil,
+                limit: nil,
+                used: nil,
+                remaining: nil,
+                unit: nil,
+                windowSeconds: 18_000
+            )],
+            confidence: .official,
+            capturedAt: Date(),
+            stale: false,
+            issue: nil
+        )
+    }
 
     private func todayBuckets(total: Int, conversations: Int = 0) -> UsageBucketState {
         let calendar = Calendar.current

@@ -10,8 +10,6 @@ struct TokenUsagePanelView: View {
     let strings: Strings
     var onOpenSettings: (SettingsToolbarTab?) -> Void = { _ in }
 
-    @AppStorage(UserDefaultsKeys.tokenUsageSelectedPeriod)
-    private var selectedPeriodRawValue = TokenUsagePeriod.today.rawValue
     /// nil = 全部（配置的全部 provider 卡片堆叠）。
     @State private var selectedProvider: TokenUsageProvider?
     @Environment(\.colorScheme) private var colorScheme
@@ -95,12 +93,12 @@ struct TokenUsagePanelView: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    /// 「今日 ▾」周期选择 — 仅作用于用量区块。
+    /// 「今日 ▾」周期选择 — 仅作用于用量区块；读写 `configuration.usagePeriodDefault`（#05/#10 共用同一偏好键）。
     private var periodMenu: some View {
         Menu {
             ForEach(TokenUsagePeriod.allCases) { period in
                 Button {
-                    selectedPeriodRawValue = period.rawValue
+                    preferences.update { $0.usagePeriodDefault = period }
                 } label: {
                     if period == selectedPeriod {
                         Label(period.title(in: strings), systemImage: "checkmark")
@@ -131,7 +129,7 @@ struct TokenUsagePanelView: View {
     }
 
     private var selectedPeriod: TokenUsagePeriod {
-        TokenUsagePeriod(rawValue: selectedPeriodRawValue) ?? .today
+        preferences.configuration.usagePeriodDefault
     }
 
     // MARK: - 内容区

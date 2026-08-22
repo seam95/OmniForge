@@ -768,7 +768,8 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         }
         updateTokenUsageMenuBar(
             mode: prefs.configuration.menuBarMode,
-            overview: state.tokenUsageManager?.usageOverview
+            overview: state.tokenUsageManager?.usageOverview,
+            limits: state.tokenUsageManager?.limits ?? [:]
         )
 
         // @Published 在 willSet 阶段先发新值再写属性：sink 内不得回读同一属性，
@@ -779,7 +780,8 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             .sink { [weak self] mode in
                 self?.updateTokenUsageMenuBar(
                     mode: mode,
-                    overview: self?.state.tokenUsageManager?.usageOverview
+                    overview: self?.state.tokenUsageManager?.usageOverview,
+                    limits: self?.state.tokenUsageManager?.limits ?? [:]
                 )
             }
             .store(in: &tokenMenuBarCancellables)
@@ -789,19 +791,40 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
                 self?.updateTokenUsageMenuBar(
                     mode: self?.state.tokenUsagePreferences?.configuration.menuBarMode
                         ?? .hidden,
-                    overview: overview
+                    overview: overview,
+                    limits: self?.state.tokenUsageManager?.limits ?? [:]
+                )
+            }
+            .store(in: &tokenMenuBarCancellables)
+
+        // 会话窗 % 模式消费限额快照（#10）：限额变化同样重算渲染。
+        state.tokenUsageManager?.$limits
+            .sink { [weak self] limits in
+                self?.updateTokenUsageMenuBar(
+                    mode: self?.state.tokenUsagePreferences?.configuration.menuBarMode
+                        ?? .hidden,
+                    overview: self?.state.tokenUsageManager?.usageOverview,
+                    limits: limits
                 )
             }
             .store(in: &tokenMenuBarCancellables)
     }
 
-    /// 用量快照 / 偏好 / 安装态任意变化后重算渲染状态（相等短路防抖动）。
-    private func updateTokenUsageMenuBar(mode: TokenUsageMenuBarMode, overview: TokenUsageOverview?) {
+    /// 用量快照 / 限额快照 / 偏好 / 安装态任意变化后重算渲染状态（相等短路防抖动）。
+    private func updateTokenUsageMenuBar(
+        mode: TokenUsageMenuBarMode,
+        overview: TokenUsageOverview?,
+        limits: [TokenUsageProvider: ProviderUsageLimits]
+    ) {
+        let label = mode == .sessionPercent
+            ? state.l10n.s.tokenMenuBarSessionLabel
+            : state.l10n.s.tokenMenuBarTodayLabel
         let render = TokenUsageMenuBarRenderer.render(
             isFeatureAvailable: FeatureRuntime.shared.isAvailable(.tokenUsage),
             overview: overview,
             mode: mode,
-            label: state.l10n.s.tokenMenuBarTodayLabel
+            label: label,
+            limits: limits
         )
         guard render != lastTokenMenuBarRender else { return }
         lastTokenMenuBarRender = render

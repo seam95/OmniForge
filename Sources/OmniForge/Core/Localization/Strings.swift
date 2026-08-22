@@ -1141,6 +1141,9 @@ struct Strings: Equatable {
     let tokenSettingsRequestPermission: String
     let tokenSettingsPermissionGranted: String
     let tokenSettingsPermissionDenied: String
+    let tokenSettingsConfigureHintFormat: String
+    let tokenSettingsConfigureHintCursor: String
+    let tokenMenuBarSessionLabel: String
     let tokenAlertSessionTitle: String
     let tokenAlertSessionBodyFormat: String
     let tokenAlertPaceTitle: String

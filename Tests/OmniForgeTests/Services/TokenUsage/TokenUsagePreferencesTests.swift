@@ -48,6 +48,30 @@ final class TokenUsagePreferencesTests: XCTestCase {
         XCTAssertNoThrow(try preferences.setLimitRefreshMinutes(15))
     }
 
+    func test_paceAlertDisabled_roundTrip() {
+        let suite = "TokenUsagePreferencesTestsPace.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let preferences = TokenUsagePreferences(userDefaults: defaults)
+        preferences.update { $0.paceOverrunAlertEnabled = false }
+
+        let reloaded = TokenUsagePreferences(userDefaults: defaults)
+        XCTAssertFalse(reloaded.configuration.paceOverrunAlertEnabled)
+        XCTAssertTrue(reloaded.configuration.sessionLimitAlertEnabled)
+    }
+
+    func test_usagePeriodDefaultRoundTrip_acrossAllPeriods() {
+        let suite = "TokenUsagePreferencesTestsPeriod.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let preferences = TokenUsagePreferences(userDefaults: defaults)
+        preferences.update { $0.usagePeriodDefault = .month }
+        let reloaded = TokenUsagePreferences(userDefaults: defaults)
+        XCTAssertEqual(reloaded.configuration.usagePeriodDefault, .month)
+    }
+
     func test_corruptData_fallsBackToDefaults() {
         let suite = "TokenUsagePreferencesTestsCorrupt.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

@@ -50,4 +50,8 @@ enum SettingsAccessibilityID: String, CaseIterable {
     static func menuBarMetricEnabled(_ metric: MenuBarMetric) -> String {
         "performance.menuBar.metric.\(metric.rawValue).enabled"
     }
+
+    static func tokenUsageProviderState(_ provider: TokenUsageProvider) -> String {
+        "tokenUsage.provider.\(provider.rawValue).state"
+    }
 }
