@@ -323,5 +323,20 @@ final class KeepAwakeControlStateTests: XCTestCase {
             strings: .en
         )
         XCTAssertEqual(pEn.statusSubtitle, "Current: Normal sleep")
+
+        // 定时会话展示结束时间
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let end = now.addingTimeInterval(900)
+        let endText = KeepAwakeControlCountdownFormatter.endTimeText(endDate: end, now: now)
+        let pActiveTimed = KeepAwakeControlPresentationBuilder.build(
+            session: .active(endDate: end),
+            clamshell: .off,
+            lastError: nil,
+            blocksStart: false,
+            isFeatureAvailable: true,
+            now: now,
+            strings: .zhHans
+        )
+        XCTAssertEqual(pActiveTimed.statusSubtitle, "当前: 保持唤醒至 \(endText)")
     }
 }

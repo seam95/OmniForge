@@ -261,8 +261,8 @@ private struct UtilityToolRow: View {
                     Text(tool.hubDescription(in: strings))
                         .font(.system(size: 11.5))
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
 
                 Spacer(minLength: 8)

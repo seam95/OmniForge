@@ -218,9 +218,14 @@ enum KeepAwakeControlPresentationBuilder {
                     strings: strings
                 )
             }()
-            let line = timed
-                ? strings.keepAwakeStatusActiveTimed
-                : strings.keepAwakeStatusActiveIndefinite
+            let line: String = {
+                if let endDate {
+                    let endText = KeepAwakeControlCountdownFormatter.endTimeText(endDate: endDate, now: now)
+                    return String(format: strings.keepAwakeTooltipActiveTimed, endText)
+                } else {
+                    return strings.keepAwakeStatusActiveIndefinite
+                }
+            }()
             return KeepAwakeControlPresentation(
                 title: strings.keepAwakeTitle,
                 isPrimaryEnabled: true,
