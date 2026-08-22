@@ -326,6 +326,9 @@ struct FeatureFactory {
         // #08：Gemini / Kimi 全自动 provider — 凭证自刷新 + 官方限额 API。
         let gemini = LimitsCachingFetcher(inner: GeminiLimitsFetcher(), cache: cache)
         let kimi = LimitsCachingFetcher(inner: KimiLimitsFetcher(), cache: cache)
+        // #09：Cursor 网页 API（state.vscdb 拼 cookie + 浏览器伪装 + 手动重定向，
+        // 云端账单口径）；失败仅降级自身，独立隔离。
+        let cursor = LimitsCachingFetcher(inner: CursorLimitsFetcher(), cache: cache)
         // #04：用量侧 — GRDB 聚合存储 + Claude JSONL 采集器（目录监听 + 5 分钟兜底回填）。
         let usageStore = GRDBUsageStore(databaseURL: GRDBUsageStore.defaultDatabaseURL)
         let claudeCollector = ClaudeUsageCollector(store: usageStore)
@@ -333,6 +336,8 @@ struct FeatureFactory {
         // #08：Gemini 整文件 JSON 快照差量 / Kimi wire.jsonl 增量（模型持久化游标）。
         let geminiCollector = GeminiUsageCollector(store: usageStore)
         let kimiCollector = KimiUsageCollector(store: usageStore)
+        // #09：Cursor 云端账单 CSV 定时轮询（非实时；无本地日志，无监听/游标）。
+        let cursorCollector = CursorUsageCollector(store: usageStore)
         return TokenUsageManager(
             preferences: preferences,
             fetchers: [
@@ -340,6 +345,7 @@ struct FeatureFactory {
                 .codex: codex,
                 .gemini: gemini,
                 .kimi: kimi,
+                .cursor: cursor,
             ],
             scheduler: TimerRepeatingScheduler(),
             usageStore: usageStore,
@@ -348,6 +354,7 @@ struct FeatureFactory {
                 .codex: codexCollector,
                 .gemini: geminiCollector,
                 .kimi: kimiCollector,
+                .cursor: cursorCollector,
             ]
         )
     }

@@ -192,10 +192,17 @@ final class TokenUsageManager: ObservableObject {
 
     /// 面板分布卡：按周期与 provider 过滤聚合（按模型 / 按 Provider 两区）。
     /// 数据驱动，不做 provider 特化：谁有数据谁出现（SPEC 4.2 / #05）。无窗口数据 → nil。
+    /// #09：云端口径的 Cursor 行在「全部」口径下即使窗口内无数据也占位（`--` + 徽标）。
     func usageDistribution(filteredBy provider: TokenUsageProvider?, period: TokenUsagePeriod) -> UsageDistribution? {
         guard let buckets = bucketsForPanel(filteredBy: provider, period: period) else { return nil }
         let now = Date()
-        return UsageDistributionBuilder.make(buckets: buckets, now: now, calendar: .current, period: period)
+        return UsageDistributionBuilder.make(
+            buckets: buckets,
+            now: now,
+            calendar: .current,
+            period: period,
+            configuredProviders: provider == nil ? configuredProviders : []
+        )
     }
 
     /// 读取所选周期窗口内的桶（provider 过滤为 nil 时聚合全部）。

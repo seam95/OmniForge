@@ -11,11 +11,13 @@ struct UsageDistributionEntry: Equatable, Identifiable {
 
     /// 展示名：模型原始名，或 provider 展示名。
     var label: String
-    var totalTokens: Int
+    /// nil = 该 provider 行态「无数据」：右值灰显 `--`（SPEC 4.2；
+    /// 仅云端口径的 Cursor 占位行会出现，见 `UsageDistributionBuilder`）。
+    var totalTokens: Int?
     /// 非 nil = 「按 Provider」行（用 provider 模块色渲染）；nil = 「按模型」行（统一蓝色）。
     var provider: TokenUsageProvider?
 
-    init(label: String, totalTokens: Int, provider: TokenUsageProvider? = nil) {
+    init(label: String, totalTokens: Int?, provider: TokenUsageProvider? = nil) {
         self.label = label
         self.totalTokens = totalTokens
         self.provider = provider
@@ -35,12 +37,16 @@ struct UsageDistribution: Equatable {
 /// - 两区各自按 token 总量降序，并列时保持确定性（模型按名字典序、provider 按目录序）；
 /// - 只有窗口内存在数据才返回非 nil（无数据时整块隐藏，SPEC 4.3）。
 /// - 不做 Claude 特化：谁有数据谁出现，后续 provider 自动填充（#07/#08/#09）。
+/// - **Cursor 云端口径占位行**（#09）：`configuredProviders` 中已配置但窗口内无数据的
+///   Cursor 追加占位行（`totalTokens = nil`，行内右值灰显 `--` + 徽标）；
+///   仅 Cursor（无本地日志、非实时）有该特殊行，其他 provider 无数据不出现。
 enum UsageDistributionBuilder {
     static func make(
         buckets: [UsageBucketState],
         now: Date,
         calendar: Calendar,
-        period: TokenUsagePeriod
+        period: TokenUsagePeriod,
+        configuredProviders: [TokenUsageProvider] = []
     ) -> UsageDistribution? {
         guard let window = UsagePeriodWindow.window(for: period, now: now, calendar: calendar) else {
             return nil
@@ -61,17 +67,23 @@ enum UsageDistributionBuilder {
             .map { UsageDistributionEntry(label: $0.key, totalTokens: $0.value) }
             .sorted { lhs, rhs in
                 lhs.totalTokens != rhs.totalTokens
-                    ? lhs.totalTokens > rhs.totalTokens
+                    ? lhs.totalTokens! > rhs.totalTokens!
                     : lhs.label < rhs.label
             }
-        let byProvider = providerTotals
+        var byProvider = providerTotals
             .map { UsageDistributionEntry(label: $0.key.displayName, totalTokens: $0.value, provider: $0.key) }
             .sorted { lhs, rhs in
                 guard let left = lhs.provider, let right = rhs.provider else { return false }
                 return lhs.totalTokens != rhs.totalTokens
-                    ? lhs.totalTokens > rhs.totalTokens
+                    ? lhs.totalTokens! > rhs.totalTokens!
                     : providerOrder(left) < providerOrder(right)
             }
+        // Cursor 云端口径占位行：已配置且窗口内无数据 → 追加（非实时，用户已知其脆弱仍保留；
+        // 与数据行并存时排在最后，不挤占真实数据）。
+        for provider in configuredProviders
+        where provider == .cursor && providerTotals[provider] == nil && !byProvider.contains(where: { $0.provider == provider }) {
+            byProvider.append(UsageDistributionEntry(label: provider.displayName, totalTokens: nil, provider: provider))
+        }
         return UsageDistribution(byModel: byModel, byProvider: byProvider)
     }
 

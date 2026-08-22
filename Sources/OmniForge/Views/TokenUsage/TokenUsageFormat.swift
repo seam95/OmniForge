@@ -102,6 +102,19 @@ enum TokenUsageFormat {
             return strings.tokenErrorTransient + " · " + strings.tokenErrorRetryableHint
         }
     }
+
+    // MARK: 分布行行态（#09 Cursor 云端口径）
+
+    /// 分布行右值：无数据灰显 `--`（纯符号，无需本地化；SPEC 4.2）；有数据接 `tokens` 缩写。
+    static func distributionValue(_ entry: UsageDistributionEntry) -> String {
+        guard let total = entry.totalTokens else { return "--" }
+        return tokens(total)
+    }
+
+    /// 该行是否标「云端口径」：仅 Cursor（云端账单，非实时；文案走 `strings.tokenCloudBadge`）。
+    static func showsCloudScopeBadge(for entry: UsageDistributionEntry) -> Bool {
+        entry.provider == .cursor
+    }
 }
 
 /// Provider 视觉风格 — 模块色 + 状态色。

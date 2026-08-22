@@ -61,27 +61,46 @@ struct TokenUsageDistributionCardView: View {
 
     private func row(_ entry: UsageDistributionEntry, maxTokens: Int, tint: Color) -> some View {
         HStack(spacing: 8) {
-            Text(entry.label)
-                .font(Theme.Stats.font11Regular)
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : .primary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .frame(width: 96, alignment: .leading)
-            MetricBar(
-                value: Double(entry.totalTokens) / Double(max(maxTokens, 1)),
-                warning: 101,
-                critical: 102,
-                tint: tint
-            )
-            Text(TokenUsageFormat.tokens(entry.totalTokens))
+            HStack(spacing: 4) {
+                Text(entry.label)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : .primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if TokenUsageFormat.showsCloudScopeBadge(for: entry) {
+                    //「云端口径」徽标：云端账单口径（非实时）；无数据行一并显示。
+                    Text(strings.tokenCloudBadge)
+                        .font(Theme.Stats.font10Regular)
+                        .foregroundStyle(Theme.Stats.text3)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            }
+            .frame(width: TokenUsageFormat.showsCloudScopeBadge(for: entry) ? 106 : 96, alignment: .leading)
+            if entry.totalTokens != nil {
+                MetricBar(
+                    value: Double(entry.totalTokens ?? 0) / Double(max(maxTokens, 1)),
+                    warning: 101,
+                    critical: 102,
+                    tint: tint
+                )
+            } else {
+                // 无数据行不画条（灰显轨道会与 0 值混淆），仅保持行高对齐。
+                Color.clear.frame(height: 4)
+            }
+            Text(TokenUsageFormat.distributionValue(entry))
                 .font(Theme.Stats.font11Regular)
                 .monospacedDigit()
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : .primary)
+                .foregroundStyle(
+                    entry.totalTokens == nil
+                        ? (colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                        : (colorScheme == .light ? Theme.Stats.text1 : .primary)
+                )
                 .frame(width: 52, alignment: .trailing)
         }
     }
 
     private func maxTokens(_ entries: [UsageDistributionEntry]) -> Int {
-        entries.map(\.totalTokens).max() ?? 0
+        entries.compactMap(\.totalTokens).max() ?? 0
     }
 }

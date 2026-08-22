@@ -284,6 +284,40 @@ final class FakeKimiTokenRefresher: KimiTokenRefreshing {
     }
 }
 
+/// 测试用 Cursor 凭证替身 — 编排 state.vscdb 读取结果（cookie 由 reader 拼装，替身直接携带）。
+final class FakeCursorCredentials: CursorCredentialReading {
+    /// 每次调用按序出队；耗尽后重复最后一个。nil 表示「未配置」。
+    var results: [Result<CursorAuthBundle?, Error>] = [.success(nil)]
+    private(set) var readCount = 0
+
+    init(bundle: CursorAuthBundle? = nil) {
+        if let bundle {
+            results = [.success(bundle)]
+        }
+    }
+
+    func readBundle() throws -> CursorAuthBundle? {
+        readCount += 1
+        let result = results[min(readCount - 1, results.count - 1)]
+        return try result.get()
+    }
+}
+
+/// 测试用 Cursor 云端 CSV 拉取替身 — 记录 cookie 并返回可编排 CSV 文本。
+final class FakeCursorCSVFetcher: CursorCSVFetching {
+    /// 每次调用按序出队；耗尽后重复最后一个。
+    var results: [Result<String, Error>] = [.success("")]
+    private(set) var callCount = 0
+    private(set) var lastCookie: String?
+
+    func fetchUsageCSV(cookie: String) async throws -> String {
+        callCount += 1
+        lastCookie = cookie
+        let result = results[min(callCount - 1, results.count - 1)]
+        return try result.get()
+    }
+}
+
 // MARK: - 共享测试辅助
 
 extension Data {

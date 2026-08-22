@@ -152,6 +152,72 @@ final class UsageDistributionTests: XCTestCase {
         ))
     }
 
+    // MARK: - Cursor 云端口径占位行（#09：无本地日志；无数值时右值灰显 "--"）
+
+    func test_distribution_cursorConfiguredNoData_appendsPlaceholderRowWithNilValue() throws {
+        // 窗口内只有 Claude 数据：Cursor 已配置但无数据 → 追加占位行（nil totalTokens），
+        // 且排在数据行之后（保持数据行在前）。
+        let distribution = try XCTUnwrap(UsageDistributionBuilder.make(
+            buckets: [bucket(at: day(2026, 8, 22, hour: 10), provider: .claude, total: 96_400)],
+            now: now,
+            calendar: fixtureCalendar,
+            period: .today,
+            configuredProviders: [.claude, .cursor]
+        ))
+        XCTAssertEqual(distribution.byProvider, [
+            UsageDistributionEntry(label: "Claude", totalTokens: 96_400, provider: .claude),
+            UsageDistributionEntry(label: "Cursor", totalTokens: nil, provider: .cursor),
+        ])
+    }
+
+    func test_distribution_cursorWithData_noPlaceholderRow() throws {
+        let distribution = try XCTUnwrap(UsageDistributionBuilder.make(
+            buckets: [
+                bucket(at: day(2026, 8, 22, hour: 10), provider: .cursor, model: "auto", total: 41_000),
+            ],
+            now: now,
+            calendar: fixtureCalendar,
+            period: .today,
+            configuredProviders: [.cursor]
+        ))
+        XCTAssertEqual(distribution.byProvider.count, 1)
+        XCTAssertEqual(distribution.byProvider.first?.totalTokens, 41_000, "有数据则显示真实值，不出占位行")
+    }
+
+    func test_distribution_cursorNotConfigured_noPlaceholderRow() throws {
+        let distribution = try XCTUnwrap(UsageDistributionBuilder.make(
+            buckets: [bucket(at: day(2026, 8, 22, hour: 10), provider: .claude, total: 96_400)],
+            now: now,
+            calendar: fixtureCalendar,
+            period: .today,
+            configuredProviders: [.claude]
+        ))
+        XCTAssertEqual(distribution.byProvider.count, 1, "未配置 → 不出现 Cursor 行")
+    }
+
+    func test_distribution_placeholderOnlyForCursor_notOtherProviders() throws {
+        // 未来 provider 无数据仍不出现占位行（占位语义是 Cursor 云端口径专属）。
+        let distribution = try XCTUnwrap(UsageDistributionBuilder.make(
+            buckets: [bucket(at: day(2026, 8, 22, hour: 10), provider: .claude, total: 96_400)],
+            now: now,
+            calendar: fixtureCalendar,
+            period: .today,
+            configuredProviders: [.claude, .codex]
+        ))
+        XCTAssertEqual(distribution.byProvider.count, 1, "非 Cursor provider 无数据不出现")
+    }
+
+    func test_distribution_windowStillEmptyWithoutAnyData_returnsNil() {
+        // 空窗口（无任何 provider 数据）→ 整块隐藏规则优先（SPEC 4.3），不单独渲 Cursor 占位。
+        XCTAssertNil(UsageDistributionBuilder.make(
+            buckets: [],
+            now: now,
+            calendar: fixtureCalendar,
+            period: .today,
+            configuredProviders: [.cursor]
+        ))
+    }
+
     // MARK: - 周期化用量快照（周/月重算）
 
     func test_builder_periodToday_keepsSevenDayTrend() throws {
