@@ -9,6 +9,17 @@ enum TokenUsageProvider: String, Codable, CaseIterable, Identifiable {
     case cursor
 
     var id: String { rawValue }
+
+    /// 展示名（品牌名，不随语言变化）。
+    var displayName: String {
+        switch self {
+        case .claude: return "Claude"
+        case .codex: return "Codex"
+        case .gemini: return "Gemini"
+        case .kimi: return "Kimi"
+        case .cursor: return "Cursor"
+        }
+    }
 }
 
 /// 限额窗口周期类型。

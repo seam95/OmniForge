@@ -174,30 +174,46 @@ struct TokenUsagePanelView: View {
         }
     }
 
-    /// 用量区块（#04）：今日用量卡 + 本地统计标注行。
+    /// 用量区块（#04/#05）：今日用量卡 + 分布卡 + 本地统计标注行。
     /// 无数据且未回填时整块隐藏（SPEC 4.3）；回填中仍显示（数值位为「正在统计历史用量…」）。
     @ViewBuilder
     private var usageBlock: some View {
-        if manager.showingUsageBlock {
-            let providerCount = selectedProvider == nil
-                ? manager.usageProvidersWithData.count
-                : 1
+        if manager.usageBackfilling || selectedUsageOverview != nil {
+            let distribution = selectedDistribution
             VStack(alignment: .leading, spacing: 10) {
                 TokenUsageTodayCardView(
                     overview: selectedUsageOverview,
                     backfilling: manager.usageBackfilling,
-                    providerCount: providerCount,
+                    providerCount: distribution?.byProvider.count ?? fallbackProviderCount,
+                    period: selectedPeriod,
                     strings: strings
                 )
+                if let distribution {
+                    TokenUsageDistributionCardView(
+                        distribution: distribution,
+                        strings: strings
+                    )
+                }
                 usageFooterLine
             }
         }
     }
 
-    /// 选中 provider 的用量快照；「全部」= 聚合快照。
+    /// 周期内无当日数据但周期有数据时的 provider 家数兜底（今日快照口径）。
+    private var fallbackProviderCount: Int {
+        selectedProvider == nil
+            ? manager.usageProvidersWithData.count
+            : 1
+    }
+
+    /// 选中 provider + 选中周期的用量快照。
     private var selectedUsageOverview: TokenUsageOverview? {
-        guard let selectedProvider else { return manager.usageOverview }
-        return manager.usageOverview(for: selectedProvider)
+        manager.usageOverview(filteredBy: selectedProvider, period: selectedPeriod)
+    }
+
+    /// 选中 provider + 选中周期的分布（按模型 / 按 Provider）。
+    private var selectedDistribution: UsageDistribution? {
+        manager.usageDistribution(filteredBy: selectedProvider, period: selectedPeriod)
     }
 
     /// 用量来源标注：「本地统计 · 每 5 分钟汇总」。

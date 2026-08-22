@@ -51,9 +51,9 @@ final class TokenUsageManagerUsageTests: XCTestCase {
         store.upsertBucket(todayBuckets(total: 128_400, conversations: 3))
         let manager = makeManager(store: store, collectors: [.claude: FakeUsageCollector(provider: .claude)])
         manager.start()
-        XCTAssertEqual(manager.usageOverview?.todayTotalTokens, 128_400)
-        XCTAssertEqual(manager.usageOverview?.todayConversations, 3)
-        XCTAssertEqual(manager.usageOverview?.sevenDay.map(\.totalTokens).reduce(0, +), 128_400)
+        XCTAssertEqual(manager.usageOverview?.totalTokens, 128_400)
+        XCTAssertEqual(manager.usageOverview?.conversations, 3)
+        XCTAssertEqual(manager.usageOverview?.daily.map(\.totalTokens).reduce(0, +), 128_400)
         XCTAssertEqual(manager.usageProvidersWithData, [.claude])
     }
 
@@ -66,7 +66,7 @@ final class TokenUsageManagerUsageTests: XCTestCase {
 
         store.upsertBucket(todayBuckets(total: 42_000))
         collector.simulateUsageChanged()
-        XCTAssertEqual(manager.usageOverview?.todayTotalTokens, 42_000, "采集回调驱动快照刷新")
+        XCTAssertEqual(manager.usageOverview?.totalTokens, 42_000, "采集回调驱动快照刷新")
         XCTAssertEqual(manager.usageProvidersWithData, [.claude])
     }
 
@@ -76,9 +76,9 @@ final class TokenUsageManagerUsageTests: XCTestCase {
         store.upsertBucket(todayBuckets(total: 20, provider: .codex))
         let manager = makeManager(store: store, collectors: [.claude: FakeUsageCollector(provider: .claude)])
         manager.start()
-        XCTAssertEqual(manager.usageOverview?.todayTotalTokens, 30, "聚合口径含全部 provider")
-        XCTAssertEqual(manager.usageOverview(for: .claude)?.todayTotalTokens, 10)
-        XCTAssertEqual(manager.usageOverview(for: .codex)?.todayTotalTokens, 20)
+        XCTAssertEqual(manager.usageOverview?.totalTokens, 30, "聚合口径含全部 provider")
+        XCTAssertEqual(manager.usageOverview(for: .claude)?.totalTokens, 10)
+        XCTAssertEqual(manager.usageOverview(for: .codex)?.totalTokens, 20)
         XCTAssertNil(manager.usageOverview(for: .gemini), "无数据 provider 无窗口数据 → nil")
     }
 
@@ -105,5 +105,72 @@ final class TokenUsageManagerUsageTests: XCTestCase {
         manager.start()
         XCTAssertNil(manager.usageOverview)
         XCTAssertFalse(manager.showingUsageBlock)
+    }
+
+    // MARK: - 周期化用量 / 分布（#05）
+
+    private func bucket(daysAgo: Int, total: Int, conversations: Int = 0, provider: TokenUsageProvider = .claude, model: String = "deepseek-v4-flash") -> UsageBucketState {
+        let calendar = Calendar.current
+        let dayStart = calendar.startOfDay(
+            for: calendar.date(byAdding: .day, value: -daysAgo, to: Date()) ?? Date()
+        )
+        return UsageBucketState(
+            key: UsageBucketKey(provider: provider, model: model, bucketStart: dayStart.addingTimeInterval(3600)),
+            usage: TokenUsage(inputTokens: total, cachedInputTokens: 0, cacheCreationInputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0, totalTokens: total),
+            conversationCount: conversations
+        )
+    }
+
+    func test_usageOverview_filteredByPeriod_appliesPeriodWindow() {
+        let store = FakeUsageStore()
+        store.upsertBucket(bucket(daysAgo: 0, total: 10))
+        store.upsertBucket(bucket(daysAgo: 40, total: 999))
+        let manager = makeManager(store: store, collectors: [.claude: FakeUsageCollector(provider: .claude)])
+        manager.start()
+
+        XCTAssertEqual(manager.usageOverview(filteredBy: nil, period: .today)?.totalTokens, 10)
+        XCTAssertEqual(manager.usageOverview(filteredBy: nil, period: .week)?.totalTokens, 10, "40 天前桶不在本周窗口")
+        XCTAssertEqual(manager.usageOverview(filteredBy: nil, period: .month)?.totalTokens, 10, "40 天前桶不在本月窗口")
+        XCTAssertEqual(manager.usageOverview(filteredBy: .claude, period: .week)?.totalTokens, 10)
+        XCTAssertNil(manager.usageOverview(filteredBy: .gemini, period: .week), "无数据 provider → nil")
+    }
+
+    func test_usageDistribution_reflectsProvidersWithData_automatically() throws {
+        let store = FakeUsageStore()
+        store.upsertBucket(bucket(daysAgo: 0, total: 10, provider: .claude, model: "opus"))
+        store.upsertBucket(bucket(daysAgo: 0, total: 20, provider: .claude, model: "sonnet"))
+        let manager = makeManager(store: store, collectors: [.claude: FakeUsageCollector(provider: .claude)])
+        manager.start()
+
+        let claudeOnly = try XCTUnwrap(manager.usageDistribution(filteredBy: nil, period: .today))
+        XCTAssertEqual(claudeOnly.byProvider, [
+            UsageDistributionEntry(label: "Claude", totalTokens: 30, provider: .claude)
+        ], "只有 Claude 一家有数据时「按 Provider」仅 Claude 一行")
+        XCTAssertEqual(claudeOnly.byModel.map(\.label), ["sonnet", "opus"])
+
+        // 后续 provider 落地后自动出现（不做 Claude 特化）。
+        store.upsertBucket(bucket(daysAgo: 0, total: 40, provider: .codex, model: "gpt-5"))
+        let both = try XCTUnwrap(manager.usageDistribution(filteredBy: nil, period: .today))
+        XCTAssertEqual(both.byProvider, [
+            UsageDistributionEntry(label: "Codex", totalTokens: 40, provider: .codex),
+            UsageDistributionEntry(label: "Claude", totalTokens: 30, provider: .claude),
+        ])
+
+        let codexOnly = try XCTUnwrap(manager.usageDistribution(filteredBy: .codex, period: .today))
+        XCTAssertEqual(codexOnly.byProvider.map(\.provider), [.codex])
+        XCTAssertEqual(codexOnly.byModel, [UsageDistributionEntry(label: "gpt-5", totalTokens: 40)])
+    }
+
+    func test_usageDistribution_selectsPeriodWindow() throws {
+        let store = FakeUsageStore()
+        store.upsertBucket(bucket(daysAgo: 0, total: 10))
+        store.upsertBucket(bucket(daysAgo: 40, total: 999))
+        let manager = makeManager(store: store, collectors: [.claude: FakeUsageCollector(provider: .claude)])
+        manager.start()
+
+        let week = try XCTUnwrap(manager.usageDistribution(filteredBy: nil, period: .week))
+        XCTAssertEqual(week.byModel.map(\.totalTokens), [10], "40 天前桶不入本周分布")
+        let month = try XCTUnwrap(manager.usageDistribution(filteredBy: nil, period: .month))
+        XCTAssertEqual(month.byModel.map(\.totalTokens), [10])
     }
 }

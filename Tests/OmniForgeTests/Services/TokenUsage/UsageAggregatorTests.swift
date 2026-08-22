@@ -108,10 +108,10 @@ final class UsageAggregatorTests: XCTestCase {
         )
 
         let result = try XCTUnwrap(overview)
-        XCTAssertEqual(result.todayTotalTokens, 128_000)
-        XCTAssertEqual(result.todayConversations, 3)
-        XCTAssertEqual(result.sevenDay.count, 7)
-        XCTAssertEqual(result.sevenDay.last?.totalTokens, 128_000, "最后一项为今日")
+        XCTAssertEqual(result.totalTokens, 128_000)
+        XCTAssertEqual(result.conversations, 3)
+        XCTAssertEqual(result.daily.count, 7)
+        XCTAssertEqual(result.daily.last?.totalTokens, 128_000, "最后一项为今日")
         XCTAssertEqual(result.peak?.totalTokens, 168_000, "峰值来自历史日")
         XCTAssertEqual(result.peak?.dayStart, calendar.startOfDay(for: todayBucket.addingTimeInterval(-24 * 3600)))
     }

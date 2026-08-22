@@ -179,11 +179,45 @@ final class TokenUsageManager: ObservableObject {
 
     /// 指定 provider 的用量快照（无窗口数据 → nil；面板切单家时使用）。
     func usageOverview(for provider: TokenUsageProvider) -> TokenUsageOverview? {
+        usageOverview(filteredBy: provider, period: .today)
+    }
+
+    /// 面板用量快照：按周期（今日/本周/本月）与 provider 过滤聚合（#05 周期选择器）。
+    /// `filteredBy == nil` 表示全部 provider 聚合口径；无窗口数据 → nil。
+    func usageOverview(filteredBy provider: TokenUsageProvider?, period: TokenUsagePeriod) -> TokenUsageOverview? {
+        guard let buckets = bucketsForPanel(filteredBy: provider, period: period) else { return nil }
+        let now = Date()
+        return UsageOverviewBuilder.make(buckets: buckets, now: now, calendar: .current, period: period)
+    }
+
+    /// 面板分布卡：按周期与 provider 过滤聚合（按模型 / 按 Provider 两区）。
+    /// 数据驱动，不做 provider 特化：谁有数据谁出现（SPEC 4.2 / #05）。无窗口数据 → nil。
+    func usageDistribution(filteredBy provider: TokenUsageProvider?, period: TokenUsagePeriod) -> UsageDistribution? {
+        guard let buckets = bucketsForPanel(filteredBy: provider, period: period) else { return nil }
+        let now = Date()
+        return UsageDistributionBuilder.make(buckets: buckets, now: now, calendar: .current, period: period)
+    }
+
+    /// 读取所选周期窗口内的桶（provider 过滤为 nil 时聚合全部）。
+    /// 今日周期额外加载近 7 日数据，保证趋势序列有值；周/月按周期窗口加载。
+    private func bucketsForPanel(
+        filteredBy provider: TokenUsageProvider?,
+        period: TokenUsagePeriod
+    ) -> [UsageBucketState]? {
         guard let usageStore else { return nil }
         let now = Date()
-        let (start, end) = snapshotWindow(now: now)
-        let buckets = usageStore.loadBuckets(from: start, to: end, providers: [provider])
-        return UsageOverviewBuilder.make(buckets: buckets, now: now, calendar: .current)
+        let window: (start: Date, end: Date)
+        switch period {
+        case .today:
+            window = snapshotWindow(now: now)
+        case .week, .month:
+            guard let periodWindow = UsagePeriodWindow.window(for: period, now: now, calendar: .current) else {
+                return nil
+            }
+            window = periodWindow
+        }
+        let providers = provider.map { Set([$0]) }
+        return usageStore.loadBuckets(from: window.start, to: window.end, providers: providers)
     }
 
     /// 采集器回调（主线程）：重新计算面板快照。

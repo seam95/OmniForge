@@ -1109,8 +1109,12 @@ struct Strings: Equatable {
     let tokenFooterFormat: String
     let tokenUsageLocalFormat: String
     let tokenTodayCardTitle: String
+    let tokenWeekCardTitle: String
+    let tokenMonthCardTitle: String
     let tokenUsageSubtitleFormat: String
     let tokenTrendCaptionFormat: String
+    let tokenTrendWeekCaptionFormat: String
+    let tokenTrendMonthCaptionFormat: String
     let tokenByModelTitle: String
     let tokenByProviderTitle: String
     let tokenCloudBadge: String

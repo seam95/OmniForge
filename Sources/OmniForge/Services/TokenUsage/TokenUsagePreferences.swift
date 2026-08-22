@@ -20,23 +20,7 @@ enum TokenUsageLimitsDisplay: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-/// 用量统计周期。
-enum TokenUsagePeriod: String, Codable, CaseIterable, Identifiable {
-    case today
-    case week
-    case month
-
-    var id: String { rawValue }
-
-    /// 周期名称（本地化由调用方完成）。
-    func title(in strings: Strings) -> String {
-        switch self {
-        case .today: return strings.tokenPeriodToday
-        case .week: return strings.tokenPeriodWeek
-        case .month: return strings.tokenPeriodMonth
-        }
-    }
-}
+/// 用量统计周期见 `Models/TokenUsage/UsagePeriod.swift`（今日/本周/本月）。
 
 // MARK: - 配置
 

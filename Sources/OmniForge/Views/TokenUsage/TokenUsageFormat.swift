@@ -92,17 +92,6 @@ enum TokenUsageFormat {
 
 /// Provider 视觉风格 — 模块色 + 状态色。
 extension TokenUsageProvider {
-    /// 展示名（品牌名，不随语言变化）。
-    var displayName: String {
-        switch self {
-        case .claude: return "Claude"
-        case .codex: return "Codex"
-        case .gemini: return "Gemini"
-        case .kimi: return "Kimi"
-        case .cursor: return "Cursor"
-        }
-    }
-
     /// 模块强调色（卡点头部色块 / 进度条正常段）。
     var accentColor: Color {
         switch self {
@@ -123,6 +112,35 @@ extension LimitWindowKind {
         case .weekly: return strings.tokenWindowWeekly
         case .monthly: return strings.tokenWindowMonthly
         case .credits: return strings.tokenWindowCredits
+        }
+    }
+}
+
+/// 周期名称（今日 / 本周 / 本月）。
+extension TokenUsagePeriod {
+    func title(in strings: Strings) -> String {
+        switch self {
+        case .today: return strings.tokenPeriodToday
+        case .week: return strings.tokenPeriodWeek
+        case .month: return strings.tokenPeriodMonth
+        }
+    }
+
+    /// 用量卡标题（今日用量 / 本周用量 / 本月用量）。
+    func cardTitle(_ strings: Strings) -> String {
+        switch self {
+        case .today: return strings.tokenTodayCardTitle
+        case .week: return strings.tokenWeekCardTitle
+        case .month: return strings.tokenMonthCardTitle
+        }
+    }
+
+    /// 趋势 caption 文案格式（近 7 日趋势 / 本周趋势 / 本月趋势）。
+    func trendCaptionFormat(_ strings: Strings) -> String {
+        switch self {
+        case .today: return strings.tokenTrendCaptionFormat
+        case .week: return strings.tokenTrendWeekCaptionFormat
+        case .month: return strings.tokenTrendMonthCaptionFormat
         }
     }
 }
