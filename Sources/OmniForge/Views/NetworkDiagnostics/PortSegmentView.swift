@@ -3,6 +3,7 @@ import SwiftUI
 // MARK: - 端口分段：工具条 + 提示条 + 列表 + 结束进程确认流
 
 struct PortSegmentView: View {
+    @Environment(\.colorScheme) private var colorScheme
     let strings: Strings
     @ObservedObject var service: NetworkDiagnosticsService
 
@@ -112,6 +113,9 @@ struct PortSegmentView: View {
                         .controlSize(.small)
                 } else {
                     Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
+                        .frame(width: 24, height: 24)
                 }
             }
             .buttonStyle(.borderless)
@@ -146,10 +150,10 @@ struct PortSegmentView: View {
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 11))
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Theme.Stats.ram)
                 Text(bannerTitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.primary)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 Button {
@@ -162,7 +166,8 @@ struct PortSegmentView: View {
                             ? strings.networkDiagnosticsHideCommand
                             : strings.networkDiagnosticsShowCommand
                     )
-                    .font(.system(size: 11, weight: .medium))
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(Theme.Stats.cpu)
                 }
                 .buttonStyle(.borderless)
             }
@@ -170,8 +175,8 @@ struct PortSegmentView: View {
             if isBannerExpanded {
                 HStack(spacing: 8) {
                     Text(NetworkDiagnosticsService.elevatedLsofCommand)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                        .font(Theme.Stats.font10Regular.monospaced())
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
                         .lineLimit(2)
                         .truncationMode(.middle)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -185,7 +190,8 @@ struct PortSegmentView: View {
                             systemImage: "doc.on.doc"
                         )
                         .labelStyle(.iconOnly)
-                        .font(.system(size: 12))
+                        .font(.system(size: 11))
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                     }
                     .buttonStyle(.borderless)
                     .help(strings.networkDiagnosticsCopyTerminalCommand)
@@ -195,7 +201,7 @@ struct PortSegmentView: View {
                 .padding(.vertical, 6)
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.primary.opacity(0.04))
+                        .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.04))
                 )
             }
         }
@@ -203,7 +209,7 @@ struct PortSegmentView: View {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.orange.opacity(0.08))
+                .fill(Theme.Stats.ram.opacity(0.08))
         )
         .onChange(of: service.permissionHint) { _, newValue in
             if newValue == .none {
@@ -224,8 +230,8 @@ struct PortSegmentView: View {
             let rows = service.filteredPorts
             if rows.isEmpty {
                 Text(emptyStateText)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                     .frame(maxWidth: .infinity, minHeight: 100, alignment: .center)
             } else {
                 // Outer ControlCenter AdaptiveHeightScroll owns scrolling — no nested ScrollView.

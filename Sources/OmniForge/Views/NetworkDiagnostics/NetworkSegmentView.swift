@@ -3,6 +3,7 @@ import SwiftUI
 // MARK: - 网络分段：身份卡 + 复制 + 公网 IP 三态
 
 struct NetworkSegmentView: View {
+    @Environment(\.colorScheme) private var colorScheme
     let strings: Strings
     @ObservedObject var service: NetworkDiagnosticsService
 
@@ -12,7 +13,7 @@ struct NetworkSegmentView: View {
     private var unavailable: String { strings.networkDiagnosticsValueUnavailable }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             toolbar
 
             if let identity = service.networkIdentity {
@@ -23,8 +24,8 @@ struct NetworkSegmentView: View {
                     .frame(maxWidth: .infinity, minHeight: 80, alignment: .center)
             } else {
                 Text(strings.networkDiagnosticsNetworkEmpty)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                     .frame(maxWidth: .infinity, minHeight: 80, alignment: .center)
             }
         }
@@ -43,6 +44,9 @@ struct NetworkSegmentView: View {
                         .controlSize(.small)
                 } else {
                     Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
+                        .frame(width: 24, height: 24)
                 }
             }
             .buttonStyle(.borderless)
@@ -56,7 +60,7 @@ struct NetworkSegmentView: View {
 
     @ViewBuilder
     private func identityCard(_ identity: NetworkIdentity) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             section(title: strings.networkDiagnosticsHostSection) {
                 copyRow(
                     id: "hostname",
@@ -69,8 +73,8 @@ struct NetworkSegmentView: View {
             section(title: strings.networkDiagnosticsInterfacesSection) {
                 if identity.interfaces.isEmpty {
                     Text(unavailable)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .font(Theme.Stats.font11Regular)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                 } else {
                     ForEach(Array(identity.interfaces.enumerated()), id: \.offset) { index, iface in
                         interfaceBlock(iface, index: index)
@@ -109,8 +113,8 @@ struct NetworkSegmentView: View {
     private func interfaceBlock(_ iface: NetworkInterface, index: Int) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(iface.name)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .font(Theme.Stats.font11Regular)
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
 
             if let ipv4 = iface.ipv4, !ipv4.isEmpty {
                 copyRow(
@@ -138,8 +142,8 @@ struct NetworkSegmentView: View {
             }
             if iface.ipv4 == nil && iface.ipv6 == nil && iface.mac == nil {
                 Text(unavailable)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Stats.font11Regular.monospaced())
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
             }
         }
         .padding(.vertical, 2)
@@ -153,8 +157,8 @@ struct NetworkSegmentView: View {
                 ProgressView()
                     .controlSize(.small)
                 Text(strings.networkDiagnosticsPublicIPLoading)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10)
@@ -184,8 +188,8 @@ struct NetworkSegmentView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .font(Theme.Stats.font10Regular)
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
                 .textCase(.uppercase)
             VStack(spacing: 6) {
                 content()
@@ -209,12 +213,12 @@ struct NetworkSegmentView: View {
         } label: {
             HStack(spacing: 10) {
                 Text(label)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
                     .frame(width: 72, alignment: .leading)
                 Text(value)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(.primary)
+                    .font(Theme.Stats.font12Medium.monospaced())
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                     .lineLimit(2)
                     .truncationMode(.middle)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -222,22 +226,22 @@ struct NetworkSegmentView: View {
                     if highlighted {
                         Image(systemName: "checkmark")
                             .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.green)
+                            .foregroundStyle(Theme.Stats.statusNormal)
                     } else {
                         Image(systemName: "doc.on.doc")
                             .font(.system(size: 11))
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                     }
                 }
             }
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .panelRowCard(isInteractive: canCopy)
             .overlay {
                 if highlighted {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(Color.accentColor.opacity(0.35), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                        .strokeBorder(Theme.Stats.statusNormal.opacity(0.4), lineWidth: 1)
                 }
             }
         }

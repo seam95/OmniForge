@@ -3,7 +3,7 @@ import SwiftUI
 /// 状态 tint 胶囊：字色 + 同色 15% 底，对齐监控总览「正常」pill。
 struct StatusTintBadge: View {
     let text: String
-    var tint: Color = .green
+    var tint: Color = Theme.Stats.statusNormal
 
     var body: some View {
         Text(text)
