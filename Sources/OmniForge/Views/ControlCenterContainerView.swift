@@ -362,9 +362,10 @@ struct ControlCenterContainerView: View {
             Spacer()
 
             // Token 页底栏右位为「刷新」；其余面板保持「退出」（UI 稿 4.2）。
+            // 手动刷新穿透内存/磁盘新鲜缓存，但 429 冷却不可穿透（#03）。
             if selectedPanel == .tokenUsage {
                 FooterButton(label: state.l10n.s.tokenRefresh, systemImage: "arrow.clockwise") {
-                    state.tokenUsageManager?.refreshNow()
+                    state.tokenUsageManager?.refreshNow(force: true)
                 }
             } else {
                 FooterButton(label: state.l10n.s.actionQuit, systemImage: nil) {

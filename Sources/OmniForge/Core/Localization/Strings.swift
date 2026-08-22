@@ -1087,6 +1087,7 @@ struct Strings: Equatable {
     let tokenStatusExceeded: String
     let tokenStatusReauth: String
     let tokenStatusRateLimited: String
+    let tokenStatusStale: String
     let tokenErrorNetwork: String
     let tokenErrorTransient: String
     let tokenRateLimitedCaptionFormat: String

@@ -24,7 +24,13 @@ struct TokenUsageLimitCardView: View {
         VStack(alignment: .leading, spacing: 10) {
             header
             if let issue = limits.issue {
-                errorRow(issue)
+                if limits.stale, !orderedWindows.isEmpty {
+                    // 断网/超时/冷却回退：显示上一次成功快照 + 行内错误提示（stale 标注见徽章与脚注）。
+                    windowsBody
+                    errorRow(issue)
+                } else {
+                    errorRow(issue)
+                }
             } else if orderedWindows.isEmpty {
                 errorRow(.decoding("empty windows"))
             } else {

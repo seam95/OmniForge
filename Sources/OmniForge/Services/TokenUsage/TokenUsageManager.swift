@@ -54,7 +54,7 @@ final class TokenUsageManager: ObservableObject {
     func start() {
         guard !isActive else { return }
         isActive = true
-        refreshLimits()
+        refreshLimits(force: false)
         rescheduleRefreshTimer()
     }
 
@@ -67,38 +67,39 @@ final class TokenUsageManager: ObservableObject {
         inFlight.removeAll()
     }
 
-    /// 手动刷新入口（底栏「刷新」；#03 起穿透缓存但仍遵循 429 冷却）。
+    /// 手动刷新入口（底栏「刷新」）：force 穿透内存/磁盘新鲜缓存，但 429 冷却不可穿透（#03）。
     func refreshNow(force: Bool = false) {
         guard isActive else { return }
-        refreshLimits()
+        refreshLimits(force: force)
     }
 
     // MARK: - 限额取数
 
-    private func refreshLimits() {
+    private func refreshLimits(force: Bool) {
         for (provider, fetcher) in fetchers where !inFlight.contains(provider) {
             inFlight.insert(provider)
             Task { [weak self] in
                 guard let self else { return }
-                let result = await self.fetchOne(fetcher)
-                self.limits[provider] = result
-                if result.configured {
-                    self.limitUpdateAt = Date()
-                }
+                let result = await self.fetchOne(provider: provider, fetcher: fetcher, force: force)
+                self.apply(result, provider: provider)
                 self.inFlight.remove(provider)
             }
         }
     }
 
-    private func fetchOne(_ fetcher: LimitsFetching) async -> ProviderUsageLimits {
+    private func fetchOne(
+        provider: TokenUsageProvider,
+        fetcher: LimitsFetching,
+        force: Bool
+    ) async -> ProviderUsageLimits {
         do {
-            if let limits = try await fetcher.fetchLimits() {
+            if let limits = try await fetcher.fetchLimits(force: force) {
                 return limits
             }
-            return .notConfigured(fetcher.provider)
+            return .notConfigured(provider)
         } catch let error as LimitError {
             return ProviderUsageLimits(
-                provider: fetcher.provider,
+                provider: provider,
                 configured: true,
                 subscriptionStatus: .unknown,
                 planLabel: nil,
@@ -110,7 +111,7 @@ final class TokenUsageManager: ObservableObject {
             )
         } catch {
             return ProviderUsageLimits(
-                provider: fetcher.provider,
+                provider: provider,
                 configured: true,
                 subscriptionStatus: .unknown,
                 planLabel: nil,
@@ -123,13 +124,25 @@ final class TokenUsageManager: ObservableObject {
         }
     }
 
+    /// 记录快照并维护「更新时间」语义（#03）：取最近一次**有数据/回退**快照的 `capturedAt`；
+    /// 纯错误态（无窗口、非 stale 回退）不推进时间，错误时来源标注对齐缓存。
+    private func apply(_ result: ProviderUsageLimits, provider: TokenUsageProvider) {
+        limits[provider] = result
+        // 仅当有实际数据（新鲜成功或 last-good 回退）时推进「更新时间」，且取两者较新者。
+        guard result.configured, result.issue == nil || !result.windows.isEmpty else { return }
+        let captured = result.capturedAt
+        if limitUpdateAt == nil || limitUpdateAt! < captured {
+            limitUpdateAt = captured
+        }
+    }
+
     private func rescheduleRefreshTimer() {
         refreshTimer?.cancel()
         refreshTimer = nil
         guard isActive else { return }
         let interval = TimeInterval(preferences.configuration.limitRefreshMinutes * 60)
         refreshTimer = scheduler.schedule(every: interval) { [weak self] in
-            self?.refreshLimits()
+            self?.refreshLimits(force: false)
         }
     }
 }

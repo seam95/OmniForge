@@ -104,7 +104,7 @@ final class ClaudeLimitsFetcher: LimitsFetching {
         self.client = client
     }
 
-    func fetchLimits() async throws -> ProviderUsageLimits? {
+    func fetchLimits(force: Bool) async throws -> ProviderUsageLimits? {
         // 探测存在性（不触碰秘密）；未登录 → 未配置（nil，由管理器归一化为 notConfigured）。
         guard credentials.probe() else {
             return nil

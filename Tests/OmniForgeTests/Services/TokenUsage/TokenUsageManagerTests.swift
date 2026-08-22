@@ -6,17 +6,20 @@ final class TokenUsageManagerTests: XCTestCase {
     private func makeSnapshot(
         provider: TokenUsageProvider,
         configured: Bool = true,
-        issue: LimitError? = nil
+        issue: LimitError? = nil,
+        stale: Bool = false,
+        capturedAt: Date = Date(),
+        windows: [LimitWindowKind: UsageWindow] = [:]
     ) -> ProviderUsageLimits {
         ProviderUsageLimits(
             provider: provider,
             configured: configured,
             subscriptionStatus: .unknown,
             planLabel: nil,
-            windows: [:],
+            windows: windows,
             confidence: .official,
-            capturedAt: Date(),
-            stale: false,
+            capturedAt: capturedAt,
+            stale: stale,
             issue: issue
         )
     }
@@ -145,6 +148,68 @@ final class TokenUsageManagerTests: XCTestCase {
         XCTAssertEqual(fetcher.callCount, 1, "重复 start 不应重复取数")
         manager.stop()
         XCTAssertFalse(manager.isActive)
+    }
+
+    func test_staleFallback_keepsUpdateAtAtCapturedTime() async throws {
+        let captured = Date(timeIntervalSince1970: 1_700_000_000)
+        let snapshot = makeSnapshot(
+            provider: .claude,
+            issue: .network("offline"),
+            stale: true,
+            capturedAt: captured,
+            windows: [.session: UsageWindow(
+                usedPercent: 40,
+                resetAt: captured.addingTimeInterval(3600),
+                limit: nil,
+                used: nil,
+                remaining: nil,
+                unit: nil,
+                windowSeconds: 18000
+            )]
+        )
+        let fetcher = StubLimitsFetcher(provider: .claude, results: [.success(snapshot)])
+        let manager = TokenUsageManager(
+            preferences: TokenUsagePreferences(userDefaults: makeDefaults()),
+            fetchers: [.claude: fetcher],
+            scheduler: FakeRepeatingScheduler()
+        )
+        manager.start()
+        try await waitUntil { manager.limits[.claude] != nil }
+        XCTAssertEqual(manager.limitUpdateAt, captured, "stale 回退沿用上次成功时间，不重置为取数时刻")
+    }
+
+    func test_refreshNow_forceIsForwardedToFetcher() async throws {
+        let fetcher = StubLimitsFetcher(
+            provider: .claude,
+            results: [
+                .success(makeSnapshot(provider: .claude, capturedAt: Date(), windows: sessionWindows(percent: 40))),
+                .success(makeSnapshot(provider: .claude, capturedAt: Date(), windows: sessionWindows(percent: 50))),
+            ]
+        )
+        let manager = TokenUsageManager(
+            preferences: TokenUsagePreferences(userDefaults: makeDefaults()),
+            fetchers: [.claude: fetcher],
+            scheduler: FakeRepeatingScheduler()
+        )
+        manager.start()
+        try await waitUntil { manager.limits[.claude] != nil }
+        XCTAssertEqual(fetcher.requestedForce, false, "定时/启动刷新为非 force")
+        manager.refreshNow(force: true)
+        try await waitUntil { fetcher.callCount == 2 }
+        XCTAssertEqual(fetcher.requestedForce, true, "手动刷新以 force 穿透缓存")
+    }
+
+    /// 会话窗用途快照：供「更新时间对齐」与 force 传递测试。
+    private func sessionWindows(percent: Double) -> [LimitWindowKind: UsageWindow] {
+        [.session: UsageWindow(
+            usedPercent: percent,
+            resetAt: Date().addingTimeInterval(3600),
+            limit: nil,
+            used: nil,
+            remaining: nil,
+            unit: nil,
+            windowSeconds: 18000
+        )]
     }
 
     // MARK: - 工具

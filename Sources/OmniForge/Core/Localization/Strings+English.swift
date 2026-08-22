@@ -1009,6 +1009,7 @@ extension Strings {
         tokenStatusExceeded: "Limit exceeded",
         tokenStatusReauth: "Re-login required",
         tokenStatusRateLimited: "Rate limited",
+        tokenStatusStale: "Stale data",
         tokenErrorNetwork: "Network error",
         tokenErrorTransient: "Temporarily unavailable",
         tokenRateLimitedCaptionFormat: "Rate limited, retry in about %@",

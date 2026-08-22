@@ -1009,6 +1009,7 @@ extension Strings {
         tokenStatusExceeded: "已超额",
         tokenStatusReauth: "需重新登录",
         tokenStatusRateLimited: "请求过于频繁",
+        tokenStatusStale: "数据可能过期",
         tokenErrorNetwork: "网络错误",
         tokenErrorTransient: "暂时无法获取",
         tokenRateLimitedCaptionFormat: "请求过于频繁，约 %@ 后恢复",

@@ -318,10 +318,13 @@ struct FeatureFactory {
     }
 
     private static func makeProductionTokenUsage(preferences: TokenUsagePreferences) -> TokenUsageManager {
-        TokenUsageManager(
+        // #03：限额取数外挂弹性缓存（内存 TTL + 磁盘 last-good + 429 冷却持久化）。
+        let cache = TokenUsageLimitsCache()
+        let claude = LimitsCachingFetcher(inner: ClaudeLimitsFetcher(), cache: cache)
+        return TokenUsageManager(
             preferences: preferences,
             fetchers: [
-                .claude: ClaudeLimitsFetcher(),
+                .claude: claude,
             ],
             scheduler: TimerRepeatingScheduler()
         )

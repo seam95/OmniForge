@@ -126,15 +126,18 @@ enum TokenUsageCardStatus {
     case exceeded
     case reauth
     case rateLimited
+    case stale
     case transient
 
-    /// 从限额快照派生状态（错误优先，其次会话窗用量阈值）。
+    /// 从限额快照派生状态（错误优先；stale 回退标「数据可能过期」，其次会话窗用量阈值）。
     static func derive(from limits: ProviderUsageLimits) -> TokenUsageCardStatus {
         if let issue = limits.issue {
             switch issue {
             case .reauthRequired: return .reauth
             case .rateLimited: return .rateLimited
-            case .network, .decoding: return .transient
+            case .network, .decoding:
+                // 显示 last-good 快照 + 行内错误提示 → 徽章强调数据可能过期
+                return limits.stale && !limits.windows.isEmpty ? .stale : .transient
             }
         }
         guard let session = limits.windows[.session],
@@ -156,6 +159,7 @@ enum TokenUsageCardStatus {
         case .exceeded: return strings.tokenStatusExceeded
         case .reauth: return strings.tokenStatusReauth
         case .rateLimited: return strings.tokenStatusRateLimited
+        case .stale: return strings.tokenStatusStale
         case .transient: return strings.tokenErrorTransient
         }
     }
@@ -165,7 +169,7 @@ enum TokenUsageCardStatus {
         case .normal: return Theme.Stats.statusNormal
         case .approaching: return Theme.Stats.ram
         case .exceeded, .reauth: return Theme.Stats.up
-        case .rateLimited: return Theme.Stats.ram
+        case .rateLimited, .stale: return Theme.Stats.ram
         case .transient: return Theme.Stats.text3
         }
     }
@@ -174,7 +178,7 @@ enum TokenUsageCardStatus {
     var showsWarningIcon: Bool {
         switch self {
         case .normal: return false
-        case .approaching, .exceeded, .reauth, .rateLimited, .transient: return true
+        case .approaching, .exceeded, .reauth, .rateLimited, .stale, .transient: return true
         }
     }
 }

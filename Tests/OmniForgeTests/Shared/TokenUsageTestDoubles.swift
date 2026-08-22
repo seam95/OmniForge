@@ -71,6 +71,8 @@ final class StubLimitsFetcher: LimitsFetching {
     /// 每次调用按序出队；耗尽后重复最后一个。nil 表示「未配置」。
     var results: [Result<ProviderUsageLimits?, Error>]
     private(set) var callCount = 0
+    /// 最近一次调用的 force 标记（验证穿透语义传递）。
+    private(set) var requestedForce = false
     /// 非 nil 时挂起直到手动放行（单飞测试）。
     var gate: AsyncGate?
 
@@ -79,13 +81,50 @@ final class StubLimitsFetcher: LimitsFetching {
         self.results = results
     }
 
-    func fetchLimits() async throws -> ProviderUsageLimits? {
+    func fetchLimits(force: Bool) async throws -> ProviderUsageLimits? {
         callCount += 1
+        requestedForce = force
         if let gate {
             await gate.wait()
         }
         let result = results[min(callCount - 1, results.count - 1)]
         return try result.get()
+    }
+}
+
+/// 测试用限额缓存替身 — 可编排内存/冷却/last-good 结果并记录写入。
+final class FakeLimitsCache: LimitsCaching {
+    var memorySnapshotResult: ProviderUsageLimits?
+    var lastGoodSnapshotResult: ProviderUsageLimits?
+    var cooldownResult: Date?
+    /// 每次 storeSuccess 追加，便于断言「落缓存」。
+    private(set) var storedSuccess: [TokenUsageProvider: [ProviderUsageLimits]] = [:]
+    private(set) var storedRateLimits: [TokenUsageProvider: [Date]] = [:]
+    private(set) var clearedCooldowns = Set<TokenUsageProvider>()
+    private(set) var clearedProviders = Set<TokenUsageProvider>()
+
+    func memorySnapshot(for provider: TokenUsageProvider) -> ProviderUsageLimits? { memorySnapshotResult }
+
+    func lastGoodSnapshot(for provider: TokenUsageProvider) -> ProviderUsageLimits? { lastGoodSnapshotResult }
+
+    func storeSuccess(_ limits: ProviderUsageLimits) {
+        storedSuccess[limits.provider, default: []].append(limits)
+        // 镜像真实缓存：成功取数后解除冷却。
+        clearedCooldowns.insert(limits.provider)
+    }
+
+    func storeNotConfigured(_ provider: TokenUsageProvider) {
+        clearedProviders.insert(provider)
+    }
+
+    func storeRateLimit(for provider: TokenUsageProvider, retryAt: Date) {
+        storedRateLimits[provider, default: []].append(retryAt)
+    }
+
+    func cooldown(for provider: TokenUsageProvider) -> Date? { cooldownResult }
+
+    func clearCooldown(for provider: TokenUsageProvider) {
+        clearedCooldowns.insert(provider)
     }
 }
 
