@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - DSH Web 服务管理详情页（实用工具内嵌）
 //
 // 观察 DSHWebManager.shared；
-// 采用 Hero 服务控制卡片、已发现服务列表与终端控制台日志区的三段式精美布局。
+// 采用「服务控制与实例一体化卡片」+「运行日志终端」的双卡片精美布局。
 
 struct DSHWebView: View {
     let strings: Strings
@@ -28,8 +28,7 @@ struct DSHWebView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            heroControlCard
-            servicesSection
+            unifiedServiceCard
             logSection
         }
         .padding(.horizontal, 12)
@@ -64,20 +63,35 @@ struct DSHWebView: View {
         }
     }
 
-    // MARK: - Hero 主服务控制卡片
+    // MARK: - 统一服务与实例管理卡片
 
-    private var heroControlCard: some View {
+    private var unifiedServiceCard: some View {
         PanelCardChrome(cornerRadius: Theme.Radius.card, padding: 12, accent: statusColor) {
             VStack(alignment: .leading, spacing: 10) {
+                // 1. 顶部：标题、状态与主控制按钮
                 heroHeaderRow
-                activeAddressBanner
-                Rectangle()
-                    .fill(Color.primary.opacity(0.06))
-                    .frame(height: 1)
+
+                // 2. 运行态：高亮地址条与快捷浏览器跳转
+                if manager.state == .running {
+                    activeAddressBanner
+                }
+
+                // 3. 端口配置与辅助操作
                 heroBottomRow
+
+                // 4. 已发现实例整合区（如有运行中的实例）
+                if !manager.services.isEmpty {
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.06))
+                        .frame(height: 1)
+
+                    discoveredInstancesSubSection
+                }
             }
         }
     }
+
+    // MARK: - 主控区子组件
 
     private var heroHeaderRow: some View {
         HStack(spacing: 10) {
@@ -115,6 +129,8 @@ struct DSHWebView: View {
                 text: statusBadgeText,
                 tint: statusColor
             )
+
+            primaryButton
         }
     }
 
@@ -122,7 +138,7 @@ struct DSHWebView: View {
         HStack(spacing: 8) {
             Image(systemName: "globe")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(manager.state == .running ? Color.green : Color.accentColor)
+                .foregroundStyle(Color.green)
 
             Text(DSHWebManager.address(for: manager.configuredPort))
                 .font(.system(size: 11.5, weight: .medium, design: .monospaced))
@@ -146,37 +162,35 @@ struct DSHWebView: View {
             .buttonStyle(.plain)
             .help(isAddressCopied ? "已复制" : strings.dshWebCopyLog)
 
-            if manager.state == .running {
-                Button {
-                    manager.openInBrowser()
-                } label: {
-                    HStack(spacing: 3) {
-                        Text(strings.dshWebOpenBrowser)
-                            .font(.system(size: 11, weight: .semibold))
-                        Image(systemName: "arrow.up.right")
-                            .font(.system(size: 9, weight: .bold))
-                    }
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3.5)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(Color.accentColor.opacity(colorScheme == .dark ? 0.25 : 0.12))
-                    )
-                    .foregroundStyle(Color.accentColor)
+            Button {
+                manager.openInBrowser()
+            } label: {
+                HStack(spacing: 3) {
+                    Text(strings.dshWebOpenBrowser)
+                        .font(.system(size: 11, weight: .semibold))
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 9, weight: .bold))
                 }
-                .buttonStyle(.plain)
-                .help(strings.dshWebOpenBrowser)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3.5)
+                .background(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(Color.accentColor.opacity(colorScheme == .dark ? 0.25 : 0.12))
+                )
+                .foregroundStyle(Color.accentColor)
             }
+            .buttonStyle(.plain)
+            .help(strings.dshWebOpenBrowser)
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-                .fill(manager.state == .running ? Color.green.opacity(colorScheme == .dark ? 0.10 : 0.05) : Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04))
+                .fill(Color.green.opacity(colorScheme == .dark ? 0.10 : 0.05))
         )
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-                .strokeBorder(manager.state == .running ? Color.green.opacity(0.25) : Color.primary.opacity(0.06), lineWidth: 1)
+                .strokeBorder(Color.green.opacity(0.25), lineWidth: 1)
         )
     }
 
@@ -216,21 +230,139 @@ struct DSHWebView: View {
 
             Spacer(minLength: 8)
 
-            HStack(spacing: 6) {
-                Button {
-                    Task { await manager.refreshServices() }
-                } label: {
+            Button {
+                Task { await manager.refreshServices() }
+            } label: {
+                HStack(spacing: 4) {
                     Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 10.5, weight: .medium))
+                    Text(strings.dshWebRefresh)
+                        .font(.system(size: 11))
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .help(strings.dshWebRefresh)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .help(strings.dshWebRefresh)
+        }
+    }
 
-                primaryButton
+    // MARK: - 已发现实例整合列表
+
+    private var discoveredInstancesSubSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "server.rack")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+
+                Text(strings.dshWebServicesTitle)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+
+                Text("\(manager.services.count)")
+                    .font(.system(size: 9.5, weight: .bold))
+                    .foregroundStyle(Color.accentColor)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(
+                        Capsule()
+                            .fill(Color.accentColor.opacity(0.12))
+                    )
+
+                Spacer(minLength: 0)
+            }
+
+            VStack(spacing: 5) {
+                ForEach(manager.services) { service in
+                    serviceItemRow(service)
+                }
             }
         }
     }
+
+    private func serviceItemRow(_ service: DSHWebService) -> some View {
+        let ownedByApplication = manager.isOwnedByApplication(service)
+        return HStack(spacing: 8) {
+            Image(systemName: "globe")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(ownedByApplication ? Color.green : Color.accentColor)
+                .frame(width: 22, height: 22)
+                .background(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill((ownedByApplication ? Color.green : Color.accentColor).opacity(colorScheme == .dark ? 0.20 : 0.10))
+                )
+
+            VStack(alignment: .leading, spacing: 1.5) {
+                Text(service.address)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text("PID \(service.pid)")
+                        .font(.system(size: 9.5, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                    Text("·")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(.tertiary)
+                    StatusTintBadge(
+                        text: ownedByApplication ? strings.dshWebManagedService : strings.dshWebExternalService,
+                        tint: ownedByApplication ? .green : .blue
+                    )
+                }
+            }
+
+            Spacer(minLength: 6)
+
+            HStack(spacing: 4) {
+                Button {
+                    manager.openInBrowser(service)
+                } label: {
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 22, height: 22)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .fill(Color.accentColor.opacity(colorScheme == .dark ? 0.15 : 0.08))
+                        )
+                }
+                .buttonStyle(.plain)
+                .help(strings.dshWebOpenBrowser)
+
+                Button {
+                    if ownedByApplication {
+                        Task { await manager.stop(service: service) }
+                    } else {
+                        serviceAwaitingStopConfirmation = service
+                    }
+                } label: {
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(Color.red)
+                        .frame(width: 22, height: 22)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .fill(Color.red.opacity(colorScheme == .dark ? 0.18 : 0.08))
+                        )
+                }
+                .buttonStyle(.plain)
+                .help(strings.dshWebStop)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous)
+                .fill(Color.primary.opacity(colorScheme == .dark ? 0.05 : 0.03))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous)
+                .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04), lineWidth: 1)
+        )
+    }
+
+    // MARK: - 状态计算与按钮
 
     private var statusText: String {
         switch manager.state {
@@ -292,7 +424,7 @@ struct DSHWebView: View {
                 Task { await manager.start() }
             } label: {
                 Label(strings.dshWebStart, systemImage: "play.fill")
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
@@ -302,7 +434,7 @@ struct DSHWebView: View {
                     ProgressView()
                         .controlSize(.mini)
                     Text(strings.dshWebStateStarting)
-                        .font(.system(size: 11.5, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                 }
             }
             .buttonStyle(.borderedProminent)
@@ -313,7 +445,7 @@ struct DSHWebView: View {
                 Task { await manager.stop() }
             } label: {
                 Label(strings.dshWebStop, systemImage: "stop.fill")
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
@@ -323,7 +455,7 @@ struct DSHWebView: View {
                     ProgressView()
                         .controlSize(.mini)
                     Text(strings.dshWebStateStopping)
-                        .font(.system(size: 11.5, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                 }
             }
             .buttonStyle(.bordered)
@@ -334,135 +466,11 @@ struct DSHWebView: View {
                 Task { await manager.restart() }
             } label: {
                 Label(strings.dshWebRestart, systemImage: "arrow.clockwise")
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
         }
-    }
-
-    // MARK: - 已发现服务
-
-    private var servicesSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: "server.rack")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
-
-                Text(strings.dshWebServicesTitle)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-
-                if !manager.services.isEmpty {
-                    Text("\(manager.services.count)")
-                        .font(.system(size: 9.5, weight: .bold))
-                        .foregroundStyle(Color.accentColor)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(
-                            Capsule()
-                                .fill(Color.accentColor.opacity(0.12))
-                        )
-                }
-            }
-
-            if manager.services.isEmpty {
-                HStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.tertiary)
-                    Text(strings.dshWebNoServices)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .panelRowCard()
-            } else {
-                VStack(spacing: 6) {
-                    ForEach(manager.services) { service in
-                        serviceRow(service)
-                    }
-                }
-            }
-        }
-    }
-
-    private func serviceRow(_ service: DSHWebService) -> some View {
-        let ownedByApplication = manager.isOwnedByApplication(service)
-        return HStack(spacing: 9) {
-            Image(systemName: "globe")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(ownedByApplication ? Color.green : Color.accentColor)
-                .frame(width: 26, height: 26)
-                .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill((ownedByApplication ? Color.green : Color.accentColor).opacity(colorScheme == .dark ? 0.20 : 0.10))
-                )
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(service.address)
-                    .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                HStack(spacing: 5) {
-                    Text("PID \(service.pid)")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                    Text("·")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
-                    StatusTintBadge(
-                        text: ownedByApplication ? strings.dshWebManagedService : strings.dshWebExternalService,
-                        tint: ownedByApplication ? .green : .blue
-                    )
-                }
-            }
-
-            Spacer(minLength: 8)
-
-            HStack(spacing: 6) {
-                Button {
-                    manager.openInBrowser(service)
-                } label: {
-                    Image(systemName: "arrow.up.right.square")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.accentColor)
-                        .frame(width: 24, height: 24)
-                        .background(
-                            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                .fill(Color.accentColor.opacity(colorScheme == .dark ? 0.15 : 0.08))
-                        )
-                }
-                .buttonStyle(.plain)
-                .help(strings.dshWebOpenBrowser)
-
-                Button {
-                    if ownedByApplication {
-                        Task { await manager.stop(service: service) }
-                    } else {
-                        serviceAwaitingStopConfirmation = service
-                    }
-                } label: {
-                    Image(systemName: "stop.fill")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Color.red)
-                        .frame(width: 24, height: 24)
-                        .background(
-                            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                .fill(Color.red.opacity(colorScheme == .dark ? 0.18 : 0.08))
-                        )
-                }
-                .buttonStyle(.plain)
-                .help(strings.dshWebStop)
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .panelRowCard(isInteractive: true)
     }
 
     // MARK: - 日志区
@@ -586,7 +594,7 @@ struct DSHWebView: View {
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 130, alignment: .center)
+                    .frame(maxWidth: .infinity, minHeight: 140, alignment: .center)
                 } else {
                     LazyVStack(alignment: .leading, spacing: 4) {
                         ForEach(Array(manager.logLines.enumerated()), id: \.offset) { _, line in
@@ -607,7 +615,7 @@ struct DSHWebView: View {
                 }
             }
         }
-        .frame(height: 155)
+        .frame(height: 160)
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
                 .fill(Color.black.opacity(colorScheme == .dark ? 0.38 : 0.04))
