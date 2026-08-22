@@ -45,12 +45,13 @@ final class StatusBarControllerTests: XCTestCase {
         XCTAssertEqual(composed.length, 0)
     }
 
-    func test_menuBarIcon_usesTemplateSystemImage() {
+    func test_menuBarIcon_usesTemplateImage() {
         let image = StatusBarController.menuBarIcon()
 
         XCTAssertNotNil(image)
         XCTAssertTrue(image?.isTemplate ?? false)
-        XCTAssertEqual(image?.size, NSSize(width: 15, height: 15))
+        XCTAssertGreaterThan(image?.size.width ?? 0, 0)
+        XCTAssertGreaterThan(image?.size.height ?? 0, 0)
     }
 }
 

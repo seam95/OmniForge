@@ -160,12 +160,16 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     private var keepAwakeRefreshTimer: AnyCancellable?
 
     static func menuBarIcon() -> NSImage? {
+        if let image = NSImage(named: "MenuBarIcon") {
+            image.isTemplate = true
+            return image
+        }
         let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .semibold, scale: .medium)
-        let image = NSImage(systemSymbolName: "lock.fill", accessibilityDescription: nil)?
+        let fallback = NSImage(systemSymbolName: "pin.fill", accessibilityDescription: nil)?
             .withSymbolConfiguration(config)
-        image?.isTemplate = true
-        image?.size = NSSize(width: 15, height: 15)
-        return image
+        fallback?.isTemplate = true
+        fallback?.size = NSSize(width: 15, height: 15)
+        return fallback
     }
 
     init(
