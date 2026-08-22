@@ -37,14 +37,6 @@ enum SettingsAccessibilityID: String, CaseIterable {
         "performance.section.\(section.rawValue).enabled"
     }
 
-    static func performanceSectionMoveUp(_ section: MonitorSection) -> String {
-        "performance.section.\(section.rawValue).moveUp"
-    }
-
-    static func performanceSectionMoveDown(_ section: MonitorSection) -> String {
-        "performance.section.\(section.rawValue).moveDown"
-    }
-
     static func menuBarMetricEnabled(_ metric: MenuBarMetric) -> String {
         "performance.menuBar.metric.\(metric.rawValue).enabled"
     }

@@ -144,12 +144,15 @@ public struct FooterButton: View {
     public let label: String
     public let systemImage: String?
     public let action: () -> Void
+    /// nil 保持现状（secondary 灰字）；非 nil 覆盖整组前景色。
+    public var tint: Color? = nil
     @State private var isHovered = false
     @Environment(\.colorScheme) private var colorScheme
 
-    public init(label: String, systemImage: String? = nil, action: @escaping () -> Void) {
+    public init(label: String, systemImage: String? = nil, tint: Color? = nil, action: @escaping () -> Void) {
         self.label = label
         self.systemImage = systemImage
+        self.tint = tint
         self.action = action
     }
 
@@ -163,6 +166,7 @@ public struct FooterButton: View {
                 Text(label)
                     .font(.system(size: 11.5, weight: .medium))
             }
+            .foregroundStyle(tint ?? Color.secondary)
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .background(

@@ -26,6 +26,14 @@ final class MonitorPanelStringsTests: XCTestCase {
             XCTAssertFalse(s.monitorPressureNormal.isEmpty)
             XCTAssertFalse(s.monitorPressureWarning.isEmpty)
             XCTAssertFalse(s.monitorPressureCritical.isEmpty)
+            XCTAssertFalse(s.monitorCPUSystem.isEmpty)
+            XCTAssertFalse(s.monitorCPUUser.isEmpty)
+            XCTAssertFalse(s.monitorUptimePrefix.isEmpty)
+            XCTAssertFalse(s.monitorPowerSourceAdapter.isEmpty)
+            XCTAssertFalse(s.monitorPowerSourceOnBattery.isEmpty)
+            XCTAssertFalse(s.monitorDiskUsed.isEmpty)
+            XCTAssertFalse(s.monitorCumulativeTotal.isEmpty)
+            XCTAssertFalse(s.monitorMetricHealthShort.isEmpty)
         }
     }
 
@@ -53,6 +61,14 @@ final class MonitorPanelStringsTests: XCTestCase {
         XCTAssertEqual(s.monitorPressureNormal, "OK")
         XCTAssertEqual(s.monitorPressureWarning, "WARN")
         XCTAssertEqual(s.monitorPressureCritical, "CRIT")
+        XCTAssertEqual(s.monitorCPUSystem, "System")
+        XCTAssertEqual(s.monitorCPUUser, "User")
+        XCTAssertEqual(s.monitorUptimePrefix, "Uptime")
+        XCTAssertEqual(s.monitorPowerSourceAdapter, "Power Adapter")
+        XCTAssertEqual(s.monitorPowerSourceOnBattery, "On Battery")
+        XCTAssertEqual(s.monitorDiskUsed, "Used")
+        XCTAssertEqual(s.monitorCumulativeTotal, "Total")
+        XCTAssertEqual(s.monitorMetricHealthShort, "Health")
     }
 
     func test_newMonitorPanelStrings_expectedChineseValues() {
@@ -79,5 +95,13 @@ final class MonitorPanelStringsTests: XCTestCase {
         XCTAssertEqual(s.monitorPressureNormal, "正常")
         XCTAssertEqual(s.monitorPressureWarning, "警告")
         XCTAssertEqual(s.monitorPressureCritical, "危急")
+        XCTAssertEqual(s.monitorCPUSystem, "系统")
+        XCTAssertEqual(s.monitorCPUUser, "用户")
+        XCTAssertEqual(s.monitorUptimePrefix, "已运行")
+        XCTAssertEqual(s.monitorPowerSourceAdapter, "电源适配器")
+        XCTAssertEqual(s.monitorPowerSourceOnBattery, "使用电池")
+        XCTAssertEqual(s.monitorDiskUsed, "已用")
+        XCTAssertEqual(s.monitorCumulativeTotal, "累计")
+        XCTAssertEqual(s.monitorMetricHealthShort, "健康")
     }
 }

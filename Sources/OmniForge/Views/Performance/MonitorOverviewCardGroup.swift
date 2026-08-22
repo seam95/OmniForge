@@ -1,89 +1,49 @@
 import Foundation
 
-/// Render unit for the overview grid. Power data is grouped visually while preserving existing card models.
+/// Render unit for the overview grid — group 层已拍平为 `.metric` 直映射。
 enum MonitorOverviewCardGroup: Equatable, Identifiable {
     case metric(MonitorCardModel)
-    case power(battery: MonitorCardModel, energy: MonitorCardModel)
 
     var id: String {
         switch self {
         case let .metric(model):
             return "metric.\(model.id.rawValue)"
-        case .power:
-            return "power.battery-energy"
         }
     }
 
-    var isFullWidth: Bool {
+    var metricModel: MonitorCardModel? {
         switch self {
         case let .metric(model):
-            return model.id.isFullWidth
-        case .power:
-            return false
-        }
-    }
-
-    var energyModel: MonitorCardModel? {
-        switch self {
-        case let .metric(model) where model.id == .energy:
             return model
-        case let .power(_, energy):
-            return energy
-        case .metric:
-            return nil
         }
     }
 
     static func groups(from models: [MonitorCardModel]) -> [MonitorOverviewCardGroup] {
-        let energy = models.first { $0.id == .energy }
-        var groups: [MonitorOverviewCardGroup] = []
-
-        for model in models {
-            switch model.id {
-            case .battery:
-                if let energy {
-                    groups.append(.power(battery: model, energy: energy))
-                } else {
-                    groups.append(.metric(model))
-                }
-            case .energy:
-                if models.contains(where: { $0.id == .battery }) {
-                    continue
-                }
-                groups.append(.metric(model))
-            default:
-                groups.append(.metric(model))
-            }
-        }
-
-        return groups
+        models.map { .metric($0) }
     }
 
+    /// 固定四行：CPU|内存 → 网络整宽 → 电池|GPU → 磁盘整宽（按可见性取行）。
     static func dashboardRows(from models: [MonitorCardModel]) -> [MonitorOverviewRow] {
         let groups = groups(from: models)
         let byCardID = Dictionary(
             uniqueKeysWithValues: groups.compactMap { group -> (MonitorCardID, MonitorOverviewCardGroup)? in
-                switch group {
-                case let .metric(model):
-                    return (model.id, group)
-                case .power:
-                    return (.battery, group)
-                }
+                guard let model = group.metricModel else { return nil }
+                return (model.id, group)
             }
         )
 
         var rows: [MonitorOverviewRow] = []
-        appendPairRow(id: "row.top", first: byCardID[.cpu], second: byCardID[.memory], to: &rows)
+        appendPairRow(id: "row.cpuMemory", first: byCardID[.cpu], second: byCardID[.memory], to: &rows)
 
-        if let power = byCardID[.battery] {
-            rows.append(.single(power, id: "row.power"))
+        if let network = byCardID[.network] {
+            rows.append(.single(network, id: "row.network"))
         }
+
+        appendPairRow(id: "row.batteryGPU", first: byCardID[.battery], second: byCardID[.gpu], to: &rows)
 
         if let disk = byCardID[.disk] {
             rows.append(.single(disk, id: "row.disk"))
         }
-
-        appendPairRow(id: "row.bottom", first: byCardID[.network], second: byCardID[.gpu], to: &rows)
 
         return rows
     }
@@ -119,16 +79,16 @@ enum MonitorOverviewRow: Equatable, Identifiable {
 
     var height: CGFloat {
         switch id {
-        case "row.top":
-            return 122
-        case "row.power":
-            return 78
+        case "row.cpuMemory":
+            return 100
+        case "row.network":
+            return 96
+        case "row.batteryGPU":
+            return 100
         case "row.disk":
-            return 88
-        case "row.bottom":
-            return 104
+            return 82
         default:
-            return 104
+            return 96
         }
     }
 
@@ -143,11 +103,12 @@ enum MonitorOverviewRow: Equatable, Identifiable {
 }
 
 enum MonitorOverviewDisplayKind: Equatable {
-    case cpuGauge
-    case memoryDashboard
-    case powerStrip
-    case diskThroughput
-    case metric
+    case cpuTrend
+    case memoryGauge
+    case networkDual
+    case batteryBar
+    case gpuTrend
+    case diskChips
 }
 
 extension MonitorOverviewCardGroup {
@@ -155,17 +116,14 @@ extension MonitorOverviewCardGroup {
         switch self {
         case let .metric(model):
             switch model.id {
-            case .cpu:
-                return .cpuGauge
-            case .memory:
-                return .memoryDashboard
-            case .disk:
-                return .diskThroughput
-            default:
-                return .metric
+            case .cpu: return .cpuTrend
+            case .memory: return .memoryGauge
+            case .network: return .networkDual
+            case .battery: return .batteryBar
+            case .gpu: return .gpuTrend
+            case .disk: return .diskChips
+            case .energy: return .cpuTrend // overview 无入口，不可达
             }
-        case .power:
-            return .powerStrip
         }
     }
 }

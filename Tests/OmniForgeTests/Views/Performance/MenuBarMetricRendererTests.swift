@@ -84,9 +84,9 @@ final class MenuBarMetricRendererTests: XCTestCase {
         MenuBarMetricLayout.resetCompactHighWaterForTesting()
 
         var snapLow = SystemSnapshot()
-        snapLow.cpuUsage = 0.09
+        snapLow.cpuUsage = CPUUsageReading(total: 0.09, user: 0.06, system: 0.03)
         var snapHigh = SystemSnapshot()
-        snapHigh.cpuUsage = 1.0
+        snapHigh.cpuUsage = CPUUsageReading(total: 1.0, user: 0.6, system: 0.4)
 
         var config = MonitorConfiguration()
         config.menuBarSpacing = .standard
@@ -123,7 +123,7 @@ final class MenuBarMetricRendererTests: XCTestCase {
 
     func test_combineTemperatures_doesNotAppendTempUnlessTemperatureMetricEnabled() {
         var snapshot = SystemSnapshot()
-        snapshot.cpuUsage = 0.42
+        snapshot.cpuUsage = CPUUsageReading(total: 0.42, user: 0.3, system: 0.12)
         snapshot.gpuUsage = 0.18
         snapshot.cpuTemperature = 55
         snapshot.gpuTemperature = 48
@@ -144,7 +144,7 @@ final class MenuBarMetricRendererTests: XCTestCase {
 
     func test_combineTemperatures_appendsTempOnlyWhenTemperatureMetricEnabled() {
         var snapshot = SystemSnapshot()
-        snapshot.cpuUsage = 0.42
+        snapshot.cpuUsage = CPUUsageReading(total: 0.42, user: 0.3, system: 0.12)
         snapshot.gpuUsage = 0.18
         snapshot.cpuTemperature = 55
         snapshot.gpuTemperature = 48
@@ -166,7 +166,7 @@ final class MenuBarMetricRendererTests: XCTestCase {
 
     func test_combineTemperatures_off_keepsSeparateTemperatureBlocks() {
         var snapshot = SystemSnapshot()
-        snapshot.cpuUsage = 0.42
+        snapshot.cpuUsage = CPUUsageReading(total: 0.42, user: 0.3, system: 0.12)
         snapshot.cpuTemperature = 55
 
         var config = MonitorConfiguration()
@@ -267,9 +267,9 @@ final class MenuBarMetricRendererTests: XCTestCase {
     func test_compactAttributedTitle_cpuDigitChangeKeepsWidth() {
         MenuBarMetricLayout.resetCompactHighWaterForTesting()
         var snapLow = SystemSnapshot()
-        snapLow.cpuUsage = 0.09
+        snapLow.cpuUsage = CPUUsageReading(total: 0.09, user: 0.06, system: 0.03)
         var snapHigh = SystemSnapshot()
-        snapHigh.cpuUsage = 1.0
+        snapHigh.cpuUsage = CPUUsageReading(total: 1.0, user: 0.6, system: 0.4)
 
         var config = MonitorConfiguration()
         config.menuBarSpacing = .compact
@@ -290,7 +290,7 @@ final class MenuBarMetricRendererTests: XCTestCase {
 
     func test_temperatureUnit_fahrenheit_formatsStandaloneAndCombined() {
         var snapshot = SystemSnapshot()
-        snapshot.cpuUsage = 0.42
+        snapshot.cpuUsage = CPUUsageReading(total: 0.42, user: 0.3, system: 0.12)
         snapshot.cpuTemperature = 100 // 212°F
         snapshot.batteryTemperature = 37
 

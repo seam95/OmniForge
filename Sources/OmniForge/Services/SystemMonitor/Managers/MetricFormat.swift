@@ -149,6 +149,13 @@ enum MetricFormat {
         return "\(bytes(used)) / \(bytes(total))"
     }
 
+    /// 内存 caption：`"13.0 / 16 GB"` — used 仅数值（主值已带单位，caption 从简），total 带单位。base-1024。
+    static func shortMemoryPair(used: UInt64?, total: UInt64?) -> String? {
+        guard let used, let total else { return nil }
+        let (usedValue, _) = scale(Double(used))
+        return String(format: "%.1f / %@", usedValue, bytes(total))
+    }
+
     static func temperature(_ value: Double?, unit: TemperatureUnit) -> String? {
         switch unit {
         case .celsius: return celsius(value)

@@ -51,7 +51,7 @@ final class MonitorAlertManager: ObservableObject {
         var triggered = Set<MonitorAlertKind>()
 
         // CPU 告警 — 需要连续 12 秒超过阈值
-        if configuration.cpuEnabled, let cpu = snapshot.cpuUsage {
+        if configuration.cpuEnabled, let cpu = snapshot.cpuUsage?.total {
             if cpu > Double(configuration.cpuThreshold) / 100.0 {
                 if highCPUSince == nil { highCPUSince = now }
                 if let since = highCPUSince, now.timeIntervalSince(since) >= 12 {

@@ -12,8 +12,11 @@ final class SystemMonitorManagerTests: XCTestCase {
     }
 
     func test_sequencedCPUSamplerWorks() throws {
-        let cpu = SequencedCPUSampler(results: [.success(0.5), .failure(.systemCall("failed"))])
-        XCTAssertEqual(try cpu.sample(), 0.5)
+        let cpu = SequencedCPUSampler(results: [
+            .success(CPUUsageReading(total: 0.5, user: 0.3, system: 0.2)),
+            .failure(.systemCall("failed")),
+        ])
+        XCTAssertEqual(try cpu.sample()?.total, 0.5)
         XCTAssertThrowsError(try cpu.sample())
     }
 
@@ -106,6 +109,32 @@ final class SystemMonitorManagerTests: XCTestCase {
         XCTAssertFalse(manager.isSampling)
         XCTAssertNil(manager.snapshot.sampledAt)
         XCTAssertTrue(manager.snapshot.issues.isEmpty)
+    }
+
+    func test_foregroundSamplingAppendsHistory() async throws {
+        let manager = makeManager()
+        manager.setPanelDemand(.init(system: true, cpu: true))
+        try await waitForSnapshot(manager) { $0.cpuUsage != nil }
+        XCTAssertFalse(manager.history.cpu.isEmpty)
+        XCTAssertFalse(manager.history.gpu.isEmpty)
+    }
+
+    func test_backgroundMenuBarSamplingDoesNotAppendHistory() async throws {
+        let manager = makeManager()
+        manager.setMenuBarMetrics([.cpu])
+        try await waitForSnapshot(manager) { $0.cpuUsage != nil }
+        XCTAssertTrue(manager.history.cpu.isEmpty)
+        XCTAssertTrue(manager.history.gpu.isEmpty)
+    }
+
+    func test_stopSamplingResetsHistory() async throws {
+        let manager = makeManager()
+        manager.setPanelDemand(.init(system: true, cpu: true))
+        try await waitForSnapshot(manager) { $0.cpuUsage != nil }
+        XCTAssertFalse(manager.history.cpu.isEmpty)
+        manager.setPanelDemand(.none)
+        XCTAssertTrue(manager.history.cpu.isEmpty)
+        XCTAssertTrue(manager.history.gpu.isEmpty)
     }
 
     func test_menuBarMetricsDriveSampling() {
@@ -424,7 +453,10 @@ final class FakeRepeatingScheduler: RepeatingScheduling {
 
 final class FakeCPUSampler: CPUUsageSampling {
     var callCount = 0
-    func sample() throws -> Double? { callCount += 1; return 0.5 }
+    func sample() throws -> CPUUsageReading? {
+        callCount += 1
+        return CPUUsageReading(total: 0.5, user: 0.3, system: 0.2)
+    }
 }
 
 final class FakeTemperatureSampler: TemperatureSampling {
@@ -602,14 +634,14 @@ final class BaselineReadyProcessUsageSampler: ProcessUsageSampling {
 }
 
 final class SequencedCPUSampler: CPUUsageSampling {
-    var results: [Result<Double?, MetricSamplingError>]
+    var results: [Result<CPUUsageReading?, MetricSamplingError>]
     var index = 0
 
-    init(results: [Result<Double?, MetricSamplingError>]) {
+    init(results: [Result<CPUUsageReading?, MetricSamplingError>]) {
         self.results = results
     }
 
-    func sample() throws -> Double? {
+    func sample() throws -> CPUUsageReading? {
         defer { index += 1 }
         let result = results[min(index, results.count - 1)]
         return try result.get()

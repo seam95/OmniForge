@@ -87,7 +87,7 @@ enum MenuBarMetricRenderer {
                 return MetricBlock(label: "CPU", value: "--", minimumValue: "100%")
             }
             if let usage = snapshot.cpuUsage {
-                let pct = MetricFormat.percent(usage) ?? "--"
+                let pct = MetricFormat.percent(usage.total) ?? "--"
                 // 仅当用户勾选了 CPU 温度时才拼入；合并开关本身不隐式启用温度
                 if configuration.combineTemperatures,
                    enabledMetrics.contains(.cpuTemperature),

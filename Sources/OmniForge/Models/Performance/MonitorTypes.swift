@@ -57,6 +57,16 @@ enum MemoryPressure: UInt32, Equatable, Codable {
     case critical = 4
 }
 
+/// CPU 使用率读数 — 总量与系统/用户拆分（占比 0...1）
+struct CPUUsageReading: Equatable {
+    /// 非空闲总占比（busy/total，含 nice），语义同原 cpuUsage
+    var total: Double
+    /// 用户态占比（deltaUser/deltaTotal）
+    var user: Double
+    /// 系统态占比（(deltaSystem+deltaNice)/deltaTotal；nice 并入系统，user+system==total）
+    var system: Double
+}
+
 extension MemoryPressure {
     init(kernelLevel: Int32) {
         switch kernelLevel {

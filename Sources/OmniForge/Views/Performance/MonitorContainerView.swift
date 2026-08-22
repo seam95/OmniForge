@@ -12,6 +12,7 @@ struct MonitorContainerView: View {
     )
     @ObservedObject private var featureRuntime = FeatureRuntime.shared
     let snapshot: SystemSnapshot
+    let history: MetricHistory
     let processState: ProcessBreakdownState
     let speedTestState: SpeedTestState
     let configuration: MonitorConfiguration
@@ -31,6 +32,7 @@ struct MonitorContainerView: View {
             case .overview:
                 MonitorOverviewView(
                     snapshot: snapshot,
+                    history: history,
                     configuration: configuration,
                     strings: strings,
                     deviceSummary: deviceSummary,
@@ -86,7 +88,6 @@ struct MonitorContainerView: View {
         .onChange(of: featureRuntime.revision) { _, _ in updateDemand() }
         .onChange(of: configuration.isEnabled) { _, _ in updateDemand() }
         .onChange(of: configuration.visibleSections) { _, _ in updateDemand() }
-        .onChange(of: configuration.panelSectionOrder) { _, _ in updateDemand() }
         .onDisappear {
             onDemandChange(.none)
             coordinator.close()
@@ -99,11 +100,9 @@ struct MonitorContainerView: View {
         onDemandChange(Self.demand(for: configuration))
     }
 
-    /// 平铺布局：对所有可见分区聚合采样需求
+    /// 平铺布局：对所有可见分区聚合采样需求（隐藏即停止采样）
     static func demand(for configuration: MonitorConfiguration) -> MonitorDemand {
-        let visible = Set(
-            configuration.panelSectionOrder.filter { configuration.visibleSections.contains($0) }
-        )
+        let visible = configuration.visibleSections
         var demand = MonitorDemand()
         if visible.contains(.system) {
             demand.system = true

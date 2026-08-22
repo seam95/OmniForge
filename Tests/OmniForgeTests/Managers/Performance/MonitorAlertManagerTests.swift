@@ -7,7 +7,7 @@ final class MonitorAlertManagerTests: XCTestCase {
         let config = MonitorAlertConfiguration(cpuEnabled: true, cpuThreshold: 90)
         let manager = MonitorAlertManager(notificationClient: notifier, configuration: config)
         var snapshot = SystemSnapshot()
-        snapshot.cpuUsage = 0.95
+        snapshot.cpuUsage = CPUUsageReading(total: 0.95, user: 0.5, system: 0.45)
         _ = manager.evaluate(snapshot, at: Date(timeIntervalSince1970: 0))
         _ = manager.evaluate(snapshot, at: Date(timeIntervalSince1970: 11))
         XCTAssertTrue(notifier.posts.isEmpty)
@@ -22,9 +22,9 @@ final class MonitorAlertManagerTests: XCTestCase {
         let manager = MonitorAlertManager(notificationClient: notifier, configuration: config)
 
         var high = SystemSnapshot()
-        high.cpuUsage = 0.95
+        high.cpuUsage = CPUUsageReading(total: 0.95, user: 0.5, system: 0.45)
         var low = SystemSnapshot()
-        low.cpuUsage = 0.50
+        low.cpuUsage = CPUUsageReading(total: 0.50, user: 0.3, system: 0.2)
 
         // t=0..8 连续高
         _ = manager.evaluate(high, at: Date(timeIntervalSince1970: 0))
@@ -97,7 +97,7 @@ final class MonitorAlertManagerTests: XCTestCase {
             stringsProvider: { .en }
         )
         var snapshot = SystemSnapshot()
-        snapshot.cpuUsage = 0.95
+        snapshot.cpuUsage = CPUUsageReading(total: 0.95, user: 0.5, system: 0.45)
         _ = manager.evaluate(snapshot, at: Date(timeIntervalSince1970: 0))
         _ = manager.evaluate(snapshot, at: Date(timeIntervalSince1970: 12))
         XCTAssertEqual(notifier.posts.count, 1)

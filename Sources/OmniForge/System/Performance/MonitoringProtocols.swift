@@ -4,7 +4,7 @@ import Combine
 // MARK: - Sampler 协议（所有采样器必须实现）
 
 protocol CPUUsageSampling: AnyObject {
-    func sample() throws -> Double?
+    func sample() throws -> CPUUsageReading?
 }
 
 protocol GPUUsageSampling: AnyObject {

@@ -2,131 +2,97 @@ import XCTest
 @testable import OmniForge
 
 final class MonitorOverviewCardGroupTests: XCTestCase {
-    func test_groups_combinesBatteryAndEnergyAtBatteryPosition() {
-        let battery = model(id: .battery)
-        let energy = model(id: .energy, processMetricKind: .energy)
+    func test_groups_flattenToMetricDirectly() {
         let groups = MonitorOverviewCardGroup.groups(from: [
             model(id: .cpu, processMetricKind: .cpu),
             model(id: .memory, processMetricKind: .memory),
-            battery,
-            model(id: .disk),
             model(id: .network, processMetricKind: .network),
+            model(id: .battery),
             model(id: .gpu, processMetricKind: .gpu),
-            energy
+            model(id: .disk),
         ])
 
         XCTAssertEqual(groups.map(\.id), [
             "metric.cpu",
             "metric.memory",
-            "power.battery-energy",
-            "metric.disk",
             "metric.network",
-            "metric.gpu"
-        ])
-        XCTAssertEqual(groups[2], .power(battery: battery, energy: energy))
-    }
-
-    func test_groups_dropsStandaloneEnergyWhenBatteryExists() {
-        let groups = MonitorOverviewCardGroup.groups(from: [
-            model(id: .battery),
-            model(id: .energy, processMetricKind: .energy)
-        ])
-
-        XCTAssertEqual(groups.count, 1)
-        XCTAssertNotNil(groups.first?.energyModel)
-    }
-
-    func test_groups_keepsEnergyMetricWhenBatteryIsNotVisible() {
-        let energy = model(id: .energy, processMetricKind: .energy)
-        let groups = MonitorOverviewCardGroup.groups(from: [
-            model(id: .cpu, processMetricKind: .cpu),
-            energy
-        ])
-
-        XCTAssertEqual(groups, [
-            .metric(model(id: .cpu, processMetricKind: .cpu)),
-            .metric(energy)
+            "metric.battery",
+            "metric.gpu",
+            "metric.disk"
         ])
     }
 
-    func test_groups_powerGroupUsesSingleColumnWidth() {
-        let groups = MonitorOverviewCardGroup.groups(from: [
-            model(id: .battery),
-            model(id: .energy, processMetricKind: .energy),
-            model(id: .network, processMetricKind: .network)
-        ])
-
-        XCTAssertFalse(groups[0].isFullWidth)
-        XCTAssertTrue(groups[1].isFullWidth)
+    func test_groups_keepsMetricModels() {
+        let cpu = model(id: .cpu, processMetricKind: .cpu)
+        let groups = MonitorOverviewCardGroup.groups(from: [cpu])
+        XCTAssertEqual(groups.first?.metricModel, cpu)
     }
 
-    func test_groups_energyModelPreservesRankingKind() {
-        let groups = MonitorOverviewCardGroup.groups(from: [
-            model(id: .battery),
-            model(id: .energy, processMetricKind: .energy)
-        ])
-
-        XCTAssertEqual(groups.first?.energyModel?.processMetricKind, .energy)
-    }
-
-    func test_dashboardRows_prioritizePowerAndDiskAsFullWidthRows() {
-        let battery = model(id: .battery)
-        let energy = model(id: .energy, processMetricKind: .energy)
-        let disk = model(id: .disk)
-        let network = model(id: .network, processMetricKind: .network)
-        let gpu = model(id: .gpu, processMetricKind: .gpu)
+    func test_dashboardRows_fixedLayoutOrder() {
         let rows = MonitorOverviewCardGroup.dashboardRows(from: [
             model(id: .cpu, processMetricKind: .cpu),
             model(id: .memory, processMetricKind: .memory),
-            battery,
-            disk,
-            network,
-            gpu,
-            energy
+            model(id: .network, processMetricKind: .network),
+            model(id: .battery),
+            model(id: .gpu, processMetricKind: .gpu),
+            model(id: .disk),
         ])
 
         XCTAssertEqual(rows.map(\.id), [
-            "row.top",
-            "row.power",
-            "row.disk",
-            "row.bottom"
+            "row.cpuMemory",
+            "row.network",
+            "row.batteryGPU",
+            "row.disk"
         ])
-        XCTAssertEqual(rows[1], .single(.power(battery: battery, energy: energy), id: "row.power"))
-        XCTAssertEqual(rows[2], .single(.metric(disk), id: "row.disk"))
-        XCTAssertEqual(rows[3], .pair(.metric(network), .metric(gpu), id: "row.bottom"))
+        XCTAssertEqual(rows[0], .pair(.metric(model(id: .cpu, processMetricKind: .cpu)), .metric(model(id: .memory, processMetricKind: .memory)), id: "row.cpuMemory"))
+        XCTAssertEqual(rows[1], .single(.metric(model(id: .network, processMetricKind: .network)), id: "row.network"))
+        XCTAssertEqual(rows[2], .pair(.metric(model(id: .battery)), .metric(model(id: .gpu, processMetricKind: .gpu)), id: "row.batteryGPU"))
+        XCTAssertEqual(rows[3], .single(.metric(model(id: .disk)), id: "row.disk"))
     }
 
-    func test_dashboardRows_makesNetworkFullWidthWhenGpuHidden() {
-        let network = model(id: .network, processMetricKind: .network)
+    func test_dashboardRows_fallBackToSingleWhenMateHidden() {
+        // GPU 隐藏 → 电池独占 batteryGPU 行
         let rows = MonitorOverviewCardGroup.dashboardRows(from: [
             model(id: .cpu, processMetricKind: .cpu),
             model(id: .memory, processMetricKind: .memory),
-            network
+            model(id: .battery),
+            model(id: .disk),
         ])
-
         XCTAssertEqual(rows.map(\.id), [
-            "row.top",
-            "row.bottom"
+            "row.cpuMemory",
+            "row.batteryGPU",
+            "row.disk"
         ])
-        XCTAssertEqual(rows.last, .single(.metric(network), id: "row.bottom"))
+        XCTAssertEqual(rows[1], .single(.metric(model(id: .battery)), id: "row.batteryGPU"))
+    }
+
+    func test_dashboardRows_skipMissingRows() {
+        // 隐藏 system（cpu/memory/gpu）与 network → 只剩磁盘
+        let rows = MonitorOverviewCardGroup.dashboardRows(from: [
+            model(id: .disk),
+            model(id: .battery),
+        ])
+        XCTAssertEqual(rows.map(\.id), [
+            "row.batteryGPU",
+            "row.disk"
+        ])
     }
 
     func test_dashboardRows_defineReferenceStyleHeightsAndKinds() {
         let rows = MonitorOverviewCardGroup.dashboardRows(from: [
             model(id: .cpu, processMetricKind: .cpu),
             model(id: .memory, processMetricKind: .memory),
-            model(id: .battery),
-            model(id: .disk),
             model(id: .network, processMetricKind: .network),
+            model(id: .battery),
             model(id: .gpu, processMetricKind: .gpu),
-            model(id: .energy, processMetricKind: .energy)
+            model(id: .disk),
         ])
 
-        XCTAssertEqual(rows.map(\.height), [122, 78, 88, 104])
-        XCTAssertEqual(rows[0].displayKinds, [.cpuGauge, .memoryDashboard])
-        XCTAssertEqual(rows[1].displayKinds, [.powerStrip])
-        XCTAssertEqual(rows[2].displayKinds, [.diskThroughput])
-        XCTAssertEqual(rows[3].displayKinds, [.metric, .metric])
+        XCTAssertEqual(rows.map(\.height), [100, 96, 100, 82])
+        XCTAssertEqual(rows[0].displayKinds, [.cpuTrend, .memoryGauge])
+        XCTAssertEqual(rows[1].displayKinds, [.networkDual])
+        XCTAssertEqual(rows[2].displayKinds, [.batteryBar, .gpuTrend])
+        XCTAssertEqual(rows[3].displayKinds, [.diskChips])
     }
 
     private func model(

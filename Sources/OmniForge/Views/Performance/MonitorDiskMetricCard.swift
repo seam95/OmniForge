@@ -1,101 +1,79 @@
 import SwiftUI
 
-/// Compact full-width disk card: read/write rates are primary; capacity is supporting context.
+/// 磁盘卡 — 标题行（蓝点 + "磁盘" + 右上"已用"灰字 + 悬浮 chevron）+ 两个并排灰框（读取/写入）。
 struct MonitorDiskMetricCard: View {
     let model: MonitorCardModel
-    let strings: Strings
+    let accent: Color
     let height: CGFloat
     let action: () -> Void
 
-    @Environment(\.colorScheme) private var colorScheme
+    @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
             MonitorDashboardCardChrome(accent: accent, height: height, isInteractive: true) {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 6) {
                     header
-                    valueRow
+
+                    if let issueText = model.issueText {
+                        Text(issueText)
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(.red)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.8)
+                        Spacer(minLength: 0)
+                    } else {
+                        HStack(spacing: 10) {
+                            ForEach(model.chipTexts, id: \.self) { chip in
+                                Text(chip)
+                                    .font(.title3.weight(.semibold).monospacedDigit())
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.7)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 8)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                                            .fill(Color.primary.opacity(0.04))
+                                    )
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    }
                 }
             }
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovered = hovering
+        }
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
-            Image(systemName: model.systemImage)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(accent)
-                .frame(width: 18, height: 18)
+        HStack(spacing: 6) {
+            Circle()
+                .fill(accent)
+                .frame(width: 8, height: 8)
 
             Text(model.title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-
-            Spacer(minLength: 6)
-
-            Text(model.primaryText)
-                .font(.caption.weight(.semibold).monospacedDigit())
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+
+            Spacer(minLength: 4)
+
+            if let badgeText = model.badgeText {
+                Text(badgeText)
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
 
             Image(systemName: "chevron.right")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.tertiary)
+                .opacity(isHovered ? 1 : 0)
         }
     }
-
-    private var valueRow: some View {
-        HStack(spacing: 10) {
-            ForEach(rateParts, id: \.label) { part in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(part.label)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    Text(part.value)
-                        .font(.title3.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04))
-                )
-            }
-        }
-    }
-
-    private var rateParts: [DiskRatePart] {
-        let secondary = model.secondaryText ?? "↓ -- • ↑ --"
-        let pieces = secondary
-            .replacingOccurrences(of: "•", with: "|")
-            .components(separatedBy: "|")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        let read = pieces.first?.replacingOccurrences(of: "↓", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let write = pieces.dropFirst().first?.replacingOccurrences(of: "↑", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
-        return [
-            DiskRatePart(label: strings.monitorMetricRead, value: "↓ \(nonEmpty(read) ?? "--")"),
-            DiskRatePart(label: strings.monitorMetricWrite, value: "↑ \(nonEmpty(write) ?? "--")")
-        ]
-    }
-
-    private func nonEmpty(_ value: String?) -> String? {
-        guard let value, !value.isEmpty else { return nil }
-        return value
-    }
-
-    private var accent: Color {
-        MonitorCardAccent.color(for: .disk)
-    }
-}
-
-private struct DiskRatePart {
-    let label: String
-    let value: String
 }

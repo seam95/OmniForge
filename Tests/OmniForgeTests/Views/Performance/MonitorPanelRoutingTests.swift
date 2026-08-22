@@ -6,6 +6,7 @@ final class MonitorPanelRoutingTests: XCTestCase {
     func test_flatMonitorDemand_aggregatesVisibleSections() {
         var config = MonitorConfiguration()
         config.visibleSections = [.system, .network]
+        // panelSectionOrder 已不再参与需求计算（固定布局）
         config.panelSectionOrder = [.network, .system, .disk, .power]
 
         let demand = MonitorContainerView.demand(for: config)

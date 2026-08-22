@@ -8,7 +8,7 @@ struct SystemSnapshot {
     var batteryTemperature: Double?
 
     // CPU / GPU / 内存
-    var cpuUsage: Double?
+    var cpuUsage: CPUUsageReading?
     var gpuUsage: Double?
     var memoryUsed: UInt64?
     var memoryTotal: UInt64?

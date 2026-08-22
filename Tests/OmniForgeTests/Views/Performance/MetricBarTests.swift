@@ -42,26 +42,37 @@ final class MetricBarTests: XCTestCase {
         )
     }
 
-    func test_barTint_clampsProgressBeforeThresholds() {
-        // progress 0.9 → 90% → critical red regardless of card accent
+    func test_barTint_fixedColorExceptBatteryThresholds() {
+        // 重构后：卡内可视化统一固定色，仅电池保留低电量红/橙
         XCTAssertEqual(
             MonitorCardAccent.barTint(for: .cpu, progress: 0.9),
-            Color.red
+            MonitorCardAccent.color(for: .cpu)
         )
-        // progress 0.5 → 50% → card accent (cpu = accentColor)
         XCTAssertEqual(
             MonitorCardAccent.barTint(for: .cpu, progress: 0.5),
-            Color.accentColor
+            MonitorCardAccent.color(for: .cpu)
         )
-        // out-of-range high still clamps then critical
+        // 越界高仍被钳制，但颜色不变（不再转红）
         XCTAssertEqual(
             MonitorCardAccent.barTint(for: .memory, progress: 2.0),
-            Color.red
+            MonitorCardAccent.color(for: .memory)
         )
-        // negative clamps to 0 → normal accent (memory teal)
         XCTAssertEqual(
             MonitorCardAccent.barTint(for: .memory, progress: -1),
             MonitorCardAccent.color(for: .memory)
+        )
+        // 电池：低电量红 / 中低橙 / 正常绿
+        XCTAssertEqual(
+            MonitorCardAccent.barTint(for: .battery, progress: 0.10),
+            Color.red
+        )
+        XCTAssertEqual(
+            MonitorCardAccent.barTint(for: .battery, progress: 0.30),
+            Color.orange
+        )
+        XCTAssertEqual(
+            MonitorCardAccent.barTint(for: .battery, progress: 0.60),
+            Color.green
         )
     }
 }

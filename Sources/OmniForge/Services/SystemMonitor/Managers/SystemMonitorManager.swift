@@ -5,6 +5,8 @@ import Combine
 @MainActor
 final class SystemMonitorManager: ObservableObject {
     @Published private(set) var snapshot = SystemSnapshot()
+    /// 面板趋势折线历史（仅前台采样时追加）
+    @Published private(set) var history = MetricHistory()
     @Published private(set) var processState = ProcessBreakdownState.collapsed
     @Published private(set) var isSampling = false
     @Published private(set) var speedTestState: SpeedTestState = .idle
@@ -181,6 +183,7 @@ final class SystemMonitorManager: ObservableObject {
         // a main-vs-utility race with in-flight sampleAll blocks.
         queue.sync { lastGPUUsage = nil }
         snapshot = SystemSnapshot()
+        history.reset()
         tickCount = 0
     }
 
@@ -342,6 +345,10 @@ final class SystemMonitorManager: ObservableObject {
 
             DispatchQueue.main.async {
                 self.snapshot = newSnapshot
+                // 仅前台（面板可见）追加历史，保证等距 x 轴；后台降频采样不追加。
+                if isForeground {
+                    self.history.append(newSnapshot)
+                }
                 // 展开态下随 sampleAll 刷新进程列表（4s 节流，仅前台面板）
                 self.refreshProcessUsageIfNeeded(isForeground: isForeground)
             }

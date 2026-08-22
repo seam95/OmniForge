@@ -22,47 +22,17 @@ enum MonitorCardID: String, CaseIterable, Hashable {
         }
     }
 
-    /// Network occupies a full-width row in the overview grid.
-    var isFullWidth: Bool {
-        self == .network
-    }
-
-    /// Core cards always attempted first, in fixed order.
-    private static let coreOrder: [MonitorCardID] = [
-        .cpu, .memory, .battery, .disk, .network
-    ]
-
-    /// Extension cards (diskIO 已合并入 disk 卡，不再出现在扩展卡列表中)
-    private static let extensionCards: [MonitorCardID] = [
-        .gpu, .energy
+    /// Overview 固定卡片顺序（去掉自定义排序）：CPU|内存 → 网络整宽 → 电池|GPU → 磁盘整宽。
+    private static let fixedOrder: [MonitorCardID] = [
+        .cpu, .memory, .network, .battery, .gpu, .disk
     ]
 
     /// Returns visible overview cards for the given configuration.
     ///
-    /// Core five cards are inserted first (fixed order among those visible),
-    /// then extension cards ordered by `configuration.panelSectionOrder`
-    /// (system → gpu, disk → diskIO, power → energy), each only if still visible
-    /// under section ∩ metric rules.
+    /// 固定顺序 + 按「隐藏分区」开关过滤；隐藏即不显示（且上层停止采样）。
+    /// `.energy` 不再出现在 overview。
     static func visibleCards(configuration: MonitorConfiguration) -> [MonitorCardID] {
-        var result: [MonitorCardID] = []
-        for card in coreOrder where card.isVisible(in: configuration) {
-            result.append(card)
-        }
-
-        let sectionRank: [MonitorSection: Int] = Dictionary(
-            uniqueKeysWithValues: configuration.panelSectionOrder.enumerated().map { ($0.element, $0.offset) }
-        )
-        let extensions = extensionCards
-            .filter { $0.isVisible(in: configuration) }
-            .sorted { lhs, rhs in
-                let l = sectionRank[lhs.section] ?? Int.max
-                let r = sectionRank[rhs.section] ?? Int.max
-                if l != r { return l < r }
-                // Stable fallback if ranks equal/missing.
-                return (extensionCards.firstIndex(of: lhs) ?? 0) < (extensionCards.firstIndex(of: rhs) ?? 0)
-            }
-        result.append(contentsOf: extensions)
-        return result
+        fixedOrder.filter { $0.isVisible(in: configuration) }
     }
 
     private func isVisible(in configuration: MonitorConfiguration) -> Bool {

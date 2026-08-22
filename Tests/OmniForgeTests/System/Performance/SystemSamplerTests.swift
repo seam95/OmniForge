@@ -5,14 +5,35 @@ final class SystemSamplerTests: XCTestCase {
     // MARK: - CPU Delta
 
     func test_cpuDeltaUsesBusyShareBetweenSamples() {
-        let result = CPUUsageSampler.usage(previousBusy: 20, previousTotal: 100,
-                                           busy: 50, total: 200)
-        XCTAssertEqual(result ?? 0, 0.3, accuracy: 0.0001)
+        // deltaUser=30, deltaSystem=10, deltaNice=10, deltaTotal=100
+        // total = 50/100 = 0.5；user = 30/100 = 0.3；system = (10+10)/100 = 0.2
+        let result = CPUUsageSampler.reading(
+            previousUser: 10, previousSystem: 5, previousNice: 5, previousTotal: 100,
+            user: 40, system: 15, nice: 15, total: 200
+        )
+        XCTAssertEqual(result?.total ?? 0, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(result?.user ?? 0, 0.3, accuracy: 0.0001)
+        XCTAssertEqual(result?.system ?? 0, 0.2, accuracy: 0.0001)
+    }
+
+    func test_cpuReadingUserPlusSystemEqualsTotal() {
+        // nice 并入系统：user + system == total
+        let result = CPUUsageSampler.reading(
+            previousUser: 0, previousSystem: 0, previousNice: 0, previousTotal: 0,
+            user: 40, system: 15, nice: 15, total: 100
+        )
+        XCTAssertEqual(
+            (result?.user ?? 0) + (result?.system ?? 0),
+            result?.total ?? 0,
+            accuracy: 0.0001
+        )
     }
 
     func test_cpuCounterResetReturnsNil() {
-        let result = CPUUsageSampler.usage(previousBusy: 50, previousTotal: 200,
-                                           busy: 10, total: 100)
+        let result = CPUUsageSampler.reading(
+            previousUser: 10, previousSystem: 5, previousNice: 5, previousTotal: 200,
+            user: 5, system: 2, nice: 1, total: 100
+        )
         XCTAssertNil(result)
     }
 

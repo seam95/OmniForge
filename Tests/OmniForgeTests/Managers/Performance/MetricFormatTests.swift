@@ -113,6 +113,14 @@ final class MetricFormatTests: XCTestCase {
         XCTAssertTrue(result!.contains("/"))
     }
 
+    func test_shortMemoryPairFormatsUsedWithoutUnit() {
+        // used 仅数值（一位小数），total 带单位（bytes 在 ≥10 时取整），base-1024
+        let result = MetricFormat.shortMemoryPair(used: 13_000_000_000, total: 16_000_000_000)
+        XCTAssertEqual(result, "12.1 / 15 GB")
+        XCTAssertNil(MetricFormat.shortMemoryPair(used: nil, total: 8_000_000_000))
+        XCTAssertNil(MetricFormat.shortMemoryPair(used: 1_000_000_000, total: nil))
+    }
+
     func test_temperatureWithUnit() {
         let c = MetricFormat.temperature(100, unit: .celsius)
         XCTAssertEqual(c, "100°")

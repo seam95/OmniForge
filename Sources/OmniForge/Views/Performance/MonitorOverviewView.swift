@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// Overview page: device summary header, 2-column metric cards (network full-width), footer actions.
+/// Overview page: device summary header, 4-row metric cards (CPU|内存 → 网络 → 电池|GPU → 磁盘), footer actions.
 struct MonitorOverviewView: View {
     let snapshot: SystemSnapshot
+    let history: MetricHistory
     let configuration: MonitorConfiguration
     let strings: Strings
     let deviceSummary: DeviceSummary
@@ -17,7 +18,8 @@ struct MonitorOverviewView: View {
             snapshot: snapshot,
             configuration: configuration,
             strings: strings,
-            temperatureUnit: configuration.temperatureUnit
+            temperatureUnit: configuration.temperatureUnit,
+            history: history
         )
     }
 
@@ -35,7 +37,7 @@ struct MonitorOverviewView: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
                 header
                 cardRows
                 footer
@@ -77,7 +79,7 @@ struct MonitorOverviewView: View {
             parts.append(os)
         }
         if let uptime = deviceSummary.uptimeText, !uptime.isEmpty {
-            parts.append(uptime)
+            parts.append("\(strings.monitorUptimePrefix) \(uptime)")
         }
         guard !parts.isEmpty else { return nil }
         return parts.joined(separator: " \(strings.monitorSubtitleSeparator) ")
@@ -98,7 +100,7 @@ struct MonitorOverviewView: View {
     // MARK: - Cards
 
     private var cardRows: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             ForEach(dashboardRows) { row in
                 rowView(for: row)
                     .frame(height: row.height)
@@ -123,68 +125,58 @@ struct MonitorOverviewView: View {
 
     @ViewBuilder
     private func groupView(for group: MonitorOverviewCardGroup, height: CGFloat) -> some View {
-        switch group {
-        case let .metric(model):
-            if model.id == .cpu {
-                MonitorCPUGaugeCard(
+        if let model = group.metricModel {
+            let accent = MonitorCardAccent.color(for: model.id)
+
+            switch group.displayKind {
+            case .cpuTrend:
+                MonitorTrendCard(
                     model: model,
+                    accent: accent,
+                    visualization: .sparkline(model.trend ?? []),
                     height: height,
                     action: { onSelectRankable(.cpu) }
                 )
-            } else if model.id == .memory {
-                MonitorMemoryDashboardCard(
+            case .gpuTrend:
+                MonitorTrendCard(
                     model: model,
+                    accent: accent,
+                    visualization: .sparkline(model.trend ?? []),
+                    height: height,
+                    action: { onSelectRankable(.gpu) }
+                )
+            case .memoryGauge:
+                MonitorTrendCard(
+                    model: model,
+                    accent: accent,
+                    visualization: .semiGauge(progress: model.progress ?? 0),
                     height: height,
                     action: { onSelectRankable(.memory) }
                 )
-            } else if model.id == .disk {
+            case .batteryBar:
+                MonitorTrendCard(
+                    model: model,
+                    accent: accent,
+                    visualization: .progressBar(progress: model.progress ?? 0),
+                    height: height,
+                    action: nil
+                )
+            case .networkDual:
+                MonitorNetworkCard(
+                    model: model,
+                    accent: accent,
+                    height: height,
+                    action: { onSelectRankable(.network) }
+                )
+            case .diskChips:
                 MonitorDiskMetricCard(
                     model: model,
-                    strings: strings,
+                    accent: accent,
                     height: height,
                     action: { onSelectDiskDetail() }
                 )
-            } else {
-                cardView(for: model, height: height)
             }
-        case let .power(battery, energy):
-            MonitorPowerMetricCard(
-                battery: battery,
-                energy: energy,
-                height: height,
-                onSelectEnergy: { onSelectRankable(.energy) }
-            )
         }
-    }
-
-    @ViewBuilder
-    private func cardView(for model: MonitorCardModel, height: CGFloat? = nil) -> some View {
-        let accent = model.progress.map {
-            MonitorCardAccent.barTint(for: model.id, progress: $0)
-        } ?? MonitorCardAccent.color(for: model.id)
-
-        let action: (() -> Void)? = {
-            if model.opensDiskDetail {
-                return { onSelectDiskDetail() }
-            }
-            guard let kind = model.processMetricKind else { return nil }
-            return { onSelectRankable(kind) }
-        }()
-
-        MonitorMetricCard(
-            title: model.title,
-            systemImage: model.systemImage,
-            primaryText: model.primaryText,
-            secondaryText: model.secondaryText,
-            progress: model.progress,
-            accent: accent,
-            badgeText: model.badgeText,
-            showsLiveDot: model.showsLiveDot,
-            isRankable: model.processMetricKind != nil || model.opensDiskDetail,
-            issueText: model.issueText,
-            fixedHeight: height,
-            action: action
-        )
     }
 
     // MARK: - Footer
@@ -199,7 +191,7 @@ struct MonitorOverviewView: View {
 
             Spacer()
 
-            FooterButton(label: strings.monitorRefreshAll, systemImage: "arrow.clockwise") {
+            FooterButton(label: strings.monitorRefreshAll, systemImage: "arrow.clockwise", tint: .blue) {
                 onRefresh()
             }
         }

@@ -161,6 +161,7 @@ struct ControlCenterContainerView: View {
                     // 固定 520：overview↔ranking 不因加载态跳变 popover。
                     MonitorContainerView(
                         snapshot: monitor.snapshot,
+                        history: monitor.history,
                         processState: monitor.processState,
                         speedTestState: monitor.speedTestState,
                         configuration: preferences.configuration,

@@ -30,7 +30,7 @@ final class FakeAlertNotifier: MonitorNotificationClient {
 }
 
 final class TestCPUSampler: CPUUsageSampling {
-    func sample() throws -> Double? { nil }
+    func sample() throws -> CPUUsageReading? { nil }
 }
 final class TestGPUSampler: GPUUsageSampling {
     func sample() throws -> Double? { nil }

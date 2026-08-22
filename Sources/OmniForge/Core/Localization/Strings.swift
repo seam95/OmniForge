@@ -183,6 +183,15 @@ struct Strings: Equatable {
     let monitorPressureNormal: String
     let monitorPressureWarning: String
     let monitorPressureCritical: String
+    // 重构后卡片 caption/徽章文案
+    let monitorCPUSystem: String
+    let monitorCPUUser: String
+    let monitorUptimePrefix: String
+    let monitorPowerSourceAdapter: String
+    let monitorPowerSourceOnBattery: String
+    let monitorDiskUsed: String
+    let monitorCumulativeTotal: String
+    let monitorMetricHealthShort: String
     // MARK: - Disk Detail
     let diskSectionTitle: String
     let diskSelect: String
