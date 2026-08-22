@@ -323,21 +323,31 @@ struct FeatureFactory {
         let claude = LimitsCachingFetcher(inner: ClaudeLimitsFetcher(), cache: cache)
         // #07：Codex 第二家 provider — 同一缓存/存储，证明协议可插拔。
         let codex = LimitsCachingFetcher(inner: CodexLimitsFetcher(), cache: cache)
+        // #08：Gemini / Kimi 全自动 provider — 凭证自刷新 + 官方限额 API。
+        let gemini = LimitsCachingFetcher(inner: GeminiLimitsFetcher(), cache: cache)
+        let kimi = LimitsCachingFetcher(inner: KimiLimitsFetcher(), cache: cache)
         // #04：用量侧 — GRDB 聚合存储 + Claude JSONL 采集器（目录监听 + 5 分钟兜底回填）。
         let usageStore = GRDBUsageStore(databaseURL: GRDBUsageStore.defaultDatabaseURL)
         let claudeCollector = ClaudeUsageCollector(store: usageStore)
         let codexCollector = CodexUsageCollector(store: usageStore)
+        // #08：Gemini 整文件 JSON 快照差量 / Kimi wire.jsonl 增量（模型持久化游标）。
+        let geminiCollector = GeminiUsageCollector(store: usageStore)
+        let kimiCollector = KimiUsageCollector(store: usageStore)
         return TokenUsageManager(
             preferences: preferences,
             fetchers: [
                 .claude: claude,
                 .codex: codex,
+                .gemini: gemini,
+                .kimi: kimi,
             ],
             scheduler: TimerRepeatingScheduler(),
             usageStore: usageStore,
             usageCollectors: [
                 .claude: claudeCollector,
                 .codex: codexCollector,
+                .gemini: geminiCollector,
+                .kimi: kimiCollector,
             ]
         )
     }

@@ -8,6 +8,15 @@ struct JSONLCursor: Codable, Equatable {
     var inode: UInt64
     /// 起始字节偏移；文件被截断（offset > size）时归零重读。
     var offset: UInt64
+    /// 可选附加信息 — Kimi Code 增量续读时的模型归属（config.update 在偏移之下）。
+    /// 既有全量数据兼容位（nil）。
+    var model: String?
+
+    init(inode: UInt64, offset: UInt64, model: String? = nil) {
+        self.inode = inode
+        self.offset = offset
+        self.model = model
+    }
 }
 
 /// 一次增量读的结果。

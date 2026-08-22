@@ -4,8 +4,7 @@ import Combine
 
 /// URLProtocol 桩 — 拦截 ProviderAPIClient 等 URLSession 请求并返回固定响应。
 /// 仅安全测试用；生产路径不引用。
-final class URLProtocolStub: URLProtocol {
-    /// 待返回的响应（状态码 + 头 + 体）；并发测试各自设置。
+final class URLProtocolStub: URLProtocol {    /// 待返回的响应（状态码 + 头 + 体）；并发测试各自设置。
     static var stub: Stub?
     /// 按请求精确编排的响应器（多请求串行场景：刷新/wham/兄弟端点）；优先于 `stub`。
     static var handler: ((URLRequest) -> Stub)?
@@ -212,5 +211,91 @@ final class FakeCodexTokenRefresher: CodexTokenRefreshing {
         lastRefreshToken = refreshToken
         let result = results[min(callCount - 1, results.count - 1)]
         return try result.get()
+    }
+}
+
+/// 测试用 Gemini 凭证替身 — 编排 oauth_creds.json 读取结果。
+final class FakeGeminiCredentials: GeminiCredentialReading {
+    /// 每次调用按序出队；耗尽后重复最后一个。nil 表示「未配置」。
+    var results: [Result<GeminiAuthBundle?, Error>] = [.success(nil)]
+    private(set) var readCount = 0
+
+    init(bundle: GeminiAuthBundle? = nil) {
+        if let bundle {
+            results = [.success(bundle)]
+        }
+    }
+
+    func readBundle() throws -> GeminiAuthBundle? {
+        readCount += 1
+        let result = results[min(readCount - 1, results.count - 1)]
+        return try result.get()
+    }
+}
+
+/// 测试用 Gemini 刷新替身 — 记录调用并返回可编排结果。
+final class FakeGeminiTokenRefresher: GeminiTokenRefreshing {
+    var results: [Result<GeminiRefreshedTokens, Error>] = [.success(
+        GeminiRefreshedTokens(accessToken: "refreshed-token", idToken: nil, expiresIn: 3600)
+    )]
+    private(set) var callCount = 0
+    private(set) var lastRefreshToken: String?
+
+    func refresh(refreshToken: String) async throws -> GeminiRefreshedTokens {
+        callCount += 1
+        lastRefreshToken = refreshToken
+        let result = results[min(callCount - 1, results.count - 1)]
+        return try result.get()
+    }
+}
+
+/// 测试用 Kimi 凭证替身 — 编排 kimi-code.json 读取结果。
+final class FakeKimiCredentials: KimiCredentialReading {
+    /// 每次调用按序出队；耗尽后重复最后一个。nil 表示「未配置」。
+    var results: [Result<KimiAuthBundle?, Error>] = [.success(nil)]
+    private(set) var readCount = 0
+
+    init(bundle: KimiAuthBundle? = nil) {
+        if let bundle {
+            results = [.success(bundle)]
+        }
+    }
+
+    func readBundle() throws -> KimiAuthBundle? {
+        readCount += 1
+        let result = results[min(readCount - 1, results.count - 1)]
+        return try result.get()
+    }
+}
+
+/// 测试用 Kimi 刷新替身 — 记录调用并返回可编排结果。
+final class FakeKimiTokenRefresher: KimiTokenRefreshing {
+    var results: [Result<KimiRefreshedTokens, Error>] = [.success(
+        KimiRefreshedTokens(accessToken: "refreshed-token", refreshToken: "rotated-refresh", expiresIn: 2880, scope: "kimi-code", tokenType: "Bearer")
+    )]
+    private(set) var callCount = 0
+    private(set) var lastRefreshToken: String?
+
+    func refresh(refreshToken: String) async throws -> KimiRefreshedTokens {
+        callCount += 1
+        lastRefreshToken = refreshToken
+        let result = results[min(callCount - 1, results.count - 1)]
+        return try result.get()
+    }
+}
+
+// MARK: - 共享测试辅助
+
+extension Data {
+    /// 解析 application/x-www-form-urlencoded 请求体（Gemini/Kimi 刷新断言共用）。
+    func dictionaryFromFormURLEncoded() -> [String: String]? {
+        guard let string = String(data: self, encoding: .utf8) else { return nil }
+        var result: [String: String] = [:]
+        for pair in string.split(separator: "&") {
+            let parts = pair.split(separator: "=", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { continue }
+            result[parts[0]] = parts[1].removingPercentEncoding ?? parts[1]
+        }
+        return result
     }
 }

@@ -203,13 +203,14 @@ final class GRDBUsageStore: UsageStoring {
         guard let databaseQueue else { return [:] }
         do {
             let rows = try databaseQueue.read { db in
-                try Row.fetchAll(db, sql: "SELECT path, inode, offset FROM file_cursors")
+                try Row.fetchAll(db, sql: "SELECT path, inode, offset, model FROM file_cursors")
             }
             var cursors: [String: JSONLCursor] = [:]
             for row in rows {
                 cursors[row["path"] as String] = JSONLCursor(
                     inode: UInt64(row["inode"] as Int64),
-                    offset: UInt64(row["offset"] as Int64)
+                    offset: UInt64(row["offset"] as Int64),
+                    model: row["model"] as? String
                 )
             }
             return cursors
@@ -225,9 +226,9 @@ final class GRDBUsageStore: UsageStoring {
             try databaseQueue.write { db in
                 try db.execute(
                     sql: """
-                    INSERT OR REPLACE INTO file_cursors (path, inode, offset) VALUES (?, ?, ?)
+                    INSERT OR REPLACE INTO file_cursors (path, inode, offset, model) VALUES (?, ?, ?, ?)
                     """,
-                    arguments: [path, Int64(cursor.inode), Int64(cursor.offset)]
+                    arguments: [path, Int64(cursor.inode), Int64(cursor.offset), cursor.model]
                 )
             }
         } catch {
@@ -287,6 +288,12 @@ final class GRDBUsageStore: UsageStoring {
                 t.column("path", .text).notNull().primaryKey()
                 t.column("inode", .integer).notNull()
                 t.column("offset", .integer).notNull()
+            }
+        }
+        // Kimi Code 增量续读的模型归属（config.update 可能在游标偏移之下）。
+        migrator.registerMigration("addFileCursorModel") { db in
+            try db.alter(table: "file_cursors") { t in
+                t.add(column: "model", .text)
             }
         }
         return migrator

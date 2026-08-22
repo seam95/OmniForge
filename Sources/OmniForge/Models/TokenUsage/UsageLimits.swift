@@ -113,10 +113,22 @@ enum UsageWindowParsing {
             if let double = Double(string), double > 0 {
                 return Date(timeIntervalSince1970: double < 1e12 ? double : double / 1000)
             }
-            return ISO8601DateFormatter().date(from: string)
+            // ISO8601 带/不带毫秒两个变体（默认 withInternetDateTime 不吞小数秒）
+            if let date = isoFractional.date(from: string) {
+                return date
+            }
+            return isoPlain.date(from: string)
         }
         return nil
     }
+
+    private static let isoFractional: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let isoPlain = ISO8601DateFormatter()
 
     /// 数字或数字字符串 → Double；其余 nil。
     static func numeric(_ value: Any?) -> Double? {

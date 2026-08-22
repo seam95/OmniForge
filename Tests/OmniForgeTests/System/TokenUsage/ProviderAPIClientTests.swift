@@ -94,6 +94,57 @@ final class ProviderAPIClientTests: XCTestCase {
         }
     }
 
+    // MARK: - POST（Gemini v1internal 半私有端点）
+
+    func test_postJSON_sendsBodyAndHeaders_onSuccess() async throws {
+        URLProtocolStub.reset()
+        URLProtocolStub.stub = .init(statusCode: 200, data: jsonData(["buckets": []]))
+        let object = try await makeClient().postJSON(
+            url: URL(string: "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota")!,
+            headers: ["Authorization": "Bearer t-1"],
+            body: ["project": "projects/abc"]
+        )
+        XCTAssertTrue((object["buckets"] as? [[String: Any]])?.isEmpty ?? false)
+        let request = try XCTUnwrap(URLProtocolStub.recordedRequests.first)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer t-1")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        let payload = try XCTUnwrap(
+            (try? JSONSerialization.jsonObject(with: URLProtocolStub.recordedBodies[0])) as? [String: Any]
+        )
+        XCTAssertEqual(payload["project"] as? String, "projects/abc")
+    }
+
+    func test_postJSON_401And429MapConsistently() async {
+        URLProtocolStub.reset()
+        URLProtocolStub.stub = .init(statusCode: 401)
+        await assertThrowsLimitError(.reauthRequired) {
+            try await self.makeClient().postJSON(url: self.endpoint, headers: [:], body: [:])
+        }
+
+        URLProtocolStub.reset()
+        URLProtocolStub.stub = .init(statusCode: 429, headers: ["retry-after": "60"])
+        await assertThrowsLimitError(.rateLimited(retryAt: fixedNow.addingTimeInterval(60))) {
+            try await self.makeClient().postJSON(url: self.endpoint, headers: [:], body: [:])
+        }
+    }
+
+    func test_postJSON_transportErrorMapsToNetwork() async {
+        URLProtocolStub.reset()
+        URLProtocolStub.stub = .init(statusCode: 0, error: URLError(.notConnectedToInternet))
+        do {
+            try await makeClient().postJSON(url: endpoint, headers: [:], body: [:])
+            XCTFail("expected network error")
+        } catch let error as LimitError {
+            guard case .network = error else {
+                XCTFail("unexpected error \(error)")
+                return
+            }
+        } catch {
+            XCTFail("unexpected error \(error)")
+        }
+    }
+
     // MARK: - 工具
 
     private func assertThrowsLimitError(
