@@ -83,7 +83,7 @@ struct ControlCenterContainerView: View {
             if !visiblePanels.isEmpty {
                 panelNavigation(visiblePanels: visiblePanels)
                     .padding(.horizontal, 12)
-                    .padding(.top, 10)
+                    .padding(.top, 12)
                     .padding(.bottom, 6)
             }
 

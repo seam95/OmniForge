@@ -8,7 +8,7 @@ struct SparklineView: View {
     let color: Color
     var domain: ClosedRange<Double> = 0...1
     var lineWidth: CGFloat = 1.5
-    var fillHeight: CGFloat = 0.28
+    var fillHeight: CGFloat = 0.35
 
     var body: some View {
         GeometryReader { proxy in
@@ -25,6 +25,15 @@ struct SparklineView: View {
                 ZStack {
                     areaPath(points: points, size: proxy.size)
                     linePath(points: points)
+                }
+            } else if let single = points.first {
+                let baselinePoints = [
+                    CGPoint(x: 0, y: single.y),
+                    CGPoint(x: proxy.size.width, y: single.y)
+                ]
+                ZStack {
+                    areaPath(points: baselinePoints, size: proxy.size)
+                    linePath(points: baselinePoints)
                 }
             }
         }
@@ -56,7 +65,7 @@ struct SparklineView: View {
         }
         .fill(
             LinearGradient(
-                colors: [color.opacity(fillHeight), color.opacity(0.03)],
+                colors: [color.opacity(fillHeight), color.opacity(0.05)],
                 startPoint: .top,
                 endPoint: .bottom
             )

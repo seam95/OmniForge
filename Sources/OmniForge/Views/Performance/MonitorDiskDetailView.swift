@@ -411,7 +411,7 @@ struct MonitorDiskDetailView: View {
                 .foregroundStyle(.secondary)
             content()
         }
-        .padding(10)
+        .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 10)
                 .fill(Color.primary.opacity(0.04))

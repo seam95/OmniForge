@@ -21,6 +21,7 @@ struct DualSparklineView: View {
                     values: downValues,
                     color: .green,
                     domain: domain,
+                    lineWidth: 1.5,
                     fillHeight: 0.35
                 )
                 .frame(height: half)
@@ -30,8 +31,9 @@ struct DualSparklineView: View {
                 // 上行（红）从中线向上：默认映射 value=1 在帧顶即面板顶，无需翻转。
                 SparklineView(
                     values: upValues,
-                    color: .red,
+                    color: MonitorCardAccent.networkUpload,
                     domain: domain,
+                    lineWidth: 1.5,
                     fillHeight: 0.35
                 )
                 .frame(height: half)

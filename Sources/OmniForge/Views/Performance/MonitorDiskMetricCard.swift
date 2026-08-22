@@ -60,16 +60,16 @@ struct MonitorDiskMetricCard: View {
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04))
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.045))
         )
     }
 
     private var header: some View {
         HStack(spacing: 6) {
-            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
                 .fill(accent)
-                .frame(width: 8.5, height: 8.5)
+                .frame(width: 8, height: 8)
 
             Text(model.title)
                 .font(.system(size: 13, weight: .medium))
