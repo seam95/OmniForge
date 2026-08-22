@@ -83,27 +83,28 @@ struct ControlCenterContainerView: View {
             if !visiblePanels.isEmpty {
                 panelNavigation(visiblePanels: visiblePanels)
                     .padding(.horizontal, 12)
-                    .padding(.top, 8)
+                    .padding(.top, 10)
                     .padding(.bottom, 6)
-
-                Rectangle()
-                    .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05))
-                    .frame(height: 1)
             }
 
             panelContent(visiblePanels: visiblePanels)
                 .frame(maxWidth: .infinity, alignment: .top)
 
-            Rectangle()
-                .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05))
-                .frame(height: 1)
-
             footer
                 .padding(.horizontal, Theme.Spacing.md)
-                .padding(.vertical, Theme.Spacing.xs)
+                .padding(.top, 4)
+                .padding(.bottom, 8)
         }
         .frame(width: ControlCenterContentMetrics.panelWidth)
-        .background(.ultraThinMaterial)
+        .background(
+            Group {
+                if colorScheme == .dark {
+                    Color(nsColor: .windowBackgroundColor)
+                } else {
+                    Color(red: 242/255, green: 243/255, blue: 246/255)
+                }
+            }
+        )
         .onAppear { resolveSelection(in: visiblePanels) }
         .onChange(of: runtime.revision) { _, _ in
             resolveSelection(in: MenuPanel.visibleCases(isAvailable: runtime.isAvailable))
