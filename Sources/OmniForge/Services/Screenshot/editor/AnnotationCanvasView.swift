@@ -2616,8 +2616,8 @@ class AnnotationCanvasView: NSView {
         }
 
         let drawRect = NSRect(
-            x: center.x - tinted.size.width / 2,
-            y: center.y - tinted.size.height / 2,
+            x: round(center.x - tinted.size.width / 2),
+            y: round(center.y - tinted.size.height / 2),
             width: tinted.size.width,
             height: tinted.size.height
         )

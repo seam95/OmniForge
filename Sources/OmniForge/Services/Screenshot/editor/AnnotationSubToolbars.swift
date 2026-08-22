@@ -455,8 +455,8 @@ final class MiniChoiceButton: NSView {
             .foregroundColor: color,
         ]
         let size = (label as NSString).size(withAttributes: attr)
-        let origin = NSPoint(x: bounds.midX - size.width / 2,
-                             y: bounds.midY - size.height / 2)
+        let origin = NSPoint(x: round(bounds.midX - size.width / 2),
+                             y: round(bounds.midY - size.height / 2))
         (label as NSString).draw(at: origin, withAttributes: attr)
         if isSelected {
             let ring = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 4, yRadius: 4)

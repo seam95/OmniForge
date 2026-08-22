@@ -54,8 +54,8 @@ final class ScrollCaptureHintWindow: NSPanel {
         label.setFrameOrigin(NSPoint(x: horizontalPadding, y: verticalPadding))
 
         let origin = NSPoint(
-            x: selectionRect.midX - width / 2,
-            y: selectionRect.maxY - topInset - height
+            x: round(selectionRect.midX - width / 2),
+            y: round(selectionRect.maxY - topInset - height)
         )
         setFrame(NSRect(origin: origin, size: NSSize(width: width, height: height)), display: true)
         orderFrontRegardless()
@@ -179,8 +179,8 @@ final class ScrollCropControlWindow: NSPanel {
         let size = frame.size
         let visible = screen.visibleFrame
         setFrameOrigin(NSPoint(
-            x: visible.midX - size.width / 2,
-            y: visible.minY + 36
+            x: round(visible.midX - size.width / 2),
+            y: round(visible.minY + 36)
         ))
     }
 
@@ -368,8 +368,8 @@ final class EditorInfoToastWindow: NSPanel {
 
         let visible = anchorScreen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
         let origin = NSPoint(
-            x: visible.midX - width / 2,
-            y: visible.minY + 72
+            x: round(visible.midX - width / 2),
+            y: round(visible.minY + 72)
         )
         setFrame(NSRect(origin: origin, size: NSSize(width: width, height: height)), display: true)
         orderFrontRegardless()

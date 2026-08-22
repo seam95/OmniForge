@@ -82,4 +82,32 @@ final class AnnotationToolbarLayoutTests: XCTestCase {
 
         XCTAssertGreaterThan(longWidth, shortWidth)
     }
+
+    func test_toolbarButtons_haveIntegralPixelOrigins() {
+        let toolbar = AnnotationToolbarView(
+            items: AnnotationToolbarLayout.primary,
+            orientation: .horizontal
+        )
+        for subview in toolbar.subviews {
+            XCTAssertEqual(subview.frame.origin.x, subview.frame.origin.x.rounded())
+            XCTAssertEqual(subview.frame.origin.y, subview.frame.origin.y.rounded())
+            XCTAssertEqual(subview.frame.size.width, subview.frame.size.width.rounded())
+            XCTAssertEqual(subview.frame.size.height, subview.frame.size.height.rounded())
+        }
+    }
+
+    func test_toolButton_cell_imageRectIsPixelAligned() {
+        let btn = AnnotationToolButton(
+            frame: NSRect(x: 0, y: 0, width: 32, height: 32),
+            symbolName: "rectangle",
+            normalColor: .labelColor,
+            selectedColor: EditorHUD.accentGreen
+        )
+        guard let cell = btn.cell as? NSButtonCell else {
+            return XCTFail("Expected NSButtonCell")
+        }
+        let imageRect = cell.imageRect(forBounds: btn.bounds)
+        XCTAssertEqual(imageRect.origin.x, imageRect.origin.x.rounded())
+        XCTAssertEqual(imageRect.origin.y, imageRect.origin.y.rounded())
+    }
 }

@@ -235,13 +235,26 @@ enum AnnotationToolbarLayout {
     ]
 }
 
+private final class PixelAlignedButtonCell: NSButtonCell {
+    override func imageRect(forBounds theRect: NSRect) -> NSRect {
+        guard let img = image else { return super.imageRect(forBounds: theRect) }
+        let size = img.size
+        let x = round(theRect.origin.x + (theRect.size.width - size.width) / 2.0)
+        let y = round(theRect.origin.y + (theRect.size.height - size.height) / 2.0)
+        return NSRect(x: x, y: y, width: size.width, height: size.height)
+    }
+}
+
 // MARK: - ToolButton
 
-/// 工具栏按钮：无边框、SF Symbol 14pt medium、选中绿底圆角6。
+/// 工具栏按钮：无边框、SF Symbol 15pt medium、像素对齐、选中绿底圆角6。
 /// 参照 capcap `ToolButton`（L2879-2964）。
 final class AnnotationToolButton: NSButton {
     var isSelected = false {
-        didSet { needsDisplay = true }
+        didSet {
+            contentTintColor = isSelected ? selectedColor : normalColor
+            needsDisplay = true
+        }
     }
 
     /// 悬停提示文案。nil 表示无提示。
@@ -256,12 +269,15 @@ final class AnnotationToolButton: NSButton {
         self.selectedColor = selectedColor
         super.init(frame: frame)
 
+        cell = PixelAlignedButtonCell()
         bezelStyle = .regularSquare
         isBordered = false
         setButtonType(.momentaryPushIn)
+        imagePosition = .imageOnly
+        imageScaling = .scaleNone
 
         if let img = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil) {
-            let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+            let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
             image = img.withSymbolConfiguration(config)
         }
         contentTintColor = normalColor
@@ -301,12 +317,9 @@ final class AnnotationToolButton: NSButton {
 
     override func draw(_ dirtyRect: NSRect) {
         if isSelected {
-            contentTintColor = selectedColor
             let bgPath = NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 6, yRadius: 6)
             EditorHUD.selectedFill().setFill()
             bgPath.fill()
-        } else {
-            contentTintColor = normalColor
         }
         super.draw(dirtyRect)
     }
@@ -455,11 +468,11 @@ final class AnnotationToolbarView: NSView {
             let frame: NSRect
             switch orientation {
             case .horizontal:
-                frame = NSRect(x: along, y: Self.crossPadding, width: run, height: size)
+                frame = NSRect(x: along.rounded(), y: Self.crossPadding.rounded(), width: run, height: size)
             case .vertical:
                 // AppKit y 向上增长，首项置顶。
                 let y = bounds.height - along - run
-                frame = NSRect(x: Self.crossPadding, y: y, width: size, height: run)
+                frame = NSRect(x: Self.crossPadding.rounded(), y: y.rounded(), width: size, height: run)
             }
             along += run + Self.buttonSpacing
 
@@ -507,13 +520,13 @@ final class AnnotationToolbarView: NSView {
         for slot in separatorFrames {
             switch orientation {
             case .horizontal:
-                let x = slot.midX - Self.separatorThickness / 2
-                let y = slot.minY + 4
+                let x = round(slot.midX - Self.separatorThickness / 2)
+                let y = round(slot.minY + 4)
                 let h = max(0, slot.height - 8)
                 NSRect(x: x, y: y, width: Self.separatorThickness, height: h).fill()
             case .vertical:
-                let y = slot.midY - Self.separatorThickness / 2
-                let x = slot.minX + 4
+                let y = round(slot.midY - Self.separatorThickness / 2)
+                let x = round(slot.minX + 4)
                 let w = max(0, slot.width - 8)
                 NSRect(x: x, y: y, width: w, height: Self.separatorThickness).fill()
             }
@@ -556,6 +569,7 @@ final class MoveSelectionDragHandle: NSView {
     var onDragEnd: (() -> Void)?
 
     private let symbolName: String
+    private let symbolImage: NSImage?
     private var dragStartLocation: NSPoint = .zero
     private var isDragging = false {
         didSet { needsDisplay = true }
@@ -563,6 +577,9 @@ final class MoveSelectionDragHandle: NSView {
 
     init(frame: NSRect, symbolName: String) {
         self.symbolName = symbolName
+        let cfg = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
+        self.symbolImage = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
+            .withSymbolConfiguration(cfg)
         super.init(frame: frame)
         wantsLayer = true
     }
@@ -613,21 +630,16 @@ final class MoveSelectionDragHandle: NSView {
             bg.fill()
         }
 
-        guard let img = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)) else { return }
-        // 用 sourceAtop 把模板图标染成 labelColor，对齐 CapCap 自绘着色。
-        let tint = NSImage(size: img.size, flipped: false) { rect in
-            img.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
-            NSColor.labelColor.set()
-            rect.fill(using: .sourceAtop)
-            return true
-        }
-        let drawRect = NSRect(
-            x: bounds.midX - tint.size.width / 2,
-            y: bounds.midY - tint.size.height / 2,
-            width: tint.size.width,
-            height: tint.size.height
+        guard let img = symbolImage else { return }
+        let size = img.size
+        let origin = NSPoint(
+            x: round((bounds.width - size.width) / 2),
+            y: round((bounds.height - size.height) / 2)
         )
-        tint.draw(in: drawRect)
+        let drawRect = NSRect(origin: origin, size: size)
+        let tinted = img.withSymbolConfiguration(
+            NSImage.SymbolConfiguration(hierarchicalColor: .labelColor)
+        ) ?? img
+        tinted.draw(in: drawRect, from: .zero, operation: .sourceOver, fraction: 1.0)
     }
 }

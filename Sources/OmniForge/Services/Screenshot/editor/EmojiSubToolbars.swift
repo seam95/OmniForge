@@ -85,13 +85,13 @@ private final class EmojiCell: NSView {
             ring.stroke()
         }
 
-        // emoji 字符居中
+        // emoji 字符居中（像素对齐）
         let attr: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: fontSize),
         ]
         let size = (emoji as NSString).size(withAttributes: attr)
-        let origin = NSPoint(x: bounds.midX - size.width / 2,
-                             y: bounds.midY - size.height / 2)
+        let origin = NSPoint(x: round(bounds.midX - size.width / 2),
+                             y: round(bounds.midY - size.height / 2))
         (emoji as NSString).draw(at: origin, withAttributes: attr)
     }
 }
@@ -296,8 +296,8 @@ final class EmojiPickerView: NSView {
         for (i, emoji) in allEmojis.enumerated() {
             let col = i % Self.gridColumns
             let row = i / Self.gridColumns
-            let x = insetX + CGFloat(col) * (item + colGap)
-            let y = Self.topPad + CGFloat(row) * (item + rowGap)
+            let x = round(insetX + CGFloat(col) * (item + colGap))
+            let y = round(Self.topPad + CGFloat(row) * (item + rowGap))
             let cell = EmojiCell(
                 frame: NSRect(x: x, y: y, width: item, height: item),
                 emoji: emoji,

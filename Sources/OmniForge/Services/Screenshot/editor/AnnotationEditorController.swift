@@ -1128,8 +1128,8 @@ final class AnnotationEditorController {
     /// `EditorToolbarPlacement.primaryToolbarRect`。
     private func toolbarRect(in bounds: NSRect, size: NSSize) -> NSRect {
         let reference = selectionViewRect
-        let width = size.width
-        let height = size.height
+        let width = ceil(size.width)
+        let height = ceil(size.height)
         let margin: CGFloat = 8
         let x = max(margin, min(bounds.maxX - width - margin, reference.midX - width / 2))
         var y = reference.minY - height - margin
@@ -1137,20 +1137,22 @@ final class AnnotationEditorController {
             y = min(reference.maxY + margin, bounds.maxY - height - margin)
         }
         y = max(margin, min(bounds.maxY - height - margin, y))
-        return NSRect(x: x, y: y, width: width, height: height)
+        return NSRect(x: round(x), y: round(y), width: width, height: height)
     }
 
     /// 子工具栏位置：主工具栏下方（不够则上方）。参照 capcap `subToolbarRect`。
     private func subToolbarRect(width: CGFloat, height: CGFloat,
                                 toolbarFrame: NSRect, in bounds: NSRect) -> NSRect {
         let margin: CGFloat = 8
-        let x = max(margin, min(bounds.maxX - width - margin, toolbarFrame.midX - width / 2))
-        var y = toolbarFrame.minY - height - 4
+        let w = ceil(width)
+        let h = ceil(height)
+        let x = max(margin, min(bounds.maxX - w - margin, toolbarFrame.midX - w / 2))
+        var y = toolbarFrame.minY - h - 4
         if y < margin {
-            y = min(toolbarFrame.maxY + 4, bounds.maxY - height - margin)
+            y = min(toolbarFrame.maxY + 4, bounds.maxY - h - margin)
         }
-        y = max(margin, min(bounds.maxY - height - margin, y))
-        return NSRect(x: x, y: y, width: width, height: height)
+        y = max(margin, min(bounds.maxY - h - margin, y))
+        return NSRect(x: round(x), y: round(y), width: w, height: h)
     }
 
     private func styleFloatingHUD(_ view: NSView) {
@@ -1159,6 +1161,13 @@ final class AnnotationEditorController {
         view.layer?.shadowOpacity = EditorHUD.shadowOpacity
         view.layer?.shadowRadius = EditorHUD.shadowRadius
         view.layer?.shadowOffset = EditorHUD.shadowOffset
+        let shadowBounds = view.bounds.insetBy(dx: 2, dy: 2)
+        view.layer?.shadowPath = CGPath(
+            roundedRect: shadowBounds,
+            cornerWidth: EditorHUD.cornerRadius,
+            cornerHeight: EditorHUD.cornerRadius,
+            transform: nil
+        )
     }
 
     // MARK: - 键盘快捷键
