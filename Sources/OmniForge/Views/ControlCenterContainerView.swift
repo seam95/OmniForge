@@ -122,7 +122,7 @@ struct ControlCenterContainerView: View {
             HStack(spacing: 3) {
                 ForEach(visiblePanels) { panel in
                     let isActive = selectedPanel == panel
-                    let title = panel.title(in: state.l10n.s)
+                    let title = panel.navTitle(in: state.l10n.s)
                     ControlCenterNavButton(
                         panel: panel,
                         title: title,
@@ -342,7 +342,7 @@ struct ControlCenterContainerView: View {
 
             Spacer()
 
-            FooterButton(label: state.l10n.s.actionQuit, systemImage: "power") {
+            FooterButton(label: state.l10n.s.actionQuit, systemImage: nil) {
                 NSApp.terminate(nil)
             }
         }
@@ -360,7 +360,7 @@ struct ControlCenterContainerView: View {
     }
 
     private var navigationActiveFill: Color {
-        colorScheme == .light ? Color.white.opacity(0.85) : Color.white.opacity(0.14)
+        colorScheme == .light ? Color.white : Color.white.opacity(0.14)
     }
 
     /// 不透明 popover 底上，用 controlFill 比半透明 cardFill 更接近截图胶囊轨。
@@ -385,10 +385,15 @@ private struct ControlCenterNavButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: panel.symbolName)
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: 64, height: 26)
-                .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous))
+            HStack(spacing: 5) {
+                Image(systemName: panel.symbolName)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 12.5, weight: .medium))
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 5.5)
+            .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous))
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
@@ -396,7 +401,7 @@ private struct ControlCenterNavButton: View {
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous)
                 .fill(isActive ? activeFill : (isHovered ? Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04) : Color.clear))
-                .shadow(color: Color.black.opacity(isActive && colorScheme == .light ? 0.08 : 0.0), radius: 1.5, x: 0, y: 1)
+                .shadow(color: Color.black.opacity(isActive && colorScheme == .light ? 0.08 : 0.0), radius: 2, x: 0, y: 1)
         )
         .onHover { hovering in
             withAnimation(Theme.Animation.hover) {

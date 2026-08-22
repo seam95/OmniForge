@@ -30,10 +30,11 @@ final class UtilityToolsPresentationTests: XCTestCase {
         XCTAssertEqual(UtilityTool.uninstaller.feature, .uninstaller)
         XCTAssertEqual(UtilityTool.colorPicker.feature, .colorPicker)
         XCTAssertEqual(UtilityTool.networkDiagnostics.feature, .networkDiagnostics)
-        XCTAssertEqual(UtilityTool.cleaner.symbolName(), "sparkles")
+        XCTAssertEqual(UtilityTool.cleaner.symbolName(), "trash")
         XCTAssertEqual(UtilityTool.uninstaller.symbolName(), "trash")
         XCTAssertEqual(UtilityTool.colorPicker.symbolName(), "eyedropper")
-        XCTAssertEqual(UtilityTool.networkDiagnostics.symbolName(), "network")
+        XCTAssertEqual(UtilityTool.networkDiagnostics.symbolName(), "globe")
+        XCTAssertEqual(UtilityTool.dshWeb.symbolName(), "server.rack")
 
         let strings = Strings.zhHans
         for tool in UtilityTool.allCases {

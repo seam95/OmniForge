@@ -1,4 +1,4 @@
-import Foundation
+import SwiftUI
 
 enum UtilityTool: String, CaseIterable, Identifiable {
     case cleaner
@@ -67,11 +67,53 @@ enum UtilityTool: String, CaseIterable, Identifiable {
     }
 
     /// 列表行展示的 SF Symbol。
-    func symbolName() -> String { feature.symbolName }
+    func symbolName() -> String {
+        switch self {
+        case .cleaner:
+            return "trash"
+        case .uninstaller:
+            return "trash"
+        case .colorPicker:
+            return "eyedropper"
+        case .networkDiagnostics:
+            return "globe"
+        case .dshWeb:
+            return "server.rack"
+        }
+    }
+
+    /// 列表行图标徽章的主题高亮色。
+    var tintColor: Color {
+        switch self {
+        case .cleaner:
+            return .blue
+        case .uninstaller:
+            return Color(red: 0.95, green: 0.35, blue: 0.32)
+        case .colorPicker:
+            return .orange
+        case .networkDiagnostics:
+            return .green
+        case .dshWeb:
+            return .purple
+        }
+    }
 
     /// 列表行展示的本地化名称（与 FeatureHub 统一）。
     func hubName(in strings: Strings) -> String { feature.hubName(in: strings) }
 
     /// 列表行展示的本地化描述。
-    func hubDescription(in strings: Strings) -> String { feature.hubDescription(in: strings) }
+    func hubDescription(in strings: Strings) -> String {
+        switch self {
+        case .cleaner:
+            return strings.utilityCleanerSubtitle
+        case .uninstaller:
+            return strings.utilityUninstallerSubtitle
+        case .colorPicker:
+            return strings.utilityColorPickerSubtitle
+        case .networkDiagnostics:
+            return strings.utilityNetworkDiagnosticsSubtitle
+        case .dshWeb:
+            return strings.utilityDSHWebSubtitle
+        }
+    }
 }

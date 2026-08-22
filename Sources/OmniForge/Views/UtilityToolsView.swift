@@ -166,22 +166,32 @@ struct UtilityToolsView: View {
                 ForEach(Array(visibleTools.enumerated()), id: \.element.id) { index, tool in
                     if index > 0 {
                         Rectangle()
-                            .fill(Color.primary.opacity(0.06))
+                            .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05))
                             .frame(height: 1)
-                            .padding(.leading, 58)
                     }
                     UtilityToolRow(tool: tool, strings: strings) {
                         enterDetail(tool)
                     }
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 10)
             .background(UtilityListChrome.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05), lineWidth: 1)
+            )
+            .shadow(
+                color: Color.black.opacity(colorScheme == .dark ? 0.20 : 0.05),
+                radius: 8,
+                x: 0,
+                y: 2
+            )
             .padding(.horizontal, 14)
-            .padding(.vertical, 14)
+            .padding(.vertical, 12)
         }
     }
+
+    @Environment(\.colorScheme) private var colorScheme
 
     private func enterDetail(_ tool: UtilityTool) {
         storedTool = tool.rawValue
@@ -222,7 +232,7 @@ struct UtilityToolsView: View {
     }
 }
 
-/// 实用工具列表行：图标 + 标题/描述 + chevron，整行可点。
+/// 实用工具列表行：多彩图标 + 标题/描述 + chevron/状态药丸，整行可点。
 private struct UtilityToolRow: View {
     let tool: UtilityTool
     let strings: Strings
@@ -233,47 +243,136 @@ private struct UtilityToolRow: View {
     var body: some View {
         Button(action: onTap) {
             HStack(alignment: .center, spacing: 12) {
-                Image(systemName: tool.symbolName())
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 30, height: 30)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.accentColor.opacity(colorScheme == .dark ? 0.16 : 0.10))
-                    )
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(tool.tintColor.opacity(colorScheme == .dark ? 0.20 : 0.12))
+                        .frame(width: 38, height: 38)
+
+                    Image(systemName: tool.symbolName())
+                        .font(.system(size: 16.5, weight: .semibold))
+                        .foregroundStyle(tool.tintColor)
+                }
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(tool.hubName(in: strings))
-                        .font(.system(size: 13, weight: .semibold))
+                    Text(tool.title(in: strings))
+                        .font(.system(size: 13.5, weight: .medium))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                     Text(tool.hubDescription(in: strings))
-                        .font(.system(size: 11))
+                        .font(.system(size: 11.5))
                         .foregroundStyle(.secondary)
-                        .lineLimit(3)
+                        .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Spacer(minLength: 8)
 
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.tertiary)
+                if tool == .dshWeb {
+                    UtilityDSHWebStatusBadge(strings: strings)
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11.5, weight: .bold))
+                        .foregroundStyle(Color.primary.opacity(0.22))
+                }
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 14)
             .padding(.vertical, 12)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isHovered ? Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04) : Color.clear)
+                isHovered ? Color.primary.opacity(colorScheme == .dark ? 0.06 : 0.03) : Color.clear
             )
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering in
             isHovered = hovering
         }
-        .accessibilityLabel(tool.hubName(in: strings))
+        .accessibilityLabel(tool.title(in: strings))
         .accessibilityHint(strings.controlcenterTabUtilities)
+    }
+}
+
+/// DSH Web 服务列表行状态徽章
+private struct UtilityDSHWebStatusBadge: View {
+    let strings: Strings
+    @ObservedObject private var manager = DSHWebManager.shared
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        switch manager.state {
+        case .running:
+            HStack(spacing: 4.5) {
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 5.5, height: 5.5)
+                Text(strings.dshWebStateRunning)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.green)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3.5)
+            .background(
+                Capsule()
+                    .fill(Color.green.opacity(colorScheme == .dark ? 0.20 : 0.12))
+            )
+        case .starting:
+            HStack(spacing: 4.5) {
+                ProgressView()
+                    .controlSize(.mini)
+                Text(strings.dshWebStateStarting)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.orange)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3.5)
+            .background(
+                Capsule()
+                    .fill(Color.orange.opacity(colorScheme == .dark ? 0.20 : 0.12))
+            )
+        case .stopping:
+            HStack(spacing: 4.5) {
+                ProgressView()
+                    .controlSize(.mini)
+                Text(strings.dshWebStateStopping)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.orange)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3.5)
+            .background(
+                Capsule()
+                    .fill(Color.orange.opacity(colorScheme == .dark ? 0.20 : 0.12))
+            )
+        case .failed:
+            HStack(spacing: 4.5) {
+                Circle()
+                    .fill(Color.red)
+                    .frame(width: 5.5, height: 5.5)
+                Text("异常")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.red)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3.5)
+            .background(
+                Capsule()
+                    .fill(Color.red.opacity(colorScheme == .dark ? 0.20 : 0.12))
+            )
+        case .stopped:
+            HStack(spacing: 4.5) {
+                Circle()
+                    .fill(Color.secondary.opacity(0.7))
+                    .frame(width: 5.5, height: 5.5)
+                Text(strings.runStateStopped)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.secondary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3.5)
+            .background(
+                Capsule()
+                    .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04))
+            )
+        }
     }
 }
 
@@ -333,19 +432,8 @@ private struct UtilityListCardBackground: View {
             if colorScheme == .dark {
                 Color.white.opacity(0.06)
             } else {
-                Color.white.opacity(0.55)
+                Color.white
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05), lineWidth: 1)
-        )
-        .shadow(
-            color: Color.black.opacity(colorScheme == .dark ? 0.18 : 0.04),
-            radius: 6,
-            x: 0,
-            y: 1.5
-        )
     }
 }

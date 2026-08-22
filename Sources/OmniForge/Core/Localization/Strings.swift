@@ -85,6 +85,9 @@ struct Strings: Equatable {
     let controlcenterClipboardDisabled: String
     let controlcenterOpenSettings: String
     let controlcenterTabUtilities: String
+    let controlcenterNavMonitor: String
+    let controlcenterNavKeepAwake: String
+    let controlcenterNavUtilities: String
     let controlcenterEmpty: String
     let runStateStopped: String
     let runStateRunning: String
@@ -96,6 +99,11 @@ struct Strings: Equatable {
     let utilityCleaner: String
     let utilityUninstaller: String
     let utilityUninstallBusy: String
+    let utilityCleanerSubtitle: String
+    let utilityUninstallerSubtitle: String
+    let utilityColorPickerSubtitle: String
+    let utilityNetworkDiagnosticsSubtitle: String
+    let utilityDSHWebSubtitle: String
     let toolRetryFailures: String
     let toolSucceeded: String
     let toolFailed: String

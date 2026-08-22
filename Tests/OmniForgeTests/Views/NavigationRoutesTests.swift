@@ -121,12 +121,15 @@ final class NavigationRoutesTests: XCTestCase {
 
     func test_menuPanelMetadata_usesControlCenterStringsContract() {
         XCTAssertEqual(MenuPanel.utilities.id, "utilities")
-        XCTAssertEqual(MenuPanel.systemMonitor.symbolName, "chart.bar")
-        XCTAssertEqual(MenuPanel.keepAwake.symbolName, "moon.zzz.fill")
+        XCTAssertEqual(MenuPanel.systemMonitor.symbolName, "waveform.path.ecg")
+        XCTAssertEqual(MenuPanel.keepAwake.symbolName, "moon.fill")
         XCTAssertEqual(MenuPanel.utilities.symbolName, "wrench.and.screwdriver")
         XCTAssertEqual(MenuPanel.systemMonitor.title(in: .zhHans), Strings.zhHans.controlcenterTabSystemMonitor)
         XCTAssertEqual(MenuPanel.utilities.title(in: .en), Strings.en.controlcenterTabUtilities)
         XCTAssertEqual(MenuPanel.keepAwake.title(in: .en), Strings.en.featureHubNameKeepAwake)
+        XCTAssertEqual(MenuPanel.systemMonitor.navTitle(in: .zhHans), "监控")
+        XCTAssertEqual(MenuPanel.keepAwake.navTitle(in: .zhHans), "唤醒")
+        XCTAssertEqual(MenuPanel.utilities.navTitle(in: .zhHans), "工具")
     }
 
     func test_settingsTabs_followFeatureAvailabilityAndStableOrder() {

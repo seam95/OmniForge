@@ -142,12 +142,12 @@ extension View {
 
 public struct FooterButton: View {
     public let label: String
-    public let systemImage: String
+    public let systemImage: String?
     public let action: () -> Void
     @State private var isHovered = false
     @Environment(\.colorScheme) private var colorScheme
 
-    public init(label: String, systemImage: String, action: @escaping () -> Void) {
+    public init(label: String, systemImage: String? = nil, action: @escaping () -> Void) {
         self.label = label
         self.systemImage = systemImage
         self.action = action
@@ -156,8 +156,10 @@ public struct FooterButton: View {
     public var body: some View {
         Button(action: action) {
             HStack(spacing: 5) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 11, weight: .semibold))
+                if let systemImage, !systemImage.isEmpty {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 11, weight: .semibold))
+                }
                 Text(label)
                     .font(.system(size: 11.5, weight: .medium))
             }

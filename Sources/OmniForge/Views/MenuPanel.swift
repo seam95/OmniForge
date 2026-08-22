@@ -25,7 +25,8 @@ enum MenuPanel: String, CaseIterable, Identifiable {
         if isAvailable(.cleaner)
             || isAvailable(.uninstaller)
             || isAvailable(.colorPicker)
-            || isAvailable(.networkDiagnostics) {
+            || isAvailable(.networkDiagnostics)
+            || isAvailable(.dshWeb) {
             result.append(.utilities)
         }
 
@@ -45,8 +46,8 @@ enum MenuPanel: String, CaseIterable, Identifiable {
 
     var symbolName: String {
         switch self {
-        case .systemMonitor: return "chart.bar"
-        case .keepAwake: return "moon.zzz.fill"
+        case .systemMonitor: return "waveform.path.ecg"
+        case .keepAwake: return "moon.fill"
         case .clipboard: return "wrench.and.screwdriver"
         }
     }
@@ -56,6 +57,14 @@ enum MenuPanel: String, CaseIterable, Identifiable {
         case .systemMonitor: return strings.controlcenterTabSystemMonitor
         case .keepAwake: return strings.featureHubNameKeepAwake
         case .clipboard: return strings.controlcenterTabUtilities
+        }
+    }
+
+    func navTitle(in strings: Strings) -> String {
+        switch self {
+        case .systemMonitor: return strings.controlcenterNavMonitor
+        case .keepAwake: return strings.controlcenterNavKeepAwake
+        case .clipboard: return strings.controlcenterNavUtilities
         }
     }
 }
