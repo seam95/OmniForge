@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - DSH Web 服务管理详情页（实用工具内嵌）
 //
 // 观察 DSHWebManager.shared；
-// 采用主服务控制卡片、已发现服务卡片列表与控制台日志区的三段式布局。
+// 采用 Hero 服务控制卡片、已发现服务列表与终端控制台日志区的三段式精美布局。
 
 struct DSHWebView: View {
     let strings: Strings
@@ -12,6 +12,7 @@ struct DSHWebView: View {
 
     @State private var serviceAwaitingStopConfirmation: DSHWebService?
     @State private var isLogCopied = false
+    @State private var isAddressCopied = false
 
     private static let logAnchorID = "dsh-web-log-bottom"
     private static let portFormatter: NumberFormatter = {
@@ -27,7 +28,7 @@ struct DSHWebView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            primaryControlCard
+            heroControlCard
             servicesSection
             logSection
         }
@@ -63,86 +64,170 @@ struct DSHWebView: View {
         }
     }
 
-    // MARK: - 主服务控制卡片
+    // MARK: - Hero 主服务控制卡片
 
-    private var primaryControlCard: some View {
-        PanelCardChrome(cornerRadius: Theme.Radius.card, padding: 12) {
+    private var heroControlCard: some View {
+        PanelCardChrome(cornerRadius: Theme.Radius.card, padding: 12, accent: statusColor) {
             VStack(alignment: .leading, spacing: 10) {
-                // 上层：状态指示与访问地址
-                HStack(spacing: 8) {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(statusColor)
-                            .frame(width: 8, height: 8)
-                            .shadow(color: statusColor.opacity(manager.state == .running ? 0.6 : 0), radius: 3)
-                        Text(statusText)
-                            .font(.system(size: 12.5, weight: .semibold))
-                            .lineLimit(1)
-                    }
-
-                    Spacer(minLength: 8)
-
-                    HStack(spacing: 6) {
-                        Text(DSHWebManager.address(for: manager.configuredPort))
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-
-                        if manager.state == .running {
-                            Button {
-                                manager.openInBrowser()
-                            } label: {
-                                Image(systemName: "arrow.up.right.square")
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundStyle(Color.accentColor)
-                            }
-                            .buttonStyle(.plain)
-                            .help(strings.dshWebOpenBrowser)
-                        }
-                    }
-                }
-
+                heroHeaderRow
+                activeAddressBanner
                 Rectangle()
                     .fill(Color.primary.opacity(0.06))
                     .frame(height: 1)
+                heroBottomRow
+            }
+        }
+    }
 
-                // 下层：端口设置与主控制操作
-                HStack(spacing: 8) {
-                    HStack(spacing: 6) {
-                        Text(strings.dshWebPort)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.secondary)
-                        TextField(
-                            strings.dshWebPort,
-                            value: Binding(
-                                get: { manager.configuredPort },
-                                set: { manager.setConfiguredPort($0) }
-                            ),
-                            formatter: Self.portFormatter
-                        )
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12, design: .monospaced))
-                        .multilineTextAlignment(.center)
-                        .frame(width: 64)
-                        .disabled(isBusyOrRunning)
-                    }
+    private var heroHeaderRow: some View {
+        HStack(spacing: 10) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(statusColor.opacity(colorScheme == .dark ? 0.20 : 0.10))
+                    .frame(width: 32, height: 32)
 
-                    Spacer(minLength: 8)
+                Image(systemName: statusHeroSymbol)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(statusColor)
+            }
 
-                    HStack(spacing: 8) {
-                        Button {
-                            Task { await manager.refreshServices() }
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 11, weight: .medium))
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .help(strings.dshWebRefresh)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("DSH Web")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.primary)
 
-                        primaryButton
-                    }
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 6.5, height: 6.5)
+                        .shadow(color: statusColor.opacity(manager.state == .running ? 0.7 : 0), radius: 2.5)
+
+                    Text(statusText)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
+            }
+
+            Spacer(minLength: 8)
+
+            StatusTintBadge(
+                text: statusBadgeText,
+                tint: statusColor
+            )
+        }
+    }
+
+    private var activeAddressBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "globe")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(manager.state == .running ? Color.green : Color.accentColor)
+
+            Text(DSHWebManager.address(for: manager.configuredPort))
+                .font(.system(size: 11.5, weight: .medium, design: .monospaced))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+
+            Spacer(minLength: 4)
+
+            Button {
+                copyAddress()
+            } label: {
+                Image(systemName: isAddressCopied ? "checkmark" : "doc.on.doc")
+                    .font(.system(size: 11, weight: isAddressCopied ? .bold : .regular))
+                    .foregroundStyle(isAddressCopied ? .green : .secondary)
+                    .frame(width: 22, height: 22)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(isAddressCopied ? Color.green.opacity(0.15) : Color.primary.opacity(0.05))
+                    )
+            }
+            .buttonStyle(.plain)
+            .help(isAddressCopied ? "已复制" : strings.dshWebCopyLog)
+
+            if manager.state == .running {
+                Button {
+                    manager.openInBrowser()
+                } label: {
+                    HStack(spacing: 3) {
+                        Text(strings.dshWebOpenBrowser)
+                            .font(.system(size: 11, weight: .semibold))
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 9, weight: .bold))
+                    }
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3.5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(Color.accentColor.opacity(colorScheme == .dark ? 0.25 : 0.12))
+                    )
+                    .foregroundStyle(Color.accentColor)
+                }
+                .buttonStyle(.plain)
+                .help(strings.dshWebOpenBrowser)
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                .fill(manager.state == .running ? Color.green.opacity(colorScheme == .dark ? 0.10 : 0.05) : Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                .strokeBorder(manager.state == .running ? Color.green.opacity(0.25) : Color.primary.opacity(0.06), lineWidth: 1)
+        )
+    }
+
+    private var heroBottomRow: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Text(strings.dshWebPort)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+
+                TextField(
+                    strings.dshWebPort,
+                    value: Binding(
+                        get: { manager.configuredPort },
+                        set: { manager.setConfiguredPort($0) }
+                    ),
+                    formatter: Self.portFormatter
+                )
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12, design: .monospaced))
+                .multilineTextAlignment(.center)
+                .frame(width: 62)
+                .disabled(isBusyOrRunning)
+
+                if manager.configuredPort != DSHWebManager.defaultPort && !isBusyOrRunning {
+                    Button {
+                        manager.setConfiguredPort(DSHWebManager.defaultPort)
+                    } label: {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("恢复默认端口 (3080)")
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            HStack(spacing: 6) {
+                Button {
+                    Task { await manager.refreshServices() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help(strings.dshWebRefresh)
+
+                primaryButton
             }
         }
     }
@@ -159,6 +244,34 @@ struct DSHWebView: View {
             return strings.dshWebStateStopping
         case .failed(let reason):
             return String(format: strings.dshWebStateFailed, reason)
+        }
+    }
+
+    private var statusBadgeText: String {
+        switch manager.state {
+        case .stopped:
+            return strings.dshWebStateStopped
+        case .starting:
+            return strings.dshWebStateStarting
+        case .running:
+            return strings.dshWebStateRunning
+        case .stopping:
+            return strings.dshWebStateStopping
+        case .failed:
+            return "异常"
+        }
+    }
+
+    private var statusHeroSymbol: String {
+        switch manager.state {
+        case .running:
+            return "network"
+        case .starting, .stopping:
+            return "arrow.triangle.2.circlepath"
+        case .stopped:
+            return "power"
+        case .failed:
+            return "exclamationmark.triangle"
         }
     }
 
@@ -233,6 +346,10 @@ struct DSHWebView: View {
     private var servicesSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
+                Image(systemName: "server.rack")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+
                 Text(strings.dshWebServicesTitle)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
@@ -240,7 +357,7 @@ struct DSHWebView: View {
 
                 if !manager.services.isEmpty {
                     Text("\(manager.services.count)")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.system(size: 9.5, weight: .bold))
                         .foregroundStyle(Color.accentColor)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
@@ -253,16 +370,16 @@ struct DSHWebView: View {
 
             if manager.services.isEmpty {
                 HStack(spacing: 8) {
-                    Image(systemName: "server.rack")
-                        .font(.system(size: 13))
+                    Image(systemName: "checkmark.circle")
+                        .font(.system(size: 12))
                         .foregroundStyle(.tertiary)
                     Text(strings.dshWebNoServices)
-                        .font(.system(size: 11.5))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 10)
-                .padding(.vertical, 8)
+                .padding(.vertical, 7)
                 .panelRowCard()
             } else {
                 VStack(spacing: 6) {
@@ -276,9 +393,9 @@ struct DSHWebView: View {
 
     private func serviceRow(_ service: DSHWebService) -> some View {
         let ownedByApplication = manager.isOwnedByApplication(service)
-        return HStack(spacing: 10) {
-            Image(systemName: "server.rack")
-                .font(.system(size: 13, weight: .medium))
+        return HStack(spacing: 9) {
+            Image(systemName: "globe")
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(ownedByApplication ? Color.green : Color.accentColor)
                 .frame(width: 26, height: 26)
                 .background(
@@ -288,10 +405,10 @@ struct DSHWebView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(service.address)
-                    .font(.system(size: 11.5, weight: .medium, design: .monospaced))
+                    .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                HStack(spacing: 6) {
+                HStack(spacing: 5) {
                     Text("PID \(service.pid)")
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(.secondary)
@@ -307,17 +424,21 @@ struct DSHWebView: View {
 
             Spacer(minLength: 8)
 
-            HStack(spacing: 4) {
+            HStack(spacing: 6) {
                 Button {
                     manager.openInBrowser(service)
                 } label: {
                     Image(systemName: "arrow.up.right.square")
                         .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 24, height: 24)
+                        .background(
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .fill(Color.accentColor.opacity(colorScheme == .dark ? 0.15 : 0.08))
+                        )
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(Color.accentColor)
                 .help(strings.dshWebOpenBrowser)
-                .frame(width: 24, height: 24)
 
                 Button {
                     if ownedByApplication {
@@ -326,13 +447,17 @@ struct DSHWebView: View {
                         serviceAwaitingStopConfirmation = service
                     }
                 } label: {
-                    Image(systemName: "stop.circle")
-                        .font(.system(size: 13, weight: .medium))
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Color.red)
+                        .frame(width: 24, height: 24)
+                        .background(
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .fill(Color.red.opacity(colorScheme == .dark ? 0.18 : 0.08))
+                        )
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(Color.red)
                 .help(strings.dshWebStop)
-                .frame(width: 24, height: 24)
             }
         }
         .padding(.horizontal, 10)
@@ -342,7 +467,22 @@ struct DSHWebView: View {
 
     // MARK: - 日志区
 
-    /// 复制全部日志到剪贴板（保留换行与事件行格式）。
+    private func copyAddress() {
+        let address = DSHWebManager.address(for: manager.configuredPort)
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(address, forType: .string)
+
+        withAnimation(Theme.Animation.snappy) {
+            isAddressCopied = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            withAnimation(Theme.Animation.snappy) {
+                isAddressCopied = false
+            }
+        }
+    }
+
     private func copyLog() {
         let text = manager.logLines.joined(separator: "\n")
         guard !text.isEmpty else { return }
@@ -364,6 +504,10 @@ struct DSHWebView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 HStack(spacing: 6) {
+                    Image(systemName: "terminal.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+
                     Text(strings.dshWebLogTitle)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondary)
@@ -371,7 +515,7 @@ struct DSHWebView: View {
 
                     if !manager.logLines.isEmpty {
                         Text("\(manager.logLines.count)")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.system(size: 9.5, weight: .bold))
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
@@ -387,35 +531,41 @@ struct DSHWebView: View {
                 Button {
                     copyLog()
                 } label: {
-                    HStack(spacing: 4) {
-                        if isLogCopied {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(.green)
-                        } else {
-                            Image(systemName: "doc.on.doc")
-                                .font(.system(size: 10))
-                        }
-                        Text(strings.dshWebCopyLog)
-                            .font(.system(size: 11))
+                    HStack(spacing: 3.5) {
+                        Image(systemName: isLogCopied ? "checkmark" : "doc.on.doc")
+                            .font(.system(size: 10, weight: isLogCopied ? .bold : .regular))
+                        Text(isLogCopied ? "已复制" : strings.dshWebCopyLog)
+                            .font(.system(size: 10.5, weight: .medium))
                     }
+                    .foregroundStyle(isLogCopied ? .green : Color.accentColor)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2.5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(isLogCopied ? Color.green.opacity(0.12) : Color.primary.opacity(0.04))
+                    )
                 }
-                .buttonStyle(.borderless)
-                .foregroundStyle(isLogCopied ? .green : Color.accentColor)
+                .buttonStyle(.plain)
                 .disabled(manager.logLines.isEmpty)
 
                 Button {
                     manager.clearLog()
                 } label: {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 3.5) {
                         Image(systemName: "trash")
                             .font(.system(size: 10))
                         Text(strings.dshWebClearLog)
-                            .font(.system(size: 11))
+                            .font(.system(size: 10.5, weight: .medium))
                     }
+                    .foregroundStyle(Color.accentColor)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2.5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(Color.primary.opacity(0.04))
+                    )
                 }
-                .buttonStyle(.borderless)
-                .foregroundStyle(Color.accentColor)
+                .buttonStyle(.plain)
                 .disabled(manager.logLines.isEmpty)
             }
 
@@ -430,19 +580,18 @@ struct DSHWebView: View {
                 if manager.logLines.isEmpty {
                     VStack(spacing: 6) {
                         Image(systemName: "terminal")
-                            .font(.system(size: 18))
+                            .font(.system(size: 20))
                             .foregroundStyle(.tertiary)
                         Text(strings.dshWebLogEmpty)
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 140, alignment: .center)
+                    .frame(maxWidth: .infinity, minHeight: 130, alignment: .center)
                 } else {
-                    LazyVStack(alignment: .leading, spacing: 3) {
+                    LazyVStack(alignment: .leading, spacing: 4) {
                         ForEach(Array(manager.logLines.enumerated()), id: \.offset) { _, line in
                             logLineView(line)
                         }
-                        // 滚动锚点：新日志追加后滚到尾部
                         Color.clear
                             .frame(height: 0)
                             .id(Self.logAnchorID)
@@ -458,10 +607,10 @@ struct DSHWebView: View {
                 }
             }
         }
-        .frame(height: 160)
+        .frame(height: 155)
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                .fill(Color.black.opacity(colorScheme == .dark ? 0.35 : 0.04))
+                .fill(Color.black.opacity(colorScheme == .dark ? 0.38 : 0.04))
         )
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
@@ -470,14 +619,37 @@ struct DSHWebView: View {
     }
 
     private func logLineView(_ line: String) -> some View {
-        let isAlert = line.contains("SIGKILL") || line.contains("失败") || line.contains("占用") || line.contains("无法") || line.contains("超时")
-        let isSuccess = line.contains("服务就绪")
-        let tint: Color = isAlert ? .red : (isSuccess ? .green : .primary)
+        let isAlert = line.contains("SIGKILL") || line.contains("失败") || line.contains("占用") || line.contains("无法") || line.contains("超时") || line.contains("提前退出")
+        let isSuccess = line.contains("服务就绪") || line.contains("已启动")
+        let isWarning = line.contains("SIGTERM")
 
-        return Text(line)
-            .font(.system(size: 10.5, design: .monospaced))
-            .foregroundStyle(tint)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .textSelection(.enabled)
+        let messageColor: Color = {
+            if isAlert { return .red }
+            if isSuccess { return .green }
+            if isWarning { return .orange }
+            return .primary
+        }()
+
+        return HStack(alignment: .top, spacing: 6) {
+            if let timestampEnd = line.firstIndex(of: "]"), line.hasPrefix("[") {
+                let timestamp = String(line[...timestampEnd])
+                let message = String(line[line.index(after: timestampEnd)...]).trimmingCharacters(in: .whitespaces)
+
+                Text(timestamp)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+
+                Text(message)
+                    .font(.system(size: 10.5, design: .monospaced))
+                    .foregroundStyle(messageColor)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Text(line)
+                    .font(.system(size: 10.5, design: .monospaced))
+                    .foregroundStyle(messageColor)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .textSelection(.enabled)
     }
 }
