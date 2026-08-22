@@ -56,6 +56,10 @@ struct MonitorRankingView: View {
             .foregroundStyle(.primary)
 
             Spacer(minLength: 0)
+
+            IconButton(systemImage: "arrow.clockwise", help: strings.monitorRefreshAll) {
+                onRefresh()
+            }
         }
     }
 
@@ -229,11 +233,6 @@ struct MonitorRankingView: View {
             }
 
             Spacer()
-
-            Button(strings.monitorRefreshAll, action: onRefresh)
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .font(.caption.weight(.medium))
         }
         .padding(.top, 4)
     }

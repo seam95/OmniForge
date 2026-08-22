@@ -86,15 +86,21 @@ struct MonitorOverviewView: View {
     }
 
     private var statusPill: some View {
-        Text(statusText)
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(hasIssues ? Color.orange : Color.green)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(
-                Capsule(style: .continuous)
-                    .fill((hasIssues ? Color.orange : Color.green).opacity(0.15))
-            )
+        HStack(spacing: 6) {
+            Text(statusText)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(hasIssues ? Color.orange : Color.green)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill((hasIssues ? Color.orange : Color.green).opacity(0.15))
+                )
+
+            IconButton(systemImage: "arrow.clockwise", help: strings.monitorRefreshAll) {
+                onRefresh()
+            }
+        }
     }
 
     // MARK: - Cards
@@ -190,10 +196,6 @@ struct MonitorOverviewView: View {
             }
 
             Spacer()
-
-            FooterButton(label: strings.monitorRefreshAll, systemImage: "arrow.clockwise", tint: .blue) {
-                onRefresh()
-            }
         }
         .font(.caption.weight(.medium))
         .foregroundStyle(.secondary)

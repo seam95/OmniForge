@@ -183,3 +183,46 @@ public struct FooterButton: View {
     }
 }
 
+/// 纯图标小按钮：悬浮圆角底，配合 `FooterButton` 的视觉语言；`help` 提供悬停提示。
+public struct IconButton: View {
+    public let systemImage: String
+    public let action: () -> Void
+    /// nil 保持现状（secondary 灰字）；非 nil 覆盖前景色。
+    public var tint: Color? = nil
+    public var help: String? = nil
+    @State private var isHovered = false
+    @Environment(\.colorScheme) private var colorScheme
+
+    public init(
+        systemImage: String,
+        tint: Color? = nil,
+        help: String? = nil,
+        action: @escaping () -> Void
+    ) {
+        self.systemImage = systemImage
+        self.tint = tint
+        self.help = help
+        self.action = action
+    }
+
+    public var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(tint ?? Color.secondary)
+                .frame(width: 22, height: 22)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous)
+                        .fill(isHovered ? Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.06) : Color.clear)
+                )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(Theme.Animation.hover) {
+                isHovered = hovering
+            }
+        }
+        .help(help ?? "")
+    }
+}
+

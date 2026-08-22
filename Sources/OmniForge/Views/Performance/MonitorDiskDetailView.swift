@@ -91,6 +91,10 @@ struct MonitorDiskDetailView: View {
             .buttonStyle(.plain)
 
             Spacer()
+
+            IconButton(systemImage: "arrow.clockwise", help: strings.monitorRefreshAll) {
+                onRefresh()
+            }
         }
     }
 
@@ -395,10 +399,6 @@ struct MonitorDiskDetailView: View {
                     .font(.caption.weight(.medium))
             }
             Spacer()
-            Button(strings.monitorRefreshAll, action: onRefresh)
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .font(.caption.weight(.medium))
         }
     }
 
