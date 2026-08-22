@@ -12,6 +12,8 @@ struct TokenUsagePanelView: View {
 
     @AppStorage(UserDefaultsKeys.tokenUsageSelectedPeriod)
     private var selectedPeriodRawValue = TokenUsagePeriod.today.rawValue
+    /// nil = 全部（配置的全部 provider 卡片堆叠）。
+    @State private var selectedProvider: TokenUsageProvider?
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -37,7 +39,18 @@ struct TokenUsagePanelView: View {
     /// Provider 分段胶囊（仅已配置 provider + 「全部」）。
     private var providerSwitcher: some View {
         HStack(spacing: 3) {
-            providerChip(title: strings.tokenProviderAll, selected: true) {}
+            providerChip(
+                title: strings.tokenProviderAll,
+                provider: nil,
+                selected: selectedProvider == nil
+            ) {
+                selectedProvider = nil
+            }
+            ForEach(manager.configuredProviders) { provider in
+                providerChip(title: provider.displayName, provider: provider, selected: selectedProvider == provider) {
+                    selectedProvider = provider
+                }
+            }
         }
         .padding(3)
         .background(
@@ -46,25 +59,37 @@ struct TokenUsagePanelView: View {
         )
     }
 
-    private func providerChip(title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+    private func providerChip(
+        title: String,
+        provider: TokenUsageProvider?,
+        selected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
-            Text(title)
-                .font(Theme.Stats.font12Medium)
-                .foregroundStyle(
-                    selected
-                        ? (colorScheme == .light ? Theme.Stats.text1 : Color.white)
-                        : (colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
-                )
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background {
-                    if selected {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(colorScheme == .dark ? Color.white.opacity(0.14) : Theme.Stats.cardBackground)
-                            .shadow(color: Color.black.opacity(colorScheme == .light ? 0.06 : 0.0), radius: 2, x: 0, y: 1)
-                    }
+            HStack(spacing: 4) {
+                if let provider {
+                    Circle()
+                        .fill(provider.accentColor)
+                        .frame(width: 5, height: 5)
                 }
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                Text(title)
+                    .font(Theme.Stats.font12Medium)
+            }
+            .foregroundStyle(
+                selected
+                    ? (colorScheme == .light ? Theme.Stats.text1 : Color.white)
+                    : (colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
+            )
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background {
+                if selected {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(colorScheme == .dark ? Color.white.opacity(0.14) : Theme.Stats.cardBackground)
+                        .shadow(color: Color.black.opacity(colorScheme == .light ? 0.06 : 0.0), radius: 2, x: 0, y: 1)
+                }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -113,9 +138,58 @@ struct TokenUsagePanelView: View {
 
     @ViewBuilder
     private var content: some View {
-        // 骨架阶段无数据：恒空态；限额/用量区块在该票之后按快照开关。
-        TokenUsageEmptyStateView(strings: strings)
-            .frame(maxWidth: .infinity, minHeight: ControlCenterContentMetrics.emptyContentMinHeight)
+        if manager.limits.isEmpty {
+            // 首次抓取完成前（或从未拉取）→ 骨架加载态
+            ProgressView()
+                .controlSize(.small)
+                .frame(maxWidth: .infinity, minHeight: ControlCenterContentMetrics.emptyContentMinHeight)
+        } else if !manager.hasAnyConfiguredProvider {
+            TokenUsageEmptyStateView(strings: strings)
+                .frame(maxWidth: .infinity, minHeight: ControlCenterContentMetrics.emptyContentMinHeight)
+        } else {
+            limitsBlock
+        }
+    }
+
+    /// 限额区块：选中 provider 的卡片（「全部」= 所有已配置卡片堆叠）+ 来源脚注行。
+    private var limitsBlock: some View {
+        let providers = selectedProvider
+            .map { [$0] }
+            ?? manager.configuredProviders
+        return VStack(alignment: .leading, spacing: 10) {
+            ForEach(providers) { provider in
+                if let limits = manager.limits[provider] {
+                    TokenUsageLimitCardView(
+                        limits: limits,
+                        strings: strings,
+                        displayMode: preferences.configuration.limitsDisplayMode,
+                        now: Date()
+                    )
+                }
+            }
+            footerLine
+        }
+    }
+
+    /// 来源脚注：「10 分钟前更新 · 官方来源 · 5 家已配置 4 家」。
+    private var footerLine: some View {
+        let activeCount = manager.configuredProviders.filter { provider in
+            guard let limits = manager.limits[provider] else { return false }
+            return limits.issue == nil && !limits.windows.isEmpty
+        }.count
+        let updated = TokenUsageFormat.relativeUpdate(manager.limitUpdateAt, strings: strings)
+        return Text(
+            String(
+                format: strings.tokenFooterFormat,
+                updated,
+                strings.tokenSourceOfficial,
+                manager.configuredProviders.count,
+                activeCount
+            )
+        )
+        .font(Theme.Stats.font10Regular)
+        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 }
 

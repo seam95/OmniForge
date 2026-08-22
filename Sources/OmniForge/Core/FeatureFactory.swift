@@ -83,7 +83,7 @@ struct FeatureFactory {
             if runtime.manager(for: .tokenUsage, as: TokenUsageManager.self) == nil {
                 let preferences = runtime.manager(for: .tokenUsage, as: TokenUsagePreferences.self)
                     ?? TokenUsagePreferences(userDefaults: userDefaults)
-                runtime.register(.tokenUsage, manager: TokenUsageManager(preferences: preferences))
+                runtime.register(.tokenUsage, manager: Self.makeProductionTokenUsage(preferences: preferences))
             }
         case .shelf:
             if runtime.manager(for: .shelf, as: ShelfService.self) == nil {
@@ -314,6 +314,16 @@ struct FeatureFactory {
             powerSampler: PowerSampler(smc: SMCClient()),
             peripheralBatterySampler: PeripheralBatterySampler(),
             processSampler: ProcessUsageSampler()
+        )
+    }
+
+    private static func makeProductionTokenUsage(preferences: TokenUsagePreferences) -> TokenUsageManager {
+        TokenUsageManager(
+            preferences: preferences,
+            fetchers: [
+                .claude: ClaudeLimitsFetcher(),
+            ],
+            scheduler: TimerRepeatingScheduler()
         )
     }
 }

@@ -1,0 +1,152 @@
+import Foundation
+
+/// 已接入的 AI CLI provider。
+enum TokenUsageProvider: String, Codable, CaseIterable, Identifiable {
+    case claude
+    case codex
+    case gemini
+    case kimi
+    case cursor
+
+    var id: String { rawValue }
+}
+
+/// 限额窗口周期类型。
+enum LimitWindowKind: String, Codable, CaseIterable {
+    case session
+    case weekly
+    case monthly
+    case credits
+}
+
+/// 单个限额窗口（参考 03）。
+struct UsageWindow: Codable, Equatable {
+    /// 已用百分比，已 clamp 到 0…100。
+    var usedPercent: Double
+    var resetAt: Date?
+    /// 额度型窗口：上限 / 已用 / 剩余。
+    var limit: Double?
+    var used: Double?
+    var remaining: Double?
+    var unit: String?
+    /// 窗口时长（秒）。可信才允许画 LimitPace 刻度；月度/计费周期通常无值。
+    var windowSeconds: Double?
+}
+
+/// 数据点置信度（参考 03）：官方 API 直读 / 本地库观测 / 本地估算。
+enum LimitConfidence: String, Codable, Equatable {
+    case official
+    case observed
+    case inferred
+}
+
+enum SubscriptionStatus: String, Codable, Equatable {
+    case active
+    case inactive
+    case unknown
+}
+
+/// 限额取数错误 — 与「未配置」分开建模；Codable 以便持久化到磁盘缓存。
+enum LimitError: Error, Equatable, Codable {
+    case reauthRequired
+    case rateLimited(retryAt: Date)
+    case network(String)
+    case decoding(String)
+}
+
+/// 单个 provider 的限额快照（聚合层统一补齐置信度/新鲜度元数据）。
+struct ProviderUsageLimits: Codable, Equatable {
+    var provider: TokenUsageProvider
+    var configured: Bool
+    var subscriptionStatus: SubscriptionStatus
+    var planLabel: String?
+    var windows: [LimitWindowKind: UsageWindow]
+    var confidence: LimitConfidence
+    var capturedAt: Date
+    var stale: Bool
+    var issue: LimitError?
+
+    static func notConfigured(_ provider: TokenUsageProvider, at date: Date = Date()) -> ProviderUsageLimits {
+        ProviderUsageLimits(
+            provider: provider,
+            configured: false,
+            subscriptionStatus: .unknown,
+            planLabel: nil,
+            windows: [:],
+            confidence: .inferred,
+            capturedAt: date,
+            stale: false,
+            issue: nil
+        )
+    }
+}
+
+// MARK: - 解析工具
+
+/// 窗口/百分比/reset_at 的解析清洗 — 纯函数，独立可测（参考 03）。
+enum UsageWindowParsing {
+    /// 已用百分比 clamp 到 0…100；nil / 非有限值 → nil。
+    static func clampPercent(_ value: Double?) -> Double? {
+        guard let value, value.isFinite else { return nil }
+        return min(max(value, 0), 100)
+    }
+
+    /// reset_at 多格式统一：unix 秒 / 毫秒 / ISO8601 字符串 / Date。
+    /// 数值 `< 1e12` 视为秒，否则已是毫秒。
+    static func parseResetDate(_ value: Any?) -> Date? {
+        if let date = value as? Date { return date }
+        if let number = numeric(value), number > 0 {
+            return Date(timeIntervalSince1970: number < 1e12 ? number : number / 1000)
+        }
+        if let string = value as? String {
+            if let double = Double(string), double > 0 {
+                return Date(timeIntervalSince1970: double < 1e12 ? double : double / 1000)
+            }
+            return ISO8601DateFormatter().date(from: string)
+        }
+        return nil
+    }
+
+    /// 数字或数字字符串 → Double；其余 nil。
+    static func numeric(_ value: Any?) -> Double? {
+        switch value {
+        case let number as NSNumber:
+            return number.doubleValue
+        case let string as String:
+            return Double(string)
+        default:
+            return nil
+        }
+    }
+
+    /// 秒 → 窗口类型：18000 = 会话（5h）、604800 = 周（7d）。
+    static func windowKind(forSeconds seconds: Double) -> LimitWindowKind? {
+        switch seconds {
+        case 18000: return .session
+        case 604800: return .weekly
+        default: return nil
+        }
+    }
+
+    /// 把原始窗口字典（含 used_percent/reset_at/limit_window_seconds 等字段）清洗为 `UsageWindow`。
+    static func makeWindow(from raw: [String: Any]) -> UsageWindow {
+        let seconds = numeric(raw["limit_window_seconds"]) ?? numeric(raw["window_seconds"])
+        let limit = numeric(raw["limit"]) ?? numeric(raw["total_limit_amount"])
+        let used = numeric(raw["used"])
+        let remaining = numeric(raw["remaining"])
+        var usedPercent = clampPercent(numeric(raw["used_percent"]) ?? numeric(raw["used_pct"]))
+        // 额度型窗口：limit/used 齐全时用 used/limit 反推百分比兜底
+        if usedPercent == nil, let limit, limit > 0, let used {
+            usedPercent = clampPercent(used / limit * 100)
+        }
+        return UsageWindow(
+            usedPercent: usedPercent ?? 0,
+            resetAt: parseResetDate(raw["reset_at"] ?? raw["resets_at"] ?? raw["next_reset_at"]),
+            limit: limit,
+            used: used,
+            remaining: remaining,
+            unit: raw["unit"] as? String,
+            windowSeconds: seconds
+        )
+    }
+}

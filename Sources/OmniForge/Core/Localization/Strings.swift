@@ -1070,6 +1070,7 @@ struct Strings: Equatable {
     let settingsTabTokenUsage: String
     let tokenSettingsCaption: String
     let tokenEmptyHint: String
+    let tokenReauthHint: String
     let tokenRefresh: String
     let tokenProviderAll: String
     let tokenPeriodToday: String
@@ -1088,6 +1089,8 @@ struct Strings: Equatable {
     let tokenStatusRateLimited: String
     let tokenErrorNetwork: String
     let tokenErrorTransient: String
+    let tokenRateLimitedCaptionFormat: String
+    let tokenErrorRetryableHint: String
     let tokenBackfilling: String
     let tokenUsedSuffix: String
     let tokenRemainingSuffix: String
@@ -1096,7 +1099,9 @@ struct Strings: Equatable {
     let tokenResetInFormat: String
     let tokenPaceNormal: String
     let tokenPaceOver: String
+    let tokenPaceProjectedFormat: String
     let tokenCreditCaption: String
+    let tokenUpdatedJustNow: String
     let tokenUpdatedMinutesFormat: String
     let tokenUpdatedHoursFormat: String
     let tokenSourceOfficial: String
