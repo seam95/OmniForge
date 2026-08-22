@@ -35,6 +35,8 @@ struct MonitorOverviewView: View {
         !snapshot.issues.isEmpty
     }
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
@@ -49,16 +51,16 @@ struct MonitorOverviewView: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(deviceSummary.hostName)
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.primary)
+                    .font(Theme.Stats.font13SemiBold)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                     .lineLimit(1)
 
                 if let subtitle = subtitleText {
                     Text(subtitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .font(Theme.Stats.font11Regular)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                         .lineLimit(1)
                 }
             }
@@ -92,27 +94,28 @@ struct MonitorOverviewView: View {
     }
 
     private var statusPill: some View {
-        HStack(spacing: 5) {
+        let tintColor = hasIssues ? Theme.Stats.ram : Theme.Stats.statusNormal
+        return HStack(spacing: 5) {
             Circle()
-                .fill(hasIssues ? Color.orange : Color.green)
+                .fill(tintColor)
                 .frame(width: 6, height: 6)
 
             Text(statusText)
-                .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(hasIssues ? Color.orange : Color.green)
+                .font(Theme.Stats.font11Regular)
+                .foregroundStyle(tintColor)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 3.5)
         .background(
             Capsule(style: .continuous)
-                .fill((hasIssues ? Color.orange : Color.green).opacity(0.12))
+                .fill(tintColor.opacity(0.12))
         )
     }
 
     // MARK: - Cards
 
     private var cardRows: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 10) {
             ForEach(dashboardRows) { row in
                 rowView(for: row)
                     .frame(height: row.height)

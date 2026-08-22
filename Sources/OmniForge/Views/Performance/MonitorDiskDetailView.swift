@@ -23,6 +23,8 @@ struct MonitorDiskDetailView: View {
         return disks.first(where: { $0.id == id }) ?? disks.first
     }
 
+    @Environment(\.colorScheme) private var colorScheme
+
     // MARK: - Body
 
     var body: some View {
@@ -45,8 +47,8 @@ struct MonitorDiskDetailView: View {
             header
             Spacer()
             Text(strings.diskNoDisks)
-                .foregroundStyle(.secondary)
-                .font(.title3)
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                .font(Theme.Stats.font13SemiBold)
             Spacer()
             footer
         }
@@ -57,9 +59,10 @@ struct MonitorDiskDetailView: View {
 
     private var contentView: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
                 header
                 Divider()
+                    .overlay(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
                 diskSelector
                 if let sel = selected {
                     usageSection(sel)
@@ -68,6 +71,7 @@ struct MonitorDiskDetailView: View {
                     protectionAndToolsSection(sel)
                 }
                 Divider()
+                    .overlay(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
                 footer
             }
             .padding(12)
@@ -81,10 +85,10 @@ struct MonitorDiskDetailView: View {
             Button(action: onBack) {
                 HStack(spacing: 4) {
                     Image(systemName: "chevron.left")
-                        .font(.caption.weight(.semibold))
+                        .font(.system(size: 11, weight: .semibold))
                     Text(strings.diskSectionTitle)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
+                        .font(Theme.Stats.font13SemiBold)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                         .lineLimit(1)
                 }
             }
@@ -118,21 +122,21 @@ struct MonitorDiskDetailView: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: disk.isInternal ? "internaldrive" : "externaldrive")
-                    .font(.caption)
+                    .font(.system(size: 11))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(disk.name)
-                        .font(.caption.weight(.medium))
+                        .font(Theme.Stats.font11Regular)
                         .lineLimit(1)
                     Text(String(format: "%.0f%%", disk.usedFraction * 100))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .font(Theme.Stats.font10Regular)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                 }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.08))
+                    .fill(isSelected ? Color.accentColor.opacity(0.15) : (colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.08)))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
@@ -150,20 +154,20 @@ struct MonitorDiskDetailView: View {
                 // Title row
                 HStack(spacing: 6) {
                     Image(systemName: disk.isInternal ? "internaldrive" : "externaldrive")
-                        .font(.headline)
+                        .font(.system(size: 13, weight: .semibold))
                     Text(disk.name)
-                        .font(.headline)
+                        .font(Theme.Stats.font13SemiBold)
                         .lineLimit(1)
 
                     labelCapsule(
                         disk.isInternal ? strings.diskInternal : strings.diskExternal,
-                        color: disk.isInternal ? .green : .orange
+                        color: disk.isInternal ? Theme.Stats.statusNormal : Theme.Stats.ram
                     )
 
                     if let fs = disk.fileSystem {
-                        labelCapsule(fs, color: .blue)
+                        labelCapsule(fs, color: Theme.Stats.cpu)
                     } else {
-                        labelCapsule(strings.diskFileSystemUnsupported, color: .secondary)
+                        labelCapsule(strings.diskFileSystemUnsupported, color: colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                     }
                 }
 
@@ -179,19 +183,19 @@ struct MonitorDiskDetailView: View {
                 // Stats
                 HStack {
                     Text("\(Int(disk.usedFraction * 100))% \(strings.diskUsed)")
-                        .font(.caption.weight(.medium))
+                        .font(Theme.Stats.font11Regular)
 
                     Spacer()
 
                     Text("\(MetricFormat.diskBytes(disk.freeBytes)) \(strings.diskFree)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(Theme.Stats.font11Regular)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                 }
 
                 HStack {
                     Text("\(MetricFormat.diskBytes(disk.usedBytes)) / \(MetricFormat.diskBytes(disk.totalBytes))")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .font(Theme.Stats.font10Regular)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                     Spacer()
                 }
             }
@@ -207,22 +211,22 @@ struct MonitorDiskDetailView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.down.circle")
-                            .font(.caption)
-                            .foregroundStyle(.green)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.Stats.down)
                         Text(strings.diskRead)
-                            .font(.caption.weight(.medium))
+                            .font(Theme.Stats.font11Regular)
                     }
                     let rate = MetricFormat.bytesPerSec(disk.readBytesPerSec) ?? strings.diskMeasuring
                     Text(rate)
-                        .font(.title3.weight(.semibold))
+                        .font(Theme.Stats.font13SemiBold)
                         .lineLimit(1)
                     HStack(spacing: 4) {
                         Text(strings.diskThisSession)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .font(Theme.Stats.font10Regular)
+                            .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                         Text(disk.totalReadBytes.map { MetricFormat.diskBytes($0) } ?? strings.diskMeasuring)
-                            .font(.caption2.weight(.medium))
-                            .foregroundStyle(.secondary)
+                            .font(Theme.Stats.font10Regular)
+                            .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                     }
                 }
 
@@ -232,22 +236,22 @@ struct MonitorDiskDetailView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.up.circle")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.Stats.ram)
                         Text(strings.diskWrite)
-                            .font(.caption.weight(.medium))
+                            .font(Theme.Stats.font11Regular)
                     }
                     let rate = MetricFormat.bytesPerSec(disk.writeBytesPerSec) ?? strings.diskMeasuring
                     Text(rate)
-                        .font(.title3.weight(.semibold))
+                        .font(Theme.Stats.font13SemiBold)
                         .lineLimit(1)
                     HStack(spacing: 4) {
                         Text(strings.diskThisSession)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .font(Theme.Stats.font10Regular)
+                            .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                         Text(disk.totalWrittenBytes.map { MetricFormat.diskBytes($0) } ?? strings.diskMeasuring)
-                            .font(.caption2.weight(.medium))
-                            .foregroundStyle(.secondary)
+                            .font(Theme.Stats.font10Regular)
+                            .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                     }
                 }
             }
@@ -271,8 +275,8 @@ struct MonitorDiskDetailView: View {
                 smartDetailRow(label: strings.diskPowerOnHours, value: smart.powerOnHours.map { "\($0) h" })
             } else {
                 Text(strings.diskSMARTUnavailable)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
             }
         }
     }
@@ -280,12 +284,12 @@ struct MonitorDiskDetailView: View {
     private func smartDetailRow(label: String, value: String?) -> some View {
         HStack(spacing: 8) {
             Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(Theme.Stats.font11Regular)
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                 .frame(width: 80, alignment: .leading)
             Text(value ?? strings.diskUnsupported)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(value == nil ? .secondary : .primary)
+                .font(Theme.Stats.font11Regular)
+                .foregroundStyle(value == nil ? (colorScheme == .light ? Theme.Stats.text3 : Color.secondary) : (colorScheme == .light ? Theme.Stats.text1 : Color.primary))
             Spacer()
         }
     }
@@ -321,8 +325,8 @@ struct MonitorDiskDetailView: View {
 
         if ejectables.isEmpty {
             Text(strings.diskNoExternal)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(Theme.Stats.font11Regular)
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
@@ -346,8 +350,8 @@ struct MonitorDiskDetailView: View {
                     captionForState(state)
                 } else {
                     Text(strings.diskProtectionCaption)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .font(Theme.Stats.font10Regular)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                 }
             }
         }
@@ -358,16 +362,16 @@ struct MonitorDiskDetailView: View {
         switch state {
         case .ejecting:
             Text(strings.diskEjecting)
-                .font(.caption2)
-                .foregroundStyle(.orange)
+                .font(Theme.Stats.font10Regular)
+                .foregroundStyle(Theme.Stats.ram)
         case .ready:
             Text(strings.diskReadyToRemove)
-                .font(.caption2)
-                .foregroundStyle(.green)
+                .font(Theme.Stats.font10Regular)
+                .foregroundStyle(Theme.Stats.statusNormal)
         case .failed(let message):
             Text("\(strings.diskEjectFailed): \(message)")
-                .font(.caption2)
-                .foregroundStyle(.red)
+                .font(Theme.Stats.font10Regular)
+                .foregroundStyle(Theme.Stats.up)
         }
     }
 
@@ -393,10 +397,9 @@ struct MonitorDiskDetailView: View {
     private var footer: some View {
         HStack(spacing: 12) {
             if showsSettingsAction {
-                Button(strings.monitorPreferences, action: onOpenSettings)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .font(.caption.weight(.medium))
+                FooterButton(label: strings.monitorPreferences, systemImage: "slider.horizontal.3") {
+                    onOpenSettings()
+                }
             }
             Spacer()
         }
@@ -407,20 +410,20 @@ struct MonitorDiskDetailView: View {
     private func sectionBlock<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .font(Theme.Stats.font13SemiBold)
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
             content()
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color.primary.opacity(0.04))
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(colorScheme == .light ? Theme.Stats.cardBackground : Color.white.opacity(0.08))
         )
     }
 
     private func labelCapsule(_ text: String, color: Color) -> some View {
         Text(text)
-            .font(.caption2.weight(.medium))
+            .font(Theme.Stats.font10Regular)
             .foregroundStyle(color)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)

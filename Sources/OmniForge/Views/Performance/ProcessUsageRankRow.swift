@@ -83,14 +83,14 @@ struct ProcessUsageRankRow: View {
             iconBadge
 
             Text(name)
-                .font(.subheadline)
-                .foregroundStyle(.primary)
+                .font(Theme.Stats.font12Medium)
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             Text(valueText)
-                .font(.caption.monospacedDigit().weight(.medium))
-                .foregroundStyle(.secondary)
+                .font(Theme.Stats.font11Regular.monospacedDigit())
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
                 .lineLimit(1)
                 .layoutPriority(1)
 
@@ -109,10 +109,10 @@ struct ProcessUsageRankRow: View {
                     // 待终止确认态：红色❌，提示再次点击将终止进程。
                     ZStack {
                         Circle()
-                            .fill(Color.red.opacity(colorScheme == .dark ? 0.28 : 0.18))
+                            .fill(Theme.Stats.up.opacity(colorScheme == .dark ? 0.28 : 0.18))
                         Image(systemName: "xmark")
                             .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(.red)
+                            .foregroundStyle(Theme.Stats.up)
                     }
                 } else if let icon {
                     // 真实 app 图标自带彩色 squircle，直接居中显示，无需 accent 底块。

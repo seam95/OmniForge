@@ -91,9 +91,9 @@ struct ControlCenterContainerView: View {
                 .frame(maxWidth: .infinity, alignment: .top)
 
             footer
-                .padding(.horizontal, Theme.Spacing.md)
-                .padding(.top, 4)
-                .padding(.bottom, 8)
+                .frame(height: 36)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 6)
         }
         .frame(width: ControlCenterContentMetrics.panelWidth)
         .background(
@@ -101,7 +101,7 @@ struct ControlCenterContainerView: View {
                 if colorScheme == .dark {
                     Color(nsColor: .windowBackgroundColor)
                 } else {
-                    Color(red: 242/255, green: 243/255, blue: 246/255)
+                    Theme.Stats.panelBackground
                 }
             }
         )
@@ -327,8 +327,8 @@ struct ControlCenterContainerView: View {
 
     private var unavailablePanel: some View {
         Text(state.l10n.s.controlcenterEmpty)
-            .font(.callout)
-            .foregroundStyle(.secondary)
+            .font(Theme.Stats.font12Medium)
+            .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
             .multilineTextAlignment(.center)
             .padding()
             .frame(
@@ -350,8 +350,6 @@ struct ControlCenterContainerView: View {
                 NSApp.terminate(nil)
             }
         }
-        .font(.caption.weight(.medium))
-        .foregroundStyle(.secondary)
     }
 
     private func resolveSelection(in visiblePanels: [MenuPanel]) {
@@ -369,11 +367,11 @@ struct ControlCenterContainerView: View {
 
     /// 不透明 popover 底上，用 controlFill 比半透明 cardFill 更接近截图胶囊轨。
     private var navigationTrackFill: Color {
-        colorScheme == .light ? Color.black.opacity(0.04) : Color.white.opacity(0.06)
+        colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.06)
     }
 
     private var navigationTrackBorder: Color {
-        Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05)
+        colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08)
     }
 }
 
@@ -391,9 +389,9 @@ private struct ControlCenterNavButton: View {
         Button(action: action) {
             HStack(spacing: 5) {
                 Image(systemName: panel.symbolName)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 11.5, weight: .semibold))
                 Text(title)
-                    .font(.system(size: 12.5, weight: .medium))
+                    .font(Theme.Stats.font12Medium)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 5.5)
@@ -401,11 +399,11 @@ private struct ControlCenterNavButton: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .foregroundStyle(isActive ? Color.accentColor : (isHovered ? Color.primary : Color.secondary.opacity(0.85)))
+        .foregroundStyle(isActive ? (colorScheme == .light ? Theme.Stats.text1 : Color.white) : (isHovered ? (colorScheme == .light ? Theme.Stats.text1 : Color.primary) : (colorScheme == .light ? Theme.Stats.text2 : Color.secondary)))
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous)
                 .fill(isActive ? activeFill : (isHovered ? Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04) : Color.clear))
-                .shadow(color: Color.black.opacity(isActive && colorScheme == .light ? 0.08 : 0.0), radius: 2, x: 0, y: 1)
+                .shadow(color: Color.black.opacity(isActive && colorScheme == .light ? 0.06 : 0.0), radius: 2, x: 0, y: 1)
         )
         .onHover { hovering in
             withAnimation(Theme.Animation.hover) {

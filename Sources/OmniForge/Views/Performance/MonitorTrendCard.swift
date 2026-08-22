@@ -16,6 +16,7 @@ struct MonitorTrendCard: View {
     /// nil = 不可点击（电池卡）；非 nil = 整卡按钮 + 悬浮 chevron。
     let action: (() -> Void)?
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered = false
 
     var body: some View {
@@ -34,13 +35,13 @@ struct MonitorTrendCard: View {
 
     private var cardContent: some View {
         MonitorDashboardCardChrome(accent: accent, height: height, isInteractive: action != nil) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 header
 
                 if let issueText = model.issueText {
                     Text(issueText)
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(.red)
+                        .font(Theme.Stats.font13SemiBold)
+                        .foregroundStyle(Theme.Stats.up)
                         .lineLimit(2)
                         .minimumScaleFactor(0.8)
                     Spacer(minLength: 0)
@@ -48,16 +49,16 @@ struct MonitorTrendCard: View {
                     switch visualization {
                     case .semiGauge(let progress):
                         // 内存卡片：居中半圆仪表弧 + 中心大号百分比 + 底部副文案
-                        VStack(spacing: 2) {
+                        VStack(spacing: 4) {
                             ZStack {
-                                SemiCircleGaugeView(progress: progress, accent: accent, lineWidth: 7)
-                                    .frame(height: 48)
+                                SemiCircleGaugeView(progress: progress, accent: accent, lineWidth: 7.5)
+                                    .frame(height: 56)
                                     .padding(.top, 4)
 
                                 Text(model.primaryText)
-                                    .font(.system(size: 22, weight: .bold).monospacedDigit())
-                                    .foregroundStyle(.primary)
-                                    .offset(y: 12)
+                                    .font(Theme.Stats.font24Bold.monospacedDigit())
+                                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                                    .offset(y: 14)
                             }
                             .frame(maxWidth: .infinity)
 
@@ -69,10 +70,10 @@ struct MonitorTrendCard: View {
 
                     case .sparkline(let values):
                         // CPU / GPU 卡片：大号数值居上，面积折线图居中全宽，副文案居底
-                        VStack(alignment: .leading, spacing: 3) {
+                        VStack(alignment: .leading, spacing: 4) {
                             primaryValue
 
-                            SparklineView(values: values, color: accent, lineWidth: 1.8, fillHeight: 0.35)
+                            SparklineView(values: values, color: accent, lineWidth: 1.8, fillHeight: 0.18)
                                 .frame(maxWidth: .infinity)
                                 .frame(maxHeight: .infinity)
 
@@ -103,8 +104,8 @@ struct MonitorTrendCard: View {
 
     private var primaryValue: some View {
         Text(model.primaryText)
-            .font(.system(size: 22, weight: .bold).monospacedDigit())
-            .foregroundStyle(.primary)
+            .font(Theme.Stats.font24Bold.monospacedDigit())
+            .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
             .lineLimit(1)
             .minimumScaleFactor(0.75)
     }
@@ -113,43 +114,43 @@ struct MonitorTrendCard: View {
     private var captionView: some View {
         if let caption = model.secondaryText {
             Text(caption)
-                .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
+                .font(Theme.Stats.font10Regular)
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }
     }
 
     private var header: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
             RoundedRectangle(cornerRadius: 2, style: .continuous)
                 .fill(accent)
                 .frame(width: 8, height: 8)
 
             Text(model.title)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.secondary)
+                .font(Theme.Stats.font13SemiBold)
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
                 .lineLimit(1)
 
             Spacer(minLength: 4)
 
             if model.showsLiveDot {
                 Circle()
-                    .fill(Color.green)
+                    .fill(Theme.Stats.statusNormal)
                     .frame(width: 6, height: 6)
             }
 
             if let badgeText = model.badgeText {
                 Text(badgeText)
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                     .lineLimit(1)
             }
 
             if action != nil {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                     .opacity(isHovered ? 1 : 0)
             }
         }

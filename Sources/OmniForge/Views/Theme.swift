@@ -54,9 +54,35 @@ public enum Theme {
     public static func statusBackground(for fraction: Double, isInverse: Bool = false) -> Color {
         statusColor(for: fraction, isInverse: isInverse).opacity(0.14)
     }
+    /// Stats Light 设计规范色值与字阶
+    public enum Stats {
+        public static let panelBackground = Color(red: 0xF2/255.0, green: 0xF2/255.0, blue: 0xF5/255.0)
+        public static let cardBackground = Color.white
+        public static let cardInset = Color(red: 0xEE/255.0, green: 0xEE/255.0, blue: 0xEF/255.0)
+        public static let text1 = Color(red: 0x1C/255.0, green: 0x1C/255.0, blue: 0x1E/255.0)
+        public static let text2 = Color(red: 0x6E/255.0, green: 0x6E/255.0, blue: 0x73/255.0)
+        public static let text3 = Color(red: 0xAD/255.0, green: 0xAD/255.0, blue: 0xB2/255.0)
+        public static let separator = Color(red: 0xE5/255.0, green: 0xE5/255.0, blue: 0xEA/255.0)
+
+        // 模块色
+        public static let cpu = Color(red: 0x0A/255.0, green: 0x84/255.0, blue: 0xFF/255.0)
+        public static let ram = Color(red: 0xFF/255.0, green: 0x9F/255.0, blue: 0x0A/255.0)
+        public static let gpu = Color(red: 0xAF/255.0, green: 0x52/255.0, blue: 0xDE/255.0)
+        public static let down = Color(red: 0x33/255.0, green: 0xC7/255.0, blue: 0x59/255.0)
+        public static let battery = Color(red: 0x33/255.0, green: 0xC7/255.0, blue: 0x59/255.0)
+        public static let up = Color(red: 0xFF/255.0, green: 0x45/255.0, blue: 0x3A/255.0)
+        public static let statusNormal = Color(red: 0x1F/255.0, green: 0xA9/255.0, blue: 0x4A/255.0)
+
+        // 5 级字体
+        public static let font24Bold = Font.system(size: 24, weight: .bold)
+        public static let font13SemiBold = Font.system(size: 13, weight: .semibold)
+        public static let font12Medium = Font.system(size: 12, weight: .medium)
+        public static let font11Regular = Font.system(size: 11, weight: .regular)
+        public static let font10Regular = Font.system(size: 10, weight: .regular)
+    }
 }
 
-/// 统一卡片 ViewModifier 修饰器：无硬描边，柔和毛玻璃 + 微内描边 + 漫反射阴影
+/// 统一卡片 ViewModifier 修饰器：Stats 浅色版无描边无投影，靠白/浅灰对比分层
 public struct OmniCardModifier: ViewModifier {
     let isSelected: Bool
     let cornerRadius: CGFloat
@@ -76,19 +102,6 @@ public struct OmniCardModifier: ViewModifier {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(backgroundFill)
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(
-                        strokeBorderColor,
-                        lineWidth: isSelected ? 1.5 : 1
-                    )
-            )
-            .shadow(
-                color: Color.black.opacity(shadowOpacity),
-                radius: (isSelected || (isHovered && isInteractive)) ? 10 : 6,
-                x: 0,
-                y: (isSelected || (isHovered && isInteractive)) ? 3.5 : 1.5
-            )
             .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .onHover { hovering in
                 guard isInteractive else { return }
@@ -106,27 +119,10 @@ public struct OmniCardModifier: ViewModifier {
             return Color.white.opacity(isHovered && isInteractive ? 0.10 : 0.06)
         } else {
             if isSelected {
-                return Color.white.opacity(0.90)
+                return Color.white
             }
-            return Color.white.opacity(isHovered && isInteractive ? 0.78 : 0.60)
+            return isHovered && isInteractive ? Color(red: 0xFA/255.0, green: 0xFA/255.0, blue: 0xFC/255.0) : Color.white
         }
-    }
-
-    private var strokeBorderColor: Color {
-        if isSelected {
-            return Color.accentColor.opacity(0.60)
-        }
-        if isHovered && isInteractive {
-            return Color.accentColor.opacity(colorScheme == .dark ? 0.40 : 0.30)
-        }
-        return Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05)
-    }
-
-    private var shadowOpacity: Double {
-        if colorScheme == .dark {
-            return (isSelected || (isHovered && isInteractive)) ? 0.22 : 0.12
-        }
-        return (isSelected || (isHovered && isInteractive)) ? 0.08 : 0.04
     }
 }
 
@@ -164,14 +160,14 @@ public struct FooterButton: View {
                         .font(.system(size: 11, weight: .semibold))
                 }
                 Text(label)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(Theme.Stats.font12Medium)
             }
-            .foregroundStyle(tint ?? Color.secondary)
+            .foregroundStyle(tint ?? (colorScheme == .light ? Theme.Stats.text2 : Color.secondary))
             .padding(.horizontal, 8)
-            .padding(.vertical, 5)
+            .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous)
-                    .fill(isHovered ? Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.06) : Color.clear)
+                    .fill(isHovered ? Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.05) : Color.clear)
             )
         }
         .buttonStyle(.plain)
@@ -208,12 +204,12 @@ public struct IconButton: View {
     public var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(tint ?? Color.secondary)
-                .frame(width: 22, height: 22)
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(tint ?? (colorScheme == .light ? Theme.Stats.text2 : Color.secondary))
+                .frame(width: 24, height: 24)
                 .background(
                     RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous)
-                        .fill(isHovered ? Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.06) : Color.clear)
+                        .fill(isHovered ? Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.05) : Color.clear)
                 )
         }
         .buttonStyle(.plain)

@@ -37,12 +37,12 @@ struct MetricBar: View {
         tint: Color?
     ) -> Color {
         if percent >= critical {
-            return .red
+            return Theme.Stats.up
         }
         if percent >= warning {
-            return .orange
+            return Theme.Stats.ram
         }
-        return tint ?? .green
+        return tint ?? Theme.Stats.statusNormal
     }
 
     private var percent: Double { value * 100 }

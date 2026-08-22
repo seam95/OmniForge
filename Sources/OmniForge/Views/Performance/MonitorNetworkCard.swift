@@ -7,6 +7,7 @@ struct MonitorNetworkCard: View {
     let height: CGFloat
     let action: () -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered = false
 
     private var downText: String? {
@@ -25,21 +26,21 @@ struct MonitorNetworkCard: View {
 
                     if let issueText = model.issueText {
                         Text(issueText)
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(.red)
+                            .font(Theme.Stats.font13SemiBold)
+                            .foregroundStyle(Theme.Stats.up)
                             .lineLimit(2)
                             .minimumScaleFactor(0.8)
                         Spacer(minLength: 0)
                     } else {
                         HStack(alignment: .center, spacing: 12) {
                             VStack(alignment: .leading, spacing: 5) {
-                                rateRow(downText, color: .primary, indicatorColor: .green)
-                                rateRow(upText, color: .primary, indicatorColor: MonitorCardAccent.networkUpload)
+                                rateRow(downText, color: colorScheme == .light ? Theme.Stats.text1 : Color.primary, indicatorColor: Theme.Stats.down)
+                                rateRow(upText, color: colorScheme == .light ? Theme.Stats.text1 : Color.primary, indicatorColor: Theme.Stats.up)
 
                                 if let caption = model.secondaryText {
                                     Text(caption)
-                                        .font(.system(size: 11.5))
-                                        .foregroundStyle(.secondary)
+                                        .font(Theme.Stats.font10Regular)
+                                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                                         .lineLimit(1)
                                         .minimumScaleFactor(0.75)
                                         .padding(.top, 2)
@@ -66,13 +67,13 @@ struct MonitorNetworkCard: View {
     }
 
     private func rateRow(_ text: String?, color: Color, indicatorColor: Color) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
             RoundedRectangle(cornerRadius: 2, style: .continuous)
                 .fill(indicatorColor)
                 .frame(width: 8, height: 8)
 
             Text(text ?? "--")
-                .font(.system(size: 15.5, weight: .bold).monospacedDigit())
+                .font(.system(size: 15, weight: .bold).monospacedDigit())
                 .foregroundStyle(color)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
@@ -80,28 +81,28 @@ struct MonitorNetworkCard: View {
     }
 
     private var header: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
             RoundedRectangle(cornerRadius: 2, style: .continuous)
                 .fill(accent)
                 .frame(width: 8, height: 8)
 
             Text(model.title)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.secondary)
+                .font(Theme.Stats.font13SemiBold)
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
                 .lineLimit(1)
 
             Spacer(minLength: 4)
 
             if let badgeText = model.badgeText {
                 Text(badgeText)
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                     .lineLimit(1)
             }
 
             Image(systemName: "chevron.right")
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                 .opacity(isHovered ? 1 : 0)
         }
     }

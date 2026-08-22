@@ -20,31 +20,31 @@ struct QuickPhraseView: View {
     var body: some View {
         VStack(spacing: 0) {
             searchField
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
 
             Rectangle()
-                .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05))
+                .fill(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
                 .frame(height: 1)
 
             groupChips
 
             Rectangle()
-                .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05))
+                .fill(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
                 .frame(height: 1)
 
             phraseList
 
             Rectangle()
-                .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05))
+                .fill(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
                 .frame(height: 1)
 
             footer
         }
         .onAppear { setupKeyMonitor() }
         .onDisappear { removeKeyMonitor() }
-        .onChange(of: uiState.searchFocusToken) { _ in focusSearchField() }
-        .onChange(of: uiState.sessionResetToken) { _ in resetSession() }
+        .onChange(of: uiState.searchFocusToken) { _, _ in focusSearchField() }
+        .onChange(of: uiState.sessionResetToken) { _, _ in resetSession() }
         .sheet(isPresented: $showEditor) {
             QuickPhraseEditorView(
                 phrase: editingPhrase,
@@ -64,28 +64,28 @@ struct QuickPhraseView: View {
     private var searchField: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
 
             TextField(l10n.s.quickphraseSearchPlaceholder, text: $uiState.searchText)
                 .textFieldStyle(.plain)
-                .font(.system(size: 14))
+                .font(Theme.Stats.font12Medium)
                 .focused($isSearchFocused)
 
             if !uiState.searchText.isEmpty {
                 Button(action: { uiState.searchText = "" }) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.secondary.opacity(0.6))
+                        .font(.system(size: 13))
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary.opacity(0.6))
                 }
                 .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.vertical, 6)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.primary.opacity(0.06))
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.08))
         )
     }
 
@@ -106,9 +106,8 @@ struct QuickPhraseView: View {
                 }
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.vertical, 6)
         }
-        .background(listBackground)
     }
 
     private var phraseList: some View {

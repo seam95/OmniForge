@@ -8,7 +8,7 @@ struct SparklineView: View {
     let color: Color
     var domain: ClosedRange<Double> = 0...1
     var lineWidth: CGFloat = 1.5
-    var fillHeight: CGFloat = 0.35
+    var fillHeight: CGFloat = 0.18
 
     var body: some View {
         GeometryReader { proxy in
@@ -65,7 +65,7 @@ struct SparklineView: View {
         }
         .fill(
             LinearGradient(
-                colors: [color.opacity(fillHeight), color.opacity(0.05)],
+                colors: [color.opacity(fillHeight), color.opacity(0.04)],
                 startPoint: .top,
                 endPoint: .bottom
             )

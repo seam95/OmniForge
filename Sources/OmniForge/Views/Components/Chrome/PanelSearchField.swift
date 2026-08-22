@@ -4,22 +4,23 @@ import SwiftUI
 struct PanelSearchField: View {
     let placeholder: String
     @Binding var text: String
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
 
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
-                .font(.system(size: 12))
+                .font(Theme.Stats.font12Medium)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.primary.opacity(0.06))
+                .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.08))
         )
     }
 }

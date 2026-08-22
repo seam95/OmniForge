@@ -102,6 +102,8 @@ struct ColorPickerContentView: View {
         }
     }
 
+    @Environment(\.colorScheme) private var colorScheme
+
     /// 单个格式行：标签 + 格式化文本 + 复制反馈。
     @ViewBuilder
     private func formatRow(_ format: ColorFormat, color: NSColor) -> some View {
@@ -113,35 +115,31 @@ struct ColorPickerContentView: View {
         } label: {
             HStack(spacing: 10) {
                 Text(format.localizedLabel(in: strings))
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
                     .frame(width: 34, alignment: .leading)
                 Text(text)
-                    .font(.system(size: 13, design: .monospaced))
-                    .foregroundStyle(.primary)
+                    .font(Theme.Stats.font13SemiBold.monospaced())
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 0)
                 if isCopied {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.green)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Theme.Stats.statusNormal)
                 } else {
                     Image(systemName: "doc.on.doc")
                         .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                 }
             }
-            .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
             .background(
-                RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-                    .fill(isCopied ? Color.green.opacity(0.12) : Color.primary.opacity(0.04))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-                    .strokeBorder(isCopied ? Color.green.opacity(0.35) : Color.primary.opacity(0.05), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isCopied ? Theme.Stats.statusNormal.opacity(0.12) : (colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.08)))
             )
         }
         .buttonStyle(.plain)

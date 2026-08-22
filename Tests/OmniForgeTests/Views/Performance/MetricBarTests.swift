@@ -14,31 +14,31 @@ final class MetricBarTests: XCTestCase {
     func test_resolvedColor_defaultPathUsesGreenOrangeRed() {
         XCTAssertEqual(
             MetricBar.resolvedColor(percent: 10, warning: 60, critical: 80, tint: nil),
-            Color.green
+            Theme.Stats.statusNormal
         )
         XCTAssertEqual(
             MetricBar.resolvedColor(percent: 60, warning: 60, critical: 80, tint: nil),
-            Color.orange
+            Theme.Stats.ram
         )
         XCTAssertEqual(
             MetricBar.resolvedColor(percent: 80, warning: 60, critical: 80, tint: nil),
-            Color.red
+            Theme.Stats.up
         )
     }
 
     func test_resolvedColor_tintModeOverridesNormalOnly() {
-        let tint = Color.blue
+        let tint = Theme.Stats.cpu
         XCTAssertEqual(
             MetricBar.resolvedColor(percent: 20, warning: 60, critical: 80, tint: tint),
             tint
         )
         XCTAssertEqual(
             MetricBar.resolvedColor(percent: 65, warning: 60, critical: 80, tint: tint),
-            Color.orange
+            Theme.Stats.ram
         )
         XCTAssertEqual(
             MetricBar.resolvedColor(percent: 90, warning: 60, critical: 80, tint: tint),
-            Color.red
+            Theme.Stats.up
         )
     }
 
@@ -64,15 +64,15 @@ final class MetricBarTests: XCTestCase {
         // 电池：低电量红 / 中低橙 / 正常绿
         XCTAssertEqual(
             MonitorCardAccent.barTint(for: .battery, progress: 0.10),
-            Color.red
+            Theme.Stats.up
         )
         XCTAssertEqual(
             MonitorCardAccent.barTint(for: .battery, progress: 0.30),
-            Color.orange
+            Theme.Stats.ram
         )
         XCTAssertEqual(
             MonitorCardAccent.barTint(for: .battery, progress: 0.60),
-            Color.green
+            Theme.Stats.down
         )
     }
 }

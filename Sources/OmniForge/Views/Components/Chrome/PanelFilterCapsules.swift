@@ -10,6 +10,7 @@ struct PanelFilterCapsules<Tag: Hashable>: View {
 
     let options: [Option]
     @Binding var selection: Tag
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 0) {
@@ -19,21 +20,28 @@ struct PanelFilterCapsules<Tag: Hashable>: View {
                     selection = option.tag
                 } label: {
                     Text(option.title)
-                        .font(.system(size: 9, weight: .bold))
+                        .font(Theme.Stats.font10Regular)
                         .textCase(.uppercase)
-                        .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
+                        .foregroundStyle(isSelected ? (colorScheme == .light ? Theme.Stats.text1 : Color.white) : (colorScheme == .light ? Theme.Stats.text2 : Color.secondary))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background {
+                            if isSelected {
+                                Capsule(style: .continuous)
+                                    .fill(colorScheme == .light ? Theme.Stats.cardBackground : Color.white.opacity(0.14))
+                                    .shadow(color: Color.black.opacity(colorScheme == .light ? 0.06 : 0.0), radius: 2, x: 0, y: 1)
+                            }
+                        }
                         .contentShape(Capsule(style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
-        .padding(3)
+        .padding(2.5)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.primary.opacity(0.06))
+            Capsule(style: .continuous)
+                .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.08))
         )
     }
 }

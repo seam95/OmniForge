@@ -432,7 +432,7 @@ struct KeepAwakeControlView: View {
     ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             // 卡片 1：保持唤醒主开关卡片
             mainToggleCard
 
@@ -444,8 +444,8 @@ struct KeepAwakeControlView: View {
 
             // 底部说明文案
             Text(strings.keepAwakeClamshellFootnote)
-                .font(.system(size: 11, weight: .regular))
-                .foregroundStyle(.secondary)
+                .font(Theme.Stats.font11Regular)
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                 .padding(.horizontal, 4)
 
             // 残留状态重试清理按钮（若需要）
@@ -459,17 +459,17 @@ struct KeepAwakeControlView: View {
             // 错误信息（若存在）
             if let error = config.configError {
                 Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(Theme.Stats.up)
                     .padding(.horizontal, 4)
             } else if let secondary = presentation.secondaryStatusLine {
                 Text(secondary)
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(Theme.Stats.up)
                     .padding(.horizontal, 4)
             }
         }
-        .padding(Theme.Spacing.md)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
@@ -479,22 +479,22 @@ struct KeepAwakeControlView: View {
             // 月亮图标圆角底块
             ZStack {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.06))
+                    .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.08))
                 Image(systemName: "moon")
-                    .font(.system(size: 16.5, weight: .medium))
-                    .foregroundStyle(.primary)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
             }
             .frame(width: 38, height: 38)
 
             // 标题与状态副文案
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(presentation.title)
-                    .font(.system(size: 13.5, weight: .semibold))
-                    .foregroundStyle(.primary)
+                    .font(Theme.Stats.font13SemiBold)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                     .lineLimit(1)
                 Text(presentation.statusSubtitle)
-                    .font(.system(size: 11.5, weight: .regular))
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                     .lineLimit(1)
             }
 
@@ -504,12 +504,11 @@ struct KeepAwakeControlView: View {
             Toggle("", isOn: toggleBinding)
                 .labelsHidden()
                 .toggleStyle(.switch)
-                .tint(.green)
+                .tint(Theme.Stats.down)
                 .disabled(!presentation.isSessionToggleEnabled)
                 .accessibilityLabel(presentation.title)
         }
-        .padding(.horizontal, Theme.Spacing.md)
-        .padding(.vertical, Theme.Spacing.md)
+        .padding(12)
         .background(cardBackground)
     }
 
@@ -517,8 +516,8 @@ struct KeepAwakeControlView: View {
     private var durationSelectorCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(strings.keepAwakeDurationLabel)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.primary)
+                .font(Theme.Stats.font12Medium)
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
 
             HStack(spacing: 8) {
                 ForEach(presets) { preset in
@@ -528,39 +527,38 @@ struct KeepAwakeControlView: View {
                         onSetDuration(preset.duration)
                     } label: {
                         Text(preset.labelKey(strings))
-                            .font(.system(size: 12, weight: isSelected ? .medium : .regular))
-                            .foregroundStyle(isSelected ? Color.white : Color.primary)
+                            .font(Theme.Stats.font12Medium)
+                            .foregroundStyle(isSelected ? Color.white : (colorScheme == .light ? Theme.Stats.text2 : Color.primary))
                             .frame(maxWidth: .infinity)
-                            .frame(height: 32)
+                            .frame(height: 30)
                             .background(
-                                RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-                                    .fill(isSelected ? Color.accentColor : Color.primary.opacity(colorScheme == .dark ? 0.10 : 0.06))
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(isSelected ? Color.accentColor : (colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.08)))
                             )
                     }
                     .buttonStyle(.plain)
-                    .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 }
             }
         }
-        .padding(.horizontal, Theme.Spacing.md)
-        .padding(.vertical, Theme.Spacing.md)
+        .padding(12)
         .background(cardBackground)
     }
 
     // MARK: - 卡片 3：合盖时保持唤醒
     private var clamshellCard: some View {
         HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(strings.keepAwakeClamshellTitle)
-                    .font(.system(size: 13.5, weight: .semibold))
-                    .foregroundStyle(.primary)
+                    .font(Theme.Stats.font13SemiBold)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                 Text(strings.keepAwakeClamshellSubtitle)
-                    .font(.system(size: 11.5, weight: .regular))
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                 if let line = presentation.clamshellStatusLine {
                     Text(line)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(Theme.Stats.font10Regular)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                 }
             }
 
@@ -569,12 +567,11 @@ struct KeepAwakeControlView: View {
             Toggle("", isOn: config.clamshellPreferred)
                 .labelsHidden()
                 .toggleStyle(.switch)
-                .tint(.green)
+                .tint(Theme.Stats.down)
                 .disabled(!presentation.clamshellToggleEnabled)
                 .accessibilityLabel(strings.keepAwakeClamshellTitle)
         }
-        .padding(.horizontal, Theme.Spacing.md)
-        .padding(.vertical, Theme.Spacing.md)
+        .padding(12)
         .background(cardBackground)
     }
 
@@ -584,20 +581,10 @@ struct KeepAwakeControlView: View {
             if colorScheme == .dark {
                 Color.white.opacity(0.08)
             } else {
-                Color.white
+                Theme.Stats.cardBackground
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04), lineWidth: 0.8)
-        )
-        .shadow(
-            color: Color.black.opacity(colorScheme == .dark ? 0.20 : 0.03),
-            radius: 4,
-            x: 0,
-            y: 1.5
-        )
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private var toggleBinding: Binding<Bool> {

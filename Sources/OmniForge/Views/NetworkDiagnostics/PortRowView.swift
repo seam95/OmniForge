@@ -33,23 +33,25 @@ struct PortRowView: View {
         return raw.isEmpty ? unavailable : raw
     }
 
+    @Environment(\.colorScheme) private var colorScheme
+
     private var stateTint: Color {
         let normalized = stateLabel.uppercased()
         if normalized == "LISTEN" || normalized == "LISTENING" {
-            return .green
+            return Theme.Stats.statusNormal
         }
         if normalized == unavailable.uppercased() {
-            return .secondary
+            return colorScheme == .light ? Theme.Stats.text3 : Color.secondary
         }
-        return Color.secondary
+        return colorScheme == .light ? Theme.Stats.text3 : Color.secondary
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .center, spacing: 8) {
                 Text(displayProcessName)
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(.primary)
+                    .font(Theme.Stats.font13SemiBold)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .help(displayProcessName)
@@ -63,28 +65,28 @@ struct PortRowView: View {
 
             HStack(spacing: 6) {
                 Text(entry.proto.displayName)
-                    .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Stats.font10Regular.monospaced())
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1.5)
                     .background(
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(Color.primary.opacity(0.06))
+                            .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.08))
                     )
 
                 Text(":\(entry.localPortDisplay)")
-                    .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.accentColor)
+                    .font(Theme.Stats.font11Regular.monospacedDigit())
+                    .foregroundStyle(Theme.Stats.cpu)
                     .help(entry.hostPortCopyText)
 
                 if entry.pid > 0 {
                     Text("•")
                         .font(.system(size: 8))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
 
                     Text("PID \(entry.pid)")
-                        .font(.system(size: 10.5, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                        .font(Theme.Stats.font10Regular.monospaced())
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                 }
 
                 Spacer(minLength: 0)

@@ -62,28 +62,31 @@ struct KeepAwakeRecoveryBannerModel: Equatable {
 struct KeepAwakeRecoveryBanner: View {
     let model: KeepAwakeRecoveryBannerModel
     var onRetry: () -> Void = {}
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         if model.isVisible {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                VStack(alignment: .leading, spacing: 4) {
+                    .foregroundStyle(Theme.Stats.ram)
+                VStack(alignment: .leading, spacing: 3) {
                     Text(model.title)
-                        .font(.subheadline.weight(.semibold))
+                        .font(Theme.Stats.font12Medium)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                     Text(model.detail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(Theme.Stats.font11Regular)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                         .lineLimit(4)
                 }
                 Spacer(minLength: 0)
                 if model.showsRetry {
                     Button(model.retryLabel, action: onRetry)
                         .buttonStyle(.bordered)
+                        .controlSize(.small)
                 }
             }
             .padding(10)
-            .background(Color.orange.opacity(0.12))
+            .background(Theme.Stats.ram.opacity(0.12))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .padding(.horizontal, 12)
             .padding(.top, 8)

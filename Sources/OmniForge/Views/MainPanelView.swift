@@ -9,26 +9,7 @@ struct MainPanelView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     private var accentColor: Color {
-        Color(.sRGB, red: 0.14, green: 0.45, blue: 0.98, opacity: 1)
-    }
-
-    private var backgroundGradientColors: [Color] {
-        [
-            Color(nsColor: .windowBackgroundColor),
-            Color(nsColor: .controlBackgroundColor)
-        ]
-    }
-
-    private var cardBackgroundMaterial: Material {
-        colorScheme == .dark ? .regularMaterial : .ultraThinMaterial
-    }
-
-    private var cardSelectedBackgroundMaterial: Material {
-        colorScheme == .dark ? .thickMaterial : .regularMaterial
-    }
-
-    private var separatorStrokeColor: Color {
-        Color.primary.opacity(colorScheme == .dark ? 0.22 : 0.12)
+        Theme.Stats.cpu
     }
 
     private var headerTitle: String {
@@ -47,15 +28,15 @@ struct MainPanelView: View {
             }
         } label: {
             HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(source.name)
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(isDisabled ? .secondary : .primary)
+                        .font(Theme.Stats.font13SemiBold)
+                        .foregroundStyle(isDisabled ? (colorScheme == .light ? Theme.Stats.text3 : Color.secondary) : (colorScheme == .light ? Theme.Stats.text1 : Color.primary))
                         .lineLimit(1)
 
                     Text(source.id)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(Theme.Stats.font11Regular)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -65,7 +46,7 @@ struct MainPanelView: View {
                 Group {
                     if isSelected {
                         Image(systemName: "checkmark")
-                            .font(.system(size: 13, weight: .bold))
+                            .font(.system(size: 12, weight: .bold))
                             .foregroundStyle(accentColor)
                     } else {
                         Image(systemName: "checkmark")
@@ -78,26 +59,7 @@ struct MainPanelView: View {
             .padding(.vertical, 10)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isSelected ? cardSelectedBackgroundMaterial : cardBackgroundMaterial)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(
-                        isSelected
-                            ? accentColor.opacity(0.55)
-                            : separatorStrokeColor,
-                        lineWidth: isSelected ? 1.5 : 1
-                    )
-            )
-            .shadow(
-                color: Color.black.opacity(
-                    isDisabled
-                        ? 0
-                        : (isHovered ? (colorScheme == .dark ? 0.25 : 0.10) : (colorScheme == .dark ? 0.18 : 0.06))
-                ),
-                radius: isHovered ? 10 : 6,
-                x: 0,
-                y: isHovered ? 4 : 2
+                    .fill(cardFill(isSelected: isSelected, isHovered: isHovered))
             )
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
@@ -108,40 +70,26 @@ struct MainPanelView: View {
         }
     }
 
-    private func footerButton<Label: View>(@ViewBuilder label: () -> Label) -> some View {
-        label()
-            .foregroundStyle(.primary)
-            .padding(8)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(cardBackgroundMaterial)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(separatorStrokeColor, lineWidth: 1)
-            )
+    private func cardFill(isSelected: Bool, isHovered: Bool) -> Color {
+        if colorScheme == .dark {
+            return isSelected ? Color.white.opacity(0.14) : Color.white.opacity(isHovered ? 0.10 : 0.06)
+        }
+        if isSelected {
+            return Theme.Stats.cardBackground
+        }
+        return isHovered ? Color(red: 0xFA/255.0, green: 0xFA/255.0, blue: 0xFC/255.0) : Theme.Stats.cardBackground
     }
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: backgroundGradientColors,
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            (colorScheme == .dark ? Color(nsColor: .windowBackgroundColor) : Theme.Stats.panelBackground)
+                .ignoresSafeArea()
 
-            Circle()
-                .fill(accentColor.opacity(colorScheme == .dark ? 0.16 : 0.10))
-                .blur(radius: 22)
-                .frame(width: 220, height: 220)
-                .offset(x: 120, y: -120)
-
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .center) {
                     Text(headerTitle)
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.primary)
+                        .font(Theme.Stats.font13SemiBold)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
 
@@ -151,8 +99,8 @@ struct MainPanelView: View {
                         onOpenClipboard()
                     } label: {
                         Image(systemName: "doc.on.clipboard")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.primary)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
                     }
                     .buttonStyle(.plain)
                     .padding(.trailing, 4)
@@ -172,60 +120,40 @@ struct MainPanelView: View {
                 }
 
                 Text(state.l10n.s.panelSelectSource)
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
 
-                // 改进布局：使用最小高度确保输入法列表能够正常显示
                 ScrollView(.vertical, showsIndicators: false) {
-                    LazyVStack(alignment: .leading, spacing: 8) {
+                    LazyVStack(alignment: .leading, spacing: 6) {
                         ForEach(state.inputSources) { source in
                             card(for: source)
                         }
                     }
-                    .padding(.vertical, 4)
-                    .padding(.horizontal, 2)
+                    .padding(.vertical, 2)
                 }
                 .scrollDisabled(state.inputSources.count <= 3)
                 .scrollIndicators(.hidden)
-                .frame(maxHeight: 180) // 刚好显示 3 个项目 (52 * 3 + 8 * 2 + 8 padding)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .frame(maxHeight: 180)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
 
                 Divider()
-                    .padding(.vertical, 4)
+                    .overlay(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
+                    .padding(.vertical, 2)
 
                 HStack {
-                    Button {
+                    FooterButton(label: state.l10n.s.settingsTitle, systemImage: "gearshape") {
                         onOpenSettings()
-                    } label: {
-                        footerButton {
-                            Image(systemName: "gearshape")
-                                .font(.system(size: 14, weight: .semibold))
-                        }
                     }
-                    .buttonStyle(.plain)
 
                     Spacer()
 
-                    Button(state.l10n.s.actionQuit) {
+                    FooterButton(label: state.l10n.s.actionQuit, systemImage: nil) {
                         NSApplication.shared.terminate(nil)
                     }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(cardBackgroundMaterial)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(separatorStrokeColor, lineWidth: 1)
-                    )
                 }
             }
-            .padding(14)
+            .padding(12)
         }
-        // MenuBarExtra 的 popover 在尺寸推导上偏保守，这里强制给出理想尺寸，避免内容被压缩到"什么都看不见"。
         .frame(width: 340, alignment: .topLeading)
         .onAppear {
             state.refreshInputSources()

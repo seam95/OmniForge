@@ -21,8 +21,10 @@ struct MonitorRankingView: View {
     /// 本应用自身 pid，用于排除误杀自己。
     private static var ownPID: pid_t { ProcessInfo.processInfo.processIdentifier }
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             header
             content
             footer
@@ -45,15 +47,14 @@ struct MonitorRankingView: View {
             Button(action: onBack) {
                 HStack(spacing: 4) {
                     Image(systemName: "chevron.left")
-                        .font(.caption.weight(.semibold))
+                        .font(.system(size: 11, weight: .semibold))
                     Text(title)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
+                        .font(Theme.Stats.font13SemiBold)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                         .lineLimit(1)
                 }
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.primary)
 
             Spacer(minLength: 0)
 
@@ -118,8 +119,8 @@ struct MonitorRankingView: View {
             ProgressView()
                 .controlSize(.small)
             Text(String(format: strings.monitorProcessLoading, title))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(Theme.Stats.font11Regular)
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.top, 8)
@@ -127,8 +128,8 @@ struct MonitorRankingView: View {
 
     private var emptyView: some View {
         Text(strings.monitorProcessEmpty)
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            .font(Theme.Stats.font11Regular)
+            .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(.top, 8)
     }
@@ -136,10 +137,10 @@ struct MonitorRankingView: View {
     private func failedView(reason: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.triangle")
-                .foregroundStyle(.red)
+                .foregroundStyle(Theme.Stats.up)
             Text("\(title): \(reason)")
-                .font(.caption)
-                .foregroundStyle(.red)
+                .font(Theme.Stats.font11Regular)
+                .foregroundStyle(Theme.Stats.up)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -169,7 +170,7 @@ struct MonitorRankingView: View {
                         )
                         if proc.id != processes.last?.id {
                             Divider()
-                                .opacity(0.35)
+                                .overlay(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
                         }
                     }
                 }
@@ -205,8 +206,8 @@ struct MonitorRankingView: View {
             Text(strings.monitorProcessShareHeader)
                 .frame(width: 56, alignment: .trailing)
         }
-        .font(.caption2.weight(.semibold))
-        .foregroundStyle(.secondary)
+        .font(Theme.Stats.font10Regular)
+        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
         .padding(.horizontal, 4)
         .padding(.bottom, 2)
     }
@@ -226,10 +227,9 @@ struct MonitorRankingView: View {
     private var footer: some View {
         HStack(spacing: 12) {
             if showsSettingsAction {
-                Button(strings.monitorPreferences, action: onOpenSettings)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .font(.caption.weight(.medium))
+                FooterButton(label: strings.monitorPreferences, systemImage: "slider.horizontal.3") {
+                    onOpenSettings()
+                }
             }
 
             Spacer()

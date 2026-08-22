@@ -18,8 +18,8 @@ struct MonitorDiskMetricCard: View {
 
                     if let issueText = model.issueText {
                         Text(issueText)
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(.red)
+                            .font(Theme.Stats.font13SemiBold)
+                            .foregroundStyle(Theme.Stats.up)
                             .lineLimit(2)
                             .minimumScaleFactor(0.8)
                         Spacer(minLength: 0)
@@ -48,11 +48,11 @@ struct MonitorDiskMetricCard: View {
     private func diskBox(label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+                .font(Theme.Stats.font10Regular)
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
             Text(value)
                 .font(.system(size: 15, weight: .bold).monospacedDigit())
-                .foregroundStyle(.primary)
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
         }
@@ -61,33 +61,33 @@ struct MonitorDiskMetricCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.045))
+                .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.08))
         )
     }
 
     private var header: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
             RoundedRectangle(cornerRadius: 2, style: .continuous)
                 .fill(accent)
                 .frame(width: 8, height: 8)
 
             Text(model.title)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.secondary)
+                .font(Theme.Stats.font13SemiBold)
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
                 .lineLimit(1)
 
             Spacer(minLength: 4)
 
             if let badgeText = model.badgeText {
                 Text(badgeText)
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(.secondary)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                     .lineLimit(1)
             }
 
             Image(systemName: "chevron.right")
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                 .opacity(isHovered ? 1 : 0)
         }
     }

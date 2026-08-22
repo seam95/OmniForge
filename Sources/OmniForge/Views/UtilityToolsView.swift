@@ -166,7 +166,7 @@ struct UtilityToolsView: View {
                 ForEach(Array(visibleTools.enumerated()), id: \.element.id) { index, tool in
                     if index > 0 {
                         Rectangle()
-                            .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05))
+                            .fill(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
                             .frame(height: 1)
                     }
                     UtilityToolRow(tool: tool, strings: strings) {
@@ -175,19 +175,9 @@ struct UtilityToolsView: View {
                 }
             }
             .background(UtilityListChrome.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05), lineWidth: 1)
-            )
-            .shadow(
-                color: Color.black.opacity(colorScheme == .dark ? 0.20 : 0.05),
-                radius: 8,
-                x: 0,
-                y: 2
-            )
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
         }
     }
 
@@ -249,18 +239,18 @@ private struct UtilityToolRow: View {
                         .frame(width: 38, height: 38)
 
                     Image(systemName: tool.symbolName())
-                        .font(.system(size: 16.5, weight: .semibold))
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(tool.tintColor)
                 }
 
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(tool.title(in: strings))
-                        .font(.system(size: 13.5, weight: .medium))
-                        .foregroundStyle(.primary)
+                        .font(Theme.Stats.font13SemiBold)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                         .lineLimit(1)
                     Text(tool.hubDescription(in: strings))
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(.secondary)
+                        .font(Theme.Stats.font11Regular)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
@@ -271,12 +261,12 @@ private struct UtilityToolRow: View {
                     UtilityDSHWebStatusBadge(strings: strings)
                 } else {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 11.5, weight: .bold))
-                        .foregroundStyle(Color.primary.opacity(0.22))
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
             .background(
                 isHovered ? Color.primary.opacity(colorScheme == .dark ? 0.06 : 0.03) : Color.clear
             )
@@ -302,69 +292,69 @@ private struct UtilityDSHWebStatusBadge: View {
         case .running:
             HStack(spacing: 4.5) {
                 Circle()
-                    .fill(Color.green)
+                    .fill(Theme.Stats.statusNormal)
                     .frame(width: 5.5, height: 5.5)
                 Text(strings.dshWebStateRunning)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.green)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(Theme.Stats.statusNormal)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 3.5)
             .background(
                 Capsule()
-                    .fill(Color.green.opacity(colorScheme == .dark ? 0.20 : 0.12))
+                    .fill(Theme.Stats.statusNormal.opacity(0.12))
             )
         case .starting:
             HStack(spacing: 4.5) {
                 ProgressView()
                     .controlSize(.mini)
                 Text(strings.dshWebStateStarting)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.orange)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(Theme.Stats.ram)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 3.5)
             .background(
                 Capsule()
-                    .fill(Color.orange.opacity(colorScheme == .dark ? 0.20 : 0.12))
+                    .fill(Theme.Stats.ram.opacity(0.12))
             )
         case .stopping:
             HStack(spacing: 4.5) {
                 ProgressView()
                     .controlSize(.mini)
                 Text(strings.dshWebStateStopping)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.orange)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(Theme.Stats.ram)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 3.5)
             .background(
                 Capsule()
-                    .fill(Color.orange.opacity(colorScheme == .dark ? 0.20 : 0.12))
+                    .fill(Theme.Stats.ram.opacity(0.12))
             )
         case .failed:
             HStack(spacing: 4.5) {
                 Circle()
-                    .fill(Color.red)
+                    .fill(Theme.Stats.up)
                     .frame(width: 5.5, height: 5.5)
                 Text("异常")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.red)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(Theme.Stats.up)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 3.5)
             .background(
                 Capsule()
-                    .fill(Color.red.opacity(colorScheme == .dark ? 0.20 : 0.12))
+                    .fill(Theme.Stats.up.opacity(0.12))
             )
         case .stopped:
             HStack(spacing: 4.5) {
                 Circle()
-                    .fill(Color.secondary.opacity(0.7))
+                    .fill(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                     .frame(width: 5.5, height: 5.5)
                 Text(strings.runStateStopped)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.secondary)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 3.5)
@@ -388,7 +378,7 @@ private struct UtilityToolDetailBar: View {
         HStack(spacing: 8) {
             Button(action: onBack) {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .frame(width: 24, height: 24)
                     .background(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -401,17 +391,18 @@ private struct UtilityToolDetailBar: View {
             .accessibilityLabel(strings.controlcenterTabUtilities)
 
             Text(title)
-                .font(.system(size: 13, weight: .semibold))
+                .font(Theme.Stats.font13SemiBold)
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                 .lineLimit(1)
 
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
         .background(Color.clear)
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(Color.primary.opacity(0.06))
+                .fill(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.06))
                 .frame(height: 1)
         }
     }
@@ -430,9 +421,9 @@ private struct UtilityListCardBackground: View {
     var body: some View {
         Group {
             if colorScheme == .dark {
-                Color.white.opacity(0.06)
+                Color.white.opacity(0.08)
             } else {
-                Color.white
+                Theme.Stats.cardBackground
             }
         }
     }

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Shared card frame for monitor dashboard cards.
+/// Shared card frame for monitor dashboard cards: Stats Light 规范纯白底无边框无投影卡片。
 struct MonitorDashboardCardChrome<Content: View>: View {
     let accent: Color
     let height: CGFloat
@@ -24,23 +24,13 @@ struct MonitorDashboardCardChrome<Content: View>: View {
 
     var body: some View {
         content
-            .padding(Theme.Spacing.md)
+            .padding(12)
             .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(cardBackground)
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                    .strokeBorder(cardBorder, lineWidth: 1)
-            )
-            .shadow(
-                color: Color.black.opacity(shadowOpacity),
-                radius: isHovered && isInteractive ? 10 : 6,
-                x: 0,
-                y: isHovered && isInteractive ? 4 : 2
-            )
-            .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .onHover { hovering in
                 guard isInteractive else { return }
                 withAnimation(Theme.Animation.hover) {
@@ -53,21 +43,8 @@ struct MonitorDashboardCardChrome<Content: View>: View {
         if colorScheme == .dark {
             return Color.white.opacity(isHovered && isInteractive ? 0.10 : 0.08)
         }
-        return Color.white
-    }
-
-    private var cardBorder: Color {
-        if isHovered && isInteractive {
-            return accent.opacity(colorScheme == .dark ? 0.35 : 0.25)
-        }
-        return Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04)
-    }
-
-    private var shadowOpacity: Double {
-        if colorScheme == .dark {
-            return isHovered && isInteractive ? 0.22 : 0.14
-        }
-        return isHovered && isInteractive ? 0.07 : 0.035
+        return isHovered && isInteractive ? Color(red: 0xFA/255.0, green: 0xFA/255.0, blue: 0xFC/255.0) : Theme.Stats.cardBackground
     }
 }
+
 

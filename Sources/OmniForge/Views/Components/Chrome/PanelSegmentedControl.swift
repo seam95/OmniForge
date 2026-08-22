@@ -21,15 +21,15 @@ struct PanelSegmentedControl<Tag: Hashable>: View {
                     selection = option.tag
                 } label: {
                     Text(option.title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                        .font(Theme.Stats.font12Medium)
+                        .foregroundStyle(isSelected ? (colorScheme == .light ? Theme.Stats.text1 : Color.white) : (colorScheme == .light ? Theme.Stats.text2 : Color.secondary))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 6)
                         .background {
                             if isSelected {
                                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                                     .fill(selectedFill)
-                                    .shadow(color: Color.black.opacity(0.08), radius: 3, x: 0, y: 1)
+                                    .shadow(color: Color.black.opacity(colorScheme == .light ? 0.06 : 0.0), radius: 2, x: 0, y: 1)
                             }
                         }
                         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -41,13 +41,13 @@ struct PanelSegmentedControl<Tag: Hashable>: View {
         .padding(3)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.primary.opacity(0.06))
+                .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.06))
         )
     }
 
     private var selectedFill: Color {
         colorScheme == .dark
-            ? Color.primary.opacity(0.12)
-            : Color.white.opacity(0.92)
+            ? Color.white.opacity(0.14)
+            : Theme.Stats.cardBackground
     }
 }

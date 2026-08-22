@@ -19,10 +19,10 @@ struct DualSparklineView: View {
                 // 下行（绿）从中线向下：默认映射 value=1 在帧顶（中线），垂直翻转后落在底边。
                 SparklineView(
                     values: downValues,
-                    color: .green,
+                    color: Theme.Stats.down,
                     domain: domain,
                     lineWidth: 1.5,
-                    fillHeight: 0.35
+                    fillHeight: 0.18
                 )
                 .frame(height: half)
                 .frame(maxHeight: .infinity, alignment: .bottom)
@@ -31,10 +31,10 @@ struct DualSparklineView: View {
                 // 上行（红）从中线向上：默认映射 value=1 在帧顶即面板顶，无需翻转。
                 SparklineView(
                     values: upValues,
-                    color: MonitorCardAccent.networkUpload,
+                    color: Theme.Stats.up,
                     domain: domain,
                     lineWidth: 1.5,
-                    fillHeight: 0.35
+                    fillHeight: 0.18
                 )
                 .frame(height: half)
                 .frame(maxHeight: .infinity, alignment: .top)
