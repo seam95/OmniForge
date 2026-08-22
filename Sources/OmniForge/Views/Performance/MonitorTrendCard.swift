@@ -47,79 +47,87 @@ struct MonitorTrendCard: View {
                 } else {
                     switch visualization {
                     case .semiGauge(let progress):
-                        // 值 + caption 叠放在半圆弧内
-                        ZStack {
-                            SemiCircleGaugeView(progress: progress, accent: accent)
-                            VStack(spacing: 2) {
+                        // 内存卡片：居中半圆仪表弧 + 中心大号百分比 + 底部副文案
+                        VStack(spacing: 2) {
+                            ZStack {
+                                SemiCircleGaugeView(progress: progress, accent: accent, lineWidth: 7)
+                                    .frame(height: 48)
+                                    .padding(.top, 4)
+
                                 Text(model.primaryText)
-                                    .font(.title3.weight(.semibold).monospacedDigit())
+                                    .font(.system(size: 22, weight: .bold).monospacedDigit())
                                     .foregroundStyle(.primary)
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.7)
-                                if let caption = model.secondaryText {
-                                    Text(caption)
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                        .minimumScaleFactor(0.75)
-                                }
+                                    .offset(y: 12)
                             }
                             .frame(maxWidth: .infinity)
-                            .offset(y: -6)
+
+                            Spacer(minLength: 2)
+
+                            captionView
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+
                     case .sparkline(let values):
-                        // 大号值与趋势折线同行，折线占剩余横向空间
-                        HStack(alignment: .center, spacing: 10) {
+                        // CPU / GPU 卡片：大号数值居上，面积折线图居中全宽，副文案居底
+                        VStack(alignment: .leading, spacing: 3) {
                             primaryValue
-                            SparklineView(values: values, color: accent)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                            SparklineView(values: values, color: accent, lineWidth: 1.8, fillHeight: 0.35)
+                                .frame(maxWidth: .infinity)
+                                .frame(maxHeight: .infinity)
+
+                            captionView
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        captionView
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+
                     case .progressBar(let progress):
-                        primaryValue
-                        VStack(spacing: 3) {
-                            Spacer(minLength: 0)
+                        // 电池卡片：大号数值居上，胶囊进度条居中，副文案居底
+                        VStack(alignment: .leading, spacing: 6) {
+                            primaryValue
+
                             MetricBar(value: progress, warning: 101, critical: 101, tint: accent)
+                                .frame(height: 5)
+                                .padding(.top, 2)
+
+                            Spacer(minLength: 2)
+
+                            captionView
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        captionView
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                     }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 
     private var primaryValue: some View {
         Text(model.primaryText)
-            .font(.title2.weight(.semibold).monospacedDigit())
+            .font(.system(size: 22, weight: .bold).monospacedDigit())
             .foregroundStyle(.primary)
             .lineLimit(1)
-            .minimumScaleFactor(0.7)
-            .fixedSize(horizontal: true, vertical: false)
+            .minimumScaleFactor(0.75)
     }
 
     @ViewBuilder
     private var captionView: some View {
         if let caption = model.secondaryText {
             Text(caption)
-                .font(.caption)
+                .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
+                .minimumScaleFactor(0.8)
         }
     }
 
     private var header: some View {
         HStack(spacing: 6) {
-            Circle()
+            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
                 .fill(accent)
-                .frame(width: 8, height: 8)
+                .frame(width: 8.5, height: 8.5)
 
             Text(model.title)
-                .font(.caption.weight(.semibold))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
 
@@ -133,14 +141,14 @@ struct MonitorTrendCard: View {
 
             if let badgeText = model.badgeText {
                 Text(badgeText)
-                    .font(.caption2.weight(.semibold))
+                    .font(.system(size: 12, weight: .regular))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
 
             if action != nil {
                 Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.tertiary)
                     .opacity(isHovered ? 1 : 0)
             }

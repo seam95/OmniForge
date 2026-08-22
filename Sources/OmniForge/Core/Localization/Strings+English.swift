@@ -154,7 +154,7 @@ extension Strings {
         monitorRefreshAll: "Refresh All",
         monitorCardStorage: "Storage",
         monitorCardDisk: "Disk",
-        monitorCardNetworkTraffic: "Network Traffic",
+        monitorCardNetworkTraffic: "Network",
         monitorCardDiskIO: "Disk I/O",
         monitorCardEnergy: "Energy",
         monitorLiveBadge: "Live",

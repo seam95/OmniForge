@@ -51,23 +51,23 @@ struct MonitorDashboardCardChrome<Content: View>: View {
 
     private var cardBackground: Color {
         if colorScheme == .dark {
-            return Color.white.opacity(isHovered && isInteractive ? 0.10 : 0.06)
+            return Color.white.opacity(isHovered && isInteractive ? 0.10 : 0.08)
         }
-        return Color.white.opacity(isHovered && isInteractive ? 0.78 : 0.58)
+        return Color.white
     }
 
     private var cardBorder: Color {
         if isHovered && isInteractive {
-            return accent.opacity(colorScheme == .dark ? 0.45 : 0.35)
+            return accent.opacity(colorScheme == .dark ? 0.35 : 0.25)
         }
-        return Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05)
+        return Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04)
     }
 
     private var shadowOpacity: Double {
         if colorScheme == .dark {
-            return isHovered && isInteractive ? 0.20 : 0.12
+            return isHovered && isInteractive ? 0.22 : 0.14
         }
-        return isHovered && isInteractive ? 0.08 : 0.04
+        return isHovered && isInteractive ? 0.07 : 0.035
     }
 }
 

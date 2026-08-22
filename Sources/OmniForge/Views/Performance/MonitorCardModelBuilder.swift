@@ -216,9 +216,9 @@ enum MonitorCardModelBuilder {
         let readRate = snapshot.disk?.readBytesPerSec
         let writeRate = snapshot.disk?.writeBytesPerSec
         let readText = (readRate ?? 0) > 0
-            ? (MetricFormat.bytesPerSec(readRate!) ?? "--") : "--"
+            ? MetricFormat.bytesPerSec(readRate!) : "--"
         let writeText = (writeRate ?? 0) > 0
-            ? (MetricFormat.bytesPerSec(writeRate!) ?? "--") : "--"
+            ? MetricFormat.bytesPerSec(writeRate!) : "--"
         return MonitorCardModel(
             id: .disk,
             title: strings.monitorCardDisk,
@@ -232,8 +232,8 @@ enum MonitorCardModelBuilder {
             processMetricKind: nil,
             opensDiskDetail: true,
             chipTexts: [
-                "\(strings.monitorMetricRead) ↓ \(readText)",
-                "\(strings.monitorMetricWrite) ↑ \(writeText)",
+                "↓ \(readText)",
+                "↑ \(writeText)",
             ]
         )
     }
@@ -260,7 +260,7 @@ enum MonitorCardModelBuilder {
             secondaryText: caption,
             progress: nil,
             badgeText: strings.monitorLiveBadge,
-            showsLiveDot: true,
+            showsLiveDot: false,
             issueText: issueText(for: snapshot.issues[.network], strings: strings),
             processMetricKind: .network,
             trend: history.netDown,

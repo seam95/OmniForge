@@ -80,15 +80,15 @@ enum MonitorOverviewRow: Equatable, Identifiable {
     var height: CGFloat {
         switch id {
         case "row.cpuMemory":
-            return 100
+            return 130
         case "row.network":
-            return 96
+            return 112
         case "row.batteryGPU":
-            return 100
+            return 112
         case "row.disk":
-            return 82
+            return 92
         default:
-            return 96
+            return 112
         }
     }
 

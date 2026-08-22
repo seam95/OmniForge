@@ -39,6 +39,7 @@ struct MonitorOverviewView: View {
         VStack(alignment: .leading, spacing: 10) {
             header
             cardRows
+            refreshActionRow
             footer
         }
         .padding(12)
@@ -48,16 +49,16 @@ struct MonitorOverviewView: View {
     // MARK: - Header
 
     private var header: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(deviceSummary.hostName)
-                    .font(.headline)
+                    .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
                 if let subtitle = subtitleText {
                     Text(subtitle)
-                        .font(.caption)
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -67,6 +68,8 @@ struct MonitorOverviewView: View {
 
             statusPill
         }
+        .padding(.horizontal, 2)
+        .padding(.top, 2)
     }
 
     private var subtitleText: String? {
@@ -82,21 +85,43 @@ struct MonitorOverviewView: View {
     }
 
     private var statusPill: some View {
-        HStack(spacing: 6) {
-            Text(statusText)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(hasIssues ? Color.orange : Color.green)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill((hasIssues ? Color.orange : Color.green).opacity(0.15))
-                )
+        HStack(spacing: 5) {
+            Circle()
+                .fill(hasIssues ? Color.orange : Color.green)
+                .frame(width: 6, height: 6)
 
-            IconButton(systemImage: "arrow.clockwise", help: strings.monitorRefreshAll) {
-                onRefresh()
-            }
+            Text(statusText)
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(hasIssues ? Color.orange : Color.green)
         }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3.5)
+        .background(
+            Capsule(style: .continuous)
+                .fill((hasIssues ? Color.orange : Color.green).opacity(0.12))
+        )
+    }
+
+    // MARK: - Refresh Action
+
+    @ViewBuilder
+    private var refreshActionRow: some View {
+        HStack {
+            Spacer()
+
+            Button(action: onRefresh) {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11.5, weight: .semibold))
+                    Text(strings.monitorRefreshAll)
+                        .font(.system(size: 12.5, weight: .medium))
+                }
+                .foregroundStyle(Color.accentColor)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.top, 2)
+        .padding(.trailing, 2)
     }
 
     // MARK: - Cards
@@ -175,7 +200,8 @@ struct MonitorOverviewView: View {
                     model: model,
                     accent: accent,
                     height: height,
-                    action: { onSelectDiskDetail() }
+                    action: { onSelectDiskDetail() },
+                    strings: strings
                 )
             }
         }

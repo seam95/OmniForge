@@ -1,18 +1,19 @@
 import SwiftUI
 
-/// 磁盘卡 — 标题行（蓝点 + "磁盘" + 右上"已用"灰字 + 悬浮 chevron）+ 两个并排灰框（读取/写入）。
 struct MonitorDiskMetricCard: View {
     let model: MonitorCardModel
     let accent: Color
     let height: CGFloat
     let action: () -> Void
+    var strings: Strings = .en
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
             MonitorDashboardCardChrome(accent: accent, height: height, isInteractive: true) {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 8) {
                     header
 
                     if let issueText = model.issueText {
@@ -24,22 +25,16 @@ struct MonitorDiskMetricCard: View {
                         Spacer(minLength: 0)
                     } else {
                         HStack(spacing: 10) {
-                            ForEach(model.chipTexts, id: \.self) { chip in
-                                Text(chip)
-                                    .font(.title3.weight(.semibold).monospacedDigit())
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.7)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 8)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-                                            .fill(Color.primary.opacity(0.04))
-                                    )
-                            }
+                            diskBox(
+                                label: strings.monitorMetricRead,
+                                value: model.chipTexts.indices.contains(0) ? model.chipTexts[0] : "--"
+                            )
+                            diskBox(
+                                label: strings.monitorMetricWrite,
+                                value: model.chipTexts.indices.contains(1) ? model.chipTexts[1] : "--"
+                            )
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
             }
@@ -50,14 +45,34 @@ struct MonitorDiskMetricCard: View {
         }
     }
 
+    private func diskBox(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 15, weight: .bold).monospacedDigit())
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04))
+        )
+    }
+
     private var header: some View {
         HStack(spacing: 6) {
-            Circle()
+            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
                 .fill(accent)
-                .frame(width: 8, height: 8)
+                .frame(width: 8.5, height: 8.5)
 
             Text(model.title)
-                .font(.caption.weight(.semibold))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
 
@@ -65,13 +80,13 @@ struct MonitorDiskMetricCard: View {
 
             if let badgeText = model.badgeText {
                 Text(badgeText)
-                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .font(.system(size: 12, weight: .regular))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
 
             Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.tertiary)
                 .opacity(isHovered ? 1 : 0)
         }

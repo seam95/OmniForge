@@ -88,7 +88,7 @@ final class MonitorOverviewCardGroupTests: XCTestCase {
             model(id: .disk),
         ])
 
-        XCTAssertEqual(rows.map(\.height), [100, 96, 100, 82])
+        XCTAssertEqual(rows.map(\.height), [130, 112, 112, 92])
         XCTAssertEqual(rows[0].displayKinds, [.cpuTrend, .memoryGauge])
         XCTAssertEqual(rows[1].displayKinds, [.networkDual])
         XCTAssertEqual(rows[2].displayKinds, [.batteryBar, .gpuTrend])

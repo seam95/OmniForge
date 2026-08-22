@@ -186,7 +186,7 @@ final class MonitorCardModelBuilderTests: XCTestCase {
             "Total ↓ \(MetricFormat.bytes(1_048_576 as UInt64)) \(sep) ↑ \(MetricFormat.bytes(2_097_152 as UInt64))"
         )
         XCTAssertEqual(network?.badgeText, Strings.en.monitorLiveBadge)
-        XCTAssertTrue(network?.showsLiveDot == true)
+        XCTAssertFalse(network?.showsLiveDot == true)
         XCTAssertEqual(network?.processMetricKind, .network)
     }
 
@@ -223,8 +223,8 @@ final class MonitorCardModelBuilderTests: XCTestCase {
         XCTAssertNil(disk?.secondaryText)
         XCTAssertNil(disk?.progress)
         XCTAssertEqual(disk?.chipTexts, [
-            "读取 ↓ \(MetricFormat.bytesPerSec(1_000_000 as Double) ?? "--")",
-            "写入 ↑ \(MetricFormat.bytesPerSec(500_000 as Double) ?? "--")",
+            "↓ \(MetricFormat.bytesPerSec(1_000_000 as Double) ?? "--")",
+            "↑ \(MetricFormat.bytesPerSec(500_000 as Double) ?? "--")",
         ])
         XCTAssertNil(disk?.processMetricKind)
         XCTAssertTrue(disk?.opensDiskDetail == true)
@@ -245,7 +245,7 @@ final class MonitorCardModelBuilderTests: XCTestCase {
         let models = build(snap, strings: .en)
         let disk = models.first { $0.id == .disk }
         XCTAssertNil(disk?.badgeText) // total 缺失 → 无"已用"
-        XCTAssertEqual(disk?.chipTexts, ["Read ↓ --", "Write ↑ --"])
+        XCTAssertEqual(disk?.chipTexts, ["↓ --", "↑ --"])
         XCTAssertTrue(disk?.opensDiskDetail == true)
     }
 

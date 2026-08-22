@@ -154,7 +154,7 @@ extension Strings {
         monitorRefreshAll: "全部刷新",
         monitorCardStorage: "存储",
         monitorCardDisk: "磁盘",
-        monitorCardNetworkTraffic: "网络流量",
+        monitorCardNetworkTraffic: "网络",
         monitorCardDiskIO: "磁盘 I/O",
         monitorCardEnergy: "能耗",
         monitorLiveBadge: "实时",
