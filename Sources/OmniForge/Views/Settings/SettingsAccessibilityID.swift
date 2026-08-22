@@ -8,6 +8,16 @@ enum SettingsAccessibilityID: String, CaseIterable {
 
     case performanceSegment = "performance.segment"
     case performanceMonitorEnabled = "performance.monitor.enabled"
+    case tokenUsageSegment = "tokenUsage.segment"
+    case tokenUsageEnabled = "tokenUsage.enabled"
+    case tokenUsageMenuBarMode = "tokenUsage.menuBarMode"
+    case tokenUsageRefreshInterval = "tokenUsage.refreshInterval"
+    case tokenUsageLimitsDisplay = "tokenUsage.limitsDisplay"
+    case tokenUsageDefaultPeriod = "tokenUsage.defaultPeriod"
+    case tokenUsageSessionAlert = "tokenUsage.sessionAlert"
+    case tokenUsagePaceAlert = "tokenUsage.paceAlert"
+    case tokenUsageRequestPermission = "tokenUsage.requestPermission"
+
     case menuBarEnabled = "performance.menuBar.enabled"
     case menuBarPreview = "performance.menuBar.preview"
     case menuBarSpacing = "performance.menuBar.spacing"

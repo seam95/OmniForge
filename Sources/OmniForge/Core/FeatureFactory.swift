@@ -73,6 +73,18 @@ struct FeatureFactory {
                     )
                 )
             }
+        case .tokenUsage:
+            if runtime.manager(for: .tokenUsage, as: TokenUsagePreferences.self) == nil {
+                runtime.register(
+                    .tokenUsage,
+                    manager: TokenUsagePreferences(userDefaults: userDefaults)
+                )
+            }
+            if runtime.manager(for: .tokenUsage, as: TokenUsageManager.self) == nil {
+                let preferences = runtime.manager(for: .tokenUsage, as: TokenUsagePreferences.self)
+                    ?? TokenUsagePreferences(userDefaults: userDefaults)
+                runtime.register(.tokenUsage, manager: TokenUsageManager(preferences: preferences))
+            }
         case .shelf:
             if runtime.manager(for: .shelf, as: ShelfService.self) == nil {
                 runtime.register(.shelf, manager: ShelfService(userDefaults: userDefaults))
@@ -256,6 +268,8 @@ struct FeatureFactory {
                 manager.setMenuBarMetrics([])
                 manager.setAlertRequirements([])
             }
+        case .tokenUsage:
+            runtime.manager(for: .tokenUsage, as: TokenUsageManager.self)?.stop()
         case .shelf:
             runtime.manager(for: .shelf, as: ShelfService.self)?.syncWithPreferences()
         case .launchAtLogin:

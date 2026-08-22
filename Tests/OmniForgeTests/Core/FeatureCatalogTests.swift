@@ -52,6 +52,22 @@ final class FeatureCatalogTests: XCTestCase {
         XCTAssertEqual(AppFeature.systemMonitor.permissions, [.notifications])
     }
 
+    func test_tokenUsage_catalogContract() {
+        XCTAssertEqual(AppFeature.tokenUsage.rawValue, "tokenUsage")
+        XCTAssertEqual(AppFeature.tokenUsage.group, .monitor)
+        XCTAssertTrue(AppFeature.tokenUsage.enabledKeys.isEmpty)
+        XCTAssertEqual(AppFeature.tokenUsage.possiblePermissions, [.notifications])
+        XCTAssertEqual(AppFeature.tokenUsage.permissions, [.notifications])
+        XCTAssertEqual(AppFeature.tokenUsage.permissionUsage(for: .notifications), .optional)
+        XCTAssertNil(AppFeature.tokenUsage.permissionUsage(for: .accessibility))
+        XCTAssertEqual(AppFeature.tokenUsage.symbolName, "chart.line.uptrend.xyaxis")
+        XCTAssertEqual(AppFeature.tokenUsage.hubName(in: .en), "Token Usage")
+        XCTAssertEqual(AppFeature.tokenUsage.hubName(in: .zhHans), "Token 用量")
+        XCTAssertFalse(AppFeature.tokenUsage.hubDescription(in: .en).isEmpty)
+        XCTAssertFalse(AppFeature.tokenUsage.hubDescription(in: .zhHans).isEmpty)
+        XCTAssertEqual(FeatureGroup.features(in: .monitor), [.systemMonitor, .tokenUsage])
+    }
+
     func test_featureGroupAssignment() {
         XCTAssertEqual(AppFeature.inputLock.group, .input)
         XCTAssertEqual(AppFeature.clipboardHistory.group, .clipboard)
@@ -182,7 +198,7 @@ final class FeatureCatalogTests: XCTestCase {
     func test_featureGroupFeaturesStaticMethod() {
         XCTAssertEqual(FeatureGroup.features(in: .input), [.inputLock])
         XCTAssertEqual(FeatureGroup.features(in: .clipboard), [.clipboardHistory, .quickPhrase])
-        XCTAssertEqual(FeatureGroup.features(in: .monitor), [.systemMonitor])
+        XCTAssertEqual(FeatureGroup.features(in: .monitor), [.systemMonitor, .tokenUsage])
         XCTAssertEqual(FeatureGroup.features(in: .system), [.launchAtLogin])
         XCTAssertEqual(FeatureGroup.features(in: .mouse),
                        [.scrollInverter, .smoothScroll, .mouseNavigation, .dockClick])

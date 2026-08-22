@@ -286,6 +286,8 @@ final class FeatureRuntime: ObservableObject {
                 m.setMenuBarMetrics([])
                 m.setAlertRequirements([])
             }
+        case .tokenUsage:
+            manager(for: .tokenUsage, as: TokenUsageManager.self)?.stop()
         case .shelf:
             manager(for: .shelf, as: ShelfService.self)?.syncWithPreferences()
         case .cleaner:
@@ -357,6 +359,15 @@ final class FeatureRuntime: ObservableObject {
                 manager.setPanelDemand(.none)
                 manager.setMenuBarMetrics([])
                 manager.setAlertRequirements([])
+            }
+        },
+        .tokenUsage: {
+            // availability 即启用：install 后启动调度，卸载时停止。
+            guard let manager = shared.manager(for: .tokenUsage, as: TokenUsageManager.self) else { return }
+            if shared.isAvailable(.tokenUsage) {
+                manager.start()
+            } else {
+                manager.stop()
             }
         },
         .shelf: {

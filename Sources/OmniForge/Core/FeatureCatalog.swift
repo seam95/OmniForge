@@ -7,6 +7,7 @@ enum AppFeature: String, CaseIterable {
     case clipboardHistory
     case quickPhrase
     case systemMonitor
+    case tokenUsage
     case networkDiagnostics
     case dshWeb
     case shelf
@@ -66,7 +67,7 @@ extension AppFeature {
         switch self {
         case .inputLock: return .input
         case .clipboardHistory, .quickPhrase: return .clipboard
-        case .systemMonitor: return .monitor
+        case .systemMonitor, .tokenUsage: return .monitor
         case .shelf: return .productivity
         case .launchAtLogin: return .system
         case .cleaner, .uninstaller, .colorPicker, .networkDiagnostics, .dshWeb: return .productivity
@@ -89,7 +90,7 @@ extension AppFeature {
         case .inputLock: return [UserDefaultsKeys.isLocked]
         case .clipboardHistory: return [UserDefaultsKeys.clipboardFeatureEnabled]
         case .quickPhrase: return []
-        case .systemMonitor, .networkDiagnostics: return []
+        case .systemMonitor, .networkDiagnostics, .tokenUsage: return []
         case .shelf: return [UserDefaultsKeys.shelfEnabled]
         case .launchAtLogin: return []
         case .cleaner, .uninstaller, .colorPicker, .dshWeb: return []
@@ -109,6 +110,7 @@ extension AppFeature {
         case .clipboardHistory: return []
         case .quickPhrase: return []
         case .systemMonitor: return [.notifications]
+        case .tokenUsage: return [.notifications]
         case .networkDiagnostics, .dshWeb: return []
         case .shelf: return []
         case .launchAtLogin: return []
@@ -142,7 +144,7 @@ extension AppFeature {
             }
         case .inputLock, .scrollInverter, .smoothScroll, .mouseNavigation, .dockClick:
             return permission == .accessibility ? .required : nil
-        case .systemMonitor:
+        case .systemMonitor, .tokenUsage:
             return permission == .notifications ? .optional : nil
         case .cleaner, .uninstaller:
             return permission == .fullDiskAccess ? .required : nil
@@ -178,6 +180,7 @@ extension AppFeature {
         case .clipboardHistory: return "doc.on.clipboard"
         case .quickPhrase: return "text.bubble"
         case .systemMonitor: return "chart.bar"
+        case .tokenUsage: return "chart.line.uptrend.xyaxis"
         case .networkDiagnostics: return "network"
         case .shelf: return "tray.full"
         case .launchAtLogin: return "power"
@@ -201,6 +204,7 @@ extension AppFeature {
         case .clipboardHistory: return strings.featureHubNameClipboardHistory
         case .quickPhrase: return strings.featureHubNameQuickPhrase
         case .systemMonitor: return strings.featureHubNameSystemMonitor
+        case .tokenUsage: return strings.featureHubNameTokenUsage
         case .networkDiagnostics: return strings.featureHubNameNetworkDiagnostics
         case .shelf: return strings.featureHubNameShelf
         case .launchAtLogin: return strings.featureHubNameLaunchAtLogin
@@ -224,6 +228,7 @@ extension AppFeature {
         case .clipboardHistory: return strings.featureHubDescClipboardHistory
         case .quickPhrase: return strings.featureHubDescQuickPhrase
         case .systemMonitor: return strings.featureHubDescSystemMonitor
+        case .tokenUsage: return strings.featureHubDescTokenUsage
         case .networkDiagnostics: return strings.featureHubDescNetworkDiagnostics
         case .shelf: return strings.featureHubDescShelf
         case .launchAtLogin: return strings.featureHubDescLaunchAtLogin

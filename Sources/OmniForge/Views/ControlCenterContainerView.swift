@@ -187,6 +187,21 @@ struct ControlCenterContainerView: View {
                 } else {
                     unavailablePanel
                 }
+            case .tokenUsage:
+                if let manager = state.tokenUsageManager,
+                   let preferences = state.tokenUsagePreferences,
+                   runtime.isAvailable(.tokenUsage) {
+                    AdaptiveHeightScroll(maxHeight: ControlCenterContentMetrics.maxContentHeight) {
+                        TokenUsagePanelView(
+                            manager: manager,
+                            preferences: preferences,
+                            strings: state.l10n.s,
+                            onOpenSettings: onOpenSettings
+                        )
+                    }
+                } else {
+                    unavailablePanel
+                }
             case .keepAwake:
                 AdaptiveHeightScroll(maxHeight: ControlCenterContentMetrics.maxContentHeight) {
                     keepAwakePanel
@@ -346,8 +361,15 @@ struct ControlCenterContainerView: View {
 
             Spacer()
 
-            FooterButton(label: state.l10n.s.actionQuit, systemImage: nil) {
-                NSApp.terminate(nil)
+            // Token 页底栏右位为「刷新」；其余面板保持「退出」（UI 稿 4.2）。
+            if selectedPanel == .tokenUsage {
+                FooterButton(label: state.l10n.s.tokenRefresh, systemImage: "arrow.clockwise") {
+                    state.tokenUsageManager?.refreshNow()
+                }
+            } else {
+                FooterButton(label: state.l10n.s.actionQuit, systemImage: nil) {
+                    NSApp.terminate(nil)
+                }
             }
         }
     }

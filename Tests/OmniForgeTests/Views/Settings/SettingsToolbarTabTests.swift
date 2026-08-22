@@ -3,14 +3,30 @@ import XCTest
 
 final class SettingsToolbarTabTests: XCTestCase {
     func test_sidebarContainsStableTabs() {
-        XCTAssertEqual(SettingsToolbarTab.allCases.count, 11)
+        XCTAssertEqual(SettingsToolbarTab.allCases.count, 12)
         XCTAssertEqual(
             SettingsToolbarTab.allCases,
             [
                 .general, .features, .inputMethod, .clipboard, .shelf, .screenshot, .mouse,
-                .performance, .keepAwake, .cleaner, .uninstaller
+                .performance, .tokenUsage, .keepAwake, .cleaner, .uninstaller
             ]
         )
+    }
+
+    func test_tokenUsageSystemImageAndTitle() {
+        XCTAssertEqual(SettingsToolbarTab.tokenUsage.systemImage, "chart.line.uptrend.xyaxis")
+        XCTAssertEqual(SettingsToolbarTab.tokenUsage.title(in: .en), "Token Usage")
+        XCTAssertEqual(SettingsToolbarTab.tokenUsage.title(in: .zhHans), "Token 用量")
+    }
+
+    func test_tokenUsageSections_orderAndTitles() {
+        XCTAssertEqual(
+            TokenUsageSettingsSection.allCases,
+            [.general, .providers, .alerts]
+        )
+        XCTAssertEqual(TokenUsageSettingsSection.general.title(in: .en), "General")
+        XCTAssertEqual(TokenUsageSettingsSection.providers.title(in: .zhHans), "提供商")
+        XCTAssertEqual(TokenUsageSettingsSection.alerts.title(in: .zhHans), "告警")
     }
 
     func test_keepAwakeSystemImageAndTitle() {

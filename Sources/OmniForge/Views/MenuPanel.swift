@@ -2,15 +2,16 @@ import Foundation
 
 enum MenuPanel: String, CaseIterable, Identifiable {
     case systemMonitor
+    case tokenUsage
     case keepAwake
     case clipboard = "utilities"
 
     /// 兼容历史命名；控制中心实用工具页。
     static let utilities: MenuPanel = .clipboard
 
-    /// 系统监控 → 保持唤醒 → 实用工具
+    /// 系统监控 → Token 用量 → 保持唤醒 → 实用工具
     static let primaryCases: [MenuPanel] = [
-        .systemMonitor, .keepAwake, .utilities,
+        .systemMonitor, .tokenUsage, .keepAwake, .utilities,
     ]
 
     static func visibleCases(isAvailable: (AppFeature) -> Bool) -> [MenuPanel] {
@@ -18,6 +19,9 @@ enum MenuPanel: String, CaseIterable, Identifiable {
 
         if isAvailable(.systemMonitor) {
             result.append(.systemMonitor)
+        }
+        if isAvailable(.tokenUsage) {
+            result.append(.tokenUsage)
         }
         if isAvailable(.keepAwake) {
             result.append(.keepAwake)
@@ -47,6 +51,7 @@ enum MenuPanel: String, CaseIterable, Identifiable {
     var symbolName: String {
         switch self {
         case .systemMonitor: return "waveform.path.ecg"
+        case .tokenUsage: return "chart.line.uptrend.xyaxis"
         case .keepAwake: return "moon.fill"
         case .clipboard: return "wrench.fill"
         }
@@ -55,6 +60,7 @@ enum MenuPanel: String, CaseIterable, Identifiable {
     func title(in strings: Strings) -> String {
         switch self {
         case .systemMonitor: return strings.controlcenterTabSystemMonitor
+        case .tokenUsage: return strings.controlcenterTabTokenUsage
         case .keepAwake: return strings.featureHubNameKeepAwake
         case .clipboard: return strings.controlcenterTabUtilities
         }
@@ -63,6 +69,7 @@ enum MenuPanel: String, CaseIterable, Identifiable {
     func navTitle(in strings: Strings) -> String {
         switch self {
         case .systemMonitor: return strings.controlcenterNavMonitor
+        case .tokenUsage: return strings.controlcenterNavTokenUsage
         case .keepAwake: return strings.controlcenterNavKeepAwake
         case .clipboard: return strings.controlcenterNavUtilities
         }

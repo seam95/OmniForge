@@ -174,6 +174,35 @@ final class FeatureRuntimeBindingTests: XCTestCase {
         FeatureRuntime.shared.resetForTesting()
         XCTAssertTrue(FeatureRuntime.shared.isAvailable(.systemMonitor))
     }
+
+    func test_tokenUsageBinding_startsWhenAvailable() {
+        let manager = TokenUsageManager(preferences: TokenUsagePreferences(userDefaults: .standard))
+        FeatureRuntime.shared.register(.tokenUsage, manager: manager)
+
+        FeatureRuntime.shared.syncAtLaunch()
+
+        XCTAssertTrue(manager.isActive)
+    }
+
+    func test_tokenUsageBinding_stopsWhenUnavailable() {
+        let manager = TokenUsageManager(preferences: TokenUsagePreferences(userDefaults: .standard))
+        FeatureRuntime.shared.register(.tokenUsage, manager: manager)
+
+        FeatureRuntime.shared.syncAtLaunch()
+        XCTAssertTrue(manager.isActive)
+
+        FeatureRuntime.shared.setAvailable(.tokenUsage, false)
+        XCTAssertFalse(manager.isActive)
+
+        FeatureRuntime.shared.setAvailable(.tokenUsage, true)
+        XCTAssertTrue(manager.isActive)
+    }
+
+    func test_tokenUsageBinding_noManager_doesNotCrash() {
+        FeatureRuntime.shared.syncAtLaunch()
+        FeatureRuntime.shared.setAvailable(.tokenUsage, false)
+        FeatureRuntime.shared.setAvailable(.tokenUsage, true)
+    }
 }
 
 private final class BindingTestStore: ClipboardStore {

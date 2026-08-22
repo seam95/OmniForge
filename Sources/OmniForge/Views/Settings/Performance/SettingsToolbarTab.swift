@@ -10,6 +10,7 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
     case screenshot
     case mouse
     case performance
+    case tokenUsage
     case keepAwake
     case cleaner
     case uninstaller
@@ -31,6 +32,8 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
                 return AppFeature.mouseFeatures.contains(where: isAvailable)
             case .performance:
                 return isAvailable(.systemMonitor)
+            case .tokenUsage:
+                return isAvailable(.tokenUsage)
             case .keepAwake:
                 return isAvailable(.keepAwake)
             case .cleaner:
@@ -61,6 +64,7 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
         case .screenshot: return "camera.viewfinder"
         case .mouse: return "computermouse"
         case .performance: return "gauge.with.dots.needle.33percent"
+        case .tokenUsage: return "chart.line.uptrend.xyaxis"
         case .keepAwake: return "moon.zzz.fill"
         case .cleaner: return "sparkles"
         case .uninstaller: return "trash"
@@ -77,10 +81,28 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
         case .screenshot: return strings.settingsTabScreenshot
         case .mouse: return strings.settingsTabMouse
         case .performance: return strings.settingsTabPerformance
+        case .tokenUsage: return strings.settingsTabTokenUsage
         case .keepAwake: return strings.featureHubNameKeepAwake
         case .cleaner: return strings.cleanerName
         case .uninstaller: return strings.uninstallerName
         case .features: return strings.settingsTabFeatures
+        }
+    }
+}
+
+/// Token 用量设置页内部分段（通用 / 提供商 / 告警）。
+enum TokenUsageSettingsSection: String, CaseIterable, Identifiable {
+    case general
+    case providers
+    case alerts
+
+    var id: String { rawValue }
+
+    func title(in strings: Strings) -> String {
+        switch self {
+        case .general: return strings.tokenSettingsGenericSection
+        case .providers: return strings.tokenSettingsProvidersSection
+        case .alerts: return strings.tokenSettingsAlertsSection
         }
     }
 }

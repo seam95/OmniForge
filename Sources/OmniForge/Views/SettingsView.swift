@@ -69,6 +69,9 @@ struct SettingsView: View {
         case .performance:
             PerformanceSettingsView(state: state)
                 .navigationTitle(tab.title(in: state.l10n.s))
+        case .tokenUsage:
+            TokenUsageSettingsView(state: state)
+                .navigationTitle(tab.title(in: state.l10n.s))
         case .keepAwake:
             KeepAwakeSettingsView(state: state)
                 .navigationTitle(tab.title(in: state.l10n.s))
