@@ -39,7 +39,6 @@ struct MonitorOverviewView: View {
         VStack(alignment: .leading, spacing: 10) {
             header
             cardRows
-            refreshActionRow
             footer
         }
         .padding(12)
@@ -66,7 +65,15 @@ struct MonitorOverviewView: View {
 
             Spacer(minLength: 8)
 
-            statusPill
+            HStack(spacing: 6) {
+                statusPill
+
+                IconButton(
+                    systemImage: "arrow.clockwise",
+                    help: strings.monitorRefreshAll,
+                    action: onRefresh
+                )
+            }
         }
         .padding(.horizontal, 2)
         .padding(.top, 2)
@@ -100,28 +107,6 @@ struct MonitorOverviewView: View {
             Capsule(style: .continuous)
                 .fill((hasIssues ? Color.orange : Color.green).opacity(0.12))
         )
-    }
-
-    // MARK: - Refresh Action
-
-    @ViewBuilder
-    private var refreshActionRow: some View {
-        HStack {
-            Spacer()
-
-            Button(action: onRefresh) {
-                HStack(spacing: 4) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 11.5, weight: .semibold))
-                    Text(strings.monitorRefreshAll)
-                        .font(.system(size: 12.5, weight: .medium))
-                }
-                .foregroundStyle(Color.accentColor)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.top, 2)
-        .padding(.trailing, 2)
     }
 
     // MARK: - Cards
