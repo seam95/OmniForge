@@ -8,8 +8,8 @@ final class ControlCenterContentMetricsTests: XCTestCase {
         XCTAssertEqual(ControlCenterContentMetrics.emptyContentMinHeight, 120)
     }
 
-    func test_usesSelfSizedFixedHeight_onlySystemMonitor() {
-        XCTAssertTrue(ControlCenterContentMetrics.usesSelfSizedFixedHeight(.systemMonitor))
+    func test_usesSelfSizedFixedHeight_allPanelsAdaptive() {
+        XCTAssertFalse(ControlCenterContentMetrics.usesSelfSizedFixedHeight(.systemMonitor))
         XCTAssertFalse(ControlCenterContentMetrics.usesSelfSizedFixedHeight(.keepAwake))
         XCTAssertFalse(ControlCenterContentMetrics.usesSelfSizedFixedHeight(.clipboard))
     }

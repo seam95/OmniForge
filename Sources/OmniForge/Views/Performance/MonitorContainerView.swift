@@ -73,8 +73,6 @@ struct MonitorContainerView: View {
                 )
             }
         }
-        // 固定内容高度，避免 overview→ranking 切换时 NSPopover 随 loading/loaded 高度跳变。
-        .frame(height: 520)
         .onAppear {
             coordinator.onToggle = { onExpandedMetric($0) }
             if deviceSummary.hostName.isEmpty {

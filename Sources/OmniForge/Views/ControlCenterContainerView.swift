@@ -1,17 +1,17 @@
 import ApplicationServices
 import SwiftUI
 
-/// 控制中心内容区高度策略：系统监控固定高度，其余页按内容收缩并设上限。
+/// 控制中心内容区高度策略：所有页按内容自适应收缩并设滚动上限。
 enum ControlCenterContentMetrics {
     static let panelWidth: CGFloat = 380
-    /// 系统监控固定高度，以及其它页滚动上限；与 `MonitorContainerView` 一致。
+    /// 各页滚动上限。
     static let maxContentHeight: CGFloat = 520
     /// 空状态 / 不可用页的最小内容高度，避免 popover 过扁。
     static let emptyContentMinHeight: CGFloat = 120
 
-    /// 系统监控自带固定高度，外壳直接托管；其余页走自适应测量。
+    /// 所有页均支持自适应内容高度。
     static func usesSelfSizedFixedHeight(_ panel: MenuPanel) -> Bool {
-        panel == .systemMonitor
+        false
     }
 
     /// 根据测得的内容高度计算展示高度（不超过上限）。
@@ -158,31 +158,32 @@ struct ControlCenterContainerView: View {
                 if let monitor = state.monitor,
                    let preferences = state.monitorPreferences,
                    runtime.isAvailable(.systemMonitor) {
-                    // 固定 520：overview↔ranking 不因加载态跳变 popover。
-                    MonitorContainerView(
-                        snapshot: monitor.snapshot,
-                        history: monitor.history,
-                        processState: monitor.processState,
-                        speedTestState: monitor.speedTestState,
-                        configuration: preferences.configuration,
-                        strings: state.l10n.s,
-                        onDemandChange: { demand in
-                            monitor.setPanelDemand(
-                                MonitorPanelDemandGate.resolve(
-                                    demand,
-                                    isEnabled: preferences.configuration.isEnabled,
-                                    isAvailable: runtime.isAvailable(.systemMonitor)
+                    AdaptiveHeightScroll(maxHeight: ControlCenterContentMetrics.maxContentHeight) {
+                        MonitorContainerView(
+                            snapshot: monitor.snapshot,
+                            history: monitor.history,
+                            processState: monitor.processState,
+                            speedTestState: monitor.speedTestState,
+                            configuration: preferences.configuration,
+                            strings: state.l10n.s,
+                            onDemandChange: { demand in
+                                monitor.setPanelDemand(
+                                    MonitorPanelDemandGate.resolve(
+                                        demand,
+                                        isEnabled: preferences.configuration.isEnabled,
+                                        isAvailable: runtime.isAvailable(.systemMonitor)
+                                    )
                                 )
-                            )
-                        },
-                        onExpandedMetric: { monitor.setExpandedProcessMetric($0) },
-                        onStartSpeedTest: { monitor.startSpeedTest() },
-                        onOpenSettings: { onOpenSettings(nil) },
-                        showsSettingsAction: false,
-                        onRefresh: { forceProcess in
-                            monitor.refreshNow(forceProcess: forceProcess)
-                        }
-                    )
+                            },
+                            onExpandedMetric: { monitor.setExpandedProcessMetric($0) },
+                            onStartSpeedTest: { monitor.startSpeedTest() },
+                            onOpenSettings: { onOpenSettings(nil) },
+                            showsSettingsAction: false,
+                            onRefresh: { forceProcess in
+                                monitor.refreshNow(forceProcess: forceProcess)
+                            }
+                        )
+                    }
                 } else {
                     unavailablePanel
                 }

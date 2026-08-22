@@ -36,17 +36,13 @@ struct MonitorOverviewView: View {
     }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 10) {
-                header
-                cardRows
-                footer
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+        VStack(alignment: .leading, spacing: 10) {
+            header
+            cardRows
+            footer
         }
-        // 高度由 MonitorContainerView 固定外壳决定（避免 route 切换时 popover 跳变）。
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
     // MARK: - Header
@@ -185,20 +181,19 @@ struct MonitorOverviewView: View {
         }
     }
 
-    // MARK: - Footer
-
+    @ViewBuilder
     private var footer: some View {
-        HStack(spacing: 12) {
-            if showsSettingsAction {
+        if showsSettingsAction {
+            HStack(spacing: 12) {
                 FooterButton(label: strings.monitorPreferences, systemImage: "slider.horizontal.3") {
                     onOpenSettings()
                 }
-            }
 
-            Spacer()
+                Spacer()
+            }
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .padding(.top, 4)
         }
-        .font(.caption.weight(.medium))
-        .foregroundStyle(.secondary)
-        .padding(.top, 4)
     }
 }
