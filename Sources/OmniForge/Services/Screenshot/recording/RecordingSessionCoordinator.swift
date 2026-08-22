@@ -37,16 +37,20 @@ final class RecordingSessionCoordinator: RecordingSessionCoordinating {
 
     var isRecording: Bool { engine != nil }
 
+    let suppressesWindowDisplay: Bool
+
     init(
         userDefaults: UserDefaults = .standard,
         stringsProvider: @escaping () -> Strings = { .en },
         engineFactory: @escaping () -> RecordingEngine = { RecordingEngine() },
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        suppressesWindowDisplay: Bool = (NSClassFromString("XCTestCase") != nil)
     ) {
         self.userDefaults = userDefaults
         self.stringsProvider = stringsProvider
         self.engineFactory = engineFactory
         self.fileManager = fileManager
+        self.suppressesWindowDisplay = suppressesWindowDisplay
     }
 
     func begin(rect: NSRect, screen: NSScreen) {
@@ -66,7 +70,9 @@ final class RecordingSessionCoordinator: RecordingSessionCoordinating {
         let strings = stringsProvider()
         let border = RecordingBorderPanel(screen: screen)
         border.setSelectionRect(rect)
-        border.orderFrontRegardless()
+        if !suppressesWindowDisplay {
+            border.orderFrontRegardless()
+        }
         borderPanel = border
 
         let hud = RecordingHUDPanel(
@@ -85,7 +91,9 @@ final class RecordingSessionCoordinator: RecordingSessionCoordinating {
         hud.onResumeRecording = { [weak self] in
             self?.engine?.resumeRecording()
         }
-        hud.orderFrontRegardless()
+        if !suppressesWindowDisplay {
+            hud.orderFrontRegardless()
+        }
         hudPanel = hud
 
         let recordingEngine = engineFactory()

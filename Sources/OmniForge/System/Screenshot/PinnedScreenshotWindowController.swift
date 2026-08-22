@@ -39,6 +39,7 @@ final class PinnedScreenshotWindowController: NSObject, NSWindowDelegate {
         pipeline: ScreenshotResultPipeline,
         createdAt: Date = Date(),
         initialState: PinnedScreenshotState = PinnedScreenshotState(),
+        suppressesWindowDisplay: Bool = (NSClassFromString("XCTestCase") != nil),
         onClose: @escaping (UUID) -> Void
     ) {
         self.id = id
@@ -48,9 +49,12 @@ final class PinnedScreenshotWindowController: NSObject, NSWindowDelegate {
         self.pipeline = pipeline
         self.createdAt = createdAt
         self.state = initialState
+        self.suppressesWindowDisplay = suppressesWindowDisplay
         self.onClose = onClose
         super.init()
     }
+
+    let suppressesWindowDisplay: Bool
 
     var handle: PinnedScreenshotHandle {
         PinnedScreenshotHandle(
@@ -151,7 +155,9 @@ final class PinnedScreenshotWindowController: NSObject, NSWindowDelegate {
 
         self.panel = panel
         self.contentView = content
-        panel.orderFront(nil)
+        if !suppressesWindowDisplay {
+            panel.orderFront(nil)
+        }
     }
 
     func close() {

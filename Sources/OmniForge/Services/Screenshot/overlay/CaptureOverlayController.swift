@@ -198,6 +198,9 @@ final class CaptureOverlayController {
         )
     }
 
+    /// 是否抑制实际窗口与监听器的展示（单测环境下默认开启，避免弹出全屏遮罩及黑屏闪烁）。
+    let suppressesWindowDisplay: Bool
+
     /// 使用指定的捕获客户端初始化。
     /// - Parameter editorEnabled: 选区完成后是否嵌入标注编辑器。
     /// - Parameters outputEncoder/clipboardWriter/screenshotSaver/resultPipeline/pinResultBuilder:
@@ -212,7 +215,8 @@ final class CaptureOverlayController {
              ScreenshotOutputConfiguration().load()
          },
          resultPipeline: ScreenshotResultPipeline? = nil,
-         pinResultBuilder: ((NSImage) -> ScreenshotResult?)? = nil) {
+         pinResultBuilder: ((NSImage) -> ScreenshotResult?)? = nil,
+         suppressesWindowDisplay: Bool = (NSClassFromString("XCTestCase") != nil)) {
         self.captureClient = captureClient
         self.editorEnabled = editorEnabled
         self.stringsProvider = stringsProvider
@@ -222,6 +226,7 @@ final class CaptureOverlayController {
         self.outputConfigurationProvider = outputConfigurationProvider
         self.resultPipeline = resultPipeline
         self.pinResultBuilder = pinResultBuilder
+        self.suppressesWindowDisplay = suppressesWindowDisplay
     }
 
     /// 启动捕获流程。
@@ -240,49 +245,51 @@ final class CaptureOverlayController {
         self.screenSnapshots = preSnapshots
         self.onComplete = completion
 
-        // 为每块屏幕创建遮罩面板
-        for screen in NSScreen.screens {
-            let panel = createOverlayPanel(for: screen)
-            overlayPanels.append(panel)
+        if !suppressesWindowDisplay {
+            // 为每块屏幕创建遮罩面板
+            for screen in NSScreen.screens {
+                let panel = createOverlayPanel(for: screen)
+                overlayPanels.append(panel)
 
-            let selectionView = SelectionView(frame: screen.frame)
-            selectionView.delegate = self
+                let selectionView = SelectionView(frame: screen.frame)
+                selectionView.delegate = self
 
-            // 注入窗口吸附 provider（按权限选 AX 或 SC 降级）。
-            selectionView.snapProvider = makeSnapProvider()
-            // 屏 frame 来源：用 SelectionView 所在 panel 的 screen。
-            selectionView.screenFrameProvider = { [weak panel] in panel?.screen?.frame }
-            // visibleFrame 来源（已扣除菜单栏/Dock，用于边缘条带吸附）。
-            selectionView.visibleFrameProvider = { [weak panel] in panel?.screen?.visibleFrame }
-            // CG/AX 全局坐标以主屏高度为 Y 翻转基准（上下/不等高多屏必需）。
-            selectionView.primaryDisplayHeightProvider = {
-                NSScreen.screens.first?.frame.maxY
+                // 注入窗口吸附 provider（按权限选 AX 或 SC 降级）。
+                selectionView.snapProvider = makeSnapProvider()
+                // 屏 frame 来源：用 SelectionView 所在 panel 的 screen。
+                selectionView.screenFrameProvider = { [weak panel] in panel?.screen?.frame }
+                // visibleFrame 来源（已扣除菜单栏/Dock，用于边缘条带吸附）。
+                selectionView.visibleFrameProvider = { [weak panel] in panel?.screen?.visibleFrame }
+                // CG/AX 全局坐标以主屏高度为 Y 翻转基准（上下/不等高多屏必需）。
+                selectionView.primaryDisplayHeightProvider = {
+                    NSScreen.screens.first?.frame.maxY
+                }
+
+                // 注入底图快照（仅用预抓；缺图时保持 nil，暗罩可先出，后续 apply 补图）
+                if let displayID = screen.displayID {
+                    panelDisplayIDs[panel] = displayID
+                    selectionView.backgroundSnapshot = preSnapshots[displayID]
+                }
+
+                panel.contentView = selectionView
+                selectionViews[panel] = selectionView
             }
 
-            // 注入底图快照（仅用预抓；缺图时保持 nil，暗罩可先出，后续 apply 补图）
-            if let displayID = screen.displayID {
-                panelDisplayIDs[panel] = displayID
-                selectionView.backgroundSnapshot = preSnapshots[displayID]
+            // 安装 ESC / 右键 / 多屏 hover 路由
+            installCancellationMonitors()
+            installHoverRoutingMonitors()
+
+            // 批量显示（禁用动画避免闪烁）
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            for panel in overlayPanels {
+                panel.orderFront(nil)
             }
+            CATransaction.commit()
 
-            panel.contentView = selectionView
-            selectionViews[panel] = selectionView
+            // 启动后立即按当前鼠标位置刷一次 hover（不依赖先收到 mouseMoved）。
+            routeHover(to: NSEvent.mouseLocation)
         }
-
-        // 安装 ESC / 右键 / 多屏 hover 路由
-        installCancellationMonitors()
-        installHoverRoutingMonitors()
-
-        // 批量显示（禁用动画避免闪烁）
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        for panel in overlayPanels {
-            panel.orderFront(nil)
-        }
-        CATransaction.commit()
-
-        // 启动后立即按当前鼠标位置刷一次 hover（不依赖先收到 mouseMoved）。
-        routeHover(to: NSEvent.mouseLocation)
 
         onStartCaptureForTesting?()
     }
@@ -323,68 +330,70 @@ final class CaptureOverlayController {
         self.snapshotGeneration &+= 1
         self.onComplete = completion
 
-        let panel = createOverlayPanel(for: screen)
-        overlayPanels.append(panel)
+        if !suppressesWindowDisplay {
+            let panel = createOverlayPanel(for: screen)
+            overlayPanels.append(panel)
 
-        let selectionView = SelectionView(frame: screen.frame)
-        selectionView.delegate = self
-        if let displayID = screen.displayID {
-            selectionView.backgroundSnapshot = screenSnapshots[displayID]
-        }
-        panel.contentView = selectionView
-        selectionViews[panel] = selectionView
-
-        installCancellationMonitors()
-
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        panel.orderFront(nil)
-        CATransaction.commit()
-
-        // 整屏矩形作为选区 → 直接进入编辑器。
-        let fullRect = NSRect(origin: .zero, size: screen.frame.size)
-        let fullCaptureRect = convertToCGRect(fullRect, on: screen)
-        let displayID = screen.displayID
-        let preSnapshot = displayID.flatMap { screenSnapshots[$0] }
-        selectionView.selectionLocked = true
-        selectionView.selectionInteractionEnabled = true
-        selectionView.annotationToolActive = true
-        editorHostView = selectionView
-        // 禁用其余屏的选区交互（当前 startEditor 虽只建单屏 panel，保留防御）。
-        disableSelectionInteractionOnOtherScreens(keeping: selectionView)
-
-        let encoder = outputEncoder ?? ImageOutputEncoder()
-        let clipboard = clipboardWriter ?? ClipboardImageWriter()
-        let editor = AnnotationEditorController(
-            baseImage: baseImage,
-            document: AnnotationDocument(),
-            stringsProvider: stringsProvider,
-            resultRunner: resolvedResultPipeline(),
-            encoder: encoder,
-            clipboardWriter: clipboard,
-            makeResult: makeResultBuilder(
-                mode: .fullScreen,
-                screen: screen,
-                selectionViewRect: nil
-            ),
-            sourceBackingScaleFactor: screen.backingScaleFactor,
-            onComplete: { [weak self] finalImage in
-                guard let self else { return }
-                Self.logger.info("startEditor 编辑器 onComplete(#1) 被调用，image=\(finalImage != nil)")
-                self.tearDown()
-                self.onComplete?(finalImage)
-                self.onComplete = nil
+            let selectionView = SelectionView(frame: screen.frame)
+            selectionView.delegate = self
+            if let displayID = screen.displayID {
+                selectionView.backgroundSnapshot = screenSnapshots[displayID]
             }
-        )
-        editor.onRecordingSelection = onRecordingSelection
-        editorController = editor
-        editor.show(
-            in: selectionView,
-            selectionRect: fullRect,
-            captureRect: fullCaptureRect,
-            preSnapshot: preSnapshot,
-            displayID: displayID
-        )
+            panel.contentView = selectionView
+            selectionViews[panel] = selectionView
+
+            installCancellationMonitors()
+
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            panel.orderFront(nil)
+            CATransaction.commit()
+
+            // 整屏矩形作为选区 → 直接进入编辑器。
+            let fullRect = NSRect(origin: .zero, size: screen.frame.size)
+            let fullCaptureRect = convertToCGRect(fullRect, on: screen)
+            let displayID = screen.displayID
+            let preSnapshot = displayID.flatMap { screenSnapshots[$0] }
+            selectionView.selectionLocked = true
+            selectionView.selectionInteractionEnabled = true
+            selectionView.annotationToolActive = true
+            editorHostView = selectionView
+            // 禁用其余屏的选区交互（当前 startEditor 虽只建单屏 panel，保留防御）。
+            disableSelectionInteractionOnOtherScreens(keeping: selectionView)
+
+            let encoder = outputEncoder ?? ImageOutputEncoder()
+            let clipboard = clipboardWriter ?? ClipboardImageWriter()
+            let editor = AnnotationEditorController(
+                baseImage: baseImage,
+                document: AnnotationDocument(),
+                stringsProvider: stringsProvider,
+                resultRunner: resolvedResultPipeline(),
+                encoder: encoder,
+                clipboardWriter: clipboard,
+                makeResult: makeResultBuilder(
+                    mode: .fullScreen,
+                    screen: screen,
+                    selectionViewRect: nil
+                ),
+                sourceBackingScaleFactor: screen.backingScaleFactor,
+                onComplete: { [weak self] finalImage in
+                    guard let self else { return }
+                    Self.logger.info("startEditor 编辑器 onComplete(#1) 被调用，image=\(finalImage != nil)")
+                    self.tearDown()
+                    self.onComplete?(finalImage)
+                    self.onComplete = nil
+                }
+            )
+            editor.onRecordingSelection = onRecordingSelection
+            editorController = editor
+            editor.show(
+                in: selectionView,
+                selectionRect: fullRect,
+                captureRect: fullCaptureRect,
+                preSnapshot: preSnapshot,
+                displayID: displayID
+            )
+        }
     }
 
     /// 清理遮罩和监听器。
