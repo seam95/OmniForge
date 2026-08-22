@@ -80,10 +80,25 @@ struct FeatureFactory {
                     manager: TokenUsagePreferences(userDefaults: userDefaults)
                 )
             }
+            if runtime.manager(for: .tokenUsage, as: TokenUsageAlertManager.self) == nil {
+                let preferences = runtime.manager(for: .tokenUsage, as: TokenUsagePreferences.self)
+                    ?? TokenUsagePreferences(userDefaults: userDefaults)
+                let l10n = L10n(userDefaults: userDefaults)
+                runtime.register(
+                    .tokenUsage,
+                    manager: TokenUsageAlertManager(
+                        notificationClient: UserNotificationMonitorClient(),
+                        configuration: { preferences.configuration },
+                        stringsProvider: { l10n.s },
+                        authorizationProvider: { Permissions.shared.notifications }
+                    )
+                )
+            }
             if runtime.manager(for: .tokenUsage, as: TokenUsageManager.self) == nil {
                 let preferences = runtime.manager(for: .tokenUsage, as: TokenUsagePreferences.self)
                     ?? TokenUsagePreferences(userDefaults: userDefaults)
-                runtime.register(.tokenUsage, manager: Self.makeProductionTokenUsage(preferences: preferences))
+                let alerts = runtime.manager(for: .tokenUsage, as: TokenUsageAlertManager.self)
+                runtime.register(.tokenUsage, manager: Self.makeProductionTokenUsage(preferences: preferences, alerts: alerts))
             }
         case .shelf:
             if runtime.manager(for: .shelf, as: ShelfService.self) == nil {
@@ -317,7 +332,10 @@ struct FeatureFactory {
         )
     }
 
-    private static func makeProductionTokenUsage(preferences: TokenUsagePreferences) -> TokenUsageManager {
+    private static func makeProductionTokenUsage(
+        preferences: TokenUsagePreferences,
+        alerts: TokenUsageAlertManager? = nil
+    ) -> TokenUsageManager {
         // #03：限额取数外挂弹性缓存（内存 TTL + 磁盘 last-good + 429 冷却持久化）。
         let cache = TokenUsageLimitsCache()
         let claude = LimitsCachingFetcher(inner: ClaudeLimitsFetcher(), cache: cache)
@@ -355,7 +373,8 @@ struct FeatureFactory {
                 .gemini: geminiCollector,
                 .kimi: kimiCollector,
                 .cursor: cursorCollector,
-            ]
+            ],
+            alerts: alerts
         )
     }
 }
