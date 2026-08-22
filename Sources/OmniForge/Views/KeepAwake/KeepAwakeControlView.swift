@@ -444,7 +444,7 @@ struct KeepAwakeControlView: View {
 
             // 底部说明文案
             Text(strings.keepAwakeClamshellFootnote)
-                .font(.system(size: 11.5, weight: .regular))
+                .font(.system(size: 11, weight: .regular))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 4)
 
@@ -481,19 +481,19 @@ struct KeepAwakeControlView: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.06))
                 Image(systemName: "moon")
-                    .font(.system(size: 18, weight: .medium))
+                    .font(.system(size: 16.5, weight: .medium))
                     .foregroundStyle(.primary)
             }
-            .frame(width: 40, height: 40)
+            .frame(width: 38, height: 38)
 
             // 标题与状态副文案
             VStack(alignment: .leading, spacing: 3) {
                 Text(presentation.title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 13.5, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                 Text(presentation.statusSubtitle)
-                    .font(.system(size: 12, weight: .regular))
+                    .font(.system(size: 11.5, weight: .regular))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -508,16 +508,16 @@ struct KeepAwakeControlView: View {
                 .disabled(!presentation.isSessionToggleEnabled)
                 .accessibilityLabel(presentation.title)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 14)
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.vertical, Theme.Spacing.md)
         .background(cardBackground)
     }
 
     // MARK: - 卡片 2：唤醒时长
     private var durationSelectorCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             Text(strings.keepAwakeDurationLabel)
-                .font(.system(size: 13.5, weight: .medium))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.primary)
 
             HStack(spacing: 8) {
@@ -528,10 +528,10 @@ struct KeepAwakeControlView: View {
                         onSetDuration(preset.duration)
                     } label: {
                         Text(preset.labelKey(strings))
-                            .font(.system(size: 13, weight: isSelected ? .medium : .regular))
+                            .font(.system(size: 12, weight: isSelected ? .medium : .regular))
                             .foregroundStyle(isSelected ? Color.white : Color.primary)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 36)
+                            .frame(height: 32)
                             .background(
                                 RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
                                     .fill(isSelected ? Color.accentColor : Color.primary.opacity(colorScheme == .dark ? 0.10 : 0.06))
@@ -542,8 +542,8 @@ struct KeepAwakeControlView: View {
                 }
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 14)
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.vertical, Theme.Spacing.md)
         .background(cardBackground)
     }
 
@@ -552,10 +552,10 @@ struct KeepAwakeControlView: View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(strings.keepAwakeClamshellTitle)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 13.5, weight: .semibold))
                     .foregroundStyle(.primary)
                 Text(strings.keepAwakeClamshellSubtitle)
-                    .font(.system(size: 12, weight: .regular))
+                    .font(.system(size: 11.5, weight: .regular))
                     .foregroundStyle(.secondary)
                 if let line = presentation.clamshellStatusLine {
                     Text(line)
@@ -573,8 +573,8 @@ struct KeepAwakeControlView: View {
                 .disabled(!presentation.clamshellToggleEnabled)
                 .accessibilityLabel(strings.keepAwakeClamshellTitle)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 14)
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.vertical, Theme.Spacing.md)
         .background(cardBackground)
     }
 
