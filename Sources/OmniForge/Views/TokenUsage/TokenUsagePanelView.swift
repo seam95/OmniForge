@@ -147,7 +147,10 @@ struct TokenUsagePanelView: View {
             TokenUsageEmptyStateView(strings: strings)
                 .frame(maxWidth: .infinity, minHeight: ControlCenterContentMetrics.emptyContentMinHeight)
         } else {
-            limitsBlock
+            VStack(alignment: .leading, spacing: 10) {
+                limitsBlock
+                usageBlock
+            }
         }
     }
 
@@ -169,6 +172,40 @@ struct TokenUsagePanelView: View {
             }
             footerLine
         }
+    }
+
+    /// 用量区块（#04）：今日用量卡 + 本地统计标注行。
+    /// 无数据且未回填时整块隐藏（SPEC 4.3）；回填中仍显示（数值位为「正在统计历史用量…」）。
+    @ViewBuilder
+    private var usageBlock: some View {
+        if manager.showingUsageBlock {
+            let providerCount = selectedProvider == nil
+                ? manager.usageProvidersWithData.count
+                : 1
+            VStack(alignment: .leading, spacing: 10) {
+                TokenUsageTodayCardView(
+                    overview: selectedUsageOverview,
+                    backfilling: manager.usageBackfilling,
+                    providerCount: providerCount,
+                    strings: strings
+                )
+                usageFooterLine
+            }
+        }
+    }
+
+    /// 选中 provider 的用量快照；「全部」= 聚合快照。
+    private var selectedUsageOverview: TokenUsageOverview? {
+        guard let selectedProvider else { return manager.usageOverview }
+        return manager.usageOverview(for: selectedProvider)
+    }
+
+    /// 用量来源标注：「本地统计 · 每 5 分钟汇总」。
+    private var usageFooterLine: some View {
+        Text(String(format: strings.tokenUsageLocalFormat, Int(ClaudeUsageCollector.defaultScanInterval / 60)))
+            .font(Theme.Stats.font10Regular)
+            .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+            .frame(maxWidth: .infinity, alignment: .center)
     }
 
     /// 来源脚注：「10 分钟前更新 · 官方来源 · 5 家已配置 4 家」。

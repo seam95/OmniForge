@@ -1144,4 +1144,6 @@ struct Strings: Equatable {
     let tokenDurationDayFormat: String
     let tokenDurationHourFormat: String
     let tokenDurationMinuteFormat: String
+    /// 星期缩写（索引 0 = 周日；用于「峰值 168k（周三）」）。中文为准。
+    let tokenWeekdayNames: [String]
 }

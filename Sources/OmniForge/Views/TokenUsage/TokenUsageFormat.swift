@@ -42,6 +42,14 @@ enum TokenUsageFormat {
         return String(format: strings.tokenUpdatedHoursFormat, minutes / 60)
     }
 
+    /// 星期简称（周日前置，配合 `tokenWeekdayNames`）。
+    static func weekdayName(for date: Date, strings: Strings) -> String {
+        let weekday = Calendar.current.component(.weekday, from: date) // 1 = 周日
+        let index = max(0, weekday - 1)
+        guard index < strings.tokenWeekdayNames.count else { return "" }
+        return strings.tokenWeekdayNames[index]
+    }
+
     /// 窗口行说明文案（重置 + 步速结论）；credits 窗口固定额度口径。
     static func caption(
         for window: UsageWindow,

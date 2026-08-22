@@ -4,7 +4,8 @@ import Foundation
 /// Token 用量运行时 — 调度限额取数 / 用量采集 / 告警，聚合为面板快照。
 ///
 /// #02：限额侧接入（多 provider 并行、单家失败不拖垮整体、单飞合并）；
-/// 用量采集（#04+）与告警（#11）按 issue 逐步接入。
+/// #04：用量侧接入（采集器启停 + 后台回填 + 今日用量快照发布）；
+/// 告警（#11）按 issue 逐步接入。
 @MainActor
 final class TokenUsageManager: ObservableObject {
     @Published private(set) var isActive = false
@@ -13,9 +14,24 @@ final class TokenUsageManager: ObservableObject {
     /// 最近一次任何成功取数时间（来源标注「X 分钟前更新」）。
     @Published private(set) var limitUpdateAt: Date?
 
+    // MARK: #04 — 用量侧
+    /// 聚合用量快照（全部已配置 provider；nil = 窗口内无任何数据）。
+    @Published private(set) var usageOverview: TokenUsageOverview?
+    /// 回填中（首次启用后台全量回填；回填中 UI 显示「正在统计历史用量…」）。
+    @Published private(set) var usageBackfilling = false
+    /// 窗口内有用量数据的 provider（按目录序）。
+    @Published private(set) var usageProvidersWithData: [TokenUsageProvider] = []
+
+    /// 用量区块显隐（SPEC 4.3）：有数据或回填中才显示。
+    var showingUsageBlock: Bool {
+        usageOverview != nil || usageBackfilling
+    }
+
     private let preferences: TokenUsagePreferences
     private let fetchers: [TokenUsageProvider: LimitsFetching]
     private let scheduler: RepeatingScheduling
+    private let usageStore: UsageStoring?
+    private let usageCollectors: [TokenUsageProvider: UsageCollecting]
     private var refreshTimer: AnyCancellable?
     /// 单飞合并：并发未命中共享同一次上游拉取，避免打爆 Claude OAuth 端点。
     private var inFlight = Set<TokenUsageProvider>()
@@ -24,11 +40,25 @@ final class TokenUsageManager: ObservableObject {
     init(
         preferences: TokenUsagePreferences,
         fetchers: [TokenUsageProvider: LimitsFetching] = [:],
-        scheduler: RepeatingScheduling = TimerRepeatingScheduler()
+        scheduler: RepeatingScheduling = TimerRepeatingScheduler(),
+        usageStore: UsageStoring? = nil,
+        usageCollectors: [TokenUsageProvider: UsageCollecting] = [:]
     ) {
         self.preferences = preferences
         self.fetchers = fetchers
         self.scheduler = scheduler
+        self.usageStore = usageStore
+        self.usageCollectors = usageCollectors
+
+        for (provider, collector) in usageCollectors {
+            collector.onUsageDidChange = { [weak self] changed in
+                guard let self else { return }
+                self.usageDidChange(changed)
+            }
+            collector.onBackfillStateChange = { [weak self] value in
+                self?.usageBackfilling = value
+            }
+        }
 
         preferences.$configuration
             .map(\.limitRefreshMinutes)
@@ -56,6 +86,11 @@ final class TokenUsageManager: ObservableObject {
         isActive = true
         refreshLimits(force: false)
         rescheduleRefreshTimer()
+        // #04：启动采集器（首次即后台全量回填），并先渲染一次已有快照。
+        for collector in usageCollectors.values {
+            collector.start()
+        }
+        refreshUsageSnapshot()
     }
 
     /// 停用：停止所有后台刷新与监听。
@@ -65,6 +100,10 @@ final class TokenUsageManager: ObservableObject {
         refreshTimer?.cancel()
         refreshTimer = nil
         inFlight.removeAll()
+        usageBackfilling = false
+        for collector in usageCollectors.values {
+            collector.stop()
+        }
     }
 
     /// 手动刷新入口（底栏「刷新」）：force 穿透内存/磁盘新鲜缓存，但 429 冷却不可穿透（#03）。
@@ -134,6 +173,46 @@ final class TokenUsageManager: ObservableObject {
         if limitUpdateAt == nil || limitUpdateAt! < captured {
             limitUpdateAt = captured
         }
+    }
+
+    // MARK: - 用量侧（#04）
+
+    /// 指定 provider 的用量快照（无窗口数据 → nil；面板切单家时使用）。
+    func usageOverview(for provider: TokenUsageProvider) -> TokenUsageOverview? {
+        guard let usageStore else { return nil }
+        let now = Date()
+        let (start, end) = snapshotWindow(now: now)
+        let buckets = usageStore.loadBuckets(from: start, to: end, providers: [provider])
+        return UsageOverviewBuilder.make(buckets: buckets, now: now, calendar: .current)
+    }
+
+    /// 采集器回调（主线程）：重新计算面板快照。
+    private func usageDidChange(_ provider: TokenUsageProvider) {
+        refreshUsageSnapshot()
+    }
+
+    private func refreshUsageSnapshot() {
+        guard let usageStore else { return }
+        let now = Date()
+        let (start, end) = snapshotWindow(now: now)
+        let buckets = usageStore.loadBuckets(from: start, to: end, providers: nil)
+        usageOverview = UsageOverviewBuilder.make(buckets: buckets, now: now, calendar: .current)
+        let withData = Set(buckets.map(\.key.provider))
+        usageProvidersWithData = TokenUsageProvider.allCases.filter { withData.contains($0) }
+    }
+
+    /// 快照窗口：近 7 日（今日起往前 6 天）~ 明日 0 点。
+    private func snapshotWindow(now: Date) -> (start: Date, end: Date) {
+        let calendar = Calendar.current
+        let todayStart = calendar.startOfDay(for: now)
+        let weekStart = calendar.date(
+            byAdding: .day,
+            value: -(UsageOverviewBuilder.trendDays - 1),
+            to: todayStart
+        ) ?? todayStart
+        let tomorrowStart = calendar.date(byAdding: .day, value: 1, to: todayStart)
+            ?? now.addingTimeInterval(86_400)
+        return (weekStart, tomorrowStart)
     }
 
     private func rescheduleRefreshTimer() {

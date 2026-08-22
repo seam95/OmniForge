@@ -1,0 +1,32 @@
+import Foundation
+
+/// 聚合桶写入策略（参考 02 queue.jsonl 约定）。
+enum UsageStorePolicy {
+    /// 已见 key 容量上限，超出做 LRU 淘汰（参考 02：10 万条封顶）。
+    static let maxSeenKeys = 100_000
+}
+
+/// 用量存储边界 — GRDB 实现 + 测试替身（协议在 Services 层）。
+///
+/// 隐私红线（SPEC 2.6）：只存 token 数字与时间戳；上游解析永不写入
+/// prompt/消息正文/会话内容。
+protocol UsageStoring: AnyObject {
+    // 半小时桶：主键 (provider, model, bucket_start)，last-writer-wins。
+    func upsertBucket(_ state: UsageBucketState)
+    func loadBucket(_ key: UsageBucketKey) -> UsageBucketState?
+    func loadBuckets(
+        from start: Date,
+        to end: Date,
+        providers: Set<TokenUsageProvider>?
+    ) -> [UsageBucketState]
+
+    // 已见消息 id 集合（跨 sync 持久化；容量上限 LRU 截断）。
+    func loadSeenKeys() -> Set<String>
+    func storeSeenKeys(_ keys: Set<String>, asOf date: Date)
+
+    // 文件游标 {inode, offset}。
+    func loadCursors() -> [String: JSONLCursor]
+    func storeCursor(path: String, cursor: JSONLCursor)
+    func removeCursor(path: String)
+    func clearCursors()
+}

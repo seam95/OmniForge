@@ -1065,6 +1065,7 @@ extension Strings {
         tokenDurationWeekFormat: "%d days",
         tokenDurationDayFormat: "%d d",
         tokenDurationHourFormat: "%d h",
-        tokenDurationMinuteFormat: "%d min"
+        tokenDurationMinuteFormat: "%d min",
+        tokenWeekdayNames: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
     )
 }
