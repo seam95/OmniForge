@@ -4,7 +4,7 @@ import XCTest
 final class ControlCenterContentMetricsTests: XCTestCase {
     func test_metrics_matchControlCenterShellContract() {
         XCTAssertEqual(ControlCenterContentMetrics.panelWidth, 380)
-        XCTAssertEqual(ControlCenterContentMetrics.maxContentHeight, 520)
+        XCTAssertEqual(ControlCenterContentMetrics.maxContentHeight, 525)
         XCTAssertEqual(ControlCenterContentMetrics.emptyContentMinHeight, 120)
     }
 
@@ -16,16 +16,16 @@ final class ControlCenterContentMetricsTests: XCTestCase {
 
     func test_resolvedHeight_capsAtMaxAndIgnoresInvalid() {
         XCTAssertEqual(
-            ControlCenterContentMetrics.resolvedHeight(contentHeight: 240, maxHeight: 520),
+            ControlCenterContentMetrics.resolvedHeight(contentHeight: 240, maxHeight: 525),
             240
         )
         XCTAssertEqual(
-            ControlCenterContentMetrics.resolvedHeight(contentHeight: 600, maxHeight: 520),
-            520
+            ControlCenterContentMetrics.resolvedHeight(contentHeight: 600, maxHeight: 525),
+            525
         )
         XCTAssertEqual(
-            ControlCenterContentMetrics.resolvedHeight(contentHeight: 520, maxHeight: 520),
-            520
+            ControlCenterContentMetrics.resolvedHeight(contentHeight: 525, maxHeight: 525),
+            525
         )
         XCTAssertEqual(
             ControlCenterContentMetrics.resolvedHeight(contentHeight: 0, maxHeight: 520),
