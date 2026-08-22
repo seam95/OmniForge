@@ -48,7 +48,7 @@ enum MenuPanel: String, CaseIterable, Identifiable {
         switch self {
         case .systemMonitor: return "waveform.path.ecg"
         case .keepAwake: return "moon.fill"
-        case .clipboard: return "wrench.and.screwdriver"
+        case .clipboard: return "wrench.fill"
         }
     }
 

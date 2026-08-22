@@ -644,6 +644,14 @@ struct Strings: Equatable {
     // MARK: - Keep Awake
     let keepAwakeTitle: String
     let keepAwakeDurationLabel: String
+    let keepAwakeDurationNever: String
+    let keepAwakeDuration15m: String
+    let keepAwakeDuration1h: String
+    let keepAwakeDuration4h: String
+    let keepAwakeClamshellTitle: String
+    let keepAwakeClamshellSubtitle: String
+    let keepAwakeClamshellFootnote: String
+    let keepAwakeStatusCurrentPrefix: String
     let keepAwakeOptionsSection: String
     let keepAwakeRemainingLabel: String
     let keepAwakeEndsAtLabel: String

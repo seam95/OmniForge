@@ -277,6 +277,31 @@ final class KeepAwakeManagerTests: XCTestCase {
         XCTAssertEqual(assertions.systemAcquires, 0)
     }
 
+    func test_setDuration_updatesActiveSessionEndDate() {
+        manager.start(duration: .minutes15)
+        guard case let .active(end1?) = manager.state else {
+            XCTFail("Expected timed active state")
+            return
+        }
+        XCTAssertEqual(end1, Date(timeIntervalSince1970: 1_000 + 15 * 60))
+
+        // 切换到 1 小时
+        manager.setDuration(.minutes60)
+        guard case let .active(end2?) = manager.state else {
+            XCTFail("Expected timed active state after switching duration")
+            return
+        }
+        XCTAssertEqual(end2, Date(timeIntervalSince1970: 1_000 + 60 * 60))
+
+        // 切换到无限期
+        manager.setDuration(.indefinite)
+        guard case let .active(end3) = manager.state else {
+            XCTFail("Expected active state")
+            return
+        }
+        XCTAssertNil(end3)
+    }
+
     private func waitForInactiveOrCleanup(timeout: TimeInterval = 1.0) async {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {

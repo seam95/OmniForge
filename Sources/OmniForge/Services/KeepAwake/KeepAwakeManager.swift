@@ -359,6 +359,20 @@ final class KeepAwakeManager: ObservableObject {
         scheduleDeadline(newEnd, generation: generation)
     }
 
+    /// 在活动会话中即时切换或更新时长设定（无限期或指定分钟数）。
+    func setDuration(_ duration: KeepAwakeDuration) {
+        KeepAwakeDiagnostics.info(
+            "setDuration.request duration=\(duration.minutes)m state=\(KeepAwakeDiagnostics.describeSession(state, now: clock.now))"
+        )
+        guard case .active = state else { return }
+        let newEnd = KeepAwakeSessionSupport.initialEndDate(duration: duration, now: clock.now)
+        state = .active(endDate: newEnd)
+        KeepAwakeDiagnostics.info(
+            "setDuration.applied newEnd=\(newEnd.map { String($0.timeIntervalSince1970) } ?? "nil") \(KeepAwakeDiagnostics.describeSession(state, now: clock.now))"
+        )
+        scheduleDeadline(newEnd, generation: generation)
+    }
+
     func retryCleanup() async {
         guard case .cleanupRequired = state else {
             lastOperationError = .alreadyInactive

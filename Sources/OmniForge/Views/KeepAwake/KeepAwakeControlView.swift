@@ -17,13 +17,14 @@ struct KeepAwakeControlPresentation: Equatable {
     var showsExtendButtons: Bool
     var showsDurationPicker: Bool
     var statusLine: String
+    var statusSubtitle: String
     var clamshellStatusLine: String?
     var startLabel: String
     var stopLabel: String
     var retryCleanupLabel: String
     var unavailableLabel: String
 
-    // 新增：控制中心 Toggle / 分区 / 倒计时
+    // 控制中心 Toggle / 分区 / 倒计时
     var isSessionToggleOn: Bool
     var isSessionToggleEnabled: Bool
     var showsRetryCleanupButton: Bool
@@ -104,6 +105,7 @@ enum KeepAwakeControlPresentationBuilder {
                 showsExtendButtons: false,
                 showsDurationPicker: false,
                 statusLine: strings.keepAwakeStatusFeatureUnavailable,
+                statusSubtitle: String(format: strings.keepAwakeStatusCurrentPrefix, strings.keepAwakeStatusFeatureUnavailable),
                 clamshellStatusLine: nil,
                 startLabel: labels.start,
                 stopLabel: labels.stop,
@@ -129,6 +131,7 @@ enum KeepAwakeControlPresentationBuilder {
                 showsExtendButtons: false,
                 showsDurationPicker: false,
                 statusLine: strings.keepAwakeStatusWaitingRecovery,
+                statusSubtitle: String(format: strings.keepAwakeStatusCurrentPrefix, strings.keepAwakeStatusWaitingRecovery),
                 clamshellStatusLine: nil,
                 startLabel: labels.start,
                 stopLabel: labels.stop,
@@ -149,13 +152,14 @@ enum KeepAwakeControlPresentationBuilder {
         switch session {
         case .inactive:
             let status: String
+            let subtitle: String
             if let lastError {
-                status = String(
-                    format: strings.keepAwakeStatusNotActiveWithError,
-                    shortError(lastError)
-                )
+                let errText = shortError(lastError)
+                status = String(format: strings.keepAwakeStatusNotActiveWithError, errText)
+                subtitle = String(format: strings.keepAwakeStatusCurrentPrefix, status)
             } else {
                 status = strings.keepAwakeStatusNormalSleep
+                subtitle = String(format: strings.keepAwakeStatusCurrentPrefix, strings.keepAwakeStatusNormalSleep)
             }
             return KeepAwakeControlPresentation(
                 title: strings.keepAwakeTitle,
@@ -164,6 +168,7 @@ enum KeepAwakeControlPresentationBuilder {
                 showsExtendButtons: false,
                 showsDurationPicker: true,
                 statusLine: status,
+                statusSubtitle: subtitle,
                 clamshellStatusLine: nil,
                 startLabel: labels.start,
                 stopLabel: labels.stop,
@@ -177,7 +182,6 @@ enum KeepAwakeControlPresentationBuilder {
                 showsOptionsSection: true,
                 showsClamshellSection: true,
                 clamshellToggleEnabled: true,
-                // inactive：lastError 已并入 statusLine；secondary 仅含 pointer/battery
                 secondaryStatusLine: secondary
             )
         case .activating:
@@ -188,6 +192,7 @@ enum KeepAwakeControlPresentationBuilder {
                 showsExtendButtons: false,
                 showsDurationPicker: false,
                 statusLine: strings.keepAwakeStatusStarting,
+                statusSubtitle: String(format: strings.keepAwakeStatusCurrentPrefix, strings.keepAwakeStatusStarting),
                 clamshellStatusLine: nil,
                 startLabel: labels.start,
                 stopLabel: labels.stop,
@@ -213,15 +218,17 @@ enum KeepAwakeControlPresentationBuilder {
                     strings: strings
                 )
             }()
+            let line = timed
+                ? strings.keepAwakeStatusActiveTimed
+                : strings.keepAwakeStatusActiveIndefinite
             return KeepAwakeControlPresentation(
                 title: strings.keepAwakeTitle,
                 isPrimaryEnabled: true,
                 primaryAction: .stop,
                 showsExtendButtons: timed,
                 showsDurationPicker: false,
-                statusLine: timed
-                    ? strings.keepAwakeStatusActiveTimed
-                    : strings.keepAwakeStatusActiveIndefinite,
+                statusLine: line,
+                statusSubtitle: String(format: strings.keepAwakeStatusCurrentPrefix, line),
                 clamshellStatusLine: clamshellLine(clamshell, strings: strings),
                 startLabel: labels.start,
                 stopLabel: labels.stop,
@@ -245,6 +252,7 @@ enum KeepAwakeControlPresentationBuilder {
                 showsExtendButtons: false,
                 showsDurationPicker: false,
                 statusLine: strings.keepAwakeStatusStopping,
+                statusSubtitle: String(format: strings.keepAwakeStatusCurrentPrefix, strings.keepAwakeStatusStopping),
                 clamshellStatusLine: nil,
                 startLabel: labels.start,
                 stopLabel: labels.stop,
@@ -268,6 +276,7 @@ enum KeepAwakeControlPresentationBuilder {
                 showsExtendButtons: false,
                 showsDurationPicker: false,
                 statusLine: strings.keepAwakeStatusCleanupRequired,
+                statusSubtitle: String(format: strings.keepAwakeStatusCurrentPrefix, strings.keepAwakeStatusCleanupRequired),
                 clamshellStatusLine: clamshellLine(clamshell, strings: strings),
                 startLabel: labels.start,
                 stopLabel: labels.stop,
@@ -389,7 +398,7 @@ struct KeepAwakeControlConfigBindings {
     }
 }
 
-// MARK: - View（依赖注入 presentation / config；无 Manager 时显示不可用）
+// MARK: - View
 
 struct KeepAwakeControlView: View {
     let presentation: KeepAwakeControlPresentation
@@ -399,275 +408,191 @@ struct KeepAwakeControlView: View {
     var onStop: () -> Void = {}
     var onRetryCleanup: () -> Void = {}
     var onExtend: (Int) -> Void = { _ in }
+    var onSetDuration: (KeepAwakeDuration) -> Void = { _ in }
 
     @Environment(\.colorScheme) private var colorScheme
 
-    /// 与 MainDashboardView 一致的控制中心强调色。
-    private var accentColor: Color {
-        Theme.accentColor
+    private struct DurationPresetItem: Identifiable {
+        let duration: KeepAwakeDuration
+        let labelKey: (Strings) -> String
+
+        var id: Int { duration.rawValue }
     }
 
-    private var cardBackgroundMaterial: Material {
-        colorScheme == .dark ? .regularMaterial : .ultraThinMaterial
-    }
-
-    private var separatorStrokeColor: Color {
-        Color.primary.opacity(colorScheme == .dark ? 0.22 : 0.12)
-    }
+    private let presets: [DurationPresetItem] = [
+        DurationPresetItem(duration: .minutes15, labelKey: { $0.keepAwakeDuration15m }),
+        DurationPresetItem(duration: .minutes60, labelKey: { $0.keepAwakeDuration1h }),
+        DurationPresetItem(duration: .minutes240, labelKey: { $0.keepAwakeDuration4h }),
+        DurationPresetItem(duration: .indefinite, labelKey: { $0.keepAwakeDurationNever }),
+    ]
 
     var body: some View {
-        // 不用无界 ScrollView 撑满父级：控制中心按内容固有高度收缩 popover。
-        // 内容偶发超过上限时，由 ControlCenterContainerView 的 maxHeight 裁剪承接。
-        VStack(alignment: .leading, spacing: 14) {
-            header
+        VStack(alignment: .leading, spacing: 12) {
+            // 卡片 1：保持唤醒主开关卡片
+            mainToggleCard
 
+            // 卡片 2：唤醒时长选择卡片
+            durationSelectorCard
+
+            // 卡片 3：合盖时保持唤醒卡片
+            clamshellCard
+
+            // 底部说明文案
+            Text(strings.keepAwakeClamshellFootnote)
+                .font(.system(size: 11.5, weight: .regular))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 4)
+
+            // 残留状态重试清理按钮（若需要）
+            if presentation.showsRetryCleanupButton {
+                Button(presentation.retryCleanupLabel) { onRetryCleanup() }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .padding(.horizontal, 4)
+            }
+
+            // 错误信息（若存在）
             if let error = config.configError {
                 Text(error)
                     .font(.caption)
                     .foregroundStyle(.red)
-            }
-
-            if presentation.showsSessionCard {
-                sessionCard
-            }
-
-            if presentation.showsOptionsSection && config.mouseJiggleEnabled.wrappedValue {
-                optionsCard
+                    .padding(.horizontal, 4)
+            } else if let secondary = presentation.secondaryStatusLine {
+                Text(secondary)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 4)
             }
         }
         .padding(Theme.Spacing.md)
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
-    // 标题行 + 主开关（switch，与输入法锁定页一致）
-    private var header: some View {
+    // MARK: - 卡片 1：保持唤醒
+    private var mainToggleCard: some View {
         HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
+            // 月亮图标圆角底块
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.06))
+                Image(systemName: "moon")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(.primary)
+            }
+            .frame(width: 40, height: 40)
+
+            // 标题与状态副文案
+            VStack(alignment: .leading, spacing: 3) {
                 Text(presentation.title)
-                    .font(.title3.weight(.semibold))
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
-                Text(presentation.statusLine)
-                    .font(.caption)
+                Text(presentation.statusSubtitle)
+                    .font(.system(size: 12, weight: .regular))
                     .foregroundStyle(.secondary)
-                if let secondary = presentation.secondaryStatusLine {
-                    Text(secondary)
-                        .font(.caption)
-                        .foregroundStyle(.red)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            // 绿色 Switch 开关
+            Toggle("", isOn: toggleBinding)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .tint(.green)
+                .disabled(!presentation.isSessionToggleEnabled)
+                .accessibilityLabel(presentation.title)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 14)
+        .background(cardBackground)
+    }
+
+    // MARK: - 卡片 2：唤醒时长
+    private var durationSelectorCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(strings.keepAwakeDurationLabel)
+                .font(.system(size: 13.5, weight: .medium))
+                .foregroundStyle(.primary)
+
+            HStack(spacing: 8) {
+                ForEach(presets) { preset in
+                    let isSelected = (config.defaultDurationMinutes.wrappedValue == preset.duration.minutes)
+                    Button {
+                        config.defaultDurationMinutes.wrappedValue = preset.duration.minutes
+                        onSetDuration(preset.duration)
+                    } label: {
+                        Text(preset.labelKey(strings))
+                            .font(.system(size: 13, weight: isSelected ? .medium : .regular))
+                            .foregroundStyle(isSelected ? Color.white : Color.primary)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 36)
+                            .background(
+                                RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                                    .fill(isSelected ? Color.accentColor : Color.primary.opacity(colorScheme == .dark ? 0.10 : 0.06))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 14)
+        .background(cardBackground)
+    }
+
+    // MARK: - 卡片 3：合盖时保持唤醒
+    private var clamshellCard: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(strings.keepAwakeClamshellTitle)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Text(strings.keepAwakeClamshellSubtitle)
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(.secondary)
+                if let line = presentation.clamshellStatusLine {
+                    Text(line)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
                 }
             }
 
             Spacer(minLength: 8)
 
-            Toggle("", isOn: toggleBinding)
+            Toggle("", isOn: config.clamshellPreferred)
                 .labelsHidden()
                 .toggleStyle(.switch)
-                .tint(accentColor)
-                .disabled(!presentation.isSessionToggleEnabled)
-                .accessibilityLabel(presentation.title)
+                .tint(.green)
+                .disabled(!presentation.clamshellToggleEnabled)
+                .accessibilityLabel(strings.keepAwakeClamshellTitle)
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 14)
+        .background(cardBackground)
     }
 
-    // 主会话卡片：时长 / 倒计时 / 关闭时刻 / 延长 / 清理 / 合盖（合并为一张，避免双卡片）。
-    @ViewBuilder
-    private var sessionCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if presentation.showsDurationPicker {
-                settingsRow(title: strings.keepAwakeDurationLabel) {
-                    Picker("", selection: config.defaultDurationMinutes) {
-                        Text(strings.keepAwakeDurationIndefinite).tag(0)
-                        Text(String(format: strings.keepAwakeDurationMinutesFormat, 15)).tag(15)
-                        Text(String(format: strings.keepAwakeDurationMinutesFormat, 30)).tag(30)
-                        Text(String(format: strings.keepAwakeDurationHoursFormat, 1)).tag(60)
-                        Text(String(format: strings.keepAwakeDurationHoursFormat, 2)).tag(120)
-                        Text(String(format: strings.keepAwakeDurationHoursFormat, 4)).tag(240)
-                        Text(String(format: strings.keepAwakeDurationHoursFormat, 8)).tag(480)
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .frame(maxWidth: 140, alignment: .trailing)
-                }
-            }
-
-            // 局部 TimelineView 秒级刷新，不重建整页。
-            if let endDate = presentation.countdownEndDate {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    VStack(spacing: 8) {
-                        VStack(spacing: 4) {
-                            Text(
-                                KeepAwakeControlCountdownFormatter.text(
-                                    endDate: endDate,
-                                    now: context.date,
-                                    strings: strings
-                                )
-                            )
-                            .font(.system(size: 30, weight: .bold, design: .rounded).monospacedDigit())
-                            .foregroundStyle(Color.accentColor)
-
-                            Text(
-                                String(
-                                    format: "%@: %@",
-                                    strings.keepAwakeEndsAtLabel,
-                                    KeepAwakeControlCountdownFormatter.endTimeText(
-                                        endDate: endDate,
-                                        now: context.date
-                                    )
-                                )
-                            )
-                            .font(.system(size: 11.5, weight: .medium))
-                            .foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-                                .fill(Color.accentColor.opacity(colorScheme == .dark ? 0.10 : 0.06))
-                        )
-                    }
-                }
-            } else if let countdown = presentation.countdownText {
-                VStack(spacing: 4) {
-                    Text(countdown)
-                        .font(.system(size: 30, weight: .bold, design: .rounded).monospacedDigit())
-                        .foregroundStyle(Color.accentColor)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-                        .fill(Color.accentColor.opacity(colorScheme == .dark ? 0.10 : 0.06))
-                )
-            }
-
-            if presentation.showsExtendButtons {
-                HStack(spacing: 8) {
-                    extendButton("+15m") { onExtend(15) }
-                    extendButton("+30m") { onExtend(30) }
-                    extendButton("+1h") { onExtend(60) }
-                }
-            }
-
-            if presentation.showsRetryCleanupButton {
-                Button(presentation.retryCleanupLabel) { onRetryCleanup() }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-            }
-
-            if presentation.showsClamshellSection {
-                featureRow(
-                    title: strings.keepAwakeClamshellAction,
-                    helpText: strings.keepAwakeClamshellCaption,
-                    isOn: config.clamshellPreferred,
-                    enabled: presentation.clamshellToggleEnabled
-                )
-                if let line = presentation.clamshellStatusLine {
-                    Text(line)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .padding(Theme.Spacing.md)
-        .background(sectionCard)
-    }
-
-    private var optionsCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(strings.keepAwakeOptionsSection)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.secondary)
-
-            if config.mouseJiggleEnabled.wrappedValue {
-                settingsRow(title: strings.keepAwakeJiggleInterval) {
-                    Picker("", selection: config.mouseJiggleIntervalMinutes) {
-                        Text(String(format: strings.keepAwakeDurationMinutesFormat, 1)).tag(1)
-                        Text(String(format: strings.keepAwakeDurationMinutesFormat, 2)).tag(2)
-                        Text(String(format: strings.keepAwakeDurationMinutesFormat, 5)).tag(5)
-                        Text(String(format: strings.keepAwakeDurationMinutesFormat, 10)).tag(10)
-                        Text(String(format: strings.keepAwakeDurationMinutesFormat, 15)).tag(15)
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .frame(maxWidth: 120, alignment: .trailing)
-                }
-
-                Text(strings.keepAwakeJiggleCaption)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Button(strings.keepAwakeRequestAccessibility) {
-                    config.onRequestAccessibility()
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(accentColor)
-            }
-        }
-        .padding(Theme.Spacing.md)
-        .background(sectionCard)
-    }
-
-    private var sectionCard: some View {
+    // MARK: - 卡片背景样式
+    private var cardBackground: some View {
         Group {
             if colorScheme == .dark {
-                Color.white.opacity(0.06)
+                Color.white.opacity(0.08)
             } else {
-                Color.white.opacity(0.60)
+                Color.white
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05), lineWidth: 1)
+                .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04), lineWidth: 0.8)
         )
         .shadow(
-            color: Color.black.opacity(colorScheme == .dark ? 0.18 : 0.04),
-            radius: 6,
+            color: Color.black.opacity(colorScheme == .dark ? 0.20 : 0.03),
+            radius: 4,
             x: 0,
             y: 1.5
         )
-    }
-
-    private func featureRow(
-        title: String,
-        subtitle: String? = nil,
-        helpText: String? = nil,
-        isOn: Binding<Bool>,
-        enabled: Bool = true
-    ) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                FeatureTitleWithHelp(title: title, helpText: helpText)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer(minLength: 8)
-            Toggle("", isOn: isOn)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .tint(accentColor)
-                .disabled(!enabled)
-        }
-    }
-
-    private func settingsRow<Trailing: View>(
-        title: String,
-        @ViewBuilder trailing: () -> Trailing
-    ) -> some View {
-        HStack(spacing: 12) {
-            Text(title)
-                .font(.system(size: 13, weight: .semibold))
-            Spacer(minLength: 8)
-            trailing()
-        }
-    }
-
-    private func extendButton(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(title, action: action)
-            .buttonStyle(.bordered)
-            .controlSize(.small)
     }
 
     private var toggleBinding: Binding<Bool> {
@@ -681,169 +606,5 @@ struct KeepAwakeControlView: View {
                 }
             }
         )
-    }
-}
-
-/// 标题 + 问号；问号用 AppKit NSPopover，鼠标进入立即显示说明。
-private struct FeatureTitleWithHelp: View {
-    let title: String
-    let helpText: String?
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Text(title)
-                .font(.system(size: 13, weight: .semibold))
-            if let helpText {
-                InstantHelpIcon(text: helpText)
-                    .frame(width: 18, height: 18)
-                    .accessibilityLabel(helpText)
-            }
-        }
-    }
-}
-
-/// 菜单栏 popover 内即时说明：系统 `.help` 延迟大，SwiftUI overlay 易被裁剪；
-/// 使用独立 NSView + NSPopover，mouseEntered 立即弹出。
-private struct InstantHelpIcon: NSViewRepresentable {
-    let text: String
-
-    func makeNSView(context: Context) -> InstantHelpIconNSView {
-        InstantHelpIconNSView(helpText: text)
-    }
-
-    func updateNSView(_ nsView: InstantHelpIconNSView, context: Context) {
-        nsView.helpText = text
-    }
-}
-
-private final class InstantHelpIconNSView: NSView {
-    var helpText: String {
-        didSet {
-            toolTip = helpText
-            if popover.isShown {
-                (popover.contentViewController as? HelpTextViewController)?.setText(helpText)
-            }
-        }
-    }
-
-    private var tracking: NSTrackingArea?
-    private let imageView = NSImageView()
-    private let popover = NSPopover()
-    private var dismissWorkItem: DispatchWorkItem?
-
-    init(helpText: String) {
-        self.helpText = helpText
-        super.init(frame: .zero)
-        wantsLayer = true
-        toolTip = helpText
-
-        let symbol = NSImage(
-            systemSymbolName: "questionmark.circle",
-            accessibilityDescription: helpText
-        )
-        imageView.image = symbol
-        imageView.contentTintColor = .secondaryLabelColor
-        imageView.imageScaling = .scaleProportionallyUpOrDown
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(imageView)
-        NSLayoutConstraint.activate([
-            imageView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            imageView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            imageView.topAnchor.constraint(equalTo: topAnchor),
-            imageView.bottomAnchor.constraint(equalTo: bottomAnchor),
-            widthAnchor.constraint(equalToConstant: 18),
-            heightAnchor.constraint(equalToConstant: 18),
-        ])
-
-        popover.behavior = .transient
-        popover.animates = false
-        popover.contentViewController = HelpTextViewController(text: helpText)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let tracking {
-            removeTrackingArea(tracking)
-        }
-        let area = NSTrackingArea(
-            rect: .zero,
-            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-            owner: self,
-            userInfo: nil
-        )
-        addTrackingArea(area)
-        tracking = area
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        dismissWorkItem?.cancel()
-        dismissWorkItem = nil
-        showHelpImmediately()
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        // 短暂延迟关闭，避免移向气泡时闪断；仍比系统 help 快得多。
-        let work = DispatchWorkItem { [weak self] in
-            self?.popover.performClose(nil)
-        }
-        dismissWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        if popover.isShown {
-            popover.performClose(nil)
-        } else {
-            showHelpImmediately()
-        }
-    }
-
-    private func showHelpImmediately() {
-        guard window != nil else { return }
-        (popover.contentViewController as? HelpTextViewController)?.setText(helpText)
-        if !popover.isShown {
-            popover.show(relativeTo: bounds, of: self, preferredEdge: .maxY)
-        }
-    }
-}
-
-private final class HelpTextViewController: NSViewController {
-    private let label = NSTextField(wrappingLabelWithString: "")
-
-    init(text: String) {
-        super.init(nibName: nil, bundle: nil)
-        setText(text)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func loadView() {
-        let container = NSView(frame: .zero)
-        label.font = NSFont.systemFont(ofSize: 12)
-        label.textColor = .labelColor
-        label.maximumNumberOfLines = 0
-        label.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(label)
-        NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 10),
-            label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -10),
-            label.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
-            label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8),
-            label.widthAnchor.constraint(lessThanOrEqualToConstant: 240),
-            label.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
-        ])
-        view = container
-    }
-
-    func setText(_ text: String) {
-        label.stringValue = text
     }
 }

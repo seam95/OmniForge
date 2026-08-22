@@ -223,7 +223,8 @@ struct ControlCenterContainerView: View {
                 onRetryCleanup: {
                     Task { await manager.retryCleanup() }
                 },
-                onExtend: { minutes in manager.extend(byMinutes: minutes) }
+                onExtend: { minutes in manager.extend(byMinutes: minutes) },
+                onSetDuration: { duration in manager.setDuration(duration) }
             )
         } else {
             KeepAwakeControlView(

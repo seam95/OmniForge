@@ -302,4 +302,26 @@ final class KeepAwakeControlStateTests: XCTestCase {
         XCTAssertFalse(p.isSessionToggleEnabled)
         XCTAssertEqual(p.primaryAction, .stop) // 语义保留；View 以禁用 Toggle 呈现
     }
+
+    func test_statusSubtitle_formatting() {
+        let pZh = KeepAwakeControlPresentationBuilder.build(
+            session: .inactive,
+            clamshell: .off,
+            lastError: nil,
+            blocksStart: false,
+            isFeatureAvailable: true,
+            strings: .zhHans
+        )
+        XCTAssertEqual(pZh.statusSubtitle, "当前: 正常睡眠")
+
+        let pEn = KeepAwakeControlPresentationBuilder.build(
+            session: .inactive,
+            clamshell: .off,
+            lastError: nil,
+            blocksStart: false,
+            isFeatureAvailable: true,
+            strings: .en
+        )
+        XCTAssertEqual(pEn.statusSubtitle, "Current: Normal sleep")
+    }
 }

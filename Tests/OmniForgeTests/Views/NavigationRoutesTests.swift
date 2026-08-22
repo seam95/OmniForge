@@ -123,7 +123,7 @@ final class NavigationRoutesTests: XCTestCase {
         XCTAssertEqual(MenuPanel.utilities.id, "utilities")
         XCTAssertEqual(MenuPanel.systemMonitor.symbolName, "waveform.path.ecg")
         XCTAssertEqual(MenuPanel.keepAwake.symbolName, "moon.fill")
-        XCTAssertEqual(MenuPanel.utilities.symbolName, "wrench.and.screwdriver")
+        XCTAssertEqual(MenuPanel.utilities.symbolName, "wrench.fill")
         XCTAssertEqual(MenuPanel.systemMonitor.title(in: .zhHans), Strings.zhHans.controlcenterTabSystemMonitor)
         XCTAssertEqual(MenuPanel.utilities.title(in: .en), Strings.en.controlcenterTabUtilities)
         XCTAssertEqual(MenuPanel.keepAwake.title(in: .en), Strings.en.featureHubNameKeepAwake)
