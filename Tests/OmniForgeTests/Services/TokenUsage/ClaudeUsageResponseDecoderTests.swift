@@ -57,6 +57,70 @@ final class ClaudeUsageResponseDecoderTests: XCTestCase {
         XCTAssertEqual(windows[.weekly]?.usedPercent, 66)
     }
 
+    // MARK: - 模型级周窗（seven_day_opus / weekly_scoped → labeledWindows）
+
+    func test_labeledScopedWeekly_sevenDayOpusBecomesLabeledWindow() {
+        let object: [String: Any] = [
+            "five_hour": ["used_percent": 50],
+            "seven_day_opus": ["utilization": 33, "resets_at": "2027-01-15T08:00:00.000Z"],
+        ]
+        let labeled = ClaudeUsageResponseDecoder.decodeLabeledScopedWeekly(object)
+        XCTAssertEqual(labeled.count, 1)
+        XCTAssertEqual(labeled.first?.label, "Opus")
+        XCTAssertEqual(labeled.first?.window.usedPercent, 33)
+        XCTAssertEqual(labeled.first?.window.windowSeconds, 604800)
+        XCTAssertNotNil(labeled.first?.window.resetAt)
+    }
+
+    func test_labeledScopedWeekly_limitsArrayEntriesWithModelLabels() {
+        let object: [String: Any] = [
+            "five_hour": ["used_percent": 50],
+            "limits": [
+                [
+                    "kind": "weekly_scoped",
+                    "scope": ["model": ["display_name": "Fable", "id": "claude-fable"]],
+                    "percent": 21,
+                    "resets_at": "2027-01-15T08:00:00.000Z",
+                ],
+                [
+                    "kind": "weekly_scoped",
+                    "scope": ["model": ["id": "claude-haiku"]],
+                    "utilization": 9,
+                ],
+                ["kind": "other_kind", "percent": 99],
+            ],
+        ]
+        let labeled = ClaudeUsageResponseDecoder.decodeLabeledScopedWeekly(object)
+        XCTAssertEqual(labeled.map(\.label), ["Fable", "claude-haiku"], "display_name 优先，回退 id；非 weekly_scoped 跳过")
+        XCTAssertEqual(labeled.first?.window.usedPercent, 21)
+        XCTAssertEqual(labeled.last?.window.usedPercent, 9)
+    }
+
+    func test_labeledScopedWeekly_deduplicatesOpusWhenSevenDayOpusPresent() {
+        let object: [String: Any] = [
+            "seven_day_opus": ["utilization": 33],
+            "limits": [
+                [
+                    "kind": "weekly_scoped",
+                    "scope": ["model": ["display_name": "Opus", "id": "claude-opus"]],
+                    "percent": 33,
+                ],
+            ],
+        ]
+        let labeled = ClaudeUsageResponseDecoder.decodeLabeledScopedWeekly(object)
+        XCTAssertEqual(labeled.count, 1, "顶层 seven_day_opus 存在时，scoped 的重复 Opus 条目丢弃")
+        XCTAssertEqual(labeled.first?.label, "Opus")
+    }
+
+    func test_labeledScopedWeekly_emptyOrUnusableReturnsEmpty() {
+        XCTAssertTrue(ClaudeUsageResponseDecoder.decodeLabeledScopedWeekly([:]).isEmpty)
+        // percent 缺失且无 limit/used → 条目不可用，跳过。
+        let unusable: [String: Any] = [
+            "limits": [["kind": "weekly_scoped", "scope": ["model": ["display_name": "X"]]]],
+        ]
+        XCTAssertTrue(ClaudeUsageResponseDecoder.decodeLabeledScopedWeekly(unusable).isEmpty)
+    }
+
     // MARK: - 额外额度（credits）
 
     func test_decode_creditsMapsNestedFieldsAndBackfillsRemaining() {

@@ -132,6 +132,44 @@ final class CursorLimitsFetcherTests: XCTestCase {
         XCTAssertNil(CursorUsageSummaryDecoder.membershipLabel(summaryBody(membershipType: nil)))
     }
 
+    // MARK: - Auto / API 车道窗（对齐 B secondary/tertiary）
+
+    func test_laneLabeledWindows_emitsAutoAndApiWithCycleReset() throws {
+        let lanes = try XCTUnwrap(
+            CursorUsageSummaryDecoder.laneLabeledWindows(summaryBody(totalPercent: 82, autoPercent: 60, apiPercent: 40))
+        )
+        XCTAssertEqual(lanes.map(\.label), ["Auto", "API"])
+        XCTAssertEqual(lanes[0].window.usedPercent, 60)
+        XCTAssertEqual(lanes[1].window.usedPercent, 40)
+        let end = try XCTUnwrap(CursorUsageProcessing.parseDate("2026-09-01T00:00:00.000Z"))
+        for lane in lanes {
+            XCTAssertEqual(lane.window.resetAt, end, "车道窗与主窗同 reset")
+            XCTAssertEqual(lane.window.windowSeconds, 31 * 86_400, "车道窗与主窗同周期秒数")
+        }
+    }
+
+    func test_laneLabeledWindows_partialLanesOnlyPresentOnes() throws {
+        let autoOnly = try XCTUnwrap(
+            CursorUsageSummaryDecoder.laneLabeledWindows(summaryBody(totalPercent: 82, autoPercent: 66))
+        )
+        XCTAssertEqual(autoOnly.map(\.label), ["Auto"])
+
+        XCTAssertNil(
+            CursorUsageSummaryDecoder.laneLabeledWindows(summaryBody(totalPercent: 82)),
+            "无车道数据 → nil（不产出空数组）"
+        )
+    }
+
+    func test_fetchLimits_carriesLaneWindows() async throws {
+        URLProtocolStub.stub = .init(statusCode: 200, data: try! JSONSerialization.data(
+            withJSONObject: summaryBody(totalPercent: 75, autoPercent: 30, apiPercent: 12)
+        ))
+        let fetcher = makeFetcher(credentials: FakeCursorCredentials(bundle: makeBundle()))
+        let limits = try await fetcher.fetchLimits()
+        XCTAssertEqual(limits?.labeledWindows?.map(\.label), ["Auto", "API"], "fetcher 快照携带车道窗")
+        XCTAssertEqual(limits?.labeledWindows?.first?.window.usedPercent, 30)
+    }
+
     // MARK: - 取数编排
 
     func test_fetchLimits_notConfiguredReturnsNil_andNoNetwork() async throws {

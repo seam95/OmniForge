@@ -2,20 +2,13 @@ import Foundation
 
 // MARK: - wham 响应解码（防御式：端点字段变动 → 降级不崩）
 
-/// wham reset-credits 精简解析（参考 normalizeCodexResetCredits）。
-struct CodexResetCredits: Equatable {
-    var availableCount: Int?
-    var totalEarnedCount: Int?
-    /// 可用 credits 中最早的 expires_at（用于补齐 credits 窗口的 reset）。
-    var earliestExpiresAt: Date?
-}
-
 /// Codex wham/usage 响应解码 — 纯函数，独立可测（参考 03/08 + usage-limits.js:283-432）。
 ///
 /// 窗口映射：`rate_limit.primary_window/secondary_window` 按 `limit_window_seconds`
 /// 分类（18000=会话 / 604800=周；参考 03 关键技巧），分类失败回退按位置命名；
 /// `spend_control.individual_limit` → 额度型 credits 窗口；主窗口缺失时补
 /// `additional_rate_limits`（spark）。任何窗口缺「可用百分比」则丢弃（不渲染为 0%）。
+/// spark 窗口同时始终输出为带标签窗口（"Spark 5h"/"Spark 7d"，对齐 B 独立展示）。
 enum CodexWhamResponseDecoder {
     static let sessionWindowSeconds: Double = 18000
     static let weeklyWindowSeconds: Double = 604800
@@ -69,22 +62,60 @@ enum CodexWhamResponseDecoder {
         return windows
     }
 
-    /// reset-credits 解码（`rate_limit_reset_credits` 或兄弟端点响应，形状一致）。
-    static func decodeResetCredits(_ value: Any?, now: Date = Date()) -> CodexResetCredits? {
+    /// spark 独立带标签窗口（对齐 B normalizeCodexSparkRateWindows + UI 固定标签）：
+    /// 能按秒数分类则标 "Spark 5h"/"Spark 7d"，否则按位置标注。
+    static func decodeSparkLabeledWindows(_ object: [String: Any]) -> [LabeledUsageWindow]? {
+        guard let entries = object["additional_rate_limits"] as? [[String: Any]] else { return nil }
+        var labeled: [LabeledUsageWindow] = []
+        for entry in entries {
+            let name = (entry["limit_name"] as? String ?? "").lowercased()
+            let feature = (entry["metered_feature"] as? String ?? "").lowercased()
+            guard name.contains("spark") || feature.contains("spark") else { continue }
+            guard let rateLimit = entry["rate_limit"] as? [String: Any] else { continue }
+            let primary = rateLimit["primary_window"] as? [String: Any]
+            let secondary = rateLimit["secondary_window"] as? [String: Any]
+            // 分类优先：按秒数标注标签。
+            var byKind: [LimitWindowKind: UsageWindow] = [:]
+            for raw in [primary, secondary].compactMap({ $0 }) {
+                if let classified = classify(raw), byKind[classified.kind] == nil {
+                    byKind[classified.kind] = classified.window
+                }
+            }
+            if !byKind.isEmpty {
+                if let window = byKind[.session] {
+                    labeled.append(LabeledUsageWindow(label: "Spark 5h", window: window))
+                }
+                if let window = byKind[.weekly] {
+                    labeled.append(LabeledUsageWindow(label: "Spark 7d", window: window))
+                }
+                continue
+            }
+            // 无秒数 → 位置兜底。
+            if let primary, let window = usableWindow(primary) {
+                labeled.append(LabeledUsageWindow(label: "Spark 5h", window: window))
+            }
+            if let secondary, let window = usableWindow(secondary) {
+                labeled.append(LabeledUsageWindow(label: "Spark 7d", window: window))
+            }
+        }
+        return labeled.isEmpty ? nil : labeled
+    }
+
+    /// reset-credits 解码（`rate_limit_reset_credits` 或兄弟端点响应，形状一致）：
+    /// 完整明细模型 — 可用行（status==available、reset_type 为 codex_rate_limits 或缺失、
+    /// 未过期）保留 granted/expires，按过期时间升序。
+    static func decodeResetBank(_ value: Any?, now: Date = Date()) -> UsageResetBank? {
         guard let object = value as? [String: Any] else { return nil }
         let available = nonNegativeInt(object["available_count"])
         let totalEarned = nonNegativeInt(object["total_earned_count"])
-        let credits = (object["credits"] as? [[String: Any]]) ?? []
-        let earliest = credits
-            .compactMap { resetCredit($0, now: now) }
-            .map { $0 }
-            .sorted { $0 < $1 }
-            .first
-        if available == nil, totalEarned == nil, earliest == nil { return nil }
-        return CodexResetCredits(
+        let rows = (object["credits"] as? [[String: Any]]) ?? []
+        let credits = rows.compactMap { resetCreditEntry($0, now: now) }
+            .sorted { $0.expiresAt < $1.expiresAt }
+        if available == nil, totalEarned == nil, credits.isEmpty { return nil }
+        return UsageResetBank(
             availableCount: available,
             totalEarnedCount: totalEarned,
-            earliestExpiresAt: earliest
+            credits: credits
         )
     }
 
@@ -153,18 +184,21 @@ enum CodexWhamResponseDecoder {
         )
     }
 
-    /// 单条 reset credit：仅 available、reset_type 为 codex_rate_limits（或缺失）、未过期 → expires_at。
-    private static func resetCredit(_ row: [String: Any], now: Date) -> Date? {
+    /// 单条重置权益 → 明细条目：仅 available、reset_type 为 codex_rate_limits（或缺失）、未过期。
+    private static func resetCreditEntry(_ row: [String: Any], now: Date) -> UsageResetCreditEntry? {
         guard (row["status"] as? String) == "available" else { return nil }
         if let resetType = row["reset_type"] as? String, resetType != "codex_rate_limits" {
             return nil
         }
         guard let expires = row["expires_at"] as? String,
-              let date = isoFractional.date(from: expires) ?? isoPlain.date(from: expires) else {
+              let expiresAt = isoFractional.date(from: expires) ?? isoPlain.date(from: expires),
+              expiresAt > now else {
             return nil
         }
-        guard date > now else { return nil }
-        return date
+        let grantedAt = (row["granted_at"] as? String).flatMap {
+            isoFractional.date(from: $0) ?? isoPlain.date(from: $0)
+        }
+        return UsageResetCreditEntry(grantedAt: grantedAt, expiresAt: expiresAt)
     }
 
     private static func numeric(_ value: Any?) -> Double? {
@@ -228,9 +262,10 @@ final class CodexLimitsFetcher: LimitsFetching {
 
         let object = try await client.getJSON(url: Self.usageEndpoint, headers: headers)
         var windows = CodexWhamResponseDecoder.decode(object)
+        let sparkLabeled = CodexWhamResponseDecoder.decodeSparkLabeledWindows(object)
 
         // 兄弟端点：重置额度的只读来源；失败降级用主端点体内的 rate_limit_reset_credits。
-        var resetCredits = CodexWhamResponseDecoder.decodeResetCredits(
+        var resetBank = CodexWhamResponseDecoder.decodeResetBank(
             object["rate_limit_reset_credits"],
             now: now()
         )
@@ -239,17 +274,18 @@ final class CodexLimitsFetcher: LimitsFetching {
                 url: Self.resetCreditsEndpoint,
                 headers: headers
             )
-            if let better = CodexWhamResponseDecoder.decodeResetCredits(sibling, now: now()) {
-                resetCredits = better
+            if let better = CodexWhamResponseDecoder.decodeResetBank(sibling, now: now()) {
+                resetBank = better
             }
         } catch {
             // 兄弟端点失败不崩：reset 信息保留主端点体内值。
         }
 
-        // credits 窗口缺 reset_at 时，用该窗口的补充 reset 信息兜底（无则保持原样）。
-        if var credits = windows[.credits], credits.resetAt == nil, let resetCredits {
+        // credits 窗口缺 reset_at 时，用重置权益明细的最早过期时间兜底（无则保持原样）。
+        if var credits = windows[.credits], credits.resetAt == nil,
+           let earliest = resetBank?.credits.first?.expiresAt {
             var enriched = credits
-            enriched.resetAt = resetCredits.earliestExpiresAt
+            enriched.resetAt = earliest
             windows[.credits] = enriched
         }
 
@@ -263,6 +299,8 @@ final class CodexLimitsFetcher: LimitsFetching {
             subscriptionStatus: planLabel != nil ? .active : .unknown,
             planLabel: planLabel,
             windows: windows,
+            labeledWindows: sparkLabeled,
+            resetBank: resetBank,
             confidence: .official,
             capturedAt: now(),
             stale: false,

@@ -21,16 +21,16 @@ enum CursorUsageSummaryDecoder {
         let membershipType = object["membershipType"] as? String ?? ""
         let limitType = object["limitType"] as? String ?? ""
 
+        let autoPercent = percent(plan["autoPercentUsed"])
+        let apiPercent = percent(plan["apiPercentUsed"])
         var planPercent = percent(plan["totalPercentUsed"])
         if planPercent == nil {
-            let auto = percent(plan["autoPercentUsed"])
-            let api = percent(plan["apiPercentUsed"])
-            if let auto, let api {
-                planPercent = clampPercent((auto + api) / 2)
-            } else if let api {
-                planPercent = api
-            } else if let auto {
-                planPercent = auto
+            if let autoPercent, let apiPercent {
+                planPercent = clampPercent((autoPercent + apiPercent) / 2)
+            } else if let apiPercent {
+                planPercent = apiPercent
+            } else if let autoPercent {
+                planPercent = autoPercent
             } else {
                 planPercent = centsPercent(plan["used"], limit: plan["limit"])
             }
@@ -58,7 +58,7 @@ enum CursorUsageSummaryDecoder {
         }
         guard let planPercent else { return [:] }
 
-        let window = UsageWindow(
+        return [.monthly: UsageWindow(
             usedPercent: planPercent,
             resetAt: cycle.end,
             limit: nil,
@@ -66,8 +66,30 @@ enum CursorUsageSummaryDecoder {
             remaining: nil,
             unit: nil,
             windowSeconds: cycle.seconds
-        )
-        return [.monthly: window]
+        )]
+    }
+
+    /// Auto / API 车道窗（对齐 B secondary/tertiary）：与主窗同 reset 与周期秒数。
+    static func laneLabeledWindows(_ object: [String: Any]) -> [LabeledUsageWindow]? {
+        guard let cycle = billingCycle(from: object) else { return nil }
+        let plan = (object["individualUsage"] as? [String: Any])?["plan"] as? [String: Any] ?? [:]
+        let autoPercent = percent(plan["autoPercentUsed"])
+        let apiPercent = percent(plan["apiPercentUsed"])
+        var labeled: [LabeledUsageWindow] = []
+        for (name, value) in [("Auto", autoPercent), ("API", apiPercent)] {
+            if let value {
+                labeled.append(LabeledUsageWindow(
+                    label: name,
+                    window: UsageWindow(
+                        usedPercent: value,
+                        resetAt: cycle.end,
+                        limit: nil, used: nil, remaining: nil, unit: nil,
+                        windowSeconds: cycle.seconds
+                    )
+                ))
+            }
+        }
+        return labeled.isEmpty ? nil : labeled
     }
 
     /// 显示用套餐标签（membershipType）：free/none/unknown/invalid 不可显示 → nil；其余按 `_` 分隔大写。
@@ -182,12 +204,14 @@ final class CursorLimitsFetcher: LimitsFetching {
             return providerLimits(windows: [:])
         }
         let planLabel = CursorUsageSummaryDecoder.membershipLabel(object)
+        let laneWindows = CursorUsageSummaryDecoder.laneLabeledWindows(object)
         return ProviderUsageLimits(
             provider: .cursor,
             configured: true,
             subscriptionStatus: planLabel != nil ? .active : .unknown,
             planLabel: planLabel,
             windows: CursorUsageSummaryDecoder.decode(object),
+            labeledWindows: laneWindows,
             confidence: .official,
             capturedAt: now(),
             stale: false,

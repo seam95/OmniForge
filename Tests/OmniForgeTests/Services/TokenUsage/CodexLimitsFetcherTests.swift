@@ -242,22 +242,82 @@ final class CodexLimitsFetcherTests: XCTestCase {
         XCTAssertEqual(credits?.usedPercent, 75, "limit/used 反推百分比")
     }
 
-    func test_whamDecoder_resetCredits_parsesCountsAndEarliest() throws {
-        let resetCredits = CodexWhamResponseDecoder.decodeResetCredits([
+    func test_whamDecoder_resetBank_parsesCountsAndSortedEntries() throws {
+        let resetBank = CodexWhamResponseDecoder.decodeResetBank([
             "available_count": 0,
             "total_earned_count": 2,
             "credits": [
-                ["status": "available", "expires_at": "2027-08-22T10:00:00.000Z", "reset_type": "codex_rate_limits"],
                 ["status": "available", "expires_at": "2027-08-22T12:00:00.000Z"],
+                ["status": "available", "expires_at": "2027-08-22T10:00:00.000Z", "reset_type": "codex_rate_limits", "granted_at": "2027-08-15T10:00:00.000Z"],
                 ["status": "used", "expires_at": "2027-08-22T09:00:00.000Z"],
             ],
         ], now: fixedNow)
-        XCTAssertEqual(resetCredits?.availableCount, 0)
-        XCTAssertEqual(resetCredits?.totalEarnedCount, 2)
-        let earliest = try XCTUnwrap(resetCredits?.earliestExpiresAt)
-        XCTAssertEqual(ISO8601DateFormatter().string(from: earliest), "2027-08-22T10:00:00Z", "仅 available 且未过期的 credits 参与")
-        XCTAssertNil(CodexWhamResponseDecoder.decodeResetCredits("garbage"))
-        XCTAssertNil(CodexWhamResponseDecoder.decodeResetCredits(["available_count": -1]))
+        XCTAssertEqual(resetBank?.availableCount, 0)
+        XCTAssertEqual(resetBank?.totalEarnedCount, 2)
+        XCTAssertEqual(resetBank?.credits.count, 2, "仅 available 且未过期的 credits 参与")
+        XCTAssertEqual(
+            resetBank?.credits.map { ISO8601DateFormatter().string(from: $0.expiresAt) },
+            ["2027-08-22T10:00:00Z", "2027-08-22T12:00:00Z"], "按过期时间升序"
+        )
+        XCTAssertEqual(
+            resetBank?.credits.first?.grantedAt,
+            ISO8601DateFormatter().date(from: "2027-08-15T10:00:00Z"), "granted_at 解析"
+        )
+        XCTAssertNil(CodexWhamResponseDecoder.decodeResetBank("garbage"))
+        XCTAssertNil(CodexWhamResponseDecoder.decodeResetBank(["available_count": -1]))
+    }
+
+    func test_whamDecoder_sparkLabeledWindows_alwaysEmitted() {
+        let object: [String: Any] = [
+            "rate_limit": [
+                "primary_window": ["used_percent": 82, "limit_window_seconds": 18000],
+                "secondary_window": ["used_percent": 45, "limit_window_seconds": 604800],
+            ],
+            "additional_rate_limits": [
+                [
+                    "limit_name": "spark",
+                    "metered_feature": "spark",
+                    "rate_limit": [
+                        "primary_window": ["used_percent": 88, "limit_window_seconds": 18000],
+                        "secondary_window": ["used_percent": 30, "limit_window_seconds": 604800],
+                    ],
+                ],
+            ],
+        ]
+        let labeled = CodexWhamResponseDecoder.decodeSparkLabeledWindows(object)
+        XCTAssertEqual(labeled?.map(\.label), ["Spark 5h", "Spark 7d"], "spark 独立窗口始终输出（主窗存在也输出）")
+        XCTAssertEqual(labeled?.first?.window.usedPercent, 88)
+        XCTAssertEqual(labeled?.last?.window.usedPercent, 30)
+    }
+
+    func test_whamDecoder_sparkLabeledWindows_positionalFallbackLabels() {
+        let object: [String: Any] = [
+            "additional_rate_limits": [
+                [
+                    "metered_feature": "spark_ide",
+                    "rate_limit": [
+                        "primary_window": ["used_percent": 12],
+                        "secondary_window": ["used_percent": 34],
+                    ],
+                ],
+            ],
+        ]
+        let labeled = CodexWhamResponseDecoder.decodeSparkLabeledWindows(object)
+        XCTAssertEqual(labeled?.map(\.label), ["Spark 5h", "Spark 7d"], "无秒数 → 按位置标注")
+        XCTAssertEqual(labeled?.first?.window.usedPercent, 12)
+        XCTAssertEqual(labeled?.last?.window.usedPercent, 34)
+    }
+
+    func test_whamDecoder_nonSparkEntriesIgnored() {
+        let object: [String: Any] = [
+            "additional_rate_limits": [
+                [
+                    "limit_name": "other",
+                    "rate_limit": ["primary_window": ["used_percent": 50]],
+                ],
+            ],
+        ]
+        XCTAssertNil(CodexWhamResponseDecoder.decodeSparkLabeledWindows(object))
     }
 
     func test_fetchLimits_prefersSiblingResetCredits_andEnrichesCreditWindowReset() async throws {
@@ -282,6 +342,7 @@ final class CodexLimitsFetcherTests: XCTestCase {
         XCTAssertEqual(credits.resetAt?.timeIntervalSince1970,
                        ISO8601DateFormatter().date(from: "2027-08-22T09:45:00Z")?.timeIntervalSince1970,
                        "credits 缺 reset_at 时用兄弟端点最早 expires_at 补 reset")
+        XCTAssertEqual(limits?.resetBank?.displayCount, 3, "兄弟端点 resetBank 覆盖体内值")
         XCTAssertEqual(URLProtocolStub.recordedRequests.count, 2, "先主端点再兄弟端点（串行）")
     }
 

@@ -65,6 +65,30 @@ enum LimitError: Error, Equatable, Codable {
     case decoding(String)
 }
 
+/// 带标签的附加窗口 — provider 特有的细分窗口，不占用语义槽位
+/// （Claude Opus 周窗 / weekly_scoped、Cursor Auto/API 车道、Codex Spark、Antigravity Gemini 双窗）。
+struct LabeledUsageWindow: Codable, Equatable {
+    var label: String
+    var window: UsageWindow
+}
+
+/// Codex 重置权益明细（参考 B ResetCredits）：仅保留可用且未过期的 credit 行，
+/// 按过期时间升序；count 缺失但有明细时以明细数为准。
+struct UsageResetBank: Codable, Equatable {
+    var availableCount: Int?
+    var totalEarnedCount: Int?
+    var credits: [UsageResetCreditEntry]
+
+    /// 可展示行数：优先官方 count，否则明细数。
+    var displayCount: Int? { availableCount ?? (credits.isEmpty ? nil : credits.count) }
+}
+
+/// 单条重置权益。
+struct UsageResetCreditEntry: Codable, Equatable {
+    var grantedAt: Date?
+    var expiresAt: Date
+}
+
 /// 单个 provider 的限额快照（聚合层统一补齐置信度/新鲜度元数据）。
 struct ProviderUsageLimits: Codable, Equatable {
     var provider: TokenUsageProvider
@@ -72,10 +96,40 @@ struct ProviderUsageLimits: Codable, Equatable {
     var subscriptionStatus: SubscriptionStatus
     var planLabel: String?
     var windows: [LimitWindowKind: UsageWindow]
+    /// 附加带标签窗口（可选：旧磁盘缓存 decodeIfPresent 兼容）。
+    var labeledWindows: [LabeledUsageWindow]?
+    /// Codex 重置权益明细（其余 provider 恒 nil）。
+    var resetBank: UsageResetBank?
     var confidence: LimitConfidence
     var capturedAt: Date
     var stale: Bool
     var issue: LimitError?
+
+    init(
+        provider: TokenUsageProvider,
+        configured: Bool,
+        subscriptionStatus: SubscriptionStatus,
+        planLabel: String?,
+        windows: [LimitWindowKind: UsageWindow],
+        labeledWindows: [LabeledUsageWindow]? = nil,
+        resetBank: UsageResetBank? = nil,
+        confidence: LimitConfidence,
+        capturedAt: Date,
+        stale: Bool,
+        issue: LimitError?
+    ) {
+        self.provider = provider
+        self.configured = configured
+        self.subscriptionStatus = subscriptionStatus
+        self.planLabel = planLabel
+        self.windows = windows
+        self.labeledWindows = labeledWindows
+        self.resetBank = resetBank
+        self.confidence = confidence
+        self.capturedAt = capturedAt
+        self.stale = stale
+        self.issue = issue
+    }
 
     static func notConfigured(_ provider: TokenUsageProvider, at date: Date = Date()) -> ProviderUsageLimits {
         ProviderUsageLimits(
@@ -151,13 +205,25 @@ enum UsageWindowParsing {
         }
     }
 
+    /// 窗口可用性：有 used_percent / utilization 或 limit/used 可反推百分比才保留（否则丢弃，绝不显示 0%）。
+    static func windowIfUsable(_ raw: [String: Any]) -> UsageWindow? {
+        let hasPercent = numeric(raw["used_percent"]) != nil
+            || numeric(raw["used_pct"]) != nil
+            || numeric(raw["utilization"]) != nil
+        let hasRatio = (numeric(raw["limit"]) ?? 0) > 0 && numeric(raw["used"]) != nil
+        guard hasPercent || hasRatio else { return nil }
+        return makeWindow(from: raw)
+    }
+
     /// 把原始窗口字典（含 used_percent/reset_at/limit_window_seconds 等字段）清洗为 `UsageWindow`。
     static func makeWindow(from raw: [String: Any]) -> UsageWindow {
         let seconds = numeric(raw["limit_window_seconds"]) ?? numeric(raw["window_seconds"])
         let limit = numeric(raw["limit"]) ?? numeric(raw["total_limit_amount"])
         let used = numeric(raw["used"])
         let remaining = numeric(raw["remaining"])
-        var usedPercent = clampPercent(numeric(raw["used_percent"]) ?? numeric(raw["used_pct"]))
+        var usedPercent = clampPercent(
+            numeric(raw["used_percent"]) ?? numeric(raw["used_pct"]) ?? numeric(raw["utilization"])
+        )
         // 额度型窗口：limit/used 齐全时用 used/limit 反推百分比兜底
         if usedPercent == nil, let limit, limit > 0, let used {
             usedPercent = clampPercent(used / limit * 100)

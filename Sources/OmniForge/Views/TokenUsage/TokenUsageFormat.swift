@@ -79,10 +79,10 @@ enum TokenUsageFormat {
         return strings.tokenWeekdayNames[index]
     }
 
-    /// 窗口行说明文案（重置 + 步速结论）；credits 窗口固定额度口径。
+    /// 窗口行说明文案（重置 + 步速结论）；credits 窗口固定额度口径；无 kind（附加带标签窗）仅显示重置时间。
     static func caption(
         for window: UsageWindow,
-        kind: LimitWindowKind,
+        kind: LimitWindowKind?,
         pace: LimitPace.Result,
         now: Date,
         strings: Strings

@@ -20,6 +20,18 @@ struct TokenUsageLimitCardView: View {
         }
     }
 
+    /// 附加带标签窗口（Claude Opus/scoped、Cursor 车道、Codex Spark、Antigravity Gemini 双窗）。
+    private var labeledWindows: [LabeledUsageWindow] {
+        limits.labeledWindows ?? []
+    }
+
+    /// 重置权益区可见性：有可展示条目（明细行或 count）才显示。
+    private var showsResetBank: Bool {
+        guard let bank = limits.resetBank else { return false }
+        if !bank.credits.isEmpty { return true }
+        return (bank.displayCount ?? 0) > 0
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
@@ -31,10 +43,16 @@ struct TokenUsageLimitCardView: View {
                 } else {
                     errorRow(issue)
                 }
-            } else if orderedWindows.isEmpty {
+            } else if orderedWindows.isEmpty && labeledWindows.isEmpty {
                 errorRow(.decoding("empty windows"))
             } else {
                 windowsBody
+                if !labeledWindows.isEmpty {
+                    labeledWindowsBody
+                }
+                if showsResetBank {
+                    resetBankSection
+                }
             }
         }
         .padding(12)
@@ -67,14 +85,86 @@ struct TokenUsageLimitCardView: View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(orderedWindows.indices, id: \.self) { index in
                 if index > 0 {
-                    Rectangle()
-                        .fill(Theme.Stats.separator)
-                        .frame(height: 0.5)
-                        .padding(.vertical, 2)
+                    windowSeparator
                 }
                 windowRow(orderedWindows[index].kind, window: orderedWindows[index].window)
             }
         }
+    }
+
+    /// 附加带标签窗口行：标题用 label，进度条同主窗样式；无 kind → 不画 pace 刻度，
+    /// 说明行仅显示重置时间（若有）。
+    private var labeledWindowsBody: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if !orderedWindows.isEmpty {
+                windowSeparator
+            }
+            ForEach(labeledWindows.indices, id: \.self) { index in
+                if index > 0 {
+                    windowSeparator
+                }
+                let entry = labeledWindows[index]
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(entry.label)
+                            .font(Theme.Stats.font11Regular)
+                            .foregroundColor(Theme.Stats.text2)
+                        Spacer()
+                        Text(TokenUsageFormat.percent(entry.window.usedPercent))
+                            .font(Theme.Stats.font12Medium)
+                            .foregroundColor(Theme.Stats.text1)
+                            .monospacedDigit()
+                    }
+                    MetricBar(
+                        value: entry.window.usedPercent / 100,
+                        warning: 70,
+                        critical: 90,
+                        tint: limits.provider.accentColor
+                    )
+                    captionRow(kind: nil, window: entry.window, pace: LimitPace.Result())
+                }
+            }
+        }
+    }
+
+    /// 重置权益区（Codex）：标题 + 每条可用权益一行「重置 N · 过期时间」；
+    /// 有 count 无明细时显示次数行；无可展示项时整区不出现。
+    @ViewBuilder
+    private var resetBankSection: some View {
+        let bank = limits.resetBank
+        VStack(alignment: .leading, spacing: 6) {
+            windowSeparator
+            Text(strings.tokenResetBankTitle)
+                .font(Theme.Stats.font11Regular)
+                .foregroundColor(Theme.Stats.text2)
+            if let credits = bank?.credits, !credits.isEmpty {
+                ForEach(credits.indices, id: \.self) { index in
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 9))
+                            .foregroundColor(Theme.Stats.statusNormal)
+                        Text(String(
+                            format: strings.tokenResetBankEntryFormat,
+                            index + 1,
+                            TokenUsageFormat.duration(credits[index].expiresAt.timeIntervalSince(now), strings: strings)
+                        ))
+                        .font(Theme.Stats.font10Regular)
+                        .foregroundColor(Theme.Stats.text2)
+                    }
+                }
+            } else if let count = bank?.displayCount, count > 0 {
+                Text(String(format: strings.tokenResetBankCountOnlyFormat, count))
+                    .font(Theme.Stats.font10Regular)
+                    .foregroundColor(Theme.Stats.text2)
+            }
+        }
+    }
+
+    private var windowSeparator: some View {
+        Rectangle()
+            .fill(Theme.Stats.separator)
+            .frame(height: 0.5)
+            .padding(.vertical, 2)
     }
 
     private func windowRow(_ kind: LimitWindowKind, window: UsageWindow) -> some View {
@@ -121,7 +211,7 @@ struct TokenUsageLimitCardView: View {
         return "\(unit) "
     }
 
-    private func captionRow(kind: LimitWindowKind, window: UsageWindow, pace: LimitPace.Result) -> some View {
+    private func captionRow(kind: LimitWindowKind?, window: UsageWindow, pace: LimitPace.Result) -> some View {
         HStack(spacing: 4) {
             if pace.paceOver {
                 Image(systemName: "exclamationmark.triangle.fill")

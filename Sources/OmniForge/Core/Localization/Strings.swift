@@ -1096,6 +1096,9 @@ struct Strings: Equatable {
     let tokenPaceOver: String
     let tokenPaceProjectedFormat: String
     let tokenCreditCaption: String
+    let tokenResetBankTitle: String
+    let tokenResetBankEntryFormat: String
+    let tokenResetBankCountOnlyFormat: String
     let tokenUpdatedJustNow: String
     let tokenUpdatedMinutesFormat: String
     let tokenUpdatedHoursFormat: String

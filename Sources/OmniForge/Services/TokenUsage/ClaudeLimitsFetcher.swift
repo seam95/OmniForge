@@ -3,7 +3,9 @@ import Foundation
 /// Claude 官方限额响应解码 — 防御式 JSON 解析（端点可能带多余字段，解析失败降级不崩）。
 ///
 /// 字段（参考 06/08）：`five_hour` / `seven_day` / `seven_day_opus` / `weekly_scoped` / `extra_usage`。
-/// 窗口按秒数分类为主（18000=会话 / 604800=周），槽位名兜底（参考 03）。
+/// 窗口按秒数分类为主（18000=会话 / 604800=周），槽位名兜底（参考 03）；
+/// `seven_day_opus` 与新式 `limits[]` 数组中的 `weekly_scoped` 条目进 labeledWindows
+/// （对齐 B extractClaudeScopedWeekly：scoped 中与 seven_day_opus 重复的 opus 条目去重丢弃）。
 enum ClaudeUsageResponseDecoder {
     static func decode(_ object: [String: Any]) -> [LimitWindowKind: UsageWindow] {
         var windows: [LimitWindowKind: UsageWindow] = [:]
@@ -43,6 +45,48 @@ enum ClaudeUsageResponseDecoder {
             windows[.credits] = decodeCredits(extra)
         }
         return windows
+    }
+
+    /// 模型级周窗：顶层 `seven_day_opus`（label "Opus"）+ 新式 `limits[]`
+    /// 数组中 `kind == "weekly_scoped"` 条目（label 取 scope.model.display_name 回退 id）。
+    /// scoped 条目与 seven_day_opus 重复（label "opus"）时去重丢弃——同一窗口不渲染两次。
+    static func decodeLabeledScopedWeekly(_ object: [String: Any]) -> [LabeledUsageWindow] {
+        var result: [LabeledUsageWindow] = []
+
+        if let raw = object["seven_day_opus"] as? [String: Any],
+           var window = UsageWindowParsing.windowIfUsable(raw) {
+            window.windowSeconds = 7 * 24 * 3600
+            result.append(LabeledUsageWindow(label: "Opus", window: window))
+        }
+        let hasSevenDayOpus = object["seven_day_opus"] != nil
+
+        guard let entries = object["limits"] as? [[String: Any]] else {
+            return result
+        }
+        for entry in entries where entry["kind"] as? String == "weekly_scoped" {
+            let model = (entry["scope"] as? [String: Any])?["model"] as? [String: Any]
+            let candidates = [
+                (model?["display_name"] as? String)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines),
+                model?["id"] as? String,
+                (entry["scope"] as? [String: Any])?["model_id"] as? String,
+            ]
+            let label = candidates.first { $0 != nil && !$0!.isEmpty } ?? nil
+            guard let label else { continue }
+            // 已有顶层 seven_day_opus 时，重复的 Opus scoped 条目跳过。
+            if hasSevenDayOpus, label.lowercased() == "opus" { continue }
+            var mapped: [String: Any] = [:]
+            if let percent = UsageWindowParsing.numeric(entry["percent"]) ?? UsageWindowParsing.numeric(entry["utilization"]) {
+                mapped["used_percent"] = percent
+            }
+            if let resetsAt = entry["resets_at"] {
+                mapped["reset_at"] = resetsAt
+            }
+            guard var window = UsageWindowParsing.windowIfUsable(mapped) else { continue }
+            window.windowSeconds = 7 * 24 * 3600
+            result.append(LabeledUsageWindow(label: label, window: window))
+        }
+        return result
     }
 
     /// 额度型窗口：`total_limit.amount`（上限）、`payg_used.amount`（已用）、`resets_at`。
@@ -120,12 +164,14 @@ final class ClaudeLimitsFetcher: LimitsFetching {
             "Accept": "application/json",
         ]
         let object = try await client.getJSON(url: Self.endpoint, headers: headers)
+        let labeled = ClaudeUsageResponseDecoder.decodeLabeledScopedWeekly(object)
         return ProviderUsageLimits(
             provider: .claude,
             configured: true,
             subscriptionStatus: ClaudeUsageResponseDecoder.decodeSubscriptionStatus(object),
             planLabel: credentials.planLabel(),
             windows: ClaudeUsageResponseDecoder.decode(object),
+            labeledWindows: labeled.isEmpty ? nil : labeled,
             confidence: .official,
             capturedAt: Date(),
             stale: false,
