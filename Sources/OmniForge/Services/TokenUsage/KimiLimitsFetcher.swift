@@ -4,8 +4,9 @@ import Foundation
 
 /// Kimi usages 响应解码 — 纯函数，独立可测（参考 normalizeKimiUsageResponse）。
 ///
-/// 槽位映射：`usage`（主额度）→ session、`limits[0].detail ?? limits[0]` → weekly、
-/// `totalQuota`（订阅总额度）→ monthly（参考 03 槽位约定）。
+/// 槽位映射（对齐 TokenTracker UI 标注）：`usage` → weekly（7d，604800s）、
+/// `limits[0].detail ?? limits[0]` → session（5h，18000s）、
+/// `totalQuota`（订阅总额度）→ monthly。
 /// 窗口废弃规则（参考 kimiWindowFromUsage）：limit 必须 > 0；used 缺时用 `limit - remaining`
 /// 反推；两者都不可得 → 丢弃（绝不显示 0%）。
 enum KimiUsageResponseDecoder {
@@ -18,11 +19,13 @@ enum KimiUsageResponseDecoder {
             return nil
         }()
         var windows: [LimitWindowKind: UsageWindow] = [:]
-        if let window = windowFromUsage(object["usage"]) {
-            windows[.session] = window
-        }
-        if let window = windowFromUsage(detail) {
+        if var window = windowFromUsage(object["usage"]) {
+            window.windowSeconds = 7 * 24 * 3600
             windows[.weekly] = window
+        }
+        if var window = windowFromUsage(detail) {
+            window.windowSeconds = 5 * 3600
+            windows[.session] = window
         }
         if let window = windowFromUsage(object["totalQuota"]) {
             windows[.monthly] = window
