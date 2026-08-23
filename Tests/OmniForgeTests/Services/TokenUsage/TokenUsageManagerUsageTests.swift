@@ -79,7 +79,7 @@ final class TokenUsageManagerUsageTests: XCTestCase {
         XCTAssertEqual(manager.usageOverview?.totalTokens, 30, "聚合口径含全部 provider")
         XCTAssertEqual(manager.usageOverview(for: .claude)?.totalTokens, 10)
         XCTAssertEqual(manager.usageOverview(for: .codex)?.totalTokens, 20)
-        XCTAssertNil(manager.usageOverview(for: .gemini), "无数据 provider 无窗口数据 → nil")
+        XCTAssertNil(manager.usageOverview(for: .antigravity), "无数据 provider 无窗口数据 → nil")
     }
 
     func test_usageBackfilling_tracksCollector() {
@@ -132,7 +132,7 @@ final class TokenUsageManagerUsageTests: XCTestCase {
         XCTAssertEqual(manager.usageOverview(filteredBy: nil, period: .week)?.totalTokens, 10, "40 天前桶不在本周窗口")
         XCTAssertEqual(manager.usageOverview(filteredBy: nil, period: .month)?.totalTokens, 10, "40 天前桶不在本月窗口")
         XCTAssertEqual(manager.usageOverview(filteredBy: .claude, period: .week)?.totalTokens, 10)
-        XCTAssertNil(manager.usageOverview(filteredBy: .gemini, period: .week), "无数据 provider → nil")
+        XCTAssertNil(manager.usageOverview(filteredBy: .antigravity, period: .week), "无数据 provider → nil")
     }
 
     func test_usageDistribution_reflectsProvidersWithData_automatically() throws {

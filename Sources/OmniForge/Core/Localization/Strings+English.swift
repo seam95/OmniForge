@@ -1062,6 +1062,7 @@ extension Strings {
         tokenSettingsPermissionDenied: "Not authorized",
         tokenSettingsConfigureHintFormat: "Run `%@` once to sign in; it will be detected automatically.",
         tokenSettingsConfigureHintCursor: "Sign in inside the Cursor app; it will be detected automatically.",
+        tokenSettingsConfigureHintAntigravity: "Launch Antigravity; usage limits are read while the IDE is running.",
         tokenMenuBarSessionLabel: "Session",
         tokenAlertSessionTitle: "Token usage alert",
         tokenAlertSessionBodyFormat: "%@ session usage reached %d%% — consider slowing down.",

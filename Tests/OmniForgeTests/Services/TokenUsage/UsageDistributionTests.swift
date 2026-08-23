@@ -129,10 +129,10 @@ final class UsageDistributionTests: XCTestCase {
     }
 
     func test_distribution_sortedTiesBrokenDeterministically() throws {
-        // 并列总量：模型按名字典序（"b" < "g"）；provider 按目录序（gemini 先于 kimi）。
+        // 并列总量：模型按名字典序（"b" < "g"）；provider 按目录序（antigravity 先于 kimi）。
         let distribution = try XCTUnwrap(UsageDistributionBuilder.make(
             buckets: [
-                bucket(at: day(2026, 8, 20, hour: 9), provider: .gemini, model: "g-2", total: 50),
+                bucket(at: day(2026, 8, 20, hour: 9), provider: .antigravity, model: "g-2", total: 50),
                 bucket(at: day(2026, 8, 20, hour: 10), provider: .kimi, model: "b-2", total: 50),
             ],
             now: now,
@@ -140,7 +140,7 @@ final class UsageDistributionTests: XCTestCase {
             period: .week
         ))
         XCTAssertEqual(distribution.byModel.map(\.label), ["b-2", "g-2"], "模型行总量并列时按名字典序")
-        XCTAssertEqual(distribution.byProvider.map(\.provider), [.gemini, .kimi], "provider 行总量并列时按目录序")
+        XCTAssertEqual(distribution.byProvider.map(\.provider), [.antigravity, .kimi], "provider 行总量并列时按目录序")
     }
 
     func test_distribution_emptyWindowReturnsNil() {

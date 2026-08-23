@@ -296,6 +296,10 @@ final class GRDBUsageStore: UsageStoring {
                 t.add(column: "model", .text)
             }
         }
+        // Gemini → Antigravity 替换：清理 gemini 历史桶行，避免聚合口径出现幽灵 provider。
+        migrator.registerMigration("removeGeminiBuckets") { db in
+            _ = try db.execute(sql: "DELETE FROM usage_buckets WHERE provider = ?", arguments: ["gemini"])
+        }
         return migrator
     }
 

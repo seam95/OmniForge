@@ -139,7 +139,7 @@ extension TokenUsageProvider {
         switch self {
         case .claude: return Color(red: 0xD9 / 255, green: 0x77 / 255, blue: 0x57 / 255)
         case .codex: return Color(red: 0x10 / 255, green: 0xA3 / 255, blue: 0x7F / 255)
-        case .gemini: return Color(red: 0x42 / 255, green: 0x85 / 255, blue: 0xF4 / 255)
+        case .antigravity: return Color(red: 0x8A / 255, green: 0x5C / 255, blue: 0xF2 / 255)
         case .kimi: return Color(red: 0x5B / 255, green: 0x5B / 255, blue: 0xD6 / 255)
         case .cursor: return Theme.Stats.text3
         }

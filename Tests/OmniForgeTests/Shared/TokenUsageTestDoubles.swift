@@ -214,41 +214,6 @@ final class FakeCodexTokenRefresher: CodexTokenRefreshing {
     }
 }
 
-/// 测试用 Gemini 凭证替身 — 编排 oauth_creds.json 读取结果。
-final class FakeGeminiCredentials: GeminiCredentialReading {
-    /// 每次调用按序出队；耗尽后重复最后一个。nil 表示「未配置」。
-    var results: [Result<GeminiAuthBundle?, Error>] = [.success(nil)]
-    private(set) var readCount = 0
-
-    init(bundle: GeminiAuthBundle? = nil) {
-        if let bundle {
-            results = [.success(bundle)]
-        }
-    }
-
-    func readBundle() throws -> GeminiAuthBundle? {
-        readCount += 1
-        let result = results[min(readCount - 1, results.count - 1)]
-        return try result.get()
-    }
-}
-
-/// 测试用 Gemini 刷新替身 — 记录调用并返回可编排结果。
-final class FakeGeminiTokenRefresher: GeminiTokenRefreshing {
-    var results: [Result<GeminiRefreshedTokens, Error>] = [.success(
-        GeminiRefreshedTokens(accessToken: "refreshed-token", idToken: nil, expiresIn: 3600)
-    )]
-    private(set) var callCount = 0
-    private(set) var lastRefreshToken: String?
-
-    func refresh(refreshToken: String) async throws -> GeminiRefreshedTokens {
-        callCount += 1
-        lastRefreshToken = refreshToken
-        let result = results[min(callCount - 1, results.count - 1)]
-        return try result.get()
-    }
-}
-
 /// 测试用 Kimi 凭证替身 — 编排 kimi-code.json 读取结果。
 final class FakeKimiCredentials: KimiCredentialReading {
     /// 每次调用按序出队；耗尽后重复最后一个。nil 表示「未配置」。

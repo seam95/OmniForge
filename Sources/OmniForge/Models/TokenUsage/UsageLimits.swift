@@ -4,7 +4,7 @@ import Foundation
 enum TokenUsageProvider: String, Codable, CaseIterable, Identifiable {
     case claude
     case codex
-    case gemini
+    case antigravity
     case kimi
     case cursor
 
@@ -15,7 +15,7 @@ enum TokenUsageProvider: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .claude: return "Claude"
         case .codex: return "Codex"
-        case .gemini: return "Gemini"
+        case .antigravity: return "Antigravity"
         case .kimi: return "Kimi"
         case .cursor: return "Cursor"
         }
