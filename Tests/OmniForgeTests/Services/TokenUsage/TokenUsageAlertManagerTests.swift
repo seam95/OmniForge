@@ -1,7 +1,7 @@
 import XCTest
 @testable import OmniForge
 
-/// #11：Token 用量告警 — 会话窗阈值（≥85%）/ 步速超前（LimitPace.paceOver）/
+/// #11：Token 用量告警 — 会话窗阈值（≥90%，对齐 TokenTracker）/ 步速超前（LimitPace.paceOver）/
 /// 同窗防抖 / 独立开关 / 未授权静默降级。
 @MainActor
 final class TokenUsageAlertManagerTests: XCTestCase {
@@ -41,7 +41,7 @@ final class TokenUsageAlertManagerTests: XCTestCase {
         )
     }
 
-    // MARK: - 阈值告警（会话窗 ≥85%）
+    // MARK: - 阈值告警（会话窗 ≥90%）
 
     private let thresholdTestPoint = Date(timeIntervalSince1970: 1_000_000)
 
@@ -50,23 +50,23 @@ final class TokenUsageAlertManagerTests: XCTestCase {
         makeSessionWindow(percent: percent, resetAt: resetAt ?? thresholdTestPoint.addingTimeInterval(1800))
     }
 
-    func test_sessionThresholdAt85PostsNotification() {
+    func test_sessionThresholdAt90PostsNotification() {
         let client = FakeTokenUsageNotificationClient()
         let manager = makeManager(client: client)
-        let snapshot = makeLimits(sessionWindow: thresholdWindow(percent: 85))
+        let snapshot = makeLimits(sessionWindow: thresholdWindow(percent: 90))
         manager.evaluate(snapshot, at: thresholdTestPoint)
         XCTAssertEqual(client.posted.count, 1)
         XCTAssertEqual(client.posted[0].title, Strings.en.tokenAlertSessionTitle)
         XCTAssertEqual(
             client.posted[0].body,
-            String(format: Strings.en.tokenAlertSessionBodyFormat, "Claude", 85)
+            String(format: Strings.en.tokenAlertSessionBodyFormat, "Claude", 90)
         )
     }
 
-    func test_sessionThresholdJustBelow85DoesNotPost() {
+    func test_sessionThresholdJustBelow90DoesNotPost() {
         let client = FakeTokenUsageNotificationClient()
         let manager = makeManager(client: client)
-        let snapshot = makeLimits(sessionWindow: thresholdWindow(percent: 84.9))
+        let snapshot = makeLimits(sessionWindow: thresholdWindow(percent: 89.9))
         manager.evaluate(snapshot, at: thresholdTestPoint)
         XCTAssertTrue(client.posted.isEmpty)
     }
@@ -87,7 +87,7 @@ final class TokenUsageAlertManagerTests: XCTestCase {
         let client = FakeTokenUsageNotificationClient()
         let manager = makeManager(client: client)
         let t = Date(timeIntervalSince1970: 1_000_000)
-        // 5h 窗剩 1h40m（expected ≈ 66.7%），已用 80% > 期望 + 3pp → 超前；但 <85% 不触发阈值。
+        // 5h 窗剩 1h40m（expected ≈ 66.7%），已用 80% > 期望 + 3pp → 超前；但 <90% 不触发阈值。
         let snapshot = makeLimits(
             sessionWindow: makeSessionWindow(percent: 80, resetAt: t.addingTimeInterval(6000))
         )

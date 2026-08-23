@@ -3,11 +3,11 @@ import Foundation
 /// Token 用量告警触发器 — 会话窗阈值（≥85%）与步速超前（LimitPace.paceOver）。
 /// 随 `TokenUsageManager` 限额刷新同频调用 `evaluate`；未授权通知静默降级（失败不报错，对齐 MonitorAlertManager）。
 final class TokenUsageAlertManager {
-    /// 会话窗阈值告警判据（规格 2.5：≥85%）。
-    static let sessionThresholdPercent = 85.0
+    /// 会话窗阈值告警判据（对齐 TokenTracker 红色阈值 90%）。
+    static let sessionThresholdPercent = 90.0
 
     enum AlertKind: Hashable {
-        /// 会话窗用量 ≥85%。
+        /// 会话窗用量 ≥90%。
         case sessionThreshold
         /// LimitPace 判定按当前步速将提前用尽。
         case paceOverrun

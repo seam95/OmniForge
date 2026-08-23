@@ -214,7 +214,8 @@ enum TokenUsageCardStatus {
             return .normal
         }
         let percent = session.usedPercent
-        if percent >= 85 { return .exceeded }
+        // 阈值对齐 TokenTracker：≥70 approaching / ≥90 exceeded。
+        if percent >= 90 { return .exceeded }
         if percent >= 70 { return .approaching }
         return .normal
     }

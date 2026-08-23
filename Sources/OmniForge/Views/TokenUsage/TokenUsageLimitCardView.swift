@@ -94,7 +94,7 @@ struct TokenUsageLimitCardView: View {
                 value: window.usedPercent / 100,
                 tint: kind == .credits ? Theme.Stats.statusNormal : limits.provider.accentColor,
                 warning: kind == .credits ? 101 : 70,
-                critical: kind == .credits ? 102 : 85,
+                critical: kind == .credits ? 102 : 90,
                 pacePercent: pace.pacePercent,
                 paceOver: pace.paceOver
             )
