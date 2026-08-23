@@ -143,7 +143,8 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     /// 打开设置；tab=nil 表示默认页，`.keepAwake` 由右键菜单使用。
     private let onOpenSettings: (SettingsToolbarTab?) -> Void
     private var cancellable: AnyCancellable?
-    private var blueDotView: NSView?
+    private var blueDotView: LockBadgeDotView?
+    var lockBadgeView: NSView? { blueDotView }
     private var metricCoordinator: StatusBarMetricCoordinator?
     /// 必须强引用：coordinator 内部只 weak 持有 sink，局部创建会立刻释放，导致 apply 空跑。
     private var metricSink: StatusBarMetricSink?
@@ -223,9 +224,9 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] isLocked in
                     guard let self else { return }
-                    self.blueDotView?.isHidden = self.isMainIconHiddenByMetrics || !isLocked
+                    self.updateLockBadgeVisibility(isLocked: isLocked)
                 }
-            blueDotView?.isHidden = isMainIconHiddenByMetrics || !lockState.isLocked
+            updateLockBadgeVisibility(isLocked: lockState.isLocked)
         } else {
             blueDotView?.isHidden = true
         }
@@ -326,7 +327,11 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         }
 
         button.toolTip = tooltipString(for: render.tooltip)
-        blueDotView?.isHidden = !render.showLockBadge || isMainIconHiddenByMetrics
+        let shouldHideBadge = !render.showLockBadge || isMainIconHiddenByMetrics
+        blueDotView?.isHidden = shouldHideBadge
+        if !shouldHideBadge {
+            layoutLockBadge()
+        }
 
         installRightClickMenu(render)
     }
@@ -350,12 +355,14 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
                     button.title = ""
                     button.attributedTitle = NSAttributedString(string: "")
                     button.imagePosition = .imageOnly
+                    layoutLockBadge()
                 }
             }
             return
         }
         button.attributedTitle = composed
         button.imagePosition = .imageLeading
+        layoutLockBadge()
     }
 
     /// countdown 纯文本前缀 + metrics attributed（attachments 保留）。
@@ -640,20 +647,60 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     }
 
     private func setupBlueDot(in button: NSStatusBarButton) {
-        let dotSize: CGFloat = 6
-        let dot = NSView(frame: NSRect(
-            x: button.bounds.maxX - dotSize - 4,
-            y: button.bounds.maxY - dotSize - 4,
-            width: dotSize,
-            height: dotSize
-        ))
-        dot.wantsLayer = true
-        dot.layer = CALayer()
-        dot.layer?.backgroundColor = NSColor.systemBlue.cgColor
-        dot.layer?.cornerRadius = dotSize / 2
+        let dot = LockBadgeDotView(frame: .zero)
         dot.isHidden = true
         button.addSubview(dot)
         blueDotView = dot
+
+        button.postsFrameChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleButtonFrameChanged),
+            name: NSView.frameDidChangeNotification,
+            object: button
+        )
+        layoutLockBadge()
+    }
+
+    @objc private func handleButtonFrameChanged(_ notification: Notification) {
+        layoutLockBadge()
+    }
+
+    private func updateLockBadgeVisibility(isLocked: Bool) {
+        let shouldHide = isMainIconHiddenByMetrics || !isLocked
+        blueDotView?.isHidden = shouldHide
+        if !shouldHide {
+            layoutLockBadge()
+        }
+    }
+
+    private func layoutLockBadge() {
+        guard let button = statusItem.button, let badge = blueDotView else { return }
+        let dotSize = LockBadgeDotView.size
+        let buttonBounds = button.bounds
+        guard buttonBounds.width > 0 && buttonBounds.height > 0 else {
+            badge.frame = NSRect(x: 14, y: 13, width: dotSize, height: dotSize)
+            return
+        }
+
+        let iconWidth: CGFloat = 15
+        let iconHeight: CGFloat = 15
+        let iconX: CGFloat
+        if button.imagePosition == .imageLeading {
+            iconX = 4
+        } else {
+            iconX = max(0, (buttonBounds.width - iconWidth) / 2)
+        }
+        let iconY = max(0, (buttonBounds.height - iconHeight) / 2)
+
+        let targetX = iconX + iconWidth - dotSize + 1
+        let targetY = iconY + iconHeight - dotSize + 1
+        badge.frame = NSRect(
+            x: round(targetX),
+            y: round(targetY),
+            width: dotSize,
+            height: dotSize
+        )
     }
 
     @objc private func togglePopover() {
@@ -721,7 +768,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
                     } == true
                 let hideMain = config.hideMainIconWithMetrics && !metrics.isEmpty && !keepAwakeForcesVisible
                 self.isMainIconHiddenByMetrics = hideMain
-                self.blueDotView?.isHidden = hideMain || !isLocked
+                self.updateLockBadgeVisibility(isLocked: isLocked)
                 self.lastMetricsMergedTitle = mergedTitle
                 self.lastMetricsSeparateGroups = separateGroups
                 self.lastMetricsSeparate = config.separateStatusItems
@@ -743,7 +790,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
     private func clearMenuBarMetricsUI(isLocked: Bool = false) {
         isMainIconHiddenByMetrics = false
-        blueDotView?.isHidden = !isLocked
+        updateLockBadgeVisibility(isLocked: isLocked)
         metricCoordinator?.apply(
             mergedTitle: NSAttributedString(string: ""),
             separateGroups: [],
@@ -922,4 +969,51 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
     /// 测试入口：token 菜单栏状态项是否可见（nil = 状态项不存在）。
     var tokenMenuBarItemVisibleForTesting: Bool? { tokenMenuItem?.isVisible }
+}
+
+// MARK: - LockBadgeDotView
+
+/// 菜单栏输入法锁定状态角标圆点：采用动态自绘制，在浅色与深色菜单栏下均保持高亮清晰与立体对比度。
+final class LockBadgeDotView: NSView {
+    static let size: CGFloat = 6.5
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: NSRect(x: frameRect.origin.x, y: frameRect.origin.y, width: Self.size, height: Self.size))
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        wantsLayer = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let insetBounds = bounds.insetBy(dx: 0.5, dy: 0.5)
+
+        // 1. 核心亮蓝色：深色模式采用明亮高饱和 #0A84FF，浅色模式采用 #007AFF
+        let dotColor = isDark
+            ? NSColor(srgbRed: 0.04, green: 0.52, blue: 1.0, alpha: 1.0)
+            : NSColor(srgbRed: 0.0, green: 0.48, blue: 1.0, alpha: 1.0)
+
+        // 2. 边框：暗色模式采用半透明亮白边缘确保在黑色背景与白色图钉旁清晰分离，浅色模式采用纯白外圈
+        let strokeColor = isDark
+            ? NSColor.white.withAlphaComponent(0.4)
+            : NSColor.white.withAlphaComponent(0.9)
+
+        context.setFillColor(dotColor.cgColor)
+        context.fillEllipse(in: insetBounds)
+
+        context.setStrokeColor(strokeColor.cgColor)
+        context.setLineWidth(0.75)
+        context.strokeEllipse(in: insetBounds)
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
 }

@@ -53,6 +53,36 @@ final class StatusBarControllerTests: XCTestCase {
         XCTAssertGreaterThan(image?.size.width ?? 0, 0)
         XCTAssertGreaterThan(image?.size.height ?? 0, 0)
     }
+
+    func test_lockBadge_visibilityFollowsLockState() {
+        let state = makeStatusBarState()
+        let windowController = ClipboardWindowController(state: state)
+        let controller = StatusBarController(
+            state: state,
+            clipboardWindowController: windowController
+        )
+
+        XCTAssertNotNil(controller.lockBadgeView)
+        XCTAssertTrue(controller.lockBadgeView?.isHidden ?? false)
+
+        state.lockState?.lock(to: "a")
+        RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        XCTAssertFalse(controller.lockBadgeView?.isHidden ?? true)
+
+        state.lockState?.unlock()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        XCTAssertTrue(controller.lockBadgeView?.isHidden ?? false)
+    }
+
+    func test_lockBadgeDotView_sizeAndDrawing() {
+        XCTAssertEqual(LockBadgeDotView.size, 6.5)
+        let dot = LockBadgeDotView(frame: .zero)
+        XCTAssertEqual(dot.frame.width, 6.5)
+        XCTAssertEqual(dot.frame.height, 6.5)
+        dot.viewDidChangeEffectiveAppearance()
+        // verify draw call succeeds without crash
+        dot.draw(dot.bounds)
+    }
 }
 
 @MainActor
