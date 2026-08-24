@@ -97,12 +97,12 @@ struct DSHWebView: View {
         HStack(spacing: 10) {
             ZStack {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(statusColor.opacity(colorScheme == .dark ? 0.20 : 0.12))
+                    .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.08))
                     .frame(width: 32, height: 32)
 
-                Image(systemName: statusHeroSymbol)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(statusColor)
+                Image(systemName: "server.rack")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
             }
 
             VStack(alignment: .leading, spacing: 2) {
@@ -134,11 +134,6 @@ struct DSHWebView: View {
 
             Spacer(minLength: 8)
 
-            StatusTintBadge(
-                text: statusBadgeText,
-                tint: statusColor
-            )
-
             primaryButton
         }
     }
@@ -155,13 +150,14 @@ struct DSHWebView: View {
     private var activeAddressBanner: some View {
         HStack(spacing: 8) {
             Image(systemName: "globe")
-                .font(.system(size: 11.5, weight: .semibold))
-                .foregroundStyle(Theme.Stats.down)
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
 
             Text(DSHWebManager.address(for: manager.configuredPort))
                 .font(Theme.Stats.font11Regular.monospaced())
                 .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                 .lineLimit(1)
+                .textSelection(.enabled)
 
             Spacer(minLength: 4)
 
@@ -174,7 +170,7 @@ struct DSHWebView: View {
                     .frame(width: 22, height: 22)
                     .background(
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(isAddressCopied ? Theme.Stats.statusNormal.opacity(0.15) : (colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.08)))
+                            .fill(isAddressCopied ? Theme.Stats.statusNormal.opacity(0.15) : (colorScheme == .light ? Theme.Stats.cardBackground : Color.white.opacity(0.08)))
                     )
             }
             .buttonStyle(.plain)
@@ -183,19 +179,19 @@ struct DSHWebView: View {
             Button {
                 manager.openInBrowser()
             } label: {
-                HStack(spacing: 3) {
+                HStack(spacing: 3.5) {
                     Text(strings.dshWebOpenBrowser)
                         .font(Theme.Stats.font11Regular)
                     Image(systemName: "arrow.up.right")
-                        .font(.system(size: 8.5, weight: .bold))
+                        .font(.system(size: 8.5, weight: .semibold))
                 }
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3.5)
                 .background(
                     RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(Theme.Stats.cpu.opacity(0.12))
+                        .fill(colorScheme == .light ? Theme.Stats.cardBackground : Color.white.opacity(0.08))
                 )
-                .foregroundStyle(Theme.Stats.cpu)
             }
             .buttonStyle(.plain)
             .help(strings.dshWebOpenBrowser)
@@ -204,7 +200,7 @@ struct DSHWebView: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Theme.Stats.down.opacity(colorScheme == .dark ? 0.10 : 0.06))
+                .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.06))
         )
     }
 
@@ -276,12 +272,12 @@ struct DSHWebView: View {
 
                 Text("\(manager.externalServices.count)")
                     .font(Theme.Stats.font10Regular)
-                    .foregroundStyle(Theme.Stats.cpu)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
                     .background(
                         Capsule()
-                            .fill(Theme.Stats.cpu.opacity(0.12))
+                            .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.08))
                     )
 
                 Spacer(minLength: 0)
@@ -299,11 +295,11 @@ struct DSHWebView: View {
         HStack(spacing: 8) {
             Image(systemName: "globe")
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Theme.Stats.cpu)
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
                 .frame(width: 22, height: 22)
                 .background(
                     RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(Theme.Stats.cpu.opacity(colorScheme == .dark ? 0.20 : 0.12))
+                        .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.08))
                 )
 
             VStack(alignment: .leading, spacing: 1.5) {
@@ -318,10 +314,9 @@ struct DSHWebView: View {
                     Text("·")
                         .font(.system(size: 8))
                         .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
-                    StatusTintBadge(
-                        text: strings.dshWebExternalService,
-                        tint: Theme.Stats.cpu
-                    )
+                    Text(strings.dshWebExternalService)
+                        .font(Theme.Stats.font10Regular)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                 }
             }
 
@@ -333,11 +328,11 @@ struct DSHWebView: View {
                 } label: {
                     Image(systemName: "arrow.up.right.square")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Theme.Stats.cpu)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
                         .frame(width: 22, height: 22)
                         .background(
                             RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill(Theme.Stats.cpu.opacity(0.12))
+                                .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.08))
                         )
                 }
                 .buttonStyle(.plain)
@@ -381,34 +376,6 @@ struct DSHWebView: View {
             return strings.dshWebStateStopping
         case .failed(let reason):
             return String(format: strings.dshWebStateFailed, reason)
-        }
-    }
-
-    private var statusBadgeText: String {
-        switch manager.state {
-        case .stopped:
-            return strings.dshWebStateStopped
-        case .starting:
-            return strings.dshWebStateStarting
-        case .running:
-            return strings.dshWebStateRunning
-        case .stopping:
-            return strings.dshWebStateStopping
-        case .failed:
-            return "异常"
-        }
-    }
-
-    private var statusHeroSymbol: String {
-        switch manager.state {
-        case .running:
-            return "network"
-        case .starting, .stopping:
-            return "arrow.triangle.2.circlepath"
-        case .stopped:
-            return "power"
-        case .failed:
-            return "exclamationmark.triangle"
         }
     }
 
@@ -541,7 +508,7 @@ struct DSHWebView: View {
                         Text(isLogCopied ? "已复制" : strings.dshWebCopyLog)
                             .font(Theme.Stats.font10Regular)
                     }
-                    .foregroundStyle(isLogCopied ? Theme.Stats.statusNormal : Theme.Stats.cpu)
+                    .foregroundStyle(isLogCopied ? Theme.Stats.statusNormal : (colorScheme == .light ? Theme.Stats.text2 : Color.secondary))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2.5)
                     .background(
@@ -561,7 +528,7 @@ struct DSHWebView: View {
                         Text(strings.dshWebClearLog)
                             .font(Theme.Stats.font10Regular)
                     }
-                    .foregroundStyle(Theme.Stats.cpu)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2.5)
                     .background(
@@ -619,13 +586,11 @@ struct DSHWebView: View {
     }
 
     private func logLineView(_ line: String) -> some View {
-        let isAlert = line.contains("SIGKILL") || line.contains("失败") || line.contains("占用") || line.contains("无法") || line.contains("超时") || line.contains("提前退出")
-        let isSuccess = line.contains("服务就绪") || line.contains("已启动")
-        let isWarning = line.contains("SIGTERM")
+        let isAlert = line.contains("SIGKILL") || line.contains("失败") || line.contains("无法") || line.contains("超时") || line.contains("提前退出") || line.contains("异常") || line.contains("错误")
+        let isWarning = line.contains("占用")
 
         let messageColor: Color = {
             if isAlert { return Theme.Stats.up }
-            if isSuccess { return Theme.Stats.statusNormal }
             if isWarning { return Theme.Stats.ram }
             return colorScheme == .light ? Theme.Stats.text1 : Color.primary
         }()
