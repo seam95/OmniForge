@@ -31,11 +31,20 @@ struct TokenUsageConfiguration: Equatable, Codable {
     var usagePeriodDefault: TokenUsagePeriod = .today
     var sessionLimitAlertEnabled = true
     var paceOverrunAlertEnabled = true
+    /// DeepSeek 余额监控设置。可选字段：旧配置无此键 → 解码回 nil，走计算属性默认值。
+    var deepSeekBalance: DeepSeekBalanceSettings?
 
     /// 限额刷新间隔合法值。
     static let allowedRefreshIntervals = [1, 5, 15]
 
     init() {}
+}
+
+extension TokenUsageConfiguration {
+    /// 余额设置兜底（未显式配置时返回默认：告警开 / ¥1 / 5 分钟）。
+    var deepSeekBalanceSettings: DeepSeekBalanceSettings {
+        deepSeekBalance ?? DeepSeekBalanceSettings()
+    }
 }
 
 // MARK: - 偏好管理器
@@ -66,6 +75,36 @@ final class TokenUsagePreferences: ObservableObject {
             throw TokenUsagePreferenceError.invalidRefreshInterval(minutes)
         }
         update { $0.limitRefreshMinutes = minutes }
+    }
+
+    /// 设置 DeepSeek 低余额告警开关。
+    func setDeepSeekLowBalanceAlertEnabled(_ enabled: Bool) {
+        update { config in
+            var settings = config.deepSeekBalance ?? DeepSeekBalanceSettings()
+            settings.lowBalanceAlertEnabled = enabled
+            config.deepSeekBalance = settings
+        }
+    }
+
+    /// 设置 DeepSeek 低余额阈值（¥）。
+    func setDeepSeekThreshold(_ threshold: Double) {
+        update { config in
+            var settings = config.deepSeekBalance ?? DeepSeekBalanceSettings()
+            settings.lowBalanceThreshold = threshold
+            config.deepSeekBalance = settings
+        }
+    }
+
+    /// 设置 DeepSeek 余额刷新间隔（分钟），仅接受 1 / 5 / 15。
+    func setDeepSeekRefreshMinutes(_ minutes: Int) throws {
+        guard DeepSeekBalanceSettings.allowedRefreshIntervals.contains(minutes) else {
+            throw TokenUsagePreferenceError.invalidRefreshInterval(minutes)
+        }
+        update { config in
+            var settings = config.deepSeekBalance ?? DeepSeekBalanceSettings()
+            settings.refreshMinutes = minutes
+            config.deepSeekBalance = settings
+        }
     }
 
     /// 整包替换 `configuration`，确保 `@Published` 与持久化 sink 被触发。

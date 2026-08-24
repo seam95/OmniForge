@@ -61,6 +61,79 @@ final class TokenUsagePreferencesTests: XCTestCase {
         XCTAssertTrue(reloaded.configuration.sessionLimitAlertEnabled)
     }
 
+    func test_deepSeekSettings_defaultsAndRoundTrip() {
+        let suite = "TokenUsagePreferencesTestsDeepSeek.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let preferences = TokenUsagePreferences(userDefaults: defaults)
+        // 未显式配置 → 计算属性兜底默认值
+        XCTAssertEqual(preferences.configuration.deepSeekBalanceSettings.lowBalanceAlertEnabled, true)
+        XCTAssertEqual(preferences.configuration.deepSeekBalanceSettings.lowBalanceThreshold, 1.0)
+        XCTAssertEqual(preferences.configuration.deepSeekBalanceSettings.refreshMinutes, 5)
+
+        preferences.setDeepSeekLowBalanceAlertEnabled(false)
+        preferences.setDeepSeekThreshold(10)
+        try? preferences.setDeepSeekRefreshMinutes(15)
+
+        let reloaded = TokenUsagePreferences(userDefaults: defaults)
+        let settings = reloaded.configuration.deepSeekBalanceSettings
+        XCTAssertFalse(settings.lowBalanceAlertEnabled)
+        XCTAssertEqual(settings.lowBalanceThreshold, 10)
+        XCTAssertEqual(settings.refreshMinutes, 15)
+    }
+
+    func test_deepSeekConfig_legacyDataWithoutKeyKeepsExistingSettings() {
+        // 旧配置没有 deepSeekBalance 键 → 解码仍成功，既有设置不丢，余额设置走默认。
+        let suite = "TokenUsagePreferencesTestsDeepSeekLegacy.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let legacy = """
+        {"menuBarMode":"todayTokens","limitRefreshMinutes":15,"limitsDisplayMode":"remaining",
+         "usagePeriodDefault":"today","sessionLimitAlertEnabled":false,"paceOverrunAlertEnabled":false}
+        """.data(using: .utf8)!
+        defaults.set(legacy, forKey: "OmniForge.tokenUsageConfiguration")
+
+        let preferences = TokenUsagePreferences(userDefaults: defaults)
+        XCTAssertEqual(preferences.configuration.limitRefreshMinutes, 15)
+        XCTAssertFalse(preferences.configuration.sessionLimitAlertEnabled)
+        XCTAssertEqual(preferences.configuration.deepSeekBalance, nil, "旧数据无余额键 → nil")
+        XCTAssertEqual(preferences.configuration.deepSeekBalanceSettings.lowBalanceThreshold, 1.0)
+        XCTAssertEqual(preferences.configuration.deepSeekBalanceSettings.refreshMinutes, 5)
+    }
+
+    func test_deepSeekConfig_partialSettingsFallbackToDefaults() {
+        // deepSeekBalance 键存在但缺部分字段 → 不拖垮整包解码，缺失字段回默认。
+        let suite = "TokenUsagePreferencesTestsDeepSeekPartial.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let partial = """
+        {"menuBarMode":"todayTokens","limitRefreshMinutes":5,"limitsDisplayMode":"used",
+         "usagePeriodDefault":"today","sessionLimitAlertEnabled":true,"paceOverrunAlertEnabled":true,
+         "deepSeekBalance":{"lowBalanceAlertEnabled":false}}
+        """.data(using: .utf8)!
+        defaults.set(partial, forKey: "OmniForge.tokenUsageConfiguration")
+
+        let preferences = TokenUsagePreferences(userDefaults: defaults)
+        XCTAssertEqual(preferences.configuration.deepSeekBalanceSettings.lowBalanceAlertEnabled, false)
+        XCTAssertEqual(preferences.configuration.deepSeekBalanceSettings.lowBalanceThreshold, 1.0, "缺阈值 → 默认")
+        XCTAssertEqual(preferences.configuration.deepSeekBalanceSettings.refreshMinutes, 5, "缺间隔 → 默认")
+    }
+
+    func test_deepSeekRefreshInterval_rejected() {
+        let suite = "TokenUsagePreferencesTestsDeepSeekInterval.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let preferences = TokenUsagePreferences(userDefaults: defaults)
+        XCTAssertThrowsError(try preferences.setDeepSeekRefreshMinutes(3))
+        XCTAssertEqual(preferences.configuration.deepSeekBalanceSettings.refreshMinutes, 5)
+        XCTAssertNoThrow(try preferences.setDeepSeekRefreshMinutes(1))
+        XCTAssertNoThrow(try preferences.setDeepSeekRefreshMinutes(15))
+    }
+
     func test_usagePeriodDefaultRoundTrip_acrossAllPeriods() {
         let suite = "TokenUsagePreferencesTestsPeriod.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
