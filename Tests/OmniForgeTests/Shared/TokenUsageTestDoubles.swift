@@ -327,3 +327,20 @@ final class FakeDeepSeekKeyStore: DeepSeekAPIKeyStoring {
         storedKey = nil
     }
 }
+
+/// 测试用 DeepSeek 余额取数替身 — 编排放置结果并记录请求。
+final class FakeDeepSeekBalanceFetcher: DeepSeekBalanceFetching {
+    /// 每次调用按序出队；耗尽后重复最后一个。
+    var results: [Result<[String: Any], Error>] = [.success([:])]
+    private(set) var callCount = 0
+    private(set) var lastURL: URL?
+    private(set) var lastHeaders: [String: String]?
+
+    func getJSON(url: URL, headers: [String: String], timeout: TimeInterval) async throws -> [String: Any] {
+        callCount += 1
+        lastURL = url
+        lastHeaders = headers
+        let result = results[min(callCount - 1, results.count - 1)]
+        return try result.get()
+    }
+}
