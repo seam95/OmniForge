@@ -119,7 +119,8 @@ final class TokenUsageLimitsCacheTests: XCTestCase {
     func test_memorySnapshot_expiresAtTTL() {
         let cache = makeCache()
         cache.storeSuccess(snapshot())
-        current = current.addingTimeInterval(299)
+        // 断言对齐 LimitsCachePolicy.defaultTTL（120s），避免 TTL 调整时再断
+        current = current.addingTimeInterval(LimitsCachePolicy.defaultTTL - 1)
         XCTAssertNotNil(cache.memorySnapshot(for: .claude), "TTL 内仍新鲜")
         current = current.addingTimeInterval(2)
         XCTAssertNil(cache.memorySnapshot(for: .claude), "TTL 过后失效")

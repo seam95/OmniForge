@@ -2,8 +2,8 @@ import Foundation
 
 /// 限额缓存策略 — 纯函数（TTL + reset 边界提前过期 + 过期窗口丢弃），独立可测（参考 06）。
 enum LimitsCachePolicy {
-    /// 内存 TTL：对齐默认限额刷新间隔（5 分钟）。
-    static let defaultTTL: TimeInterval = 5 * 60
+    /// 内存 TTL：对齐 TokenTracker CACHE_TTL_MS（2 分钟）。
+    static let defaultTTL: TimeInterval = 2 * 60
     /// 下限 5 秒：防「reset 就在此刻」导致每次调用都全量拉取。
     static let minTTL: TimeInterval = 5
 
