@@ -377,6 +377,10 @@ struct FeatureFactory {
         // grok（turn_completed 增量 + signals 兜底）。
         let dshCollector = DshUsageCollector(store: usageStore)
         let grokCollector = GrokUsageCollector(store: usageStore)
+        // 期 2：Claude-fork transcript 两家 — codebuddy（rawUsage 减法）、
+        // workbuddy（同格式 + trace 无损兜底）。
+        let codebuddyCollector = CodebuddyUsageCollector(store: usageStore)
+        let workbuddyCollector = WorkbuddyUsageCollector(store: usageStore)
         return TokenUsageManager(
             preferences: preferences,
             fetchers: [
@@ -395,6 +399,8 @@ struct FeatureFactory {
                 .cursor: cursorCollector,
                 .dsh: dshCollector,
                 .grok: grokCollector,
+                .codebuddy: codebuddyCollector,
+                .workbuddy: workbuddyCollector,
             ],
             alerts: alerts
         )
