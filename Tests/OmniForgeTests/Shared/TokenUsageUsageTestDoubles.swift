@@ -63,6 +63,20 @@ final class FakeUsageStore: UsageStoring {
         cursors.removeAll()
     }
 
+    // MARK: - 提供者消息级状态（SQLite 差分采集镜像）
+
+    var messageState: [TokenUsageProvider: [String: String]] = [:]
+
+    func loadProviderMessageState(_ provider: TokenUsageProvider) -> [String: String] {
+        messageState[provider] ?? [:]
+    }
+
+    func storeProviderMessageState(_ provider: TokenUsageProvider, entries: [String: String]) {
+        var state = messageState[provider] ?? [:]
+        state.merge(entries) { _, new in new }
+        messageState[provider] = state
+    }
+
     /// 窗口内会话数（断言辅助）。
     func totalTokens(in window: (start: Date, end: Date)? = nil) -> Int {
         bucketsByKey.values

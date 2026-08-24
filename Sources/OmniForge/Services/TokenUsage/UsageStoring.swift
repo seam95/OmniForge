@@ -29,4 +29,8 @@ protocol UsageStoring: AnyObject {
     func storeCursor(path: String, cursor: JSONLCursor)
     func removeCursor(path: String)
     func clearCursors()
+
+    // 提供者消息级状态账本（SQLite 差分采集：lastTotals/指纹/会话归属等；按 provider 隔离）。
+    func loadProviderMessageState(_ provider: TokenUsageProvider) -> [String: String]
+    func storeProviderMessageState(_ provider: TokenUsageProvider, entries: [String: String])
 }

@@ -258,6 +258,72 @@ final class GRDBUsageStore: UsageStoring {
         }
     }
 
+    // MARK: - 提供者消息级状态（SQLite 差分采集）
+
+    /// 每 provider 状态条数上限（超出按写入顺序截断，对齐 seen 容量语义）。
+    static let maxMessageStatePerProvider = 200_000
+
+    func loadProviderMessageState(_ provider: TokenUsageProvider) -> [String: String] {
+        guard let databaseQueue else { return [:] }
+        do {
+            return try databaseQueue.read { db in
+                let rows = try Row.fetchAll(
+                    db,
+                    sql: "SELECT message_key, payload FROM provider_message_state WHERE provider = ?",
+                    arguments: [provider.rawValue]
+                )
+                var state: [String: String] = [:]
+                for row in rows {
+                    state[row["message_key"] as String] = row["payload"] as String
+                }
+                return state
+            }
+        } catch {
+            print("[GRDBUsageStore] loadProviderMessageState failed: \(error)")
+            return [:]
+        }
+    }
+
+    func storeProviderMessageState(_ provider: TokenUsageProvider, entries: [String: String]) {
+        guard let databaseQueue, !entries.isEmpty else { return }
+        do {
+            try databaseQueue.write { db in
+                let now = Date().timeIntervalSince1970
+                for (key, payload) in entries {
+                    try db.execute(
+                        sql: """
+                        INSERT OR REPLACE INTO provider_message_state (provider, message_key, payload, updated_at)
+                        VALUES (?, ?, ?, ?)
+                        """,
+                        arguments: [provider.rawValue, key, payload, now]
+                    )
+                }
+                try trimProviderMessageState(db, provider: provider)
+            }
+        } catch {
+            print("[GRDBUsageStore] storeProviderMessageState failed: \(error)")
+        }
+    }
+
+    private func trimProviderMessageState(_ db: Database, provider: TokenUsageProvider) throws {
+        let count = try Int.fetchOne(
+            db,
+            sql: "SELECT COUNT(*) FROM provider_message_state WHERE provider = ?",
+            arguments: [provider.rawValue]
+        ) ?? 0
+        let excess = count - Self.maxMessageStatePerProvider
+        guard excess > 0 else { return }
+        try db.execute(
+            sql: """
+            DELETE FROM provider_message_state WHERE provider = ? AND message_key IN (
+                SELECT message_key FROM provider_message_state WHERE provider = ?
+                ORDER BY updated_at ASC, message_key ASC LIMIT ?
+            )
+            """,
+            arguments: [provider.rawValue, provider.rawValue, excess]
+        )
+    }
+
     // MARK: - Schema
 
     private static func makeMigrator() -> DatabaseMigrator {
@@ -299,6 +365,16 @@ final class GRDBUsageStore: UsageStoring {
         // Gemini → Antigravity 替换：清理 gemini 历史桶行，避免聚合口径出现幽灵 provider。
         migrator.registerMigration("removeGeminiBuckets") { db in
             _ = try db.execute(sql: "DELETE FROM usage_buckets WHERE provider = ?", arguments: ["gemini"])
+        }
+        // 多供应商接入（2026-08-24，期 3）：SQLite 差分采集的消息级状态账本。
+        migrator.registerMigration("createProviderMessageState") { db in
+            try db.create(table: "provider_message_state") { t in
+                t.column("provider", .text).notNull()
+                t.column("message_key", .text).notNull()
+                t.column("payload", .text).notNull()
+                t.column("updated_at", .double).notNull()
+                t.primaryKey(["provider", "message_key"])
+            }
         }
         return migrator
     }

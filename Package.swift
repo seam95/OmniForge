@@ -25,7 +25,10 @@ let package = Package(
         ),
         .testTarget(
             name: "OmniForgeTests",
-            dependencies: ["OmniForge"],
+            dependencies: [
+                "OmniForge",
+                .product(name: "GRDB", package: "GRDB.swift"),
+            ],
             path: "Tests/OmniForgeTests",
             swiftSettings: [
                 .swiftLanguageMode(.v5),

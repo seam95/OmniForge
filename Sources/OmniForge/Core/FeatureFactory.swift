@@ -381,6 +381,11 @@ struct FeatureFactory {
         // workbuddy（同格式 + trace 无损兜底）。
         let codebuddyCollector = CodebuddyUsageCollector(store: usageStore)
         let workbuddyCollector = WorkbuddyUsageCollector(store: usageStore)
+        // 期 3：B 类 SQLite 三家 — opencode（累积值差分 + fork 指纹）、
+        // zcode（同 schema + providerID 黑名单）、qoder（整行减旧加新）。
+        let opencodeCollector = OpencodeUsageCollector(store: usageStore)
+        let zcodeCollector = ZcodeUsageCollector(store: usageStore)
+        let qoderCollector = QoderUsageCollector(store: usageStore)
         return TokenUsageManager(
             preferences: preferences,
             fetchers: [
@@ -401,6 +406,9 @@ struct FeatureFactory {
                 .grok: grokCollector,
                 .codebuddy: codebuddyCollector,
                 .workbuddy: workbuddyCollector,
+                .opencode: opencodeCollector,
+                .zcode: zcodeCollector,
+                .qoder: qoderCollector,
             ],
             alerts: alerts
         )
