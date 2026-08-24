@@ -7,6 +7,10 @@ import SwiftUI
 struct TokenUsagePanelView: View {
     @ObservedObject var manager: TokenUsageManager
     @ObservedObject var preferences: TokenUsagePreferences
+    /// DeepSeek 余额（可选：管理器尚未接线/未注册时为 nil）。
+    /// 注意：不用 `@ObservedObject`（不接受 Optional 包装）——余额变化由 AppState
+    /// `forwardObjectWillChange` 转发触发外层刷新，面板随之重算。
+    let balanceManager: DeepSeekBalanceManager? = nil
     let strings: Strings
     var onOpenSettings: (SettingsToolbarTab?) -> Void = { _ in }
 
@@ -136,19 +140,36 @@ struct TokenUsagePanelView: View {
 
     @ViewBuilder
     private var content: some View {
-        if manager.limits.isEmpty {
+        let showingBalance = balanceManager?.showingBalanceCard ?? false
+        if manager.limits.isEmpty && !showingBalance {
             // 首次抓取完成前（或从未拉取）→ 骨架加载态
             ProgressView()
                 .controlSize(.small)
                 .frame(maxWidth: .infinity, minHeight: ControlCenterContentMetrics.emptyContentMinHeight)
-        } else if !manager.hasAnyConfiguredProvider {
+        } else if !manager.hasAnyConfiguredProvider && !showingBalance {
             TokenUsageEmptyStateView(strings: strings)
                 .frame(maxWidth: .infinity, minHeight: ControlCenterContentMetrics.emptyContentMinHeight)
         } else {
             VStack(alignment: .leading, spacing: 10) {
-                limitsBlock
+                if !manager.limits.isEmpty {
+                    limitsBlock
+                }
+                balanceBlock
                 usageBlock
             }
+        }
+    }
+
+    /// DeepSeek 余额卡：仅配置密钥后显示；不参与 provider 分段胶囊过滤。
+    @ViewBuilder
+    private var balanceBlock: some View {
+        if let balanceManager, balanceManager.showingBalanceCard {
+            DeepSeekBalanceCardView(
+                snapshot: balanceManager.snapshot,
+                threshold: preferences.configuration.deepSeekBalanceSettings.lowBalanceThreshold,
+                strings: strings,
+                now: Date()
+            )
         }
     }
 

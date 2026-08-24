@@ -1,0 +1,187 @@
+import SwiftUI
+
+/// 控制中心「Token」页的 DeepSeek 余额卡：品牌色块 + 标题 + 状态徽章、
+/// 多币种金额行、赠送/充值明细行、错误行与官方来源脚注（stale 徽章标注回退）。
+struct DeepSeekBalanceCardView: View {
+    let snapshot: DeepSeekBalanceSnapshot?
+    /// 低余额阈值（面板从偏好注入，徽章「低于阈值」口径与通知一致）。
+    let threshold: Double
+    let strings: Strings
+    let now: Date
+
+    private var status: DeepSeekBalanceCardState {
+        DeepSeekBalanceCardState.derive(snapshot: snapshot ?? DeepSeekBalanceSnapshot(
+            configured: true, isAvailable: false, infos: [], capturedAt: now, stale: false, issue: nil
+        ), threshold: threshold)
+    }
+
+    /// DeepSeek 品牌色（不进 TokenUsageProvider.accentColor——那是 provider 枚举的扩展）。
+    static let brandColor = Color(red: 0x4D / 255.0, green: 0x6B / 255.0, blue: 0xFE / 255.0)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header
+            if let snapshot {
+                if snapshot.issue != nil && snapshot.infos.isEmpty && !snapshot.stale {
+                    // 从未成功：无数值可展示，只渲染错误行
+                    errorRow(snapshot.issue!)
+                } else {
+                    currencyRows(snapshot)
+                    if let issue = snapshot.issue {
+                        errorRow(issue) // 有旧值保留时的行内错误提示
+                    }
+                    footerLine(snapshot)
+                }
+            } else {
+                // 已配置但首拉尚未完成
+                Text(strings.deepSeekBalanceLoading)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(Theme.Stats.text3)
+            }
+        }
+        .padding(12)
+        .omniCardStyle()
+    }
+
+    // MARK: - 头部
+
+    private var header: some View {
+        HStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(Self.brandColor)
+                .frame(width: 6, height: 6)
+            Text(strings.deepSeekBalanceCardTitle)
+                .font(Theme.Stats.font13SemiBold)
+                .foregroundColor(Theme.Stats.text1)
+            Spacer()
+            StatusTintBadge(text: status.label(strings), tint: status.tint)
+        }
+    }
+
+    // MARK: - 币种行
+
+    @ViewBuilder
+    private func currencyRows(_ snapshot: DeepSeekBalanceSnapshot) -> some View {
+        let infos = snapshot.infos
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(infos.indices, id: \.self) { index in
+                if index > 0 {
+                    currencySeparator
+                }
+                currencyRow(infos[index])
+            }
+        }
+    }
+
+    private func currencyRow(_ info: DeepSeekBalanceInfo) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(info.currency)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundColor(Theme.Stats.text2)
+                Spacer()
+                Text(DeepSeekBalanceFormat.amount(info.totalBalance, rawText: info.totalBalanceText, currency: info.currency))
+                    .font(Theme.Stats.font12Medium)
+                    .foregroundColor(Theme.Stats.text1)
+                    .monospacedDigit()
+            }
+            if info.grantedBalance != nil || info.toppedUpBalance != nil {
+                Text(String(
+                    format: strings.deepSeekBalanceDetailFormat,
+                    DeepSeekBalanceFormat.amount(info.grantedBalance, rawText: nil, currency: info.currency),
+                    DeepSeekBalanceFormat.amount(info.toppedUpBalance, rawText: nil, currency: info.currency)
+                ))
+                .font(Theme.Stats.font10Regular)
+                .foregroundColor(Theme.Stats.text3)
+            }
+        }
+    }
+
+    private var currencySeparator: some View {
+        Rectangle()
+            .fill(Theme.Stats.separator)
+            .frame(height: 0.5)
+            .padding(.vertical, 2)
+    }
+
+    // MARK: - 错误与脚注
+
+    private func errorRow(_ issue: LimitError) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 9))
+                .foregroundColor(status.tint)
+            Text(TokenUsageFormat.errorCaption(for: issue, now: now, strings: strings))
+                .font(Theme.Stats.font10Regular)
+                .foregroundColor(Theme.Stats.text2)
+        }
+    }
+
+    /// 脚注：「官方来源 · X 分钟前更新」（stale 时数值仍为上次成功，时间口径不变）。
+    private func footerLine(_ snapshot: DeepSeekBalanceSnapshot) -> some View {
+        Text(String(
+            format: strings.deepSeekBalanceFooterFormat,
+            strings.tokenSourceOfficial,
+            TokenUsageFormat.relativeUpdate(snapshot.capturedAt, now: now, strings: strings)
+        ))
+        .font(Theme.Stats.font10Regular)
+        .foregroundColor(Theme.Stats.text3)
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+}
+
+// MARK: - 状态派生
+
+/// 余额卡状态：错误优先（与 `TokenUsageCardStatus.derive` 同序），
+/// 其次低余额（≥ 阈值下探），再次不可用，正常兜底。
+enum DeepSeekBalanceCardState: Equatable {
+    case normal
+    case belowThreshold
+    case unavailable
+    case reauth
+    case rateLimited
+    case stale
+    case transient
+
+    static func derive(snapshot: DeepSeekBalanceSnapshot, threshold: Double) -> DeepSeekBalanceCardState {
+        if let issue = snapshot.issue {
+            switch issue {
+            case .reauthRequired: return .reauth
+            case .rateLimited: return .rateLimited
+            case .network, .decoding:
+                // 显示 last-good 快照 + 行内错误提示 → 徽章强调数据可能过期
+                return snapshot.stale && !snapshot.infos.isEmpty ? .stale : .transient
+            }
+        }
+        let response = DeepSeekBalanceResponse(isAvailable: snapshot.isAvailable, infos: snapshot.infos)
+        if DeepSeekLowBalanceEvaluator.crossedThreshold(in: response, threshold: threshold) {
+            return .belowThreshold
+        }
+        return snapshot.isAvailable ? .normal : .unavailable
+    }
+
+    func label(_ strings: Strings) -> String {
+        switch self {
+        case .normal: return strings.tokenStatusNormal
+        case .belowThreshold: return strings.deepSeekStatusBelowThreshold
+        case .unavailable: return strings.deepSeekBalanceUnavailable
+        case .reauth: return strings.deepSeekStatusReauthKey
+        case .rateLimited: return strings.tokenStatusRateLimited
+        case .stale: return strings.tokenStatusStale
+        case .transient: return strings.tokenErrorTransient
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .normal: return Theme.Stats.statusNormal
+        case .belowThreshold, .unavailable, .rateLimited, .stale: return Theme.Stats.ram
+        case .reauth: return Theme.Stats.up
+        case .transient: return Theme.Stats.text3
+        }
+    }
+
+    var showsWarningIcon: Bool {
+        self != .normal
+    }
+}
