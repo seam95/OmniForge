@@ -1064,6 +1064,7 @@ extension Strings {
         tokenSettingsConfigureHintFormat: "运行一次 `%@` 登录后自动识别",
         tokenSettingsConfigureHintCursor: "在 Cursor 应用内登录后自动识别",
         tokenSettingsConfigureHintAntigravity: "启动 Antigravity 后，IDE 运行期间自动读取限额",
+        tokenSettingsConfigureHintTraeCn: "在下方设置中粘贴 Trae CN 的 JWT，仅保存到 macOS 钥匙串",
         tokenMenuBarSessionLabel: "会话窗",
         tokenAlertSessionTitle: "Token 用量告警",
         tokenAlertSessionBodyFormat: "%@ 会话窗用量已达 %d%%，可能提前耗尽。",

@@ -373,6 +373,10 @@ struct FeatureFactory {
         let kimiCollector = KimiUsageCollector(store: usageStore)
         // #09：Cursor 云端账单 CSV 定时轮询（非实时；无本地日志，无监听/游标）。
         let cursorCollector = CursorUsageCollector(store: usageStore)
+        // 多供应商接入（2026-08-24，期 1）：A 类 JSONL 两家 — dsh（seq 水位幂等）、
+        // grok（turn_completed 增量 + signals 兜底）。
+        let dshCollector = DshUsageCollector(store: usageStore)
+        let grokCollector = GrokUsageCollector(store: usageStore)
         return TokenUsageManager(
             preferences: preferences,
             fetchers: [
@@ -389,6 +393,8 @@ struct FeatureFactory {
                 .codex: codexCollector,
                 .kimi: kimiCollector,
                 .cursor: cursorCollector,
+                .dsh: dshCollector,
+                .grok: grokCollector,
             ],
             alerts: alerts
         )

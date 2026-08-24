@@ -1142,6 +1142,7 @@ struct Strings: Equatable {
     let tokenSettingsConfigureHintFormat: String
     let tokenSettingsConfigureHintCursor: String
     let tokenSettingsConfigureHintAntigravity: String
+    let tokenSettingsConfigureHintTraeCn: String
     let tokenMenuBarSessionLabel: String
     let tokenAlertSessionTitle: String
     let tokenAlertSessionBodyFormat: String

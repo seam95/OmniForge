@@ -211,6 +211,16 @@ extension TokenUsageProvider {
         case .kimi: return Color(red: 0x5B / 255, green: 0x5B / 255, blue: 0xD6 / 255)
         case .cursor: return Theme.Stats.text3
         case .deepSeek: return DeepSeekBalanceCardView.brandColor
+        // 多供应商接入（2026-08-24，SPEC §4.1 色表）。
+        case .opencode: return Color(red: 0x8B / 255, green: 0x5C / 255, blue: 0xF6 / 255)
+        case .codebuddy: return Color(red: 0xF9 / 255, green: 0x73 / 255, blue: 0x16 / 255)
+        case .workbuddy: return Color(red: 0x0E / 255, green: 0xA5 / 255, blue: 0xE9 / 255)
+        case .grok: return Color(red: 0x11 / 255, green: 0x18 / 255, blue: 0x27 / 255)
+        case .zcode: return Color(red: 0x22 / 255, green: 0xC5 / 255, blue: 0x5E / 255)
+        case .traeCN: return Color(red: 0xEF / 255, green: 0x44 / 255, blue: 0x44 / 255)
+        case .qoder: return Color(red: 0xEA / 255, green: 0xB3 / 255, blue: 0x08 / 255)
+        case .dsh: return Color(red: 0x14 / 255, green: 0xB8 / 255, blue: 0xA6 / 255)
+        case .arkCodingPlan: return Color(red: 0x63 / 255, green: 0x66 / 255, blue: 0xF1 / 255)
         }
     }
 }
