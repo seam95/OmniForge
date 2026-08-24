@@ -71,6 +71,19 @@ enum TokenUsageFormat {
         return String(format: strings.tokenDurationMinuteFormat, s / 60)
     }
 
+    /// 具体重置/恢复时间点（日期 + 时间），本地化到当前语言环境。
+    /// 规避「约 X 后」的相对说法，直接给出可预期的目标时刻。
+    private static let exactTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    static func exactTime(_ date: Date, strings: Strings) -> String {
+        exactTimeFormatter.string(from: date)
+    }
+
     /// 星期简称（周日前置，配合 `tokenWeekdayNames`）。
     static func weekdayName(for date: Date, strings: Strings) -> String {
         let weekday = Calendar.current.component(.weekday, from: date) // 1 = 周日
@@ -91,9 +104,8 @@ enum TokenUsageFormat {
             return strings.tokenCreditCaption
         }
         var parts: [String] = []
-        let secondsUntilReset = window.resetAt?.timeIntervalSince(now) ?? 0
         if let resetAt = window.resetAt, resetAt > now {
-            parts.append(String(format: strings.tokenResetInApproxFormat, duration(secondsUntilReset, strings: strings)))
+            parts.append(String(format: strings.tokenResetInApproxFormat, exactTime(resetAt, strings: strings)))
         }
         if pace.paceOver {
             parts.append(strings.tokenPaceOver)
@@ -109,8 +121,8 @@ enum TokenUsageFormat {
         case .reauthRequired:
             return strings.tokenReauthHint
         case .rateLimited(let retryAt):
-            let seconds = max(0, retryAt.timeIntervalSince(now))
-            return String(format: strings.tokenRateLimitedCaptionFormat, duration(seconds, strings: strings))
+            let retryTime = max(retryAt, now)
+            return String(format: strings.tokenRateLimitedCaptionFormat, exactTime(retryTime, strings: strings))
         case .network:
             return strings.tokenErrorNetwork + " · " + strings.tokenErrorRetryableHint
         case .decoding:
@@ -129,6 +141,37 @@ enum TokenUsageFormat {
     /// 该行是否标「云端口径」：仅 Cursor（云端账单，非实时；文案走 `strings.tokenCloudBadge`）。
     static func showsCloudScopeBadge(for entry: UsageDistributionEntry) -> Bool {
         entry.provider == .cursor
+    }
+
+    // MARK: - 限额行纯函数（#11 视觉口径对齐）
+
+    /// 限额卡进度条进度（0.0...1.0）：固定按已用百分比计算（与显示模式 used/remaining 解耦，条表达消耗进度）。
+    static func limitBarProgress(for window: UsageWindow) -> Double {
+        MetricBar.clamp(window.usedPercent / 100)
+    }
+
+    /// 窗口行数值展示文案：额度窗固定「剩 $x」口径；其余按设置切换已用 / 剩余百分比。
+    static func limitValueText(
+        kind: LimitWindowKind,
+        window: UsageWindow,
+        displayMode: TokenUsageLimitsDisplay,
+        strings: Strings
+    ) -> String {
+        if kind == .credits, let remaining = window.remaining {
+            return String(
+                format: strings.tokenCreditsRemainingFormat,
+                currencyPrefix(for: window.unit) + String(format: "%.2f", remaining)
+            )
+        }
+        let shown = displayMode == .used ? window.usedPercent : max(0, 100 - window.usedPercent)
+        return percent(shown)
+    }
+
+    /// 额度货币前缀：USD → "$"，其他按代码 + 空格。
+    static func currencyPrefix(for unit: String?) -> String {
+        guard let unit = unit?.uppercased() else { return "$" }
+        if unit.contains("USD") { return "$" }
+        return "\(unit) "
     }
 }
 
@@ -188,6 +231,10 @@ extension TokenUsagePeriod {
 }
 
 /// 卡片整体状态 — 驱动 StatusTintBadge 文案与颜色。
+///
+/// 分工契约（SPEC 2.1）：
+/// - 徽章仅依据会话窗（Session Window）派生卡片全局状态（总览），对齐 TokenTracker 阈值（≥70 approaching / ≥90 exceeded）。
+/// - 行内进度条（MetricBar）则对每一行窗口（含 weekly / monthly / labeled 窗）独立按 70/90 阈值染色提示。
 enum TokenUsageCardStatus {
     case normal
     case approaching

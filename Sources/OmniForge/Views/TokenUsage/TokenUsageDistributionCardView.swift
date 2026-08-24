@@ -66,7 +66,8 @@ struct TokenUsageDistributionCardView: View {
                     .font(Theme.Stats.font11Regular)
                     .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : .primary)
                     .lineLimit(1)
-                    .truncationMode(.middle)
+                    .truncationMode(.tail)
+                    .help(entry.label)
                 if TokenUsageFormat.showsCloudScopeBadge(for: entry) {
                     //「云端口径」徽标：云端账单口径（非实时）；无数据行一并显示。
                     Text(strings.tokenCloudBadge)
@@ -76,7 +77,9 @@ struct TokenUsageDistributionCardView: View {
                         .fixedSize()
                 }
             }
-            .frame(width: TokenUsageFormat.showsCloudScopeBadge(for: entry) ? 106 : 96, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
+
             if entry.totalTokens != nil {
                 MetricBar(
                     value: Double(entry.totalTokens ?? 0) / Double(max(maxTokens, 1)),
@@ -84,9 +87,12 @@ struct TokenUsageDistributionCardView: View {
                     critical: 102,
                     tint: tint
                 )
+                .frame(minWidth: 36)
             } else {
                 // 无数据行不画条（灰显轨道会与 0 值混淆），仅保持行高对齐。
-                Color.clear.frame(height: 4)
+                Color.clear
+                    .frame(height: 4)
+                    .frame(minWidth: 36)
             }
             Text(TokenUsageFormat.distributionValue(entry))
                 .font(Theme.Stats.font11Regular)
@@ -97,6 +103,7 @@ struct TokenUsageDistributionCardView: View {
                         : (colorScheme == .light ? Theme.Stats.text1 : .primary)
                 )
                 .frame(width: 52, alignment: .trailing)
+                .layoutPriority(2)
         }
     }
 

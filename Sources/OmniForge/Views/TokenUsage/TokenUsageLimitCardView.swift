@@ -94,6 +94,7 @@ struct TokenUsageLimitCardView: View {
 
     /// 附加带标签窗口行：标题用 label，进度条同主窗样式；无 kind → 不画 pace 刻度，
     /// 说明行仅显示重置时间（若有）。
+    /// 注意：labeled 窗固定按已用口径展示数值（无 kind，剩余换算可能产生负数/误导）。
     private var labeledWindowsBody: some View {
         VStack(alignment: .leading, spacing: 8) {
             if !orderedWindows.isEmpty {
@@ -110,13 +111,14 @@ struct TokenUsageLimitCardView: View {
                             .font(Theme.Stats.font11Regular)
                             .foregroundColor(Theme.Stats.text2)
                         Spacer()
+                        // labeled 窗固定按已用口径展示（无 kind，剩余换算可能产生负数/误导）。
                         Text(TokenUsageFormat.percent(entry.window.usedPercent))
                             .font(Theme.Stats.font12Medium)
                             .foregroundColor(Theme.Stats.text1)
                             .monospacedDigit()
                     }
                     MetricBar(
-                        value: entry.window.usedPercent / 100,
+                        value: TokenUsageFormat.limitBarProgress(for: entry.window),
                         warning: 70,
                         critical: 90,
                         tint: limits.provider.accentColor
@@ -175,13 +177,15 @@ struct TokenUsageLimitCardView: View {
                     .font(Theme.Stats.font11Regular)
                     .foregroundColor(Theme.Stats.text2)
                 Spacer()
-                Text(valueText(kind: kind, window: window))
+                Text(TokenUsageFormat.limitValueText(kind: kind, window: window, displayMode: displayMode, strings: strings))
                     .font(Theme.Stats.font12Medium)
                     .foregroundColor(Theme.Stats.text1)
                     .monospacedDigit()
             }
+            // 条固定表达「已用消耗进度」：染色与填充始终按 usedPercent，
+            // 与行内数值的显示口径（used/remaining）解耦——条满 = 用完 = 危险。
             LimitBarWithPace(
-                value: window.usedPercent / 100,
+                value: TokenUsageFormat.limitBarProgress(for: window),
                 tint: kind == .credits ? Theme.Stats.statusNormal : limits.provider.accentColor,
                 warning: kind == .credits ? 101 : 70,
                 critical: kind == .credits ? 102 : 90,
@@ -190,25 +194,6 @@ struct TokenUsageLimitCardView: View {
             )
             captionRow(kind: kind, window: window, pace: pace)
         }
-    }
-
-    /// 窗口行值：额度窗固定「剩 $x」口径；其余按设置切换已用 / 剩余百分比。
-    private func valueText(kind: LimitWindowKind, window: UsageWindow) -> String {
-        if kind == .credits, let remaining = window.remaining {
-            return String(
-                format: strings.tokenCreditsRemainingFormat,
-                currencyPrefix(for: window.unit) + String(format: "%.2f", remaining)
-            )
-        }
-        let shown = displayMode == .used ? window.usedPercent : max(0, 100 - window.usedPercent)
-        return TokenUsageFormat.percent(shown)
-    }
-
-    /// 额度货币前缀：USD → "$"，其他按代码 + 空格。
-    private func currencyPrefix(for unit: String?) -> String {
-        guard let unit = unit?.uppercased() else { return "$" }
-        if unit.contains("USD") { return "$" }
-        return "\(unit) "
     }
 
     private func captionRow(kind: LimitWindowKind?, window: UsageWindow, pace: LimitPace.Result) -> some View {
