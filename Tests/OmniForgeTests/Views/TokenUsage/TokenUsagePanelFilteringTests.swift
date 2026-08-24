@@ -57,4 +57,32 @@ final class TokenUsagePanelFilteringTests: XCTestCase {
 
         XCTAssertEqual(visible, [.codex, .kimi])
     }
+
+    // MARK: - 多供应商接入（2026-08-24）
+
+    func test_visibleProviders_autoIncludesNewProvidersWhenConfigured() {
+        // 面板胶囊由 `configuredProviders`（allCases 过滤）驱动，无需结构改动；
+        // 任一新 provider 配置后自动出现。
+        let newProviders: [TokenUsageProvider] = [
+            .opencode, .codebuddy, .workbuddy, .grok, .zcode,
+            .traeCN, .qoder, .dsh, .arkCodingPlan,
+        ]
+        for provider in newProviders {
+            let configured: Set<TokenUsageProvider> = [provider]
+            let visible = TokenUsageProvider.allCases.filter { configured.contains($0) }
+            XCTAssertEqual(visible, [provider], "\(provider.rawValue) 配置后出现在胶囊条")
+        }
+    }
+
+    func test_balanceCardVisibility_newProvidersNeverShowDeepSeekCard() {
+        let showingBalanceCard = true
+        let newProviders: [TokenUsageProvider] = [
+            .opencode, .codebuddy, .workbuddy, .grok, .zcode,
+            .traeCN, .qoder, .dsh, .arkCodingPlan,
+        ]
+        for provider in newProviders {
+            let showsBalance = (provider == .deepSeek) && showingBalanceCard
+            XCTAssertFalse(showsBalance, "选中 \(provider.rawValue) 时绝不应展示 DeepSeek 余额卡")
+        }
+    }
 }

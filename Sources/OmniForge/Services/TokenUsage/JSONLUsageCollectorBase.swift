@@ -309,6 +309,11 @@ extension JSONLUsageCollectorBase {
             return true
         }
 
+        /// 是否已见过该 key（本次或既有；用于跨来源互斥标记查询，不写入）。
+        func isSeen(_ key: String) -> Bool {
+            seen.contains(key) || newSeen.contains(key)
+        }
+
         /// 取出本次新见 key 并清空（基类扫描末尾写库）。
         func drainNewSeen() -> Set<String> {
             let drained = newSeen
