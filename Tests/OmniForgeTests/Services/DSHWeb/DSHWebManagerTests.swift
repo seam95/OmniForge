@@ -154,7 +154,43 @@ final class DSHWebManagerTests: XCTestCase {
         await manager.refreshServices()
 
         XCTAssertEqual(manager.services, [external])
+        XCTAssertEqual(manager.externalServices, [external])
         XCTAssertFalse(manager.isOwnedByApplication(external))
+    }
+
+    func test_activePid_andExternalServices_filtersManagedInstance() async {
+        XCTAssertNil(manager.activePid)
+        XCTAssertTrue(manager.externalServices.isEmpty)
+
+        probe.results = [false, true]
+        let handle = FakeProcessHandle(pid: 4242)
+        launcher.handles = [handle]
+
+        await manager.start()
+        XCTAssertEqual(manager.activePid, 4242)
+
+        let managed = DSHWebService(
+            pid: 4242,
+            port: 3080,
+            command: "node /tmp/@deepseek-ai/dsh/lib/bin.js web --port 3080"
+        )
+        let external = DSHWebService(
+            pid: 8123,
+            port: 8081,
+            command: "node /tmp/@deepseek-ai/dsh/lib/bin.js web --port 8081"
+        )
+        serviceDiscoverer.services = [managed, external]
+
+        await manager.refreshServices()
+
+        XCTAssertEqual(manager.services.count, 2)
+        XCTAssertTrue(manager.isOwnedByApplication(managed))
+        XCTAssertFalse(manager.isOwnedByApplication(external))
+        XCTAssertEqual(manager.externalServices, [external])
+
+        await manager.stop()
+        XCTAssertNil(manager.activePid)
+        XCTAssertEqual(manager.externalServices, [managed, external])
     }
 
     func test_stopExternalService_rechecksIdentity_thenEscalatesAfterTimeout() async {

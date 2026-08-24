@@ -222,6 +222,14 @@ final class DSHWebManager: ObservableObject {
         }
     }
 
+    var activePid: Int32? {
+        activeProcess?.pid
+    }
+
+    var externalServices: [DSHWebService] {
+        services.filter { !isOwnedByApplication($0) }
+    }
+
     func isOwnedByApplication(_ service: DSHWebService) -> Bool {
         activeProcess?.pid == service.pid
     }

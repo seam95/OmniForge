@@ -79,13 +79,13 @@ struct DSHWebView: View {
                 // 3. 端口配置与辅助操作
                 heroBottomRow
 
-                // 4. 已发现实例整合区（如有运行中的实例）
-                if !manager.services.isEmpty {
+                // 4. 已发现外部实例区（如有运行中的外部实例）
+                if !manager.externalServices.isEmpty {
                     Rectangle()
                         .fill(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
                         .frame(height: 1)
 
-                    discoveredInstancesSubSection
+                    discoveredExternalInstancesSubSection
                 }
             }
         }
@@ -119,6 +119,16 @@ struct DSHWebView: View {
                         .font(Theme.Stats.font11Regular)
                         .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                         .lineLimit(1)
+
+                    if manager.state == .running, let pid = manager.activePid {
+                        Text("·")
+                            .font(.system(size: 8))
+                            .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+
+                        Text("PID \(pid)")
+                            .font(Theme.Stats.font10Regular.monospaced())
+                            .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                    }
                 }
             }
 
@@ -250,21 +260,21 @@ struct DSHWebView: View {
         }
     }
 
-    // MARK: - 已发现实例整合列表
+    // MARK: - 已发现外部实例整合列表
 
-    private var discoveredInstancesSubSection: some View {
+    private var discoveredExternalInstancesSubSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "server.rack")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
 
-                Text(strings.dshWebServicesTitle)
+                Text(strings.dshWebExternalServicesTitle)
                     .font(Theme.Stats.font11Regular)
                     .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                     .textCase(.uppercase)
 
-                Text("\(manager.services.count)")
+                Text("\(manager.externalServices.count)")
                     .font(Theme.Stats.font10Regular)
                     .foregroundStyle(Theme.Stats.cpu)
                     .padding(.horizontal, 5)
@@ -278,23 +288,22 @@ struct DSHWebView: View {
             }
 
             VStack(spacing: 5) {
-                ForEach(manager.services) { service in
-                    serviceItemRow(service)
+                ForEach(manager.externalServices) { service in
+                    externalServiceItemRow(service)
                 }
             }
         }
     }
 
-    private func serviceItemRow(_ service: DSHWebService) -> some View {
-        let ownedByApplication = manager.isOwnedByApplication(service)
-        return HStack(spacing: 8) {
+    private func externalServiceItemRow(_ service: DSHWebService) -> some View {
+        HStack(spacing: 8) {
             Image(systemName: "globe")
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(ownedByApplication ? Theme.Stats.statusNormal : Theme.Stats.cpu)
+                .foregroundStyle(Theme.Stats.cpu)
                 .frame(width: 22, height: 22)
                 .background(
                     RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill((ownedByApplication ? Theme.Stats.statusNormal : Theme.Stats.cpu).opacity(colorScheme == .dark ? 0.20 : 0.12))
+                        .fill(Theme.Stats.cpu.opacity(colorScheme == .dark ? 0.20 : 0.12))
                 )
 
             VStack(alignment: .leading, spacing: 1.5) {
@@ -310,8 +319,8 @@ struct DSHWebView: View {
                         .font(.system(size: 8))
                         .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                     StatusTintBadge(
-                        text: ownedByApplication ? strings.dshWebManagedService : strings.dshWebExternalService,
-                        tint: ownedByApplication ? Theme.Stats.statusNormal : Theme.Stats.cpu
+                        text: strings.dshWebExternalService,
+                        tint: Theme.Stats.cpu
                     )
                 }
             }
@@ -335,11 +344,7 @@ struct DSHWebView: View {
                 .help(strings.dshWebOpenBrowser)
 
                 Button {
-                    if ownedByApplication {
-                        Task { await manager.stop(service: service) }
-                    } else {
-                        serviceAwaitingStopConfirmation = service
-                    }
+                    serviceAwaitingStopConfirmation = service
                 } label: {
                     Image(systemName: "stop.fill")
                         .font(.system(size: 9.5, weight: .medium))

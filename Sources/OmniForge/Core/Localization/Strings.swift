@@ -576,6 +576,7 @@ struct Strings: Equatable {
     let dshWebPort: String
     let dshWebRefresh: String
     let dshWebServicesTitle: String
+    let dshWebExternalServicesTitle: String
     let dshWebNoServices: String
     let dshWebManagedService: String
     let dshWebExternalService: String
