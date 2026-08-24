@@ -40,25 +40,42 @@ struct TokenUsagePanelView: View {
 
     /// Provider 分段胶囊（仅已配置 provider + 「全部」）。
     private var providerSwitcher: some View {
-        HStack(spacing: 3) {
-            providerChip(
-                title: strings.tokenProviderAll,
-                provider: nil,
-                selected: selectedProvider == nil
-            ) {
-                selectedProvider = nil
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 3) {
+                    providerChip(
+                        title: strings.tokenProviderAll,
+                        provider: nil,
+                        selected: selectedProvider == nil
+                    ) {
+                        selectedProvider = nil
+                    }
+                    .id("all")
+                    ForEach(manager.configuredProviders) { provider in
+                        providerChip(title: provider.displayName, provider: provider, selected: selectedProvider == provider) {
+                            selectedProvider = provider
+                        }
+                        .id(provider.id)
+                    }
+                }
+                .padding(3)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.06))
+                )
             }
-            ForEach(manager.configuredProviders) { provider in
-                providerChip(title: provider.displayName, provider: provider, selected: selectedProvider == provider) {
-                    selectedProvider = provider
+            .onChange(of: selectedProvider) { _, newProvider in
+                if let newProvider {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        proxy.scrollTo(newProvider.id, anchor: .center)
+                    }
+                } else {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        proxy.scrollTo("all", anchor: .leading)
+                    }
                 }
             }
         }
-        .padding(3)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.06))
-        )
     }
 
     private func providerChip(
@@ -76,6 +93,7 @@ struct TokenUsagePanelView: View {
                 }
                 Text(title)
                     .font(Theme.Stats.font12Medium)
+                    .lineLimit(1)
             }
             .foregroundStyle(
                 selected
@@ -94,6 +112,7 @@ struct TokenUsagePanelView: View {
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
+        .fixedSize(horizontal: true, vertical: false)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
