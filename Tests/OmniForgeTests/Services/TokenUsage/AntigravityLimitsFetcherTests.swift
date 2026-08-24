@@ -191,6 +191,16 @@ final class AntigravityLimitsFetcherTests: XCTestCase {
         XCTAssertEqual(AntigravityLimitsFetcher.parseListeningPorts(""), [])
     }
 
+    func test_listeningPorts_supportsLoopbackAddresses() {
+        let output = """
+        COMMAND     PID USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+        language_ 56539 seam    7u  IPv4  0xf382a7dcb07a5a1      0t0  TCP 127.0.0.1:52203 (LISTEN)
+        language_ 56539 seam    8u  IPv4 0x9c5ab5c537dfaa2e      0t0  TCP 127.0.0.1:52204 (LISTEN)
+        language_ 56539 seam    9u  IPv6 0x9c5ab5c537dfaa2f      0t0  TCP [::1]:52205 (LISTEN)
+        """
+        XCTAssertEqual(AntigravityLimitsFetcher.parseListeningPorts(output), [52203, 52204, 52205])
+    }
+
     // MARK: - 取数编排
 
     /// 可编排的 shell 替身。

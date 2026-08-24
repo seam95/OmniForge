@@ -530,9 +530,9 @@ final class AntigravityLimitsFetcher: LimitsFetching {
     static func parseListeningPorts(_ output: String) -> [Int] {
         var seen = Set<Int>()
         for line in output.split(separator: "\n") where line.contains("LISTEN") {
-            // 形如 `agyd 50001 seam 12u IPv4 0x... 0t0 TCP *:8080 (LISTEN)`；地址列取最后一个 *:port。
+            // NAME 列可能是 *:port、127.0.0.1:port 或 [::1]:port，统一从最后一段提取端口。
             let tokens = line.split(separator: " ").map(String.init)
-            guard let addressIndex = tokens.lastIndex(where: { $0.contains("*:") || $0.contains("]:") }) else { continue }
+            guard let addressIndex = tokens.lastIndex(where: { $0.contains(":") && $0 != "(LISTEN)" }) else { continue }
             let address = tokens[addressIndex]
             let portString = address.split(separator: ":").last.map(String.init) ?? ""
             if let port = Int(portString.trimmingCharacters(in: CharacterSet(charactersIn: "]"))) {
