@@ -1164,6 +1164,8 @@ struct Strings: Equatable {
     let deepSeekAlertTitle: String
     let deepSeekAlertBodyFormat: String
     let tokenSettingsDeepSeekSection: String
+    let tokenSettingsTraeCnSection: String
+    let tokenSettingsTraeCnJwtPlaceholder: String
     let deepSeekSettingsApiKeySection: String
     let deepSeekSettingsApiKeyPlaceholder: String
     let deepSeekSettingsSaveKey: String

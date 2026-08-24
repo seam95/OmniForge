@@ -1084,6 +1084,8 @@ extension Strings {
         deepSeekAlertTitle: "DeepSeek 余额告警",
         deepSeekAlertBodyFormat: "DeepSeek 余额仅剩 %@，低于阈值 %@。",
         tokenSettingsDeepSeekSection: "DeepSeek 余额",
+        tokenSettingsTraeCnSection: "Trae CN",
+        tokenSettingsTraeCnJwtPlaceholder: "粘贴你的 Cloud-IDE-JWT…",
         deepSeekSettingsApiKeySection: "API Key",
         deepSeekSettingsApiKeyPlaceholder: "sk-...",
         deepSeekSettingsSaveKey: "保存",

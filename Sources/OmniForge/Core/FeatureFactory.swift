@@ -386,6 +386,9 @@ struct FeatureFactory {
         let opencodeCollector = OpencodeUsageCollector(store: usageStore)
         let zcodeCollector = ZcodeUsageCollector(store: usageStore)
         let qoderCollector = QoderUsageCollector(store: usageStore)
+        // 期 4：trae-cn 云端采集（opt-in + 手动 JWT）；ark-coding-plan 纯限额（arkcli 子进程）。
+        let traeCnCollector = TraeCnUsageCollector(store: usageStore, preferences: preferences)
+        let arkCodingPlan = LimitsCachingFetcher(inner: ArkCodingPlanLimitsFetcher(), cache: cache)
         return TokenUsageManager(
             preferences: preferences,
             fetchers: [
@@ -394,6 +397,7 @@ struct FeatureFactory {
                 .antigravity: antigravity,
                 .kimi: kimi,
                 .cursor: cursor,
+                .arkCodingPlan: arkCodingPlan,
             ],
             scheduler: TimerRepeatingScheduler(),
             usageStore: usageStore,
@@ -409,6 +413,7 @@ struct FeatureFactory {
                 .opencode: opencodeCollector,
                 .zcode: zcodeCollector,
                 .qoder: qoderCollector,
+                .traeCN: traeCnCollector,
             ],
             alerts: alerts
         )

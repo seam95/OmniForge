@@ -58,6 +58,11 @@ struct TokenUsageSettingsView: View {
                                 strings: state.l10n.s
                             )
                         }
+                    case .traeCn:
+                        TraeCnSettingsView(
+                            preferences: preferences,
+                            strings: state.l10n.s
+                        )
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -422,5 +427,70 @@ struct DeepSeekBalanceSettingsView: View {
 
     private static func formatThreshold(_ value: Double) -> String {
         String(format: "%g", value)
+    }
+}
+
+/// trae-cn 采集设置：opt-in 开关（默认关，SPEC R1）+ Cloud-IDE-JWT 手动输入（钥匙串）。
+struct TraeCnSettingsView: View {
+    @ObservedObject var preferences: TokenUsagePreferences
+    let strings: Strings
+
+    @State private var jwtInput = ""
+    @State private var saveFailed = false
+
+    private let keychain = TraeCnKeychainStore()
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle(strings.tokenSettingsTraeCnSection, isOn: Binding(
+                    get: { preferences.configuration.traeCnEnabled },
+                    set: { enabled in preferences.setTraeCnEnabled(enabled) }
+                ))
+                SecureField(strings.tokenSettingsTraeCnJwtPlaceholder, text: $jwtInput)
+                    .textFieldStyle(.roundedBorder)
+                HStack {
+                    Button(strings.deepSeekSettingsSaveKey) {
+                        save()
+                    }
+                    .disabled(DeepSeekSettingsValidation.sanitizedAPIKey(jwtInput).isEmpty)
+                    Button(strings.deepSeekSettingsClearKey) {
+                        clearKey()
+                    }
+                    .disabled(jwtInput.isEmpty && !hasStoredKey)
+                }
+                if saveFailed {
+                    Text(strings.tokenErrorTransient)
+                        .foregroundStyle(Theme.Stats.up)
+                }
+            } header: {
+                Text(strings.tokenSettingsTraeCnSection)
+            } footer: {
+                Text(strings.tokenSettingsConfigureHintTraeCn)
+            }
+        }
+        .settingsPageStyle()
+        .onAppear {
+            jwtInput = (try? keychain.readJWT()) ?? ""
+        }
+    }
+
+    private var hasStoredKey: Bool {
+        ((try? keychain.readJWT()) ?? nil) != nil
+    }
+
+    private func save() {
+        do {
+            try keychain.writeJWT(DeepSeekSettingsValidation.sanitizedAPIKey(jwtInput))
+            saveFailed = false
+        } catch {
+            saveFailed = true
+        }
+    }
+
+    private func clearKey() {
+        try? keychain.deleteJWT()
+        jwtInput = ""
+        saveFailed = false
     }
 }

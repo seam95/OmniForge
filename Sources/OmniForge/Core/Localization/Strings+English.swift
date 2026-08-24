@@ -1084,6 +1084,8 @@ extension Strings {
         deepSeekAlertTitle: "DeepSeek balance alert",
         deepSeekAlertBodyFormat: "DeepSeek balance is %@, below the %@ threshold.",
         tokenSettingsDeepSeekSection: "DeepSeek Balance",
+        tokenSettingsTraeCnSection: "Trae CN",
+        tokenSettingsTraeCnJwtPlaceholder: "Paste your Cloud-IDE-JWT…",
         deepSeekSettingsApiKeySection: "API Key",
         deepSeekSettingsApiKeyPlaceholder: "sk-...",
         deepSeekSettingsSaveKey: "Save",

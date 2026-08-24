@@ -33,6 +33,15 @@ struct TokenUsageConfiguration: Equatable, Codable {
     var paceOverrunAlertEnabled = true
     /// DeepSeek 余额监控设置。可选字段：旧配置无此键 → 解码回 nil，走计算属性默认值。
     var deepSeekBalance: DeepSeekBalanceSettings?
+    /// trae-cn 云端采集 opt-in（默认关；SPEC R1 / §4.2 C 类）。存储层可选，
+    /// 旧配置无此键 → 解码回 nil，走计算属性默认值（Codable 对非可选字段解码严格）。
+    var traeCnEnabledStored: Bool?
+
+    /// trae-cn 采集开关（缺省 false）。
+    var traeCnEnabled: Bool {
+        get { traeCnEnabledStored ?? false }
+        set { traeCnEnabledStored = newValue }
+    }
 
     /// 限额刷新间隔合法值。
     static let allowedRefreshIntervals = [1, 5, 15]
@@ -83,6 +92,13 @@ final class TokenUsagePreferences: ObservableObject {
             var settings = config.deepSeekBalance ?? DeepSeekBalanceSettings()
             settings.lowBalanceAlertEnabled = enabled
             config.deepSeekBalance = settings
+        }
+    }
+
+    /// 设置 trae-cn 云端采集开关（opt-in，默认关）。
+    func setTraeCnEnabled(_ enabled: Bool) {
+        update { config in
+            config.traeCnEnabled = enabled
         }
     }
 
