@@ -92,8 +92,7 @@ struct TokenUsageLimitCardView: View {
         }
     }
 
-    /// 附加带标签窗口行：标题用 label，进度条同主窗样式；无 kind → 不画 pace 刻度，
-    /// 说明行仅显示重置时间（若有）。
+    /// 附加带标签窗口行：标题用 label + 重置时间，进度条同主窗样式；无 kind → 不画 pace 刻度。
     /// 注意：labeled 窗固定按已用口径展示数值（无 kind，剩余换算可能产生负数/误导）。
     private var labeledWindowsBody: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -105,11 +104,17 @@ struct TokenUsageLimitCardView: View {
                     windowSeparator
                 }
                 let entry = labeledWindows[index]
+                let resetTime = TokenUsageFormat.windowResetTime(resetAt: entry.window.resetAt, now: now)
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack(alignment: .firstTextBaseline) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(entry.label)
                             .font(Theme.Stats.font11Regular)
                             .foregroundColor(Theme.Stats.text2)
+                        if let resetTime {
+                            Text(resetTime)
+                                .font(Theme.Stats.font11Regular)
+                                .foregroundColor(Theme.Stats.text3)
+                        }
                         Spacer()
                         // labeled 窗固定按已用口径展示（无 kind，剩余换算可能产生负数/误导）。
                         Text(TokenUsageFormat.percent(entry.window.usedPercent))
@@ -123,7 +128,6 @@ struct TokenUsageLimitCardView: View {
                         critical: 90,
                         tint: limits.provider.accentColor
                     )
-                    captionRow(kind: nil, window: entry.window, pace: LimitPace.Result())
                 }
             }
         }
@@ -171,11 +175,17 @@ struct TokenUsageLimitCardView: View {
 
     private func windowRow(_ kind: LimitWindowKind, window: UsageWindow) -> some View {
         let pace = computePace(kind: kind, window: window)
+        let resetTime = TokenUsageFormat.windowResetTime(resetAt: window.resetAt, now: now)
         return VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(kind.title(strings))
                     .font(Theme.Stats.font11Regular)
                     .foregroundColor(Theme.Stats.text2)
+                if let resetTime {
+                    Text(resetTime)
+                        .font(Theme.Stats.font11Regular)
+                        .foregroundColor(Theme.Stats.text3)
+                }
                 Spacer()
                 Text(TokenUsageFormat.limitValueText(kind: kind, window: window, displayMode: displayMode, strings: strings))
                     .font(Theme.Stats.font12Medium)
@@ -192,20 +202,6 @@ struct TokenUsageLimitCardView: View {
                 pacePercent: pace.pacePercent,
                 paceOver: pace.paceOver
             )
-            captionRow(kind: kind, window: window, pace: pace)
-        }
-    }
-
-    private func captionRow(kind: LimitWindowKind?, window: UsageWindow, pace: LimitPace.Result) -> some View {
-        HStack(spacing: 4) {
-            if pace.paceOver {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 9))
-                    .foregroundColor(Theme.Stats.ram)
-            }
-            Text(TokenUsageFormat.caption(for: window, kind: kind, pace: pace, now: now, strings: strings))
-                .font(Theme.Stats.font10Regular)
-                .foregroundColor(Theme.Stats.text2)
         }
     }
 
@@ -249,13 +245,14 @@ private struct LimitBarWithPace: View {
             ZStack(alignment: .leading) {
                 MetricBar(value: value, warning: warning, critical: critical, tint: tint)
                 if let pacePercent {
-                    Rectangle()
+                    RoundedRectangle(cornerRadius: 1)
                         .fill(paceOver ? Theme.Stats.up : Theme.Stats.statusNormal)
-                        .frame(width: 2, height: 8)
+                        .frame(width: 2, height: 10)
                         .offset(x: proxy.size.width * min(max(pacePercent, 0), 100) / 100 - 1)
                 }
             }
+            .frame(maxHeight: .infinity, alignment: .center)
         }
-        .frame(height: 8)
+        .frame(height: 10)
     }
 }

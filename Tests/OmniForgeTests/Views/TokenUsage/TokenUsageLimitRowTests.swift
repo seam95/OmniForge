@@ -139,4 +139,32 @@ final class TokenUsageLimitRowTests: XCTestCase {
         )
         XCTAssertEqual(color3, Theme.Stats.ram, "已用 75% 时条为橙色预警态")
     }
+
+    func test_windowResetTime_formatsSameDayAndDifferentDay() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 8 * 3600)! // +08:00
+
+        let baseComponents = DateComponents(year: 2026, month: 8, day: 24, hour: 10, minute: 0, second: 0)
+        let now = calendar.date(from: baseComponents)!
+
+        // 场景 1：同日重置（如 13:42）
+        let sameDayComponents = DateComponents(year: 2026, month: 8, day: 24, hour: 13, minute: 42, second: 0)
+        let sameDayDate = calendar.date(from: sameDayComponents)!
+        let sameDayResult = TokenUsageFormat.windowResetTime(resetAt: sameDayDate, now: now, calendar: calendar)
+        XCTAssertEqual(sameDayResult, "13:42", "同日重置显示 HH:mm")
+
+        // 场景 2：跨日重置（如 8/31 16:42）
+        let diffDayComponents = DateComponents(year: 2026, month: 8, day: 31, hour: 16, minute: 42, second: 0)
+        let diffDayDate = calendar.date(from: diffDayComponents)!
+        let diffDayResult = TokenUsageFormat.windowResetTime(resetAt: diffDayDate, now: now, calendar: calendar)
+        XCTAssertEqual(diffDayResult, "8/31 16:42", "跨日重置显示 M/d HH:mm")
+
+        // 场景 3：已过期（resetAt <= now）
+        let pastComponents = DateComponents(year: 2026, month: 8, day: 24, hour: 9, minute: 0, second: 0)
+        let pastDate = calendar.date(from: pastComponents)!
+        XCTAssertNil(TokenUsageFormat.windowResetTime(resetAt: pastDate, now: now, calendar: calendar), "已过期时间返回 nil")
+
+        // 场景 4：nil 时间
+        XCTAssertNil(TokenUsageFormat.windowResetTime(resetAt: nil, now: now, calendar: calendar), "nil 时间返回 nil")
+    }
 }

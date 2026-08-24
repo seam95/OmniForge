@@ -84,6 +84,31 @@ enum TokenUsageFormat {
         exactTimeFormatter.string(from: date)
     }
 
+    private static let sameDayTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
+    private static let differentDayTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M/d HH:mm"
+        return formatter
+    }()
+
+    /// 窗口重置时间紧凑显示（用于窗口行标题旁）：同天显示 "HH:mm"（如 13:42），不同天显示 "M/d HH:mm"（如 8/31 16:42）。
+    static func windowResetTime(
+        resetAt: Date?,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> String? {
+        guard let resetAt, resetAt > now else { return nil }
+        if calendar.isDate(resetAt, inSameDayAs: now) {
+            return sameDayTimeFormatter.string(from: resetAt)
+        }
+        return differentDayTimeFormatter.string(from: resetAt)
+    }
+
     /// 星期简称（周日前置，配合 `tokenWeekdayNames`）。
     static func weekdayName(for date: Date, strings: Strings) -> String {
         let weekday = Calendar.current.component(.weekday, from: date) // 1 = 周日
