@@ -298,3 +298,32 @@ extension Data {
         return result
     }
 }
+
+// MARK: - DeepSeek 余额替身
+
+/// 测试用 DeepSeek API Key 替身 — 内存存储，记录调用。
+final class FakeDeepSeekKeyStore: DeepSeekAPIKeyStoring {
+    var storedKey: String?
+    var readError: Error?
+    var writeError: Error?
+    private(set) var readCount = 0
+    private(set) var writeCount = 0
+    private(set) var deleteCount = 0
+
+    func readAPIKey() throws -> String? {
+        readCount += 1
+        if let readError { throw readError }
+        return storedKey
+    }
+
+    func writeAPIKey(_ apiKey: String) throws {
+        writeCount += 1
+        if let writeError { throw writeError }
+        storedKey = apiKey
+    }
+
+    func deleteAPIKey() throws {
+        deleteCount += 1
+        storedKey = nil
+    }
+}
