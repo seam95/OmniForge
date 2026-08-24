@@ -46,7 +46,8 @@ enum UsageDistributionBuilder {
         now: Date,
         calendar: Calendar,
         period: TokenUsagePeriod,
-        configuredProviders: [TokenUsageProvider] = []
+        configuredProviders: [TokenUsageProvider] = [],
+        preferredOrder: [TokenUsageProvider]? = nil
     ) -> UsageDistribution? {
         guard let window = UsagePeriodWindow.window(for: period, now: now, calendar: calendar) else {
             return nil
@@ -76,7 +77,7 @@ enum UsageDistributionBuilder {
                 guard let left = lhs.provider, let right = rhs.provider else { return false }
                 return lhs.totalTokens != rhs.totalTokens
                     ? lhs.totalTokens! > rhs.totalTokens!
-                    : providerOrder(left) < providerOrder(right)
+                    : providerOrder(left, preferred: preferredOrder) < providerOrder(right, preferred: preferredOrder)
             }
         // Cursor 云端口径占位行：已配置且窗口内无数据 → 追加（非实时，用户已知其脆弱仍保留；
         // 与数据行并存时排在最后，不挤占真实数据）。
@@ -87,7 +88,10 @@ enum UsageDistributionBuilder {
         return UsageDistribution(byModel: byModel, byProvider: byProvider)
     }
 
-    private static func providerOrder(_ provider: TokenUsageProvider) -> Int {
-        TokenUsageProvider.allCases.firstIndex(of: provider) ?? -1
+    private static func providerOrder(_ provider: TokenUsageProvider, preferred: [TokenUsageProvider]?) -> Int {
+        if let preferred, let index = preferred.firstIndex(of: provider) {
+            return index
+        }
+        return TokenUsageProvider.allCases.firstIndex(of: provider) ?? -1
     }
 }

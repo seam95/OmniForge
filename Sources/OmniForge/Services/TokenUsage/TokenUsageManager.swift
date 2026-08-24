@@ -73,10 +73,10 @@ final class TokenUsageManager: ObservableObject {
             .store(in: &cancellables)
     }
 
-    /// 已配置凭证的 provider（按目录顺序）。
+    /// 已配置凭证的 provider（按用户偏好顺序）。
     var configuredProviders: [TokenUsageProvider] {
         let configured = Set(limits.filter { $0.value.configured }.map(\.key))
-        return TokenUsageProvider.allCases.filter { configured.contains($0) }
+        return preferences.configuration.providerOrder.filter { configured.contains($0) }
     }
 
     /// 有任何 provider 配置了凭证（限额区块显隐判断）。
@@ -207,7 +207,8 @@ final class TokenUsageManager: ObservableObject {
             now: now,
             calendar: .current,
             period: period,
-            configuredProviders: provider == nil ? configuredProviders : []
+            configuredProviders: provider == nil ? configuredProviders : [],
+            preferredOrder: preferences.configuration.providerOrder
         )
     }
 
@@ -245,7 +246,7 @@ final class TokenUsageManager: ObservableObject {
         let buckets = usageStore.loadBuckets(from: start, to: end, providers: nil)
         usageOverview = UsageOverviewBuilder.make(buckets: buckets, now: now, calendar: .current)
         let withData = Set(buckets.map(\.key.provider))
-        usageProvidersWithData = TokenUsageProvider.allCases.filter { withData.contains($0) }
+        usageProvidersWithData = preferences.configuration.providerOrder.filter { withData.contains($0) }
     }
 
     /// 快照窗口：近 7 日（今日起往前 6 天）~ 明日 0 点。

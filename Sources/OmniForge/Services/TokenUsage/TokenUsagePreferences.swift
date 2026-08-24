@@ -36,11 +36,40 @@ struct TokenUsageConfiguration: Equatable, Codable {
     /// trae-cn 云端采集 opt-in（默认关；SPEC R1 / §4.2 C 类）。存储层可选，
     /// 旧配置无此键 → 解码回 nil，走计算属性默认值（Codable 对非可选字段解码严格）。
     var traeCnEnabledStored: Bool?
+    /// 供应商自定义排序。存储层可选，旧配置无此键 → 解码回 nil，走计算属性默认值。
+    var providerOrderStored: [TokenUsageProvider]?
 
     /// trae-cn 采集开关（缺省 false）。
     var traeCnEnabled: Bool {
         get { traeCnEnabledStored ?? false }
         set { traeCnEnabledStored = newValue }
+    }
+
+    /// 供应商展示顺序（包含全部已知供应商；未在自定义顺序中的供应商自动按默认顺序追加在末尾）。
+    var providerOrder: [TokenUsageProvider] {
+        get {
+            guard let stored = providerOrderStored else {
+                return TokenUsageProvider.allCases
+            }
+            var result: [TokenUsageProvider] = []
+            var seen = Set<TokenUsageProvider>()
+            for provider in stored {
+                if !seen.contains(provider) {
+                    result.append(provider)
+                    seen.insert(provider)
+                }
+            }
+            for provider in TokenUsageProvider.allCases {
+                if !seen.contains(provider) {
+                    result.append(provider)
+                    seen.insert(provider)
+                }
+            }
+            return result
+        }
+        set {
+            providerOrderStored = newValue
+        }
     }
 
     /// 限额刷新间隔合法值。
@@ -120,6 +149,25 @@ final class TokenUsagePreferences: ObservableObject {
             var settings = config.deepSeekBalance ?? DeepSeekBalanceSettings()
             settings.refreshMinutes = minutes
             config.deepSeekBalance = settings
+        }
+    }
+
+    /// 调整供应商位置（如上移 delta = -1，下移 delta = 1）。
+    func moveProvider(_ provider: TokenUsageProvider, delta: Int) {
+        update { config in
+            var order = config.providerOrder
+            guard let index = order.firstIndex(of: provider) else { return }
+            let target = index + delta
+            guard order.indices.contains(target) else { return }
+            order.swapAt(index, target)
+            config.providerOrder = order
+        }
+    }
+
+    /// 设置新的供应商整体顺序。
+    func setProviderOrder(_ newOrder: [TokenUsageProvider]) {
+        update { config in
+            config.providerOrder = newOrder
         }
     }
 

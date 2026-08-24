@@ -154,4 +154,67 @@ final class TokenUsagePreferencesTests: XCTestCase {
         let preferences = TokenUsagePreferences(userDefaults: defaults)
         XCTAssertEqual(preferences.configuration, TokenUsageConfiguration())
     }
+
+    func test_providerOrder_defaultsToAllCases() {
+        let config = TokenUsageConfiguration()
+        XCTAssertEqual(config.providerOrder, TokenUsageProvider.allCases)
+        XCTAssertNil(config.providerOrderStored)
+    }
+
+    func test_providerOrder_moveAndPersistenceRoundTrip() {
+        let suite = "TokenUsagePreferencesTestsOrder.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let preferences = TokenUsagePreferences(userDefaults: defaults)
+        let initialFirst = preferences.configuration.providerOrder.first!
+        let initialSecond = preferences.configuration.providerOrder[1]
+
+        // 将第一项下移
+        preferences.moveProvider(initialFirst, delta: 1)
+        XCTAssertEqual(preferences.configuration.providerOrder[0], initialSecond)
+        XCTAssertEqual(preferences.configuration.providerOrder[1], initialFirst)
+
+        // 重新加载验证持久化
+        let reloaded = TokenUsagePreferences(userDefaults: defaults)
+        XCTAssertEqual(reloaded.configuration.providerOrder[0], initialSecond)
+        XCTAssertEqual(reloaded.configuration.providerOrder[1], initialFirst)
+
+        // 越界移动保护（首项上移、末项下移不崩溃且不变）
+        let firstItem = reloaded.configuration.providerOrder.first!
+        let lastItem = reloaded.configuration.providerOrder.last!
+        reloaded.moveProvider(firstItem, delta: -1)
+        reloaded.moveProvider(lastItem, delta: 1)
+        XCTAssertEqual(reloaded.configuration.providerOrder.first, firstItem)
+        XCTAssertEqual(reloaded.configuration.providerOrder.last, lastItem)
+    }
+
+    func test_providerOrder_legacyConfigWithoutKey_returnsAllCases() {
+        let suite = "TokenUsagePreferencesTestsOrderLegacy.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let legacy = """
+        {"menuBarMode":"todayTokens","limitRefreshMinutes":5,"limitsDisplayMode":"used"}
+        """.data(using: .utf8)!
+        defaults.set(legacy, forKey: "OmniForge.tokenUsageConfiguration")
+
+        let preferences = TokenUsagePreferences(userDefaults: defaults)
+        XCTAssertEqual(preferences.configuration.providerOrder, TokenUsageProvider.allCases)
+    }
+
+    func test_providerOrder_partialList_appendsMissingProviders() {
+        var config = TokenUsageConfiguration()
+        // 用户自定义了前三个
+        config.providerOrder = [.kimi, .antigravity, .codex]
+        let order = config.providerOrder
+
+        XCTAssertEqual(order[0], .kimi)
+        XCTAssertEqual(order[1], .antigravity)
+        XCTAssertEqual(order[2], .codex)
+        // 包含所有 15 家，且无重复
+        XCTAssertEqual(order.count, TokenUsageProvider.allCases.count)
+        XCTAssertEqual(Set(order), Set(TokenUsageProvider.allCases))
+    }
 }
+

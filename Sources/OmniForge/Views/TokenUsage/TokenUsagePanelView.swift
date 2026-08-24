@@ -38,13 +38,13 @@ struct TokenUsagePanelView: View {
         }
     }
 
-    /// 所有已配置的 provider（含常规 limits provider 与 DeepSeek 余额 provider）。
+    /// 所有已配置的 provider（含常规 limits provider 与 DeepSeek 余额 provider，按用户设置排序）。
     private var visibleProviders: [TokenUsageProvider] {
         var providers = Set(manager.configuredProviders)
         if let balanceManager, balanceManager.showingBalanceCard {
             providers.insert(.deepSeek)
         }
-        return TokenUsageProvider.allCases.filter { providers.contains($0) }
+        return preferences.configuration.providerOrder.filter { providers.contains($0) }
     }
 
     /// Provider 分段胶囊（仅已配置 provider + 「全部」）。
@@ -180,43 +180,37 @@ struct TokenUsagePanelView: View {
                 .frame(maxWidth: .infinity, minHeight: ControlCenterContentMetrics.emptyContentMinHeight)
         } else {
             VStack(alignment: .leading, spacing: 10) {
-                limitsBlock
-                balanceBlock
+                providerCardsBlock
                 usageBlock
             }
         }
     }
 
-    /// DeepSeek 余额卡：仅在未选择 provider（全部）或选中 DeepSeek 时显示。
+    /// 供应商卡片区块：按偏好顺序展示选中 provider（或全部已配置 provider）的限额卡与余额卡 + 来源脚注行。
     @ViewBuilder
-    private var balanceBlock: some View {
-        if (selectedProvider == nil || selectedProvider == .deepSeek),
-           let balanceManager,
-           balanceManager.showingBalanceCard {
-            DeepSeekBalanceCardView(
-                snapshot: balanceManager.snapshot,
-                threshold: preferences.configuration.deepSeekBalanceSettings.lowBalanceThreshold,
-                strings: strings,
-                now: Date()
-            )
+    private var providerCardsBlock: some View {
+        let providers = selectedProvider.map { [$0] } ?? visibleProviders
+        let hasCards = providers.contains { provider in
+            (manager.limits[provider] != nil) || (provider == .deepSeek && (balanceManager?.showingBalanceCard ?? false))
         }
-    }
-
-    /// 限额区块：选中 provider 的卡片（「全部」= 所有已配置卡片堆叠）+ 来源脚注行。
-    @ViewBuilder
-    private var limitsBlock: some View {
-        let providers = selectedProvider
-            .map { [$0] }
-            ?? manager.configuredProviders
-        let matchingProviders = providers.filter { manager.limits[$0] != nil }
-        if !matchingProviders.isEmpty {
+        if hasCards {
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(matchingProviders) { provider in
+                ForEach(providers) { provider in
                     if let limits = manager.limits[provider] {
                         TokenUsageLimitCardView(
                             limits: limits,
                             strings: strings,
                             displayMode: preferences.configuration.limitsDisplayMode,
+                            now: Date()
+                        )
+                    }
+                    if provider == .deepSeek,
+                       let balanceManager,
+                       balanceManager.showingBalanceCard {
+                        DeepSeekBalanceCardView(
+                            snapshot: balanceManager.snapshot,
+                            threshold: preferences.configuration.deepSeekBalanceSettings.lowBalanceThreshold,
+                            strings: strings,
                             now: Date()
                         )
                     }

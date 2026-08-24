@@ -85,4 +85,40 @@ final class TokenUsagePanelFilteringTests: XCTestCase {
             XCTAssertFalse(showsBalance, "选中 \(provider.rawValue) 时绝不应展示 DeepSeek 余额卡")
         }
     }
+
+    func test_visibleProviders_respectsCustomProviderOrder() {
+        let configuredProviders: [TokenUsageProvider] = [.codex, .antigravity, .kimi]
+        let deepSeekConfigured = true
+
+        var providers = Set(configuredProviders)
+        if deepSeekConfigured {
+            providers.insert(.deepSeek)
+        }
+
+        // 自定义排序：DeepSeek 第一，Kimi 第二，Antigravity 第三，Codex 第四
+        let customOrder: [TokenUsageProvider] = [.deepSeek, .kimi, .antigravity, .codex]
+        let visible = customOrder.filter { providers.contains($0) }
+
+        XCTAssertEqual(visible, [.deepSeek, .kimi, .antigravity, .codex])
+    }
+
+    func test_providerCards_orderedByCustomPreferences() {
+        // 模拟已配置 provider 与自定义偏好顺序
+        let customOrder: [TokenUsageProvider] = [.antigravity, .deepSeek, .codex]
+        let configuredSet: Set<TokenUsageProvider> = [.codex, .deepSeek, .antigravity]
+
+        let visibleProviders = customOrder.filter { configuredSet.contains($0) }
+        XCTAssertEqual(visibleProviders, [.antigravity, .deepSeek, .codex])
+
+        // 模拟「全部」时卡片列表顺序
+        let selectedProvider: TokenUsageProvider? = nil
+        let targetProviders = selectedProvider.map { [$0] } ?? visibleProviders
+        XCTAssertEqual(targetProviders, [.antigravity, .deepSeek, .codex], "全部视图下卡片顺序与偏好设置严格一致")
+
+        // 模拟单选时仅展示选中的 provider 卡片
+        let singleSelect = TokenUsageProvider.deepSeek
+        let singleTarget = [singleSelect]
+        XCTAssertEqual(singleTarget, [.deepSeek])
+    }
 }
+

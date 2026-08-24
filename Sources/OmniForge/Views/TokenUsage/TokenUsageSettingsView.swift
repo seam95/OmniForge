@@ -41,6 +41,7 @@ struct TokenUsageSettingsView: View {
                         )
                     case .providers:
                         TokenUsageProvidersSettingsView(
+                            preferences: preferences,
                             manager: manager,
                             balanceManager: state.deepSeekBalanceManager,
                             strings: state.l10n.s
@@ -149,8 +150,9 @@ struct TokenUsageGeneralSettingsView: View {
     }
 }
 
-/// 提供商：各家凭证状态；未配置给「如何配置 ›」展开引导。
+/// 提供商：各家凭证状态与自定义排序；未配置给「如何配置 ›」展开引导。
 struct TokenUsageProvidersSettingsView: View {
+    @ObservedObject var preferences: TokenUsagePreferences
     @ObservedObject var manager: TokenUsageManager
     var balanceManager: DeepSeekBalanceManager? = nil
     let strings: Strings
@@ -159,7 +161,7 @@ struct TokenUsageProvidersSettingsView: View {
     var body: some View {
         Form {
             Section(strings.tokenSettingsProvidersSection) {
-                ForEach(TokenUsageProvider.allCases) { provider in
+                ForEach(preferences.configuration.providerOrder) { provider in
                     providerRow(provider)
                 }
             }
@@ -222,6 +224,17 @@ struct TokenUsageProvidersSettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                Button(strings.settingsMoveUp) {
+                    preferences.moveProvider(provider, delta: -1)
+                }
+                .disabled(preferences.configuration.providerOrder.first == provider)
+                .accessibilityIdentifier(SettingsAccessibilityID.tokenUsageProviderMoveUp(provider))
+
+                Button(strings.settingsMoveDown) {
+                    preferences.moveProvider(provider, delta: 1)
+                }
+                .disabled(preferences.configuration.providerOrder.last == provider)
+                .accessibilityIdentifier(SettingsAccessibilityID.tokenUsageProviderMoveDown(provider))
             }
             if showsGuide && expandedProviders.contains(provider) {
                 Text(TokenUsageProviderStatusBuilder.configureHint(for: provider, strings: strings))

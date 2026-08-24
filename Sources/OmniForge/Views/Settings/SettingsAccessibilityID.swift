@@ -60,4 +60,12 @@ enum SettingsAccessibilityID: String, CaseIterable {
     static func tokenUsageProviderState(_ provider: TokenUsageProvider) -> String {
         "tokenUsage.provider.\(provider.rawValue).state"
     }
+
+    static func tokenUsageProviderMoveUp(_ provider: TokenUsageProvider) -> String {
+        "tokenUsage.provider.\(provider.rawValue).moveUp"
+    }
+
+    static func tokenUsageProviderMoveDown(_ provider: TokenUsageProvider) -> String {
+        "tokenUsage.provider.\(provider.rawValue).moveDown"
+    }
 }
