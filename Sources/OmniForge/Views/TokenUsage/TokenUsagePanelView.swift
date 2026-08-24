@@ -38,6 +38,15 @@ struct TokenUsagePanelView: View {
         }
     }
 
+    /// 所有已配置的 provider（含常规 limits provider 与 DeepSeek 余额 provider）。
+    private var visibleProviders: [TokenUsageProvider] {
+        var providers = Set(manager.configuredProviders)
+        if let balanceManager, balanceManager.showingBalanceCard {
+            providers.insert(.deepSeek)
+        }
+        return TokenUsageProvider.allCases.filter { providers.contains($0) }
+    }
+
     /// Provider 分段胶囊（仅已配置 provider + 「全部」）。
     private var providerSwitcher: some View {
         ScrollViewReader { proxy in
@@ -51,7 +60,7 @@ struct TokenUsagePanelView: View {
                         selectedProvider = nil
                     }
                     .id("all")
-                    ForEach(manager.configuredProviders) { provider in
+                    ForEach(visibleProviders) { provider in
                         providerChip(title: provider.displayName, provider: provider, selected: selectedProvider == provider) {
                             selectedProvider = provider
                         }
@@ -160,29 +169,30 @@ struct TokenUsagePanelView: View {
     @ViewBuilder
     private var content: some View {
         let showingBalance = balanceManager?.showingBalanceCard ?? false
+        let hasAnyConfigured = manager.hasAnyConfiguredProvider || showingBalance
         if manager.limits.isEmpty && !showingBalance {
             // 首次抓取完成前（或从未拉取）→ 骨架加载态
             ProgressView()
                 .controlSize(.small)
                 .frame(maxWidth: .infinity, minHeight: ControlCenterContentMetrics.emptyContentMinHeight)
-        } else if !manager.hasAnyConfiguredProvider && !showingBalance {
+        } else if !hasAnyConfigured {
             TokenUsageEmptyStateView(strings: strings)
                 .frame(maxWidth: .infinity, minHeight: ControlCenterContentMetrics.emptyContentMinHeight)
         } else {
             VStack(alignment: .leading, spacing: 10) {
-                if !manager.limits.isEmpty {
-                    limitsBlock
-                }
+                limitsBlock
                 balanceBlock
                 usageBlock
             }
         }
     }
 
-    /// DeepSeek 余额卡：仅配置密钥后显示；不参与 provider 分段胶囊过滤。
+    /// DeepSeek 余额卡：仅在未选择 provider（全部）或选中 DeepSeek 时显示。
     @ViewBuilder
     private var balanceBlock: some View {
-        if let balanceManager, balanceManager.showingBalanceCard {
+        if (selectedProvider == nil || selectedProvider == .deepSeek),
+           let balanceManager,
+           balanceManager.showingBalanceCard {
             DeepSeekBalanceCardView(
                 snapshot: balanceManager.snapshot,
                 threshold: preferences.configuration.deepSeekBalanceSettings.lowBalanceThreshold,
@@ -193,22 +203,26 @@ struct TokenUsagePanelView: View {
     }
 
     /// 限额区块：选中 provider 的卡片（「全部」= 所有已配置卡片堆叠）+ 来源脚注行。
+    @ViewBuilder
     private var limitsBlock: some View {
         let providers = selectedProvider
             .map { [$0] }
             ?? manager.configuredProviders
-        return VStack(alignment: .leading, spacing: 10) {
-            ForEach(providers) { provider in
-                if let limits = manager.limits[provider] {
-                    TokenUsageLimitCardView(
-                        limits: limits,
-                        strings: strings,
-                        displayMode: preferences.configuration.limitsDisplayMode,
-                        now: Date()
-                    )
+        let matchingProviders = providers.filter { manager.limits[$0] != nil }
+        if !matchingProviders.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(matchingProviders) { provider in
+                    if let limits = manager.limits[provider] {
+                        TokenUsageLimitCardView(
+                            limits: limits,
+                            strings: strings,
+                            displayMode: preferences.configuration.limitsDisplayMode,
+                            now: Date()
+                        )
+                    }
                 }
+                footerLine
             }
-            footerLine
         }
     }
 
@@ -240,7 +254,7 @@ struct TokenUsagePanelView: View {
     /// 周期内无当日数据但周期有数据时的 provider 家数兜底（今日快照口径）。
     private var fallbackProviderCount: Int {
         selectedProvider == nil
-            ? manager.usageProvidersWithData.count
+            ? max(manager.usageProvidersWithData.count, visibleProviders.count)
             : 1
     }
 

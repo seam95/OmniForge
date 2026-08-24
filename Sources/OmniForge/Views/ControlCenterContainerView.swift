@@ -367,6 +367,7 @@ struct ControlCenterContainerView: View {
             if selectedPanel == .tokenUsage {
                 FooterButton(label: state.l10n.s.tokenRefresh, systemImage: "arrow.clockwise") {
                     state.tokenUsageManager?.refreshNow(force: true)
+                    state.deepSeekBalanceManager?.refreshNow()
                 }
             } else {
                 FooterButton(label: state.l10n.s.actionQuit, systemImage: nil) {

@@ -7,6 +7,7 @@ enum TokenUsageProvider: String, Codable, CaseIterable, Identifiable {
     case antigravity
     case kimi
     case cursor
+    case deepSeek = "deepseek"
 
     var id: String { rawValue }
 
@@ -18,6 +19,7 @@ enum TokenUsageProvider: String, Codable, CaseIterable, Identifiable {
         case .antigravity: return "Antigravity"
         case .kimi: return "Kimi"
         case .cursor: return "Cursor"
+        case .deepSeek: return "DeepSeek"
         }
     }
 }

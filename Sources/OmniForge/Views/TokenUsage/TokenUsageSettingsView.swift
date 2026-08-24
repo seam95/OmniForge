@@ -42,6 +42,7 @@ struct TokenUsageSettingsView: View {
                     case .providers:
                         TokenUsageProvidersSettingsView(
                             manager: manager,
+                            balanceManager: state.deepSeekBalanceManager,
                             strings: state.l10n.s
                         )
                     case .alerts:
@@ -143,9 +144,10 @@ struct TokenUsageGeneralSettingsView: View {
     }
 }
 
-/// 提供商：5 家各一行凭证状态；未配置给「如何配置 ›」展开引导。
+/// 提供商：各家凭证状态；未配置给「如何配置 ›」展开引导。
 struct TokenUsageProvidersSettingsView: View {
     @ObservedObject var manager: TokenUsageManager
+    var balanceManager: DeepSeekBalanceManager? = nil
     let strings: Strings
     @State private var expandedProviders: Set<TokenUsageProvider> = []
 
@@ -160,11 +162,35 @@ struct TokenUsageProvidersSettingsView: View {
         .settingsPageStyle()
     }
 
+    private func providerRowInfo(_ provider: TokenUsageProvider) -> (statusText: String?, showsGuide: Bool) {
+        if provider == .deepSeek {
+            let isConfigured = balanceManager?.apiKeyConfigured ?? false
+            if isConfigured {
+                return ("✓ " + strings.tokenSettingsLoggedIn, false)
+            } else {
+                return (
+                    String(
+                        format: strings.tokenSettingsProviderStatusFormat,
+                        strings.tokenSettingsNotConfigured,
+                        strings.tokenSettingsHowToConfigure
+                    ),
+                    true
+                )
+            }
+        } else {
+            let limits = manager.limits[provider]
+            return (
+                TokenUsageProviderStatusBuilder.statusText(limits: limits, strings: strings),
+                TokenUsageProviderStatusBuilder.showsConfigureGuide(limits)
+            )
+        }
+    }
+
     @ViewBuilder
     private func providerRow(_ provider: TokenUsageProvider) -> some View {
-        let limits = manager.limits[provider]
-        let statusText = TokenUsageProviderStatusBuilder.statusText(limits: limits, strings: strings)
-        let showsGuide = TokenUsageProviderStatusBuilder.showsConfigureGuide(limits)
+        let info = providerRowInfo(provider)
+        let statusText = info.statusText
+        let showsGuide = info.showsGuide
 
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {

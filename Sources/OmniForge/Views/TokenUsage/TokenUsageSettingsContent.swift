@@ -36,13 +36,16 @@ enum TokenUsageProviderStatusBuilder {
         return !limits.configured
     }
 
-    /// 「如何配置」展开后的说明文案（Cursor 无 CLI 走应用内登录；Antigravity 需 IDE 运行中）。
+    /// 「如何配置」展开后的说明文案（Cursor 无 CLI 走应用内登录；Antigravity 需 IDE 运行中；DeepSeek 需配置 API Key）。
     static func configureHint(for provider: TokenUsageProvider, strings: Strings) -> String {
         if provider == .cursor {
             return strings.tokenSettingsConfigureHintCursor
         }
         if provider == .antigravity {
             return strings.tokenSettingsConfigureHintAntigravity
+        }
+        if provider == .deepSeek {
+            return strings.deepSeekSettingsApiKeyCaption
         }
         return String(
             format: strings.tokenSettingsConfigureHintFormat,
@@ -54,7 +57,7 @@ enum TokenUsageProviderStatusBuilder {
 // MARK: - Provider 设置引导
 
 extension TokenUsageProvider {
-    /// 「如何配置」引导涉及的 CLI 命令名（Cursor / Antigravity 无对应 CLI，返回空）。
+    /// 「如何配置」引导涉及的 CLI 命令名（Cursor / Antigravity / DeepSeek 无对应 CLI，返回空）。
     var setupCLICommand: String {
         switch self {
         case .claude: return "claude"
@@ -62,6 +65,7 @@ extension TokenUsageProvider {
         case .antigravity: return ""
         case .kimi: return "kimi"
         case .cursor: return ""
+        case .deepSeek: return ""
         }
     }
 }

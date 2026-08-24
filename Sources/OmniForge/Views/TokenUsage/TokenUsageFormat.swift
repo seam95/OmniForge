@@ -210,6 +210,7 @@ extension TokenUsageProvider {
         case .antigravity: return Color(red: 0x8A / 255, green: 0x5C / 255, blue: 0xF2 / 255)
         case .kimi: return Color(red: 0x5B / 255, green: 0x5B / 255, blue: 0xD6 / 255)
         case .cursor: return Theme.Stats.text3
+        case .deepSeek: return DeepSeekBalanceCardView.brandColor
         }
     }
 }

@@ -68,6 +68,20 @@ final class TokenUsageProviderStatusTests: XCTestCase {
         )
     }
 
+    func test_configureHint_deepSeekUsesApiKeyCaption() {
+        XCTAssertEqual(
+            TokenUsageProviderStatusBuilder.configureHint(for: .deepSeek, strings: strings),
+            strings.deepSeekSettingsApiKeyCaption
+        )
+    }
+
+    func test_deepSeekProvider_properties() {
+        XCTAssertEqual(TokenUsageProvider.deepSeek.rawValue, "deepseek")
+        XCTAssertEqual(TokenUsageProvider.deepSeek.displayName, "DeepSeek")
+        XCTAssertEqual(TokenUsageProvider.deepSeek.setupCLICommand, "")
+        XCTAssertEqual(TokenUsageProvider.deepSeek.accentColor, DeepSeekBalanceCardView.brandColor)
+    }
+
     private func makeLimits(planLabel: String?) -> ProviderUsageLimits {
         ProviderUsageLimits(
             provider: .claude,
