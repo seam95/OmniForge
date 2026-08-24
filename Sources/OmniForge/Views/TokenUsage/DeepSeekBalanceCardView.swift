@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// 控制中心「Token」页的 DeepSeek 余额卡：品牌色块 + 标题 + 状态徽章、
-/// 多币种金额行、赠送/充值明细行、错误行与官方来源脚注（stale 徽章标注回退）。
+/// 多币种金额行、赠送/充值明细行与错误行（stale 徽章标注回退）。
 struct DeepSeekBalanceCardView: View {
     let snapshot: DeepSeekBalanceSnapshot?
     /// 低余额阈值（面板从偏好注入，徽章「低于阈值」口径与通知一致）。
@@ -30,7 +30,6 @@ struct DeepSeekBalanceCardView: View {
                     if let issue = snapshot.issue {
                         errorRow(issue) // 有旧值保留时的行内错误提示
                     }
-                    footerLine(snapshot)
                 }
             } else {
                 // 已配置但首拉尚未完成
@@ -104,8 +103,7 @@ struct DeepSeekBalanceCardView: View {
             .padding(.vertical, 2)
     }
 
-    // MARK: - 错误与脚注
-
+    // MARK: - 错误
     private func errorRow(_ issue: LimitError) -> some View {
         HStack(spacing: 5) {
             Image(systemName: "exclamationmark.triangle.fill")
@@ -115,18 +113,6 @@ struct DeepSeekBalanceCardView: View {
                 .font(Theme.Stats.font10Regular)
                 .foregroundColor(Theme.Stats.text2)
         }
-    }
-
-    /// 脚注：「官方来源 · X 分钟前更新」（stale 时数值仍为上次成功，时间口径不变）。
-    private func footerLine(_ snapshot: DeepSeekBalanceSnapshot) -> some View {
-        Text(String(
-            format: strings.deepSeekBalanceFooterFormat,
-            strings.tokenSourceOfficial,
-            TokenUsageFormat.relativeUpdate(snapshot.capturedAt, now: now, strings: strings)
-        ))
-        .font(Theme.Stats.font10Regular)
-        .foregroundColor(Theme.Stats.text3)
-        .frame(maxWidth: .infinity, alignment: .center)
     }
 }
 

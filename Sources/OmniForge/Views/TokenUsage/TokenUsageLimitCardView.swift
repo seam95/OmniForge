@@ -25,13 +25,6 @@ struct TokenUsageLimitCardView: View {
         limits.labeledWindows ?? []
     }
 
-    /// 重置权益区可见性：有可展示条目（明细行或 count）才显示。
-    private var showsResetBank: Bool {
-        guard let bank = limits.resetBank else { return false }
-        if !bank.credits.isEmpty { return true }
-        return (bank.displayCount ?? 0) > 0
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
@@ -49,9 +42,6 @@ struct TokenUsageLimitCardView: View {
                 windowsBody
                 if !labeledWindows.isEmpty {
                     labeledWindowsBody
-                }
-                if showsResetBank {
-                    resetBankSection
                 }
             }
         }
@@ -133,38 +123,7 @@ struct TokenUsageLimitCardView: View {
         }
     }
 
-    /// 重置权益区（Codex）：标题 + 每条可用权益一行「重置 N · 过期时间」；
-    /// 有 count 无明细时显示次数行；无可展示项时整区不出现。
-    @ViewBuilder
-    private var resetBankSection: some View {
-        let bank = limits.resetBank
-        VStack(alignment: .leading, spacing: 6) {
-            windowSeparator
-            Text(strings.tokenResetBankTitle)
-                .font(Theme.Stats.font11Regular)
-                .foregroundColor(Theme.Stats.text2)
-            if let credits = bank?.credits, !credits.isEmpty {
-                ForEach(credits.indices, id: \.self) { index in
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.counterclockwise")
-                            .font(.system(size: 9))
-                            .foregroundColor(Theme.Stats.statusNormal)
-                        Text(String(
-                            format: strings.tokenResetBankEntryFormat,
-                            index + 1,
-                            TokenUsageFormat.duration(credits[index].expiresAt.timeIntervalSince(now), strings: strings)
-                        ))
-                        .font(Theme.Stats.font10Regular)
-                        .foregroundColor(Theme.Stats.text2)
-                    }
-                }
-            } else if let count = bank?.displayCount, count > 0 {
-                Text(String(format: strings.tokenResetBankCountOnlyFormat, count))
-                    .font(Theme.Stats.font10Regular)
-                    .foregroundColor(Theme.Stats.text2)
-            }
-        }
-    }
+
 
     private var windowSeparator: some View {
         Rectangle()
