@@ -195,6 +195,7 @@ struct ControlCenterContainerView: View {
                         TokenUsagePanelView(
                             manager: manager,
                             preferences: preferences,
+                            balanceManager: state.deepSeekBalanceManager,
                             strings: state.l10n.s,
                             onOpenSettings: onOpenSettings
                         )

@@ -20,6 +20,7 @@ final class AppState: ObservableObject {
     private(set) var monitorAlerts: MonitorAlertManager?
     private(set) var tokenUsageManager: TokenUsageManager?
     private(set) var tokenUsagePreferences: TokenUsagePreferences?
+    private(set) var deepSeekBalanceManager: DeepSeekBalanceManager?
     private(set) var keepAwakeManager: KeepAwakeManager?
     /// 始终装载；可由 composition root 注入。
     private(set) var clamshellRecoveryCoordinator: ClamshellRecoveryCoordinator?
@@ -173,6 +174,7 @@ final class AppState: ObservableObject {
         monitorAlerts = runtime.manager(for: .systemMonitor, as: MonitorAlertManager.self)
         tokenUsageManager = runtime.manager(for: .tokenUsage, as: TokenUsageManager.self)
         tokenUsagePreferences = runtime.manager(for: .tokenUsage, as: TokenUsagePreferences.self)
+        deepSeekBalanceManager = runtime.manager(for: .tokenUsage, as: DeepSeekBalanceManager.self)
         keepAwakeManager = runtime.manager(for: .keepAwake, as: KeepAwakeManager.self)
 
         startClipboardMonitoring = { [weak self] in
@@ -200,6 +202,9 @@ final class AppState: ObservableObject {
         }
         if let tokenUsageManager {
             forwardObjectWillChange(from: tokenUsageManager, storeIn: &featureCancellables)
+        }
+        if let deepSeekBalanceManager {
+            forwardObjectWillChange(from: deepSeekBalanceManager, storeIn: &featureCancellables)
         }
         if let keepAwakeManager {
             forwardObjectWillChange(from: keepAwakeManager, storeIn: &featureCancellables)

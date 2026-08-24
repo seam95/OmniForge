@@ -49,6 +49,14 @@ struct TokenUsageSettingsView: View {
                             preferences: preferences,
                             strings: state.l10n.s
                         )
+                    case .deepSeek:
+                        if let balanceManager = state.deepSeekBalanceManager {
+                            DeepSeekBalanceSettingsView(
+                                preferences: preferences,
+                                manager: balanceManager,
+                                strings: state.l10n.s
+                            )
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -248,5 +256,145 @@ struct TokenUsageAlertsSettingsView: View {
             get: { preferences.configuration[keyPath: keyPath] },
             set: { enabled in preferences.update { $0[keyPath: keyPath] = enabled } }
         )
+    }
+}
+
+/// DeepSeek 余额设置：API Key（钥匙串）/ 低余额通知（开关 + 阈值）/ 刷新间隔。
+struct DeepSeekBalanceSettingsView: View {
+    @ObservedObject var preferences: TokenUsagePreferences
+    @ObservedObject var manager: DeepSeekBalanceManager
+    let strings: Strings
+
+    @State private var apiKeyInput = ""
+    @State private var saveFailed = false
+    @State private var thresholdText = ""
+
+    var body: some View {
+        Form {
+            apiKeySection
+            lowBalanceSection
+            refreshSection
+        }
+        .settingsPageStyle()
+        .onAppear { thresholdText = Self.formatThreshold(preferences.configuration.deepSeekBalanceSettings.lowBalanceThreshold) }
+    }
+
+    // MARK: - API Key
+
+    private var apiKeySection: some View {
+        Section {
+            SecureField(strings.deepSeekSettingsApiKeyPlaceholder, text: $apiKeyInput)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier(SettingsAccessibilityID.deepSeekApiKeyField.rawValue)
+            HStack(spacing: 8) {
+                if manager.apiKeyConfigured {
+                    Text(strings.deepSeekSettingsKeySaved)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(strings.deepSeekSettingsKeyMissing)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button(strings.deepSeekSettingsSaveKey) {
+                    saveKey()
+                }
+                .disabled(DeepSeekSettingsValidation.sanitizedAPIKey(apiKeyInput).isEmpty)
+                .accessibilityIdentifier(SettingsAccessibilityID.deepSeekSaveKey.rawValue)
+                if manager.apiKeyConfigured {
+                    Button(strings.deepSeekSettingsClearKey, role: .destructive) {
+                        clearKey()
+                    }
+                    .accessibilityIdentifier(SettingsAccessibilityID.deepSeekClearKey.rawValue)
+                }
+            }
+            if saveFailed {
+                Text(strings.deepSeekSettingsApiKeyInvalid)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        } header: {
+            Text(strings.deepSeekSettingsApiKeySection)
+        } footer: {
+            Text(strings.deepSeekSettingsApiKeyCaption)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    // MARK: - 低余额通知
+
+    private var lowBalanceSection: some View {
+        Section {
+            Toggle(strings.deepSeekSettingsLowBalanceAlert, isOn: Binding(
+                get: { preferences.configuration.deepSeekBalanceSettings.lowBalanceAlertEnabled },
+                set: { preferences.setDeepSeekLowBalanceAlertEnabled($0) }
+            ))
+            .accessibilityIdentifier(SettingsAccessibilityID.deepSeekLowBalanceToggle.rawValue)
+
+            HStack {
+                Text(strings.deepSeekSettingsThresholdLabel)
+                Spacer()
+                TextField("", text: $thresholdText)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 80)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityIdentifier(SettingsAccessibilityID.deepSeekThresholdField.rawValue)
+                    .onSubmit { commitThreshold() }
+            }
+        } header: {
+            Text(strings.deepSeekSettingsLowBalanceAlert)
+        } footer: {
+            Text(strings.deepSeekSettingsThresholdHint)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    // MARK: - 刷新间隔
+
+    private var refreshSection: some View {
+        Section(strings.deepSeekSettingsRefreshInterval) {
+            Picker(strings.deepSeekSettingsRefreshInterval, selection: Binding(
+                get: { preferences.configuration.deepSeekBalanceSettings.refreshMinutes },
+                set: { minutes in try? preferences.setDeepSeekRefreshMinutes(minutes) }
+            )) {
+                ForEach(DeepSeekBalanceSettings.allowedRefreshIntervals, id: \.self) { minutes in
+                    Text(String(format: strings.tokenSettingsRefreshMinuteFormat, minutes))
+                        .tag(minutes)
+                }
+            }
+            .accessibilityIdentifier(SettingsAccessibilityID.deepSeekRefreshInterval.rawValue)
+        }
+    }
+
+    // MARK: - 动作
+
+    private func saveKey() {
+        do {
+            try manager.saveAPIKey(DeepSeekSettingsValidation.sanitizedAPIKey(apiKeyInput))
+            apiKeyInput = ""
+            saveFailed = false
+        } catch {
+            saveFailed = true
+        }
+    }
+
+    private func clearKey() {
+        try? manager.deleteAPIKey()
+        apiKeyInput = ""
+        saveFailed = false
+    }
+
+    private func commitThreshold() {
+        guard let value = DeepSeekSettingsValidation.parseThreshold(thresholdText) else {
+            thresholdText = Self.formatThreshold(preferences.configuration.deepSeekBalanceSettings.lowBalanceThreshold)
+            return
+        }
+        preferences.setDeepSeekThreshold(value)
+        thresholdText = Self.formatThreshold(value)
+    }
+
+    private static func formatThreshold(_ value: Double) -> String {
+        String(format: "%g", value)
     }
 }

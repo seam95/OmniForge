@@ -100,6 +100,20 @@ struct FeatureFactory {
                 let alerts = runtime.manager(for: .tokenUsage, as: TokenUsageAlertManager.self)
                 runtime.register(.tokenUsage, manager: Self.makeProductionTokenUsage(preferences: preferences, alerts: alerts))
             }
+            if runtime.manager(for: .tokenUsage, as: DeepSeekBalanceManager.self) == nil {
+                let preferences = runtime.manager(for: .tokenUsage, as: TokenUsagePreferences.self)
+                    ?? TokenUsagePreferences(userDefaults: userDefaults)
+                let l10n = L10n(userDefaults: userDefaults)
+                runtime.register(
+                    .tokenUsage,
+                    manager: DeepSeekBalanceManager(
+                        preferences: preferences,
+                        notificationClient: UserNotificationMonitorClient(),
+                        authorizationProvider: { Permissions.shared.notifications },
+                        stringsProvider: { l10n.s }
+                    )
+                )
+            }
         case .shelf:
             if runtime.manager(for: .shelf, as: ShelfService.self) == nil {
                 runtime.register(.shelf, manager: ShelfService(userDefaults: userDefaults))
@@ -285,6 +299,7 @@ struct FeatureFactory {
             }
         case .tokenUsage:
             runtime.manager(for: .tokenUsage, as: TokenUsageManager.self)?.stop()
+            runtime.manager(for: .tokenUsage, as: DeepSeekBalanceManager.self)?.stop()
         case .shelf:
             runtime.manager(for: .shelf, as: ShelfService.self)?.syncWithPreferences()
         case .launchAtLogin:

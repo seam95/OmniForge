@@ -10,7 +10,7 @@ struct TokenUsagePanelView: View {
     /// DeepSeek 余额（可选：管理器尚未接线/未注册时为 nil）。
     /// 注意：不用 `@ObservedObject`（不接受 Optional 包装）——余额变化由 AppState
     /// `forwardObjectWillChange` 转发触发外层刷新，面板随之重算。
-    let balanceManager: DeepSeekBalanceManager? = nil
+    var balanceManager: DeepSeekBalanceManager? = nil
     let strings: Strings
     var onOpenSettings: (SettingsToolbarTab?) -> Void = { _ in }
 

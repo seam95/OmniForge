@@ -288,6 +288,7 @@ final class FeatureRuntime: ObservableObject {
             }
         case .tokenUsage:
             manager(for: .tokenUsage, as: TokenUsageManager.self)?.stop()
+            manager(for: .tokenUsage, as: DeepSeekBalanceManager.self)?.stop()
         case .shelf:
             manager(for: .shelf, as: ShelfService.self)?.syncWithPreferences()
         case .cleaner:
@@ -363,11 +364,12 @@ final class FeatureRuntime: ObservableObject {
         },
         .tokenUsage: {
             // availability 即启用：install 后启动调度，卸载时停止。
-            guard let manager = shared.manager(for: .tokenUsage, as: TokenUsageManager.self) else { return }
             if shared.isAvailable(.tokenUsage) {
-                manager.start()
+                shared.manager(for: .tokenUsage, as: TokenUsageManager.self)?.start()
+                shared.manager(for: .tokenUsage, as: DeepSeekBalanceManager.self)?.start()
             } else {
-                manager.stop()
+                shared.manager(for: .tokenUsage, as: TokenUsageManager.self)?.stop()
+                shared.manager(for: .tokenUsage, as: DeepSeekBalanceManager.self)?.stop()
             }
         },
         .shelf: {

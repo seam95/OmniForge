@@ -91,6 +91,41 @@ enum DeepSeekAmountParsing {
     }
 }
 
+// MARK: - 金额展示格式化
+
+enum DeepSeekBalanceFormat {
+    private static let amountFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 2
+        // 固定小数点语义，避免逗号小数区域差异
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return formatter
+    }()
+
+    /// 币种符号：CNY→¥、USD→$、其他→"<code> "。
+    static func currencySymbol(_ code: String) -> String {
+        switch code {
+        case "CNY": return "¥"
+        case "USD": return "$"
+        default: return "\(code) "
+        }
+    }
+
+    /// 金额文本：Decimal 正常格式化两位小数；解析失败回退原始字符串；均缺 → 仅符号。
+    static func amount(_ decimal: Decimal?, rawText: String?, currency: String) -> String {
+        let symbol = currencySymbol(currency)
+        if let decimal {
+            return symbol + (amountFormatter.string(from: decimal as NSDecimalNumber) ?? "\(decimal)")
+        }
+        if let rawText {
+            return symbol + rawText
+        }
+        return symbol
+    }
+}
+
 // MARK: - 低余额判定
 
 enum DeepSeekLowBalanceEvaluator {

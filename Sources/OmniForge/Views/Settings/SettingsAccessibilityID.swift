@@ -17,6 +17,12 @@ enum SettingsAccessibilityID: String, CaseIterable {
     case tokenUsageSessionAlert = "tokenUsage.sessionAlert"
     case tokenUsagePaceAlert = "tokenUsage.paceAlert"
     case tokenUsageRequestPermission = "tokenUsage.requestPermission"
+    case deepSeekApiKeyField = "deepSeek.apiKeyField"
+    case deepSeekSaveKey = "deepSeek.saveKey"
+    case deepSeekClearKey = "deepSeek.clearKey"
+    case deepSeekLowBalanceToggle = "deepSeek.lowBalanceToggle"
+    case deepSeekThresholdField = "deepSeek.thresholdField"
+    case deepSeekRefreshInterval = "deepSeek.refreshInterval"
 
     case menuBarEnabled = "performance.menuBar.enabled"
     case menuBarPreview = "performance.menuBar.preview"
