@@ -141,6 +141,8 @@ final class FakeLimitsCache: LimitsCaching {
     func lastGoodSnapshot(for provider: TokenUsageProvider) -> ProviderUsageLimits? { lastGoodSnapshotResult }
 
     func storeSuccess(_ limits: ProviderUsageLimits) {
+        // 镜像真实缓存契约：错误快照不得作为成功落缓存/解除冷却。
+        guard limits.issue == nil else { return }
         storedSuccess[limits.provider, default: []].append(limits)
         // 镜像真实缓存：成功取数后解除冷却。
         clearedCooldowns.insert(limits.provider)

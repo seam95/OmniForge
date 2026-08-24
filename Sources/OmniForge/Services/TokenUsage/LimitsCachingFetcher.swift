@@ -38,6 +38,11 @@ final class LimitsCachingFetcher: LimitsFetching {
         // ③ 上游取数。
         do {
             if let limits = try await inner.fetchLimits(force: force) {
+                // 带 issue 的快照不是成功结果（如 Antigravity「已安装但进程不在」返回错误态快照）：
+                // 不得 storeSuccess 覆盖 last-good，改走失败回退（last-good 标 stale 展示）。
+                guard limits.issue == nil else {
+                    return fallback(issue: limits.issue!, now: now())
+                }
                 cache.storeSuccess(limits)
                 return limits
             }

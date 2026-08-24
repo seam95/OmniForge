@@ -139,6 +139,32 @@ final class LimitsCachingFetcherTests: XCTestCase {
         XCTAssertTrue(result?.windows.isEmpty ?? false)
     }
 
+    // MARK: 带 issue 快照（非成功结果，如 Antigravity 进程不在）
+
+    func test_issueSnapshot_fallsBackToLastGoodWithoutStoring() async throws {
+        let cache = FakeLimitsCache()
+        let lastGood = snapshot(windows: [.session: window()], capturedAt: now.addingTimeInterval(-600))
+        cache.lastGoodSnapshotResult = lastGood
+        let issueSnapshot = snapshot(issue: .network("not running"))
+        let (fetcher, _) = make(cache: cache, results: [.success(issueSnapshot)])
+        let result = try await fetcher.fetchLimits(force: false)
+        XCTAssertEqual(result?.issue, .network("not running"), "issue 保留")
+        XCTAssertEqual(result?.stale, true, "回退快照标 stale")
+        XCTAssertEqual(result?.windows, lastGood.windows, "显示上一次成功快照")
+        XCTAssertEqual(cache.storedSuccess[.claude] ?? [], [], "错误快照不得作为成功落缓存")
+        XCTAssertFalse(cache.clearedCooldowns.contains(.claude), "错误快照不解除冷却")
+    }
+
+    func test_issueSnapshotWithoutLastGood_returnsErrorEntry() async throws {
+        let cache = FakeLimitsCache()
+        let (fetcher, _) = make(cache: cache, results: [.success(snapshot(issue: .network("not running")))])
+        let result = try await fetcher.fetchLimits(force: false)
+        XCTAssertEqual(result?.configured, true)
+        XCTAssertEqual(result?.issue, .network("not running"))
+        XCTAssertTrue(result?.windows.isEmpty ?? false)
+        XCTAssertEqual(cache.storedSuccess[.claude] ?? [], [], "错误快照不得作为成功落缓存")
+    }
+
     func test_success_storesCacheAndClearsCooldown() async throws {
         let cache = FakeLimitsCache()
         let fetched = snapshot(windows: [.session: window()])

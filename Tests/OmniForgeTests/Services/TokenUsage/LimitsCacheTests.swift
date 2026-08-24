@@ -226,6 +226,27 @@ final class TokenUsageLimitsCacheTests: XCTestCase {
         XCTAssertNil(cache.cooldown(for: .claude), "成功取数后冷却解除")
     }
 
+    func test_storeSuccess_issueSnapshotIsNotPersisted() {
+        let cache = makeCache()
+        cache.storeSuccess(snapshot(windows: [.session: window(resetAt: current.addingTimeInterval(3600))]))
+        let issueSnapshot = ProviderUsageLimits(
+            provider: .claude,
+            configured: true,
+            subscriptionStatus: .unknown,
+            planLabel: nil,
+            windows: [:],
+            confidence: .official,
+            capturedAt: current,
+            stale: false,
+            issue: .network("not running")
+        )
+        cache.storeSuccess(issueSnapshot)
+        XCTAssertNil(cache.memorySnapshot(for: .claude)?.issue, "内存快照不携带错误 issue")
+        XCTAssertEqual(cache.memorySnapshot(for: .claude)?.windows[.session]?.usedPercent, 20, "内存保留最后一次成功快照")
+        XCTAssertNotNil(cache.lastGoodSnapshot(for: .claude), "磁盘 last-good 不被错误快照覆盖")
+        XCTAssertEqual(cache.lastGoodSnapshot(for: .claude)?.windows[.session]?.usedPercent, 20)
+    }
+
     func test_clearCooldown_removesPersistedCooling() {
         let cache = makeCache()
         cache.storeRateLimit(for: .claude, retryAt: current.addingTimeInterval(300))

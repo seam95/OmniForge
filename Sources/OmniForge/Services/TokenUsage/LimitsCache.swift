@@ -114,6 +114,8 @@ final class TokenUsageLimitsCache: LimitsCaching {
     }
 
     func storeSuccess(_ limits: ProviderUsageLimits) {
+        // 契约守卫：错误快照绝不落缓存 —— 否则会覆盖磁盘 last-good（对齐 TokenTracker 拒绝写 error 缓存）。
+        guard limits.issue == nil else { return }
         let expiresAt = LimitsCachePolicy.expirationDate(
             now: now(),
             ttl: ttl,
