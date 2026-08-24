@@ -1151,4 +1151,27 @@ struct Strings: Equatable {
     let tokenDurationMinuteFormat: String
     /// 星期缩写（索引 0 = 周日；用于「峰值 168k（周三）」）。中文为准。
     let tokenWeekdayNames: [String]
+    // MARK: - DeepSeek Balance
+    let deepSeekBalanceCardTitle: String
+    let deepSeekBalanceLoading: String
+    let deepSeekBalanceUnavailable: String
+    let deepSeekStatusBelowThreshold: String
+    let deepSeekStatusReauthKey: String
+    let deepSeekBalanceDetailFormat: String
+    let deepSeekBalanceFooterFormat: String
+    let deepSeekAlertTitle: String
+    let deepSeekAlertBodyFormat: String
+    let tokenSettingsDeepSeekSection: String
+    let deepSeekSettingsApiKeySection: String
+    let deepSeekSettingsApiKeyPlaceholder: String
+    let deepSeekSettingsSaveKey: String
+    let deepSeekSettingsClearKey: String
+    let deepSeekSettingsKeySaved: String
+    let deepSeekSettingsKeyMissing: String
+    let deepSeekSettingsApiKeyCaption: String
+    let deepSeekSettingsApiKeyInvalid: String
+    let deepSeekSettingsLowBalanceAlert: String
+    let deepSeekSettingsThresholdLabel: String
+    let deepSeekSettingsThresholdHint: String
+    let deepSeekSettingsRefreshInterval: String
 }
