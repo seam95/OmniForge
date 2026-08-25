@@ -200,18 +200,25 @@ struct TokenUsagePanelView: View {
                     cards: manager.summaryCards(filteredBy: selectedProvider),
                     strings: strings
                 )
-                TokenUsageActivityHeatmapView(
-                    heatmap: manager.activityHeatmap(filteredBy: selectedProvider),
-                    strings: strings
-                )
-                TokenUsageTrendChartView(
-                    points: manager.trendPoints(filteredBy: selectedProvider, period: trendPeriod),
-                    period: trendPeriodBinding,
-                    strings: strings
-                )
-                TokenUsageTopModelsView(
-                    models: manager.topModels(filteredBy: selectedProvider, period: trendPeriod),
-                    strings: strings
+                VStack(alignment: .leading, spacing: 14) {
+                    TokenUsageActivityHeatmapView(
+                        heatmap: manager.activityHeatmap(filteredBy: selectedProvider),
+                        strings: strings
+                    )
+                    TokenUsageTrendChartView(
+                        points: manager.trendPoints(filteredBy: selectedProvider, period: trendPeriod),
+                        period: trendPeriodBinding,
+                        strings: strings
+                    )
+                    TokenUsageTopModelsView(
+                        models: manager.topModels(filteredBy: selectedProvider, period: trendPeriod),
+                        strings: strings
+                    )
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color.white)
                 )
                 usageFooterLine
             }

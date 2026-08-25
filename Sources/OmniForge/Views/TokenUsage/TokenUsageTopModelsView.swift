@@ -25,8 +25,6 @@ struct TokenUsageTopModelsView: View {
                     row(model, index: index)
                 }
             }
-            .padding(12)
-            .omniCardStyle()
         }
     }
 
@@ -34,9 +32,9 @@ struct TokenUsageTopModelsView: View {
         HStack(spacing: 6) {
             RoundedRectangle(cornerRadius: 2)
                 .fill(Theme.Stats.cpu)
-                .frame(width: 8, height: 8)
+                .frame(width: 6, height: 6)
             Text(strings.tokenTopModelsTitle)
-                .font(Theme.Stats.font13SemiBold)
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(Theme.Stats.text1)
             Spacer()
         }
@@ -55,12 +53,10 @@ struct TokenUsageTopModelsView: View {
                 .help(model.name)
             Spacer(minLength: 4)
             Text(TokenUsageFormat.compactTokens(model.tokens))
-                .font(Theme.Stats.font11Regular)
-                .monospacedDigit()
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
             Text(TokenUsageFormat.percentOneDecimal(model.percent))
-                .font(Theme.Stats.font11Regular)
-                .monospacedDigit()
+                .font(.system(size: 10, weight: .regular, design: .monospaced))
                 .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                 .frame(width: 36, alignment: .trailing)
         }

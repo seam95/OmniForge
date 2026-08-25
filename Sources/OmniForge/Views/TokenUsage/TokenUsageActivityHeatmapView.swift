@@ -32,12 +32,10 @@ struct TokenUsageActivityHeatmapView: View {
                 legend
             } else {
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.06))
+                    .fill(colorScheme == .light ? Color(red: 0xED / 255.0, green: 0xED / 255.0, blue: 0xEF / 255.0) : Color.white.opacity(0.06))
                     .frame(height: 7 * (cellSize + spacing) - spacing)
             }
         }
-        .padding(12)
-        .omniCardStyle()
         .animation(.easeOut(duration: 0.12), value: hovered)
     }
 
@@ -47,20 +45,20 @@ struct TokenUsageActivityHeatmapView: View {
         HStack(spacing: 6) {
             RoundedRectangle(cornerRadius: 2)
                 .fill(Theme.Stats.cpu)
-                .frame(width: 8, height: 8)
+                .frame(width: 6, height: 6)
             Text(strings.tokenActivityTitle)
-                .font(Theme.Stats.font13SemiBold)
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(Theme.Stats.text1)
             Spacer()
             if let heatmap, let cell = hoveredCell(in: heatmap) {
                 Text(hoverSummary(cell))
                     .font(Theme.Stats.font10Regular)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
+                    .foregroundStyle(Theme.Stats.text2)
                     .transition(.opacity)
             } else if let heatmap {
                 Text(String(format: strings.tokenSummaryActiveDaysFormat, heatmap.activeDays))
                     .font(Theme.Stats.font10Regular)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                    .foregroundStyle(Theme.Stats.text3)
             }
         }
     }

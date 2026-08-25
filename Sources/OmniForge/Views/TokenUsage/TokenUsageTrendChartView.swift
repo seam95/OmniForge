@@ -18,19 +18,17 @@ struct TokenUsageTrendChartView: View {
             sectionHeader
             if points.isEmpty {
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.06))
+                    .fill(colorScheme == .light ? Color(red: 0xED / 255.0, green: 0xED / 255.0, blue: 0xEF / 255.0) : Color.white.opacity(0.06))
                     .frame(height: 140)
                     .overlay(
                         Text(strings.tokenEmptyHint)
                             .font(Theme.Stats.font10Regular)
-                            .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                            .foregroundStyle(Theme.Stats.text3)
                     )
             } else {
                 chart
             }
         }
-        .padding(12)
-        .omniCardStyle()
         .onChange(of: period) { _, _ in hovered = nil }
     }
 
@@ -40,9 +38,9 @@ struct TokenUsageTrendChartView: View {
         HStack(spacing: 6) {
             RoundedRectangle(cornerRadius: 2)
                 .fill(Theme.Stats.cpu)
-                .frame(width: 8, height: 8)
+                .frame(width: 6, height: 6)
             Text(strings.tokenTrendTitle)
-                .font(Theme.Stats.font13SemiBold)
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(Theme.Stats.text1)
             Spacer()
             if let hovered {
@@ -50,7 +48,7 @@ struct TokenUsageTrendChartView: View {
                     "\(hovered.date.formatted(xAxisFormat)) - \(TokenUsageFormat.compactTokens(hovered.tokens)) \(strings.tokenUnit)"
                 )
                 .font(Theme.Stats.font10Regular)
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
+                .foregroundStyle(Theme.Stats.text2)
                 .transition(.opacity)
             }
             periodPicker
