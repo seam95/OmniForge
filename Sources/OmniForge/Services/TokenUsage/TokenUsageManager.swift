@@ -41,6 +41,8 @@ final class TokenUsageManager: ObservableObject {
     private let usageCollectors: [TokenUsageProvider: UsageCollecting]
     /// #11：告警触发器 — 随限额刷新同频评估（阈值/步速）。
     private let alerts: TokenUsageAlertManager?
+    /// 限额重置监控 — 窗口 rollover 后触发庆祝（toast/撒花，按用户开关）。
+    private let resetMonitor: TokenLimitResetMonitor?
     private var refreshTimer: AnyCancellable?
     /// 单飞合并：并发未命中共享同一次上游拉取，避免打爆 Claude OAuth 端点。
     private var inFlight = Set<TokenUsageProvider>()
@@ -52,7 +54,8 @@ final class TokenUsageManager: ObservableObject {
         scheduler: RepeatingScheduling = TimerRepeatingScheduler(),
         usageStore: UsageStoring? = nil,
         usageCollectors: [TokenUsageProvider: UsageCollecting] = [:],
-        alerts: TokenUsageAlertManager? = nil
+        alerts: TokenUsageAlertManager? = nil,
+        resetMonitor: TokenLimitResetMonitor? = nil
     ) {
         self.preferences = preferences
         self.fetchers = fetchers
@@ -60,6 +63,7 @@ final class TokenUsageManager: ObservableObject {
         self.usageStore = usageStore
         self.usageCollectors = usageCollectors
         self.alerts = alerts
+        self.resetMonitor = resetMonitor
 
         for (provider, collector) in usageCollectors {
             collector.onUsageDidChange = { [weak self] changed in
@@ -180,6 +184,8 @@ final class TokenUsageManager: ObservableObject {
         limits[provider] = result
         // #11：告警随限额刷新同频评估（内部按窗口 resetAt 防抖）。
         alerts?.evaluate(result)
+        // 重置监控同频评估（内部按窗口 resetAt 前进 + 用量下降判定，快照防抖）。
+        resetMonitor?.evaluate(limits: limits)
         // 仅当有实际数据（新鲜成功或 last-good 回退）时推进「更新时间」，且取两者较新者。
         guard result.configured, result.issue == nil || !result.windows.isEmpty else { return }
         let captured = result.capturedAt

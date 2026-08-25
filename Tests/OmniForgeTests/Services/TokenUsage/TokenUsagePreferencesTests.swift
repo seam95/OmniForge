@@ -218,5 +218,78 @@ final class TokenUsagePreferencesTests: XCTestCase {
         XCTAssertEqual(order.count, TokenUsageProvider.allCases.count)
         XCTAssertEqual(Set(order), Set(TokenUsageProvider.allCases))
     }
+
+    // MARK: - 限额显示弹层（重置提示/撒花/显隐）
+
+    func test_resetToggles_defaultsAndRoundTrip() {
+        let suite = "TokenUsagePreferencesTestsReset.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let preferences = TokenUsagePreferences(userDefaults: defaults)
+        XCTAssertTrue(preferences.configuration.resetToastEnabled, "提示默认开")
+        XCTAssertTrue(preferences.configuration.resetConfettiEnabled, "撒花默认开")
+
+        preferences.setResetToastEnabled(false)
+        preferences.setResetConfettiEnabled(false)
+
+        let reloaded = TokenUsagePreferences(userDefaults: defaults)
+        XCTAssertFalse(reloaded.configuration.resetToastEnabled)
+        XCTAssertFalse(reloaded.configuration.resetConfettiEnabled)
+    }
+
+    func test_hiddenProviders_defaultsAndRoundTrip() {
+        let suite = "TokenUsagePreferencesTestsHidden.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let preferences = TokenUsagePreferences(userDefaults: defaults)
+        XCTAssertTrue(preferences.configuration.hiddenProviders.isEmpty, "默认全部可见")
+
+        preferences.setProviderHidden(.codex, hidden: true)
+        preferences.setProviderHidden(.kimi, hidden: true)
+        preferences.setProviderHidden(.codex, hidden: false)   // 重新显示
+
+        let reloaded = TokenUsagePreferences(userDefaults: defaults)
+        XCTAssertEqual(reloaded.configuration.hiddenProviders, [.kimi])
+    }
+
+    func test_moveConfiguredProviders_subsetMoveKeepsUnconfiguredInPlace() {
+        let suite = "TokenUsagePreferencesTestsSubsetMove.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let preferences = TokenUsagePreferences(userDefaults: defaults)
+        preferences.setProviderOrder([.claude, .codex, .antigravity, .kimi, .cursor])
+        let configured: Set<TokenUsageProvider> = [.codex, .antigravity, .cursor]
+
+        // 子集 [codex, antigravity, cursor] 内把 codex 拖到末尾
+        preferences.moveConfiguredProviders(
+            from: IndexSet(integer: 0),
+            to: 3,
+            configured: configured
+        )
+
+        let order = preferences.configuration.providerOrder
+        XCTAssertEqual(
+            Array(order.prefix(5)),
+            [.claude, .antigravity, .cursor, .kimi, .codex],
+            "已配置子集重排，未配置项保持原位槽"
+        )
+        XCTAssertEqual(Set(order), Set(TokenUsageProvider.allCases), "未配置项仍保留在完整顺序中")
+    }
+
+    func test_moveConfiguredProviders_pureFunction() {
+        let order: [TokenUsageProvider] = [.claude, .codex, .antigravity, .kimi, .cursor]
+
+        let result = TokenUsageProviderOrdering.moveConfigured(
+            order: order,
+            configured: [.codex, .antigravity, .cursor],
+            from: IndexSet(integer: 2),
+            to: 0
+        )
+        // 子集 [codex, antigravity, cursor] 内 cursor 移到最前 → [cursor, codex, antigravity]
+        XCTAssertEqual(result, [.claude, .cursor, .codex, .kimi, .antigravity])
+    }
 }
 

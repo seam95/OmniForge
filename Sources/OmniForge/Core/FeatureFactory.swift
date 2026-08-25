@@ -98,7 +98,32 @@ struct FeatureFactory {
                 let preferences = runtime.manager(for: .tokenUsage, as: TokenUsagePreferences.self)
                     ?? TokenUsagePreferences(userDefaults: userDefaults)
                 let alerts = runtime.manager(for: .tokenUsage, as: TokenUsageAlertManager.self)
-                runtime.register(.tokenUsage, manager: Self.makeProductionTokenUsage(preferences: preferences, alerts: alerts))
+                // 限额重置监控：窗口 rollover 后按用户开关触发全屏撒花 + toast。
+                let l10n = L10n(userDefaults: userDefaults)
+                let celebration = TokenResetCelebrationController()
+                let resetMonitor = TokenLimitResetMonitor(
+                    configuration: { preferences.configuration },
+                    stringsProvider: { l10n.s }
+                )
+                resetMonitor.onCelebrate = { event, showsToast, showsConfetti in
+                    celebration.play(
+                        message: String(
+                            format: l10n.s.tokenResetCelebrationFormat,
+                            "\(event.provider.displayName) \(event.windowLabel)"
+                        ),
+                        provider: event.provider,
+                        showsToast: showsToast,
+                        showsConfetti: showsConfetti
+                    )
+                }
+                runtime.register(
+                    .tokenUsage,
+                    manager: Self.makeProductionTokenUsage(
+                        preferences: preferences,
+                        alerts: alerts,
+                        resetMonitor: resetMonitor
+                    )
+                )
             }
             if runtime.manager(for: .tokenUsage, as: DeepSeekBalanceManager.self) == nil {
                 let preferences = runtime.manager(for: .tokenUsage, as: TokenUsagePreferences.self)
@@ -349,7 +374,8 @@ struct FeatureFactory {
 
     private static func makeProductionTokenUsage(
         preferences: TokenUsagePreferences,
-        alerts: TokenUsageAlertManager? = nil
+        alerts: TokenUsageAlertManager? = nil,
+        resetMonitor: TokenLimitResetMonitor? = nil
     ) -> TokenUsageManager {
         // #03：限额取数外挂弹性缓存（内存 TTL + 磁盘 last-good + 429 冷却持久化）。
         let cache = TokenUsageLimitsCache()
@@ -425,7 +451,8 @@ struct FeatureFactory {
                 .qoder: qoderCollector,
                 .traeCN: traeCnCollector,
             ],
-            alerts: alerts
+            alerts: alerts,
+            resetMonitor: resetMonitor
         )
     }
 }

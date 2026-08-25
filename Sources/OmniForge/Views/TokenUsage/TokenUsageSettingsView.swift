@@ -224,17 +224,6 @@ struct TokenUsageProvidersSettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                Button(strings.settingsMoveUp) {
-                    preferences.moveProvider(provider, delta: -1)
-                }
-                .disabled(preferences.configuration.providerOrder.first == provider)
-                .accessibilityIdentifier(SettingsAccessibilityID.tokenUsageProviderMoveUp(provider))
-
-                Button(strings.settingsMoveDown) {
-                    preferences.moveProvider(provider, delta: 1)
-                }
-                .disabled(preferences.configuration.providerOrder.last == provider)
-                .accessibilityIdentifier(SettingsAccessibilityID.tokenUsageProviderMoveDown(provider))
             }
             if showsGuide && expandedProviders.contains(provider) {
                 Text(TokenUsageProviderStatusBuilder.configureHint(for: provider, strings: strings))

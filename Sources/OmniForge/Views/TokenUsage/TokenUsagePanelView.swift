@@ -20,6 +20,8 @@ struct TokenUsagePanelView: View {
 
     /// nil = 全部（配置的全部 provider 卡片堆叠）。
     @State private var selectedProvider: TokenUsageProvider?
+    /// 齿轮弹层（限额显示）展示状态。
+    @State private var showsLimitsSettings = false
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -33,6 +35,12 @@ struct TokenUsagePanelView: View {
         .padding(.horizontal, 12)
         .padding(.top, 2)
         .padding(.bottom, 4)
+        .onChange(of: preferences.configuration.hiddenProviders) { _, hidden in
+            // 弹层隐藏了当前选中的 provider → 清除选中，回到「全部」视图
+            if let selected = selectedProvider, hidden.contains(selected) {
+                selectedProvider = nil
+            }
+        }
     }
 
     private var summaryCardsBlock: some View {
@@ -47,16 +55,47 @@ struct TokenUsagePanelView: View {
     private var headerRow: some View {
         HStack(spacing: 8) {
             providerSwitcher
+            limitsSettingsButton
         }
     }
 
-    /// 所有已配置的 provider（含常规 limits provider 与 DeepSeek 余额 provider，按用户设置排序）。
+    /// 齿轮按钮（「限额显示」弹层）：剩余/消耗切换、provider 显隐与排序、重置提示/撒花开关。
+    private var limitsSettingsButton: some View {
+        Button {
+            showsLimitsSettings.toggle()
+        } label: {
+            Image(systemName: "gearshape")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
+                .frame(width: 22, height: 22)
+                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Theme.Stats.cardInset)
+                )
+        }
+        .buttonStyle(.plain)
+        .help(strings.tokenSettingsLimitsDisplay)
+        .accessibilityLabel(strings.tokenSettingsLimitsDisplay)
+        .accessibilityIdentifier(SettingsAccessibilityID.tokenUsageGearButton.rawValue)
+        .popover(isPresented: $showsLimitsSettings, arrowEdge: .bottom) {
+            TokenUsageLimitsSettingsPopover(
+                preferences: preferences,
+                manager: manager,
+                strings: strings
+            )
+        }
+    }
+
+    /// 所有已配置的 provider（含常规 limits provider 与 DeepSeek 余额 provider，按用户设置排序），
+    /// 过滤掉用户在「限额显示」弹层中隐藏的 provider。
     private var visibleProviders: [TokenUsageProvider] {
         var providers = Set(manager.configuredProviders)
         if let balanceManager, balanceManager.showingBalanceCard {
             providers.insert(.deepSeek)
         }
-        return preferences.configuration.providerOrder.filter { providers.contains($0) }
+        let hidden = preferences.configuration.hiddenProviders
+        return preferences.configuration.providerOrder.filter { providers.contains($0) && !hidden.contains($0) }
     }
 
     /// Provider 分段胶囊（仅已配置 provider + 「全部」）。

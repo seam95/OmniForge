@@ -40,6 +40,12 @@ struct TokenUsageConfiguration: Equatable, Codable {
     var traeCnEnabledStored: Bool?
     /// 供应商自定义排序。存储层可选，旧配置无此键 → 解码回 nil，走计算属性默认值。
     var providerOrderStored: [TokenUsageProvider]?
+    /// 额度重置时显示提示（toast）开关。存储层可选，旧配置无此键 → 解码回 nil，走计算属性默认（开）。
+    var resetToastEnabledStored: Bool?
+    /// 额度重置时撒花（全屏庆祝动画）开关。存储层可选，旧配置无此键 → 解码回 nil，走计算属性默认（开）。
+    var resetConfettiEnabledStored: Bool?
+    /// 限额区块隐藏的供应商集合（显隐开关）。存储层可选，旧配置无此键 → 解码回 nil，走计算属性默认（空）。
+    var hiddenProvidersStored: Set<TokenUsageProvider>?
 
     /// 趋势图默认周期（缺省 .month，对齐 TokenTracker）。
     var trendPeriodDefault: TokenTrendPeriod {
@@ -51,6 +57,24 @@ struct TokenUsageConfiguration: Equatable, Codable {
     var traeCnEnabled: Bool {
         get { traeCnEnabledStored ?? false }
         set { traeCnEnabledStored = newValue }
+    }
+
+    /// 额度重置时显示提示（缺省 true，对齐 TokenTracker toastEnabledDefault）。
+    var resetToastEnabled: Bool {
+        get { resetToastEnabledStored ?? true }
+        set { resetToastEnabledStored = newValue }
+    }
+
+    /// 额度重置时撒花（缺省 true，对齐 TokenTracker confettiEnabledDefault）。
+    var resetConfettiEnabled: Bool {
+        get { resetConfettiEnabledStored ?? true }
+        set { resetConfettiEnabledStored = newValue }
+    }
+
+    /// 限额区块隐藏的供应商集合（缺省空 = 全部可见）。
+    var hiddenProviders: Set<TokenUsageProvider> {
+        get { hiddenProvidersStored ?? [] }
+        set { hiddenProvidersStored = newValue }
     }
 
     /// 供应商展示顺序（包含全部已知供应商；未在自定义顺序中的供应商自动按默认顺序追加在末尾）。
@@ -179,6 +203,42 @@ final class TokenUsagePreferences: ObservableObject {
         }
     }
 
+    /// 设置额度重置时显示提示开关。
+    func setResetToastEnabled(_ enabled: Bool) {
+        update { $0.resetToastEnabled = enabled }
+    }
+
+    /// 设置额度重置时撒花开关。
+    func setResetConfettiEnabled(_ enabled: Bool) {
+        update { $0.resetConfettiEnabled = enabled }
+    }
+
+    /// 设置某供应商在限额区块的显隐（hidden=true 隐藏卡片与胶囊）。
+    func setProviderHidden(_ provider: TokenUsageProvider, hidden: Bool) {
+        update { config in
+            var hiddenSet = config.hiddenProviders
+            if hidden {
+                hiddenSet.insert(provider)
+            } else {
+                hiddenSet.remove(provider)
+            }
+            config.hiddenProviders = hiddenSet
+        }
+    }
+
+    /// 按「已配置子集」的拖拽位移重排 providerOrder（未配置项保持原位）。
+    /// 弹层只列已配置 provider，from/to 为该子集内的下标（SwiftUI move 语义）。
+    func moveConfiguredProviders(from source: IndexSet, to destination: Int, configured: Set<TokenUsageProvider>) {
+        update { config in
+            config.providerOrder = TokenUsageProviderOrdering.moveConfigured(
+                order: config.providerOrder,
+                configured: configured,
+                from: source,
+                to: destination
+            )
+        }
+    }
+
     /// 整包替换 `configuration`，确保 `@Published` 与持久化 sink 被触发。
     func update(_ mutate: (inout TokenUsageConfiguration) -> Void) {
         var copy = configuration
@@ -211,5 +271,53 @@ enum TokenUsagePreferenceError: Error, Equatable, LocalizedError {
         case .invalidRefreshInterval(let value):
             return "Invalid refresh interval: \(value). Only 1, 5, or 15 minutes are allowed."
         }
+    }
+}
+
+// MARK: - 供应商排序纯逻辑
+
+/// 供应商排序纯函数 — 无状态，独立可测。
+enum TokenUsageProviderOrdering {
+    /// 把「已配置子集」内的拖拽位移映射回完整顺序：先对子集应用 SwiftUI move 语义，
+    /// 再走原顺序，遇已配置槽位依次填回新子集顺序，未配置项保持原位。
+    ///
+    /// - Parameters:
+    ///   - order: 完整 provider 顺序（含未配置项）。
+    ///   - configured: 已配置 provider 集合（弹层展示的子集）。
+    ///   - source / destination: 子集内的下标，遵循 SwiftUI `move(fromOffsets:toOffset:)` 语义。
+    static func moveConfigured(
+        order: [TokenUsageProvider],
+        configured: Set<TokenUsageProvider>,
+        from source: IndexSet,
+        to destination: Int
+    ) -> [TokenUsageProvider] {
+        let configuredOrdered = order.filter { configured.contains($0) }
+        let reorderedSubset = moveWithinSubset(configuredOrdered, from: source, to: destination)
+        var iterator = reorderedSubset.makeIterator()
+        return order.map { provider in
+            configured.contains(provider) ? (iterator.next() ?? provider) : provider
+        }
+    }
+
+    /// 子集内的标准 move（对齐 TokenTracker `reorderedProviderOrder` 语义）。
+    /// `destination` 遵循 SwiftUI `move(fromOffsets:toOffset:)` 在原始数组上的语义。
+    private static func moveWithinSubset(
+        _ subset: [TokenUsageProvider],
+        from source: IndexSet,
+        to destination: Int
+    ) -> [TokenUsageProvider] {
+        var updated = subset
+        let indexes = source.filter { $0 >= 0 && $0 < updated.count }
+        guard !indexes.isEmpty else { return updated }
+
+        let items = indexes.map { updated[$0] }
+        for index in indexes.sorted().reversed() {
+            updated.remove(at: index)
+        }
+
+        let removedBeforeDestination = indexes.filter { $0 < destination }.count
+        let insertAt = max(0, min(destination - removedBeforeDestination, updated.count))
+        updated.insert(contentsOf: items, at: insertAt)
+        return updated
     }
 }

@@ -17,6 +17,10 @@ enum SettingsAccessibilityID: String, CaseIterable {
     case tokenUsageSessionAlert = "tokenUsage.sessionAlert"
     case tokenUsagePaceAlert = "tokenUsage.paceAlert"
     case tokenUsageRequestPermission = "tokenUsage.requestPermission"
+    case tokenUsageGearButton = "tokenUsage.gearButton"
+    case tokenUsagePopoverDisplayMode = "tokenUsage.popover.displayMode"
+    case tokenUsagePopoverResetToast = "tokenUsage.popover.resetToast"
+    case tokenUsagePopoverResetConfetti = "tokenUsage.popover.resetConfetti"
     case deepSeekApiKeyField = "deepSeek.apiKeyField"
     case deepSeekSaveKey = "deepSeek.saveKey"
     case deepSeekClearKey = "deepSeek.clearKey"
@@ -61,11 +65,7 @@ enum SettingsAccessibilityID: String, CaseIterable {
         "tokenUsage.provider.\(provider.rawValue).state"
     }
 
-    static func tokenUsageProviderMoveUp(_ provider: TokenUsageProvider) -> String {
-        "tokenUsage.provider.\(provider.rawValue).moveUp"
-    }
-
-    static func tokenUsageProviderMoveDown(_ provider: TokenUsageProvider) -> String {
-        "tokenUsage.provider.\(provider.rawValue).moveDown"
+    static func tokenUsageProviderVisible(_ provider: TokenUsageProvider) -> String {
+        "tokenUsage.provider.\(provider.rawValue).visible"
     }
 }

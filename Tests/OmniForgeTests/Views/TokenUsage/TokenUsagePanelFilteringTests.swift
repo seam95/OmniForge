@@ -120,5 +120,40 @@ final class TokenUsagePanelFilteringTests: XCTestCase {
         let singleTarget = [singleSelect]
         XCTAssertEqual(singleTarget, [.deepSeek])
     }
+
+    // MARK: - 限额显示弹层（显隐过滤，2026-08-25）
+
+    func test_visibleProviders_excludesHiddenProviders() {
+        let configured: Set<TokenUsageProvider> = [.codex, .kimi, .claude]
+        let hidden: Set<TokenUsageProvider> = [.kimi]
+
+        let visible = TokenUsageProvider.allCases.filter { configured.contains($0) && !hidden.contains($0) }
+
+        XCTAssertEqual(visible, [.claude, .codex], "隐藏的 kimi 从胶囊与卡片中剔除")
+    }
+
+    func test_visibleProviders_hiddenAllLimitsProvidersLeavesOnlyBalance() {
+        // 全部限额 provider 被隐藏后，DeepSeek 余额卡仍展示（余额显隐不归限额弹层管）
+        let configured: Set<TokenUsageProvider> = [.codex, .claude]
+        let hidden: Set<TokenUsageProvider> = [.codex, .claude]
+
+        var providers = configured
+        providers.insert(.deepSeek)
+        let visible = TokenUsageProvider.allCases.filter { providers.contains($0) && !hidden.contains($0) }
+
+        XCTAssertEqual(visible, [.deepSeek])
+    }
+
+    func test_visibleProviders_deepSeekNeverHiddenByLimitsPopover() {
+        // hidden 集合只含限额 provider；deepSeek 不在其中 → 恒通过过滤
+        let configured: Set<TokenUsageProvider> = [.deepSeek]
+        let hidden: Set<TokenUsageProvider> = [.codex, .kimi]
+
+        var providers = configured
+        providers.insert(.deepSeek)
+        let visible = TokenUsageProvider.allCases.filter { providers.contains($0) && !hidden.contains($0) }
+
+        XCTAssertEqual(visible, [.deepSeek])
+    }
 }
 

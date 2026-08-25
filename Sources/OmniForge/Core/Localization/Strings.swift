@@ -1137,6 +1137,12 @@ struct Strings: Equatable {
     let tokenSettingsLimitsDisplay: String
     let tokenSettingsLimitsUsed: String
     let tokenSettingsLimitsRemaining: String
+    /// 限额显示弹层：额度重置时显示提示（toast）开关文案。
+    let tokenResetToastLabel: String
+    /// 限额显示弹层：额度重置时撒花开关文案。
+    let tokenResetConfettiLabel: String
+    /// 重置庆祝 toast 文案格式（%@ = provider 名 + 窗口标签，如 "Codex 7d"）。
+    let tokenResetCelebrationFormat: String
     let tokenSettingsDefaultPeriod: String
     let tokenSettingsProviderStatusFormat: String
     let tokenSettingsLoggedIn: String
