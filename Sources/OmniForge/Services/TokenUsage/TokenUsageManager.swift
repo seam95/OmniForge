@@ -16,15 +16,22 @@ final class TokenUsageManager: ObservableObject {
 
     // MARK: #04 — 用量侧
     /// 聚合用量快照（全部已配置 provider；nil = 窗口内无任何数据）。
+    /// 菜单栏「今日 token」消费此快照（保持既有路径不变）。
     @Published private(set) var usageOverview: TokenUsageOverview?
     /// 回填中（首次启用后台全量回填；回填中 UI 显示「正在统计历史用量…」）。
     @Published private(set) var usageBackfilling = false
-    /// 窗口内有用量数据的 provider（按目录序）。
-    @Published private(set) var usageProvidersWithData: [TokenUsageProvider] = []
+    /// 全历史日聚合缓存（按本地日 × provider；仪表盘汇总卡/热力图/趋势的单一数据源）。
+    /// 在 `refreshUsageSnapshot()` 随用量变更全量刷新一次，避免每次渲染重复扫全历史。
+    @Published private(set) var usageDailyProviderAggregates: [UsageDayProviderAggregate] = []
 
     /// 用量区块显隐（SPEC 4.3）：有数据或回填中才显示。
     var showingUsageBlock: Bool {
-        usageOverview != nil || usageBackfilling
+        hasUsageData || usageBackfilling
+    }
+
+    /// 是否有任何本地用量数据（日聚合缓存非空）。
+    var hasUsageData: Bool {
+        !usageDailyProviderAggregates.isEmpty
     }
 
     private let preferences: TokenUsagePreferences
@@ -181,57 +188,87 @@ final class TokenUsageManager: ObservableObject {
         }
     }
 
-    // MARK: - 用量侧（#04）
+    // MARK: - 用量侧（#04 / 仪表盘重设计）
 
-    /// 指定 provider 的用量快照（无窗口数据 → nil；面板切单家时使用）。
-    func usageOverview(for provider: TokenUsageProvider) -> TokenUsageOverview? {
-        usageOverview(filteredBy: provider, period: .today)
+    /// 汇总卡快照（今日/7天/30天/总计），按 provider 过滤（nil = 全部）。无数据时为零值卡。
+    func summaryCards(filteredBy provider: TokenUsageProvider?) -> UsageSummaryCards {
+        let daily = dailyAggregates(filteredBy: provider)
+        let now = Date()
+        return UsageSummaryCardsBuilder.make(daily: daily, now: now, calendar: .current)
     }
 
-    /// 面板用量快照：按周期（今日/本周/本月）与 provider 过滤聚合（#05 周期选择器）。
-    /// `filteredBy == nil` 表示全部 provider 聚合口径；无窗口数据 → nil。
-    func usageOverview(filteredBy provider: TokenUsageProvider?, period: TokenUsagePeriod) -> TokenUsageOverview? {
-        guard let buckets = bucketsForPanel(filteredBy: provider, period: period) else { return nil }
+    /// 活跃度年度热力图，按 provider 过滤。无数据 → nil（视图显示占位）。
+    func activityHeatmap(filteredBy provider: TokenUsageProvider?) -> UsageActivityHeatmap? {
+        let daily = dailyAggregates(filteredBy: provider)
         let now = Date()
-        return UsageOverviewBuilder.make(buckets: buckets, now: now, calendar: .current, period: period)
+        return UsageHeatmapBuilder.make(daily: daily, now: now, calendar: .current)
     }
 
-    /// 面板分布卡：按周期与 provider 过滤聚合（按模型 / 按 Provider 两区）。
-    /// 数据驱动，不做 provider 特化：谁有数据谁出现（SPEC 4.2 / #05）。无窗口数据 → nil。
-    /// #09：云端口径的 Cursor 行在「全部」口径下即使窗口内无数据也占位（`--` + 徽标）。
-    func usageDistribution(filteredBy provider: TokenUsageProvider?, period: TokenUsagePeriod) -> UsageDistribution? {
-        guard let buckets = bucketsForPanel(filteredBy: provider, period: period) else { return nil }
+    /// 趋势点序列，按 provider 过滤 + 周期。对应周期无数据 → 空序列（视图显示占位）。
+    func trendPoints(filteredBy provider: TokenUsageProvider?, period: TokenTrendPeriod) -> [UsageTrendPoint] {
         let now = Date()
-        return UsageDistributionBuilder.make(
-            buckets: buckets,
-            now: now,
-            calendar: .current,
+        let calendar = Calendar.current
+        let daily = dailyAggregates(filteredBy: provider)
+        let hourly = period == .day ? todayBuckets(filteredBy: provider, now: now, calendar: calendar) : []
+        return UsageTrendBuilder.make(
             period: period,
-            configuredProviders: provider == nil ? configuredProviders : [],
-            preferredOrder: preferences.configuration.providerOrder
+            daily: daily,
+            hourlyBuckets: hourly,
+            now: now,
+            calendar: calendar
         )
     }
 
-    /// 读取所选周期窗口内的桶（provider 过滤为 nil 时聚合全部）。
-    /// 今日周期额外加载近 7 日数据，保证趋势序列有值；周/月按周期窗口加载。
-    private func bucketsForPanel(
-        filteredBy provider: TokenUsageProvider?,
-        period: TokenUsagePeriod
-    ) -> [UsageBucketState]? {
-        guard let usageStore else { return nil }
+    /// 模型 Top 列表，按 provider 过滤 + 周期窗口。无数据 → 空（视图隐藏该区）。
+    func topModels(filteredBy provider: TokenUsageProvider?, period: TokenTrendPeriod) -> [UsageTopModelEntry] {
+        guard let usageStore else { return [] }
         let now = Date()
-        let window: (start: Date, end: Date)
-        switch period {
-        case .today:
-            window = snapshotWindow(now: now)
-        case .week, .month:
-            guard let periodWindow = UsagePeriodWindow.window(for: period, now: now, calendar: .current) else {
-                return nil
-            }
-            window = periodWindow
-        }
+        let calendar = Calendar.current
+        let window = modelWindow(period: period, now: now, calendar: calendar)
         let providers = provider.map { Set([$0]) }
-        return usageStore.loadBuckets(from: window.start, to: window.end, providers: providers)
+        let aggregates = usageStore.loadModelAggregates(from: window.start, to: window.end, providers: providers)
+        return UsageTopModelsBuilder.make(models: aggregates)
+    }
+
+    /// 日聚合缓存按 provider 过滤（nil = 全部）。
+    private func dailyAggregates(filteredBy provider: TokenUsageProvider?) -> [UsageDayProviderAggregate] {
+        guard let provider else { return usageDailyProviderAggregates }
+        return usageDailyProviderAggregates.filter { $0.provider == provider }
+    }
+
+    /// 当日半小时桶（趋势「日」周期）。
+    private func todayBuckets(
+        filteredBy provider: TokenUsageProvider?,
+        now: Date,
+        calendar: Calendar
+    ) -> [UsageBucketState] {
+        guard let usageStore else { return [] }
+        let todayStart = calendar.startOfDay(for: now)
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? now.addingTimeInterval(86_400)
+        let providers = provider.map { Set([$0]) }
+        return usageStore.loadBuckets(from: todayStart, to: tomorrow, providers: providers)
+    }
+
+    /// 模型统计窗口：日=今日；周=近 7 日；月=近 30 日；总计=全历史。
+    private func modelWindow(
+        period: TokenTrendPeriod,
+        now: Date,
+        calendar: Calendar
+    ) -> (start: Date, end: Date) {
+        let todayStart = calendar.startOfDay(for: now)
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? now.addingTimeInterval(86_400)
+        switch period {
+        case .day:
+            return (todayStart, tomorrow)
+        case .week:
+            let start = calendar.date(byAdding: .day, value: -(UsageSummaryCardsBuilder.sevenDays - 1), to: todayStart) ?? todayStart
+            return (start, tomorrow)
+        case .month:
+            let start = calendar.date(byAdding: .day, value: -(UsageSummaryCardsBuilder.thirtyDays - 1), to: todayStart) ?? todayStart
+            return (start, tomorrow)
+        case .total:
+            return (Date(timeIntervalSince1970: 0), tomorrow)
+        }
     }
 
     /// 采集器回调（主线程）：重新计算面板快照。
@@ -245,8 +282,20 @@ final class TokenUsageManager: ObservableObject {
         let (start, end) = snapshotWindow(now: now)
         let buckets = usageStore.loadBuckets(from: start, to: end, providers: nil)
         usageOverview = UsageOverviewBuilder.make(buckets: buckets, now: now, calendar: .current)
-        let withData = Set(buckets.map(\.key.provider))
-        usageProvidersWithData = preferences.configuration.providerOrder.filter { withData.contains($0) }
+        // 全历史日聚合缓存（仪表盘汇总卡/热力图/趋势数据源；1970 起覆盖全部历史）。
+        let historyStart = Date(timeIntervalSince1970: 0)
+        let tomorrow = calendarTomorrow(now: now)
+        usageDailyProviderAggregates = usageStore.loadDailyAggregates(
+            from: historyStart,
+            to: tomorrow,
+            providers: nil
+        )
+    }
+
+    private func calendarTomorrow(now: Date) -> Date {
+        let calendar = Calendar.current
+        let todayStart = calendar.startOfDay(for: now)
+        return calendar.date(byAdding: .day, value: 1, to: todayStart) ?? now.addingTimeInterval(86_400)
     }
 
     /// 快照窗口：近 7 日（今日起往前 6 天）~ 明日 0 点。

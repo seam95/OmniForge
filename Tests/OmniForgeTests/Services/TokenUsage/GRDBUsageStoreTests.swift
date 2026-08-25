@@ -80,6 +80,62 @@ final class GRDBUsageStoreTests: XCTestCase {
         XCTAssertTrue(providerFiltered.isEmpty)
     }
 
+    // MARK: - 聚合查询（仪表盘重设计）
+
+    func test_loadDailyAggregates_groupsByLocalDayAndProvider() {
+        let base = Date(timeIntervalSince1970: 1_784_700_000)
+        store.upsertBucket(state(model: "a", bucket: base, total: 100, conversations: 2))
+        store.upsertBucket(state(model: "b", bucket: base.addingTimeInterval(1800), total: 200, conversations: 1))
+        store.upsertBucket(state(model: "c", bucket: base.addingTimeInterval(3600), total: 300, conversations: 0, provider: .codex))
+
+        let daily = store.loadDailyAggregates(from: .distantPast, to: .distantFuture, providers: nil)
+        XCTAssertEqual(daily.count, 2, "同日两家各聚合一行")
+        let claude = daily.first { $0.provider == .claude }
+        XCTAssertEqual(claude?.totalTokens, 300, "同 provider 同日桶求和")
+        XCTAssertEqual(claude?.conversations, 3)
+        let codex = daily.first { $0.provider == .codex }
+        XCTAssertEqual(codex?.totalTokens, 300)
+    }
+
+    func test_loadDailyAggregates_spansLocalDaysAndWindow() {
+        let base = Date(timeIntervalSince1970: 1_784_700_000)
+        store.upsertBucket(state(bucket: base, total: 100))
+        store.upsertBucket(state(bucket: base.addingTimeInterval(26 * 3600), total: 200))
+        let all = store.loadDailyAggregates(from: .distantPast, to: .distantFuture, providers: nil)
+        XCTAssertEqual(all.count, 2, "跨两天 → 两行")
+        let dayOnly = store.loadDailyAggregates(
+            from: base.addingTimeInterval(-3600),
+            to: base.addingTimeInterval(3600),
+            providers: nil
+        )
+        XCTAssertEqual(dayOnly.map(\.totalTokens).reduce(0, +), 100, "窗口只覆盖第一天")
+    }
+
+    func test_loadDailyAggregates_filtersByProvider() {
+        let base = Date(timeIntervalSince1970: 1_784_700_000)
+        store.upsertBucket(state(bucket: base, total: 100))
+        store.upsertBucket(state(bucket: base, total: 200, provider: .codex))
+        let claude = store.loadDailyAggregates(from: .distantPast, to: .distantFuture, providers: [.claude])
+        XCTAssertEqual(claude.map(\.totalTokens), [100])
+        let none = store.loadDailyAggregates(from: .distantPast, to: .distantFuture, providers: [.antigravity])
+        XCTAssertTrue(none.isEmpty)
+    }
+
+    func test_loadModelAggregates_groupsByModelSortedDesc() {
+        let base = Date(timeIntervalSince1970: 1_784_700_000)
+        store.upsertBucket(state(model: "sonnet", bucket: base, total: 300))
+        store.upsertBucket(state(model: "sonnet", bucket: base.addingTimeInterval(1800), total: 200))
+        store.upsertBucket(state(model: "opus", bucket: base.addingTimeInterval(3600), total: 400))
+        store.upsertBucket(state(model: "opus", bucket: base, total: 200, provider: .codex))
+
+        let models = store.loadModelAggregates(from: .distantPast, to: .distantFuture, providers: nil)
+        XCTAssertEqual(models.map(\.model), ["opus", "sonnet"], "按总量降序")
+        XCTAssertEqual(models.map(\.totalTokens), [600, 500])
+        let claudeOnly = store.loadModelAggregates(from: .distantPast, to: .distantFuture, providers: [.claude])
+        XCTAssertEqual(claudeOnly.map(\.model), ["sonnet", "opus"])
+        XCTAssertEqual(claudeOnly.map(\.totalTokens), [500, 400])
+    }
+
     // MARK: - 已见 key
 
     func test_seenKeys_roundTrip() {

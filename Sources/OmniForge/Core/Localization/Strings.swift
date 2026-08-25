@@ -1074,9 +1074,6 @@ struct Strings: Equatable {
     let tokenReauthHint: String
     let tokenRefresh: String
     let tokenProviderAll: String
-    let tokenPeriodToday: String
-    let tokenPeriodWeek: String
-    let tokenPeriodMonth: String
     let tokenWindowSession5h: String
     let tokenWindowWeekly: String
     let tokenWindowMonthly: String
@@ -1110,16 +1107,23 @@ struct Strings: Equatable {
     let tokenSourceOfficial: String
     let tokenFooterFormat: String
     let tokenUsageLocalFormat: String
-    let tokenTodayCardTitle: String
-    let tokenWeekCardTitle: String
-    let tokenMonthCardTitle: String
-    let tokenUsageSubtitleFormat: String
-    let tokenTrendCaptionFormat: String
-    let tokenTrendWeekCaptionFormat: String
-    let tokenTrendMonthCaptionFormat: String
-    let tokenByModelTitle: String
-    let tokenByProviderTitle: String
-    let tokenCloudBadge: String
+    let tokenSummaryToday: String
+    let tokenSummarySevenDays: String
+    let tokenSummaryThirtyDays: String
+    let tokenSummaryTotal: String
+    let tokenSummaryConversationsFormat: String
+    let tokenSummaryActiveDaysFormat: String
+    let tokenSummaryAvgPerDayFormat: String
+    let tokenActivityTitle: String
+    let tokenActivityLegendLess: String
+    let tokenActivityLegendMore: String
+    let tokenTrendTitle: String
+    let tokenTrendPeriodDay: String
+    let tokenTrendPeriodWeek: String
+    let tokenTrendPeriodMonth: String
+    let tokenTrendPeriodTotal: String
+    let tokenTopModelsTitle: String
+    let tokenUnit: String
     let tokenSettingsGenericSection: String
     let tokenSettingsProvidersSection: String
     let tokenSettingsAlertsSection: String

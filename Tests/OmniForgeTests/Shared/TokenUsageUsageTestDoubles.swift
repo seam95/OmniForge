@@ -33,6 +33,53 @@ final class FakeUsageStore: UsageStoring {
         }
     }
 
+    /// 镜像 GRDB 聚合语义：按本地日 × provider 归并半小时桶。
+    func loadDailyAggregates(
+        from start: Date,
+        to end: Date,
+        providers: Set<TokenUsageProvider>?
+    ) -> [UsageDayProviderAggregate] {
+        var byDay: [Date: [TokenUsageProvider: (tokens: Int, conversations: Int)]] = [:]
+        for state in bucketsByKey.values {
+            guard state.key.bucketStart >= start, state.key.bucketStart < end else { continue }
+            guard providers?.contains(state.key.provider) ?? true else { continue }
+            let day = Calendar.current.startOfDay(for: state.key.bucketStart)
+            var entry = byDay[day, default: [:]][state.key.provider, default: (0, 0)]
+            entry.tokens += state.usage.totalTokens
+            entry.conversations += state.conversationCount
+            byDay[day, default: [:]][state.key.provider] = entry
+        }
+        return byDay
+            .flatMap { day, providersDict in
+                providersDict.map { provider, entry in
+                    UsageDayProviderAggregate(
+                        dayStart: day,
+                        provider: provider,
+                        totalTokens: entry.tokens,
+                        conversations: entry.conversations
+                    )
+                }
+            }
+            .sorted { $0.dayStart < $1.dayStart }
+    }
+
+    /// 镜像 GRDB 聚合语义：按模型归并窗口内半小时桶。
+    func loadModelAggregates(
+        from start: Date,
+        to end: Date,
+        providers: Set<TokenUsageProvider>?
+    ) -> [UsageModelAggregate] {
+        var totals: [String: Int] = [:]
+        for state in bucketsByKey.values {
+            guard state.key.bucketStart >= start, state.key.bucketStart < end else { continue }
+            guard providers?.contains(state.key.provider) ?? true else { continue }
+            totals[state.key.model, default: 0] += state.usage.totalTokens
+        }
+        return totals
+            .map { UsageModelAggregate(model: $0.key, totalTokens: $0.value) }
+            .sorted { $0.totalTokens > $1.totalTokens }
+    }
+
     func loadSeenKeys() -> Set<String> {
         seenKeys
     }

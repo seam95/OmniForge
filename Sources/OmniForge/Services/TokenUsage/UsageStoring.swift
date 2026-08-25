@@ -20,6 +20,20 @@ protocol UsageStoring: AnyObject {
         providers: Set<TokenUsageProvider>?
     ) -> [UsageBucketState]
 
+    // 聚合查询（仪表盘重设计）：SQL 侧聚合，避免把整年半小时桶物化进内存。
+    /// 按本地日 × provider 聚合（`GROUP BY day, provider`），用于汇总卡 / 热力图 / 趋势。
+    func loadDailyAggregates(
+        from start: Date,
+        to end: Date,
+        providers: Set<TokenUsageProvider>?
+    ) -> [UsageDayProviderAggregate]
+    /// 按模型聚合（`GROUP BY model`，按总量降序），用于模型 Top 列表。
+    func loadModelAggregates(
+        from start: Date,
+        to end: Date,
+        providers: Set<TokenUsageProvider>?
+    ) -> [UsageModelAggregate]
+
     // 已见消息 id 集合（跨 sync 持久化；容量上限 LRU 截断）。
     func loadSeenKeys() -> Set<String>
     func storeSeenKeys(_ keys: Set<String>, asOf date: Date)

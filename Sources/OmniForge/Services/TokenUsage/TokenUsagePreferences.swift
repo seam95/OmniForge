@@ -28,9 +28,11 @@ struct TokenUsageConfiguration: Equatable, Codable {
     var menuBarMode: TokenUsageMenuBarMode = .todayTokens
     var limitRefreshMinutes = 5
     var limitsDisplayMode: TokenUsageLimitsDisplay = .used
-    var usagePeriodDefault: TokenUsagePeriod = .today
     var sessionLimitAlertEnabled = true
     var paceOverrunAlertEnabled = true
+    /// 趋势图默认周期（日/周/月/总计；仪表盘重设计后替代原「今日/本周/本月」用量周期）。
+    /// 存储层可选：旧配置无此键 → 解码回 nil，走计算属性默认（对齐 deepSeekBalance 模式）。
+    var trendPeriodDefaultStored: TokenTrendPeriod?
     /// DeepSeek 余额监控设置。可选字段：旧配置无此键 → 解码回 nil，走计算属性默认值。
     var deepSeekBalance: DeepSeekBalanceSettings?
     /// trae-cn 云端采集 opt-in（默认关；SPEC R1 / §4.2 C 类）。存储层可选，
@@ -38,6 +40,12 @@ struct TokenUsageConfiguration: Equatable, Codable {
     var traeCnEnabledStored: Bool?
     /// 供应商自定义排序。存储层可选，旧配置无此键 → 解码回 nil，走计算属性默认值。
     var providerOrderStored: [TokenUsageProvider]?
+
+    /// 趋势图默认周期（缺省 .month，对齐 TokenTracker）。
+    var trendPeriodDefault: TokenTrendPeriod {
+        get { trendPeriodDefaultStored ?? .month }
+        set { trendPeriodDefaultStored = newValue }
+    }
 
     /// trae-cn 采集开关（缺省 false）。
     var traeCnEnabled: Bool {

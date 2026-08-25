@@ -1,9 +1,13 @@
 import SwiftUI
 
-/// 控制中心「Token」页 — 单页布局：限额区块（上）+ 用量区块（下）。
+/// 控制中心「Token」页 — 单页布局：限额区块（上）+ 用量仪表盘区块（下）。
 ///
-/// 顶部 provider 切换器与周期选择始终保留；两区块任一无数据时整块隐藏，
+/// 顶部 provider 切换器始终保留；两区块任一无数据时整块隐藏，
 /// 均为空时走 `TokenUsageEmptyStateView` 空态（SPEC 4.2 / 4.3 / 4.6）。
+///
+/// 用量区块为 TokenTracker 化仪表盘（SPEC 2026-08-25）：
+/// 汇总卡 ×4 + 活跃度热力图 + 趋势图（日/周/月/总计，自带切换器）+ 模型 Top 列表；
+/// provider 切换器过滤全部四个子区块。
 struct TokenUsagePanelView: View {
     @ObservedObject var manager: TokenUsageManager
     @ObservedObject var preferences: TokenUsagePreferences
@@ -33,8 +37,6 @@ struct TokenUsagePanelView: View {
     private var headerRow: some View {
         HStack(spacing: 8) {
             providerSwitcher
-            Spacer(minLength: 4)
-            periodMenu
         }
     }
 
@@ -125,45 +127,6 @@ struct TokenUsagePanelView: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    /// 「今日 ▾」周期选择 — 仅作用于用量区块；读写 `configuration.usagePeriodDefault`（#05/#10 共用同一偏好键）。
-    private var periodMenu: some View {
-        Menu {
-            ForEach(TokenUsagePeriod.allCases) { period in
-                Button {
-                    preferences.update { $0.usagePeriodDefault = period }
-                } label: {
-                    if period == selectedPeriod {
-                        Label(period.title(in: strings), systemImage: "checkmark")
-                    } else {
-                        Text(period.title(in: strings))
-                    }
-                }
-            }
-        } label: {
-            HStack(spacing: 4) {
-                Text(selectedPeriod.title(in: strings))
-                    .font(Theme.Stats.font12Medium)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-            }
-            .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.06))
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-    }
-
-    private var selectedPeriod: TokenUsagePeriod {
-        preferences.configuration.usagePeriodDefault
-    }
-
     // MARK: - 内容区
 
     @ViewBuilder
@@ -220,46 +183,44 @@ struct TokenUsagePanelView: View {
         }
     }
 
-    /// 用量区块（#04/#05）：今日用量卡 + 分布卡 + 本地统计标注行。
-    /// 无数据且未回填时整块隐藏（SPEC 4.3）；回填中仍显示（数值位为「正在统计历史用量…」）。
+    /// 用量仪表盘区块（2026-08-25 重设计）：汇总卡 + 活跃度 + 趋势 + 模型 + 本地统计脚注。
+    /// 有本地数据或回填中时显示；回填中各区块以现有数据渲染（数值逐步回填）。
     @ViewBuilder
     private var usageBlock: some View {
-        if manager.usageBackfilling || selectedUsageOverview != nil {
-            let distribution = selectedDistribution
+        if manager.usageBackfilling || manager.hasUsageData {
             VStack(alignment: .leading, spacing: 10) {
-                TokenUsageTodayCardView(
-                    overview: selectedUsageOverview,
-                    backfilling: manager.usageBackfilling,
-                    providerCount: distribution?.byProvider.count ?? fallbackProviderCount,
-                    period: selectedPeriod,
+                TokenUsageSummaryCardsView(
+                    cards: manager.summaryCards(filteredBy: selectedProvider),
                     strings: strings
                 )
-                if let distribution {
-                    TokenUsageDistributionCardView(
-                        distribution: distribution,
-                        strings: strings
-                    )
-                }
+                TokenUsageActivityHeatmapView(
+                    heatmap: manager.activityHeatmap(filteredBy: selectedProvider),
+                    strings: strings
+                )
+                TokenUsageTrendChartView(
+                    points: manager.trendPoints(filteredBy: selectedProvider, period: trendPeriod),
+                    period: trendPeriodBinding,
+                    strings: strings
+                )
+                TokenUsageTopModelsView(
+                    models: manager.topModels(filteredBy: selectedProvider, period: trendPeriod),
+                    strings: strings
+                )
                 usageFooterLine
             }
         }
     }
 
-    /// 周期内无当日数据但周期有数据时的 provider 家数兜底（今日快照口径）。
-    private var fallbackProviderCount: Int {
-        selectedProvider == nil
-            ? max(manager.usageProvidersWithData.count, visibleProviders.count)
-            : 1
+    /// 趋势周期（读写 `configuration.trendPeriodDefault`，持久化）。
+    private var trendPeriod: TokenTrendPeriod {
+        preferences.configuration.trendPeriodDefault
     }
 
-    /// 选中 provider + 选中周期的用量快照。
-    private var selectedUsageOverview: TokenUsageOverview? {
-        manager.usageOverview(filteredBy: selectedProvider, period: selectedPeriod)
-    }
-
-    /// 选中 provider + 选中周期的分布（按模型 / 按 Provider）。
-    private var selectedDistribution: UsageDistribution? {
-        manager.usageDistribution(filteredBy: selectedProvider, period: selectedPeriod)
+    private var trendPeriodBinding: Binding<TokenTrendPeriod> {
+        Binding(
+            get: { preferences.configuration.trendPeriodDefault },
+            set: { newValue in preferences.update { $0.trendPeriodDefault = newValue } }
+        )
     }
 
     /// 用量来源标注：「本地统计 · 每 5 分钟汇总」。

@@ -7,7 +7,7 @@ final class TokenUsagePreferencesTests: XCTestCase {
         XCTAssertEqual(config.menuBarMode, .todayTokens)
         XCTAssertEqual(config.limitRefreshMinutes, 5)
         XCTAssertEqual(config.limitsDisplayMode, .used)
-        XCTAssertEqual(config.usagePeriodDefault, .today)
+        XCTAssertEqual(config.trendPeriodDefault, .month)
         XCTAssertTrue(config.sessionLimitAlertEnabled)
         XCTAssertTrue(config.paceOverrunAlertEnabled)
     }
@@ -22,7 +22,7 @@ final class TokenUsagePreferencesTests: XCTestCase {
             $0.menuBarMode = .sessionPercent
             $0.limitRefreshMinutes = 15
             $0.limitsDisplayMode = .remaining
-            $0.usagePeriodDefault = .week
+            $0.trendPeriodDefault = .total
             $0.sessionLimitAlertEnabled = false
         }
 
@@ -30,7 +30,7 @@ final class TokenUsagePreferencesTests: XCTestCase {
         XCTAssertEqual(reloaded.configuration.menuBarMode, .sessionPercent)
         XCTAssertEqual(reloaded.configuration.limitRefreshMinutes, 15)
         XCTAssertEqual(reloaded.configuration.limitsDisplayMode, .remaining)
-        XCTAssertEqual(reloaded.configuration.usagePeriodDefault, .week)
+        XCTAssertEqual(reloaded.configuration.trendPeriodDefault, .total)
         XCTAssertFalse(reloaded.configuration.sessionLimitAlertEnabled)
         XCTAssertTrue(reloaded.configuration.paceOverrunAlertEnabled)
     }
@@ -134,15 +134,17 @@ final class TokenUsagePreferencesTests: XCTestCase {
         XCTAssertNoThrow(try preferences.setDeepSeekRefreshMinutes(15))
     }
 
-    func test_usagePeriodDefaultRoundTrip_acrossAllPeriods() {
+    func test_trendPeriodDefaultRoundTrip_acrossAllPeriods() {
         let suite = "TokenUsagePreferencesTestsPeriod.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
 
         let preferences = TokenUsagePreferences(userDefaults: defaults)
-        preferences.update { $0.usagePeriodDefault = .month }
-        let reloaded = TokenUsagePreferences(userDefaults: defaults)
-        XCTAssertEqual(reloaded.configuration.usagePeriodDefault, .month)
+        for period in TokenTrendPeriod.allCases {
+            preferences.update { $0.trendPeriodDefault = period }
+            let reloaded = TokenUsagePreferences(userDefaults: defaults)
+            XCTAssertEqual(reloaded.configuration.trendPeriodDefault, period)
+        }
     }
 
     func test_corruptData_fallsBackToDefaults() {

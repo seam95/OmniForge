@@ -43,6 +43,37 @@ enum TokenUsageFormat {
         "\(Int(value.rounded()))%"
     }
 
+    /// 1 位小数百分比显示（"53.7%"），供模型行占比。
+    static func percentOneDecimal(_ value: Double) -> String {
+        String(format: "%.1f%%", value)
+    }
+
+    /// 仪表盘口径计数缩写（对齐 TokenTracker `formatCompact`）：大写 K/M/B、
+    /// 1 位小数并去掉尾随 `.0`。789 → "789"；1500 → "1.5K"；2_300_000 → "2.3M"；
+    /// 8_800_000_000 → "8.8B"。供汇总卡 / 趋势轴 / 模型行。
+    static func compactTokens(_ count: Int) -> String {
+        let absCount = abs(Double(count))
+        let sign = count < 0 ? "-" : ""
+        if absCount >= 1_000_000_000 {
+            return sign + compactScaled(absCount / 1_000_000_000) + "B"
+        }
+        if absCount >= 1_000_000 {
+            return sign + compactScaled(absCount / 1_000_000) + "M"
+        }
+        if absCount >= 1_000 {
+            return sign + compactScaled(absCount / 1_000) + "K"
+        }
+        return "\(count)"
+    }
+
+    private static func compactScaled(_ value: Double) -> String {
+        let rounded = (value * 10).rounded() / 10
+        if rounded == rounded.rounded() {
+            return String(Int(rounded))
+        }
+        return String(format: "%.1f", rounded)
+    }
+
     /// 相对更新时间：<1 分钟 → 刚刚；其余分钟 / 小时。
     static func relativeUpdate(_ date: Date?, now: Date = Date(), strings: Strings) -> String {
         guard let date else { return strings.tokenUpdatedJustNow }
@@ -155,19 +186,6 @@ enum TokenUsageFormat {
         case .decoding:
             return strings.tokenErrorTransient + " · " + strings.tokenErrorRetryableHint
         }
-    }
-
-    // MARK: 分布行行态（#09 Cursor 云端口径）
-
-    /// 分布行右值：无数据灰显 `--`（纯符号，无需本地化；SPEC 4.2）；有数据接 `tokens` 缩写。
-    static func distributionValue(_ entry: UsageDistributionEntry) -> String {
-        guard let total = entry.totalTokens else { return "--" }
-        return tokens(total)
-    }
-
-    /// 该行是否标「云端口径」：仅 Cursor（云端账单，非实时；文案走 `strings.tokenCloudBadge`）。
-    static func showsCloudScopeBadge(for entry: UsageDistributionEntry) -> Bool {
-        entry.provider == .cursor
     }
 
     // MARK: - 限额行纯函数（#11 视觉口径对齐）
@@ -301,35 +319,6 @@ extension LimitWindowKind {
 
     func shortTitle(_ strings: Strings) -> String {
         shortTitle(for: nil, strings: strings)
-    }
-}
-
-/// 周期名称（今日 / 本周 / 本月）。
-extension TokenUsagePeriod {
-    func title(in strings: Strings) -> String {
-        switch self {
-        case .today: return strings.tokenPeriodToday
-        case .week: return strings.tokenPeriodWeek
-        case .month: return strings.tokenPeriodMonth
-        }
-    }
-
-    /// 用量卡标题（今日用量 / 本周用量 / 本月用量）。
-    func cardTitle(_ strings: Strings) -> String {
-        switch self {
-        case .today: return strings.tokenTodayCardTitle
-        case .week: return strings.tokenWeekCardTitle
-        case .month: return strings.tokenMonthCardTitle
-        }
-    }
-
-    /// 趋势 caption 文案格式（近 7 日趋势 / 本周趋势 / 本月趋势）。
-    func trendCaptionFormat(_ strings: Strings) -> String {
-        switch self {
-        case .today: return strings.tokenTrendCaptionFormat
-        case .week: return strings.tokenTrendWeekCaptionFormat
-        case .month: return strings.tokenTrendMonthCaptionFormat
-        }
     }
 }
 

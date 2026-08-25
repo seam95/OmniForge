@@ -136,11 +136,11 @@ struct TokenUsageGeneralSettingsView: View {
 
             Section(strings.tokenSettingsDefaultPeriod) {
                 Picker(strings.tokenSettingsDefaultPeriod, selection: Binding(
-                    get: { preferences.configuration.usagePeriodDefault },
-                    set: { period in preferences.update { $0.usagePeriodDefault = period } }
+                    get: { preferences.configuration.trendPeriodDefault },
+                    set: { period in preferences.update { $0.trendPeriodDefault = period } }
                 )) {
-                    ForEach(TokenUsagePeriod.allCases) { period in
-                        Text(period.title(in: strings)).tag(period)
+                    ForEach(TokenTrendPeriod.allCases) { period in
+                        Text(period.label(strings)).tag(period)
                     }
                 }
                 .accessibilityIdentifier(SettingsAccessibilityID.tokenUsageDefaultPeriod.rawValue)

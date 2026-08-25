@@ -150,6 +150,111 @@ final class GRDBUsageStore: UsageStoring {
         }
     }
 
+    // MARK: - 聚合查询（仪表盘重设计）
+
+    /// 按本地日 × provider 聚合（`GROUP BY day, provider`）。
+    /// 本地日界用 `date(bucket_start,'unixepoch','localtime')`（与 Swift 侧
+    /// `calendar.startOfDay` 口径一致）；行少（每活跃日×provider 一行），
+    /// 避免把整年半小时桶读进内存。解析失败的日串行丢弃。
+    func loadDailyAggregates(
+        from start: Date,
+        to end: Date,
+        providers: Set<TokenUsageProvider>?
+    ) -> [UsageDayProviderAggregate] {
+        guard let databaseQueue else { return [] }
+        do {
+            return try databaseQueue.read { db in
+                let rows: [Row]
+                if let providers, !providers.isEmpty {
+                    let placeholders = Array(repeating: "?", count: providers.count).joined(separator: ",")
+                    let arguments: StatementArguments = StatementArguments(
+                        [start.timeIntervalSince1970, end.timeIntervalSince1970]
+                    ) + StatementArguments(providers.map(\.rawValue))
+                    rows = try Row.fetchAll(
+                        db,
+                        sql: """
+                        SELECT date(bucket_start, 'unixepoch', 'localtime') AS day,
+                               provider,
+                               SUM(total_tokens) AS total_tokens,
+                               SUM(conversation_count) AS conversation_count
+                        FROM usage_buckets
+                        WHERE bucket_start >= ? AND bucket_start < ? AND provider IN (\(placeholders))
+                        GROUP BY day, provider
+                        ORDER BY day
+                        """,
+                        arguments: arguments
+                    )
+                } else {
+                    rows = try Row.fetchAll(
+                        db,
+                        sql: """
+                        SELECT date(bucket_start, 'unixepoch', 'localtime') AS day,
+                               provider,
+                               SUM(total_tokens) AS total_tokens,
+                               SUM(conversation_count) AS conversation_count
+                        FROM usage_buckets
+                        WHERE bucket_start >= ? AND bucket_start < ?
+                        GROUP BY day, provider
+                        ORDER BY day
+                        """,
+                        arguments: [start.timeIntervalSince1970, end.timeIntervalSince1970]
+                    )
+                }
+                return rows.compactMap(Self.makeDayAggregate)
+            }
+        } catch {
+            print("[GRDBUsageStore] loadDailyAggregates failed: \(error)")
+            return []
+        }
+    }
+
+    /// 按模型聚合（`GROUP BY model`，按总量降序）。
+    func loadModelAggregates(
+        from start: Date,
+        to end: Date,
+        providers: Set<TokenUsageProvider>?
+    ) -> [UsageModelAggregate] {
+        guard let databaseQueue else { return [] }
+        do {
+            return try databaseQueue.read { db in
+                let rows: [Row]
+                if let providers, !providers.isEmpty {
+                    let placeholders = Array(repeating: "?", count: providers.count).joined(separator: ",")
+                    let arguments: StatementArguments = StatementArguments(
+                        [start.timeIntervalSince1970, end.timeIntervalSince1970]
+                    ) + StatementArguments(providers.map(\.rawValue))
+                    rows = try Row.fetchAll(
+                        db,
+                        sql: """
+                        SELECT model, SUM(total_tokens) AS sum_total_tokens
+                        FROM usage_buckets
+                        WHERE bucket_start >= ? AND bucket_start < ? AND provider IN (\(placeholders))
+                        GROUP BY model
+                        ORDER BY sum_total_tokens DESC
+                        """,
+                        arguments: arguments
+                    )
+                } else {
+                    rows = try Row.fetchAll(
+                        db,
+                        sql: """
+                        SELECT model, SUM(total_tokens) AS sum_total_tokens
+                        FROM usage_buckets
+                        WHERE bucket_start >= ? AND bucket_start < ?
+                        GROUP BY model
+                        ORDER BY sum_total_tokens DESC
+                        """,
+                        arguments: [start.timeIntervalSince1970, end.timeIntervalSince1970]
+                    )
+                }
+                return rows.map(Self.makeModelAggregate)
+            }
+        } catch {
+            print("[GRDBUsageStore] loadModelAggregates failed: \(error)")
+            return []
+        }
+    }
+
     // MARK: - 已见 key
 
     func loadSeenKeys() -> Set<String> {
@@ -404,6 +509,23 @@ final class GRDBUsageStore: UsageStoring {
             key: key,
             usage: usage,
             conversationCount: Int(row["conversation_count"] as Int64)
+        )
+    }
+
+    private static func makeDayAggregate(from row: Row) -> UsageDayProviderAggregate? {
+        guard let provider = TokenUsageProvider(rawValue: row["provider"] as String) else { return nil }
+        return UsageDayProviderAggregate(
+            localDay: row["day"] as String,
+            provider: provider,
+            totalTokens: Int(row["total_tokens"] as Int64),
+            conversations: Int(row["conversation_count"] as Int64)
+        )
+    }
+
+    private static func makeModelAggregate(from row: Row) -> UsageModelAggregate {
+        UsageModelAggregate(
+            model: row["model"] as String,
+            totalTokens: Int(row["sum_total_tokens"] as Int64)
         )
     }
 }
