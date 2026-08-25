@@ -128,8 +128,8 @@ struct TokenUsageGeneralSettingsView: View {
     }
 }
 
-/// 提供商：15 家凭证状态行；未配置行展开「如何配置」引导；
-/// DeepSeek / Trae CN / OpenCode / 方舟 展开为凭证配置卡（保存/清除即时反映到行状态）。
+/// 提供商：15 家凭证状态行；点击行尾「如何配置 ›」/「✓ 已登录 ›」在行下方展开——
+/// DeepSeek / Trae CN / OpenCode / 方舟 展开为凭证配置卡，其余提供商展开为配置提示文字。
 struct TokenUsageProvidersSettingsView: View {
     @ObservedObject var preferences: TokenUsagePreferences
     @ObservedObject var manager: TokenUsageManager
@@ -155,37 +155,6 @@ struct TokenUsageProvidersSettingsView: View {
                 ForEach(preferences.configuration.providerOrder) { provider in
                     providerRow(provider)
                 }
-            }
-
-            if expandedProviders.contains(.deepSeek), let balanceManager {
-                DeepSeekBalanceSettingsSections(
-                    preferences: preferences,
-                    manager: balanceManager,
-                    onCredentialsChanged: reloadCredentialStates,
-                    strings: strings
-                )
-            }
-            if expandedProviders.contains(.traeCN) {
-                TraeCnSettingsSections(
-                    preferences: preferences,
-                    strings: strings
-                )
-            }
-            if expandedProviders.contains(.opencode) {
-                OpencodeSettingsSections(
-                    preferences: preferences,
-                    manager: manager,
-                    onCredentialsChanged: reloadCredentialStates,
-                    strings: strings
-                )
-            }
-            if expandedProviders.contains(.arkCodingPlan) {
-                ArkCodingPlanSettingsSections(
-                    preferences: preferences,
-                    manager: manager,
-                    onCredentialsChanged: reloadCredentialStates,
-                    strings: strings
-                )
             }
         }
         .settingsPageStyle()
@@ -287,52 +256,99 @@ struct TokenUsageProvidersSettingsView: View {
         let showsGuide = info.showsGuide
         let isExpanded = expandedProviders.contains(provider)
 
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(provider.accentColor)
-                    .frame(width: 8, height: 8)
-                Text(provider.displayName)
-                Spacer()
-                if let statusText {
-                    if showsGuide {
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                toggleExpanded(provider)
-                            }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Text(statusText)
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Color.accentColor)
-                    } else {
-                        Text(statusText)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
+        VStack(alignment: .leading, spacing: 0) {
+            rowButton(provider: provider, statusText: statusText, showsGuide: showsGuide, isExpanded: isExpanded)
+
             if showsGuide && isExpanded {
-                guideContent(for: provider)
+                VStack(alignment: .leading, spacing: 8) {
+                    Divider()
+                    expandedContent(for: provider)
+                }
+                .padding(.leading, 24)
+                .padding(.top, 6)
             }
         }
         .padding(.vertical, 2)
         .accessibilityIdentifier(SettingsAccessibilityID.tokenUsageProviderState(provider))
     }
 
-    /// 展开内容：凭证类提供商由下方独立 Section 呈现（见 body），此处仅渲染非凭证类的提示文字。
+    /// 整行可点击：凭证类提供商与未配置行点击即展开/收起（状态文本与 chevron 用强调色示意可点）。
     @ViewBuilder
-    private func guideContent(for provider: TokenUsageProvider) -> some View {
-        if !credentialProviders.contains(provider) {
+    private func rowButton(
+        provider: TokenUsageProvider,
+        statusText: String?,
+        showsGuide: Bool,
+        isExpanded: Bool
+    ) -> some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(provider.accentColor)
+                .frame(width: 8, height: 8)
+            Text(provider.displayName)
+            Spacer()
+            if let statusText {
+                if showsGuide {
+                    HStack(spacing: 4) {
+                        Text(statusText)
+                            .foregroundStyle(Color.accentColor)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.accentColor)
+                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    }
+                } else {
+                    Text(statusText)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if showsGuide {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    toggleExpanded(provider)
+                }
+            }
+        }
+    }
+
+    /// 展开内容：凭证类提供商渲染行内凭证配置卡，其余提供商显示「如何配置」提示文字。
+    @ViewBuilder
+    private func expandedContent(for provider: TokenUsageProvider) -> some View {
+        switch provider {
+        case .deepSeek:
+            if let balanceManager {
+                DeepSeekBalanceSettingsCard(
+                    preferences: preferences,
+                    manager: balanceManager,
+                    onCredentialsChanged: reloadCredentialStates,
+                    strings: strings
+                )
+            }
+        case .traeCN:
+            TraeCnSettingsCard(
+                preferences: preferences,
+                strings: strings
+            )
+        case .opencode:
+            OpencodeSettingsCard(
+                preferences: preferences,
+                manager: manager,
+                onCredentialsChanged: reloadCredentialStates,
+                strings: strings
+            )
+        case .arkCodingPlan:
+            ArkCodingPlanSettingsCard(
+                preferences: preferences,
+                manager: manager,
+                onCredentialsChanged: reloadCredentialStates,
+                strings: strings
+            )
+        default:
             Text(TokenUsageProviderStatusBuilder.configureHint(for: provider, strings: strings))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.leading, 16)
         }
     }
 
@@ -409,8 +425,8 @@ struct TokenUsageAlertsSettingsView: View {
     }
 }
 
-/// DeepSeek 余额设置分区（并入「提供商」页展开卡）：API Key（钥匙串）/ 低余额通知（开关 + 阈值）/ 刷新间隔。
-struct DeepSeekBalanceSettingsSections: View {
+/// DeepSeek 余额配置卡（提供商行内展开）：API Key（钥匙串）/ 低余额通知（开关 + 阈值）/ 刷新间隔。
+struct DeepSeekBalanceSettingsCard: View {
     @ObservedObject var preferences: TokenUsagePreferences
     @ObservedObject var manager: DeepSeekBalanceManager
     /// 凭证变更（保存/清除）后通知父级刷新行状态缓存。
@@ -423,12 +439,13 @@ struct DeepSeekBalanceSettingsSections: View {
     @State private var thresholdError = false
     @FocusState private var thresholdFocused: Bool
 
-    @ViewBuilder
     var body: some View {
-        Group {
-            apiKeySection
-            lowBalanceSection
-            refreshSection
+        VStack(alignment: .leading, spacing: 10) {
+            apiKeyRow
+            Divider()
+            lowBalanceRow
+            Divider()
+            refreshRow
         }
         .onAppear {
             thresholdText = Self.formatThreshold(preferences.configuration.deepSeekBalanceSettings.lowBalanceThreshold)
@@ -437,8 +454,11 @@ struct DeepSeekBalanceSettingsSections: View {
 
     // MARK: - API Key
 
-    private var apiKeySection: some View {
-        Section {
+    private var apiKeyRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(strings.deepSeekSettingsApiKeySection)
+                .font(.caption)
+                .foregroundStyle(.secondary)
             SecureField(strings.deepSeekSettingsApiKeyPlaceholder, text: $apiKeyInput)
                 .textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier(SettingsAccessibilityID.deepSeekApiKeyField.rawValue)
@@ -470,18 +490,19 @@ struct DeepSeekBalanceSettingsSections: View {
                     .font(.caption)
                     .foregroundStyle(.red)
             }
-        } header: {
-            Text(strings.deepSeekSettingsApiKeySection)
-        } footer: {
             Text(strings.deepSeekSettingsApiKeyCaption)
-                .fixedSize(horizontal: false, vertical: true)
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
     // MARK: - 低余额通知
 
-    private var lowBalanceSection: some View {
-        Section {
+    private var lowBalanceRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(strings.deepSeekSettingsLowBalanceAlert)
+                .font(.caption)
+                .foregroundStyle(.secondary)
             Toggle(strings.deepSeekSettingsLowBalanceAlertToggle, isOn: Binding(
                 get: { preferences.configuration.deepSeekBalanceSettings.lowBalanceAlertEnabled },
                 set: { preferences.setDeepSeekLowBalanceAlertEnabled($0) }
@@ -510,18 +531,19 @@ struct DeepSeekBalanceSettingsSections: View {
                     .font(.caption)
                     .foregroundStyle(.red)
             }
-        } header: {
-            Text(strings.deepSeekSettingsLowBalanceAlert)
-        } footer: {
             Text(strings.deepSeekSettingsThresholdHint)
-                .fixedSize(horizontal: false, vertical: true)
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
     // MARK: - 刷新间隔
 
-    private var refreshSection: some View {
-        Section(strings.deepSeekSettingsRefreshInterval) {
+    private var refreshRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(strings.deepSeekSettingsRefreshInterval)
+                .font(.caption)
+                .foregroundStyle(.secondary)
             Picker(strings.deepSeekSettingsRefreshInterval, selection: Binding(
                 get: { preferences.configuration.deepSeekBalanceSettings.refreshMinutes },
                 set: { minutes in try? preferences.setDeepSeekRefreshMinutes(minutes) }
@@ -531,6 +553,7 @@ struct DeepSeekBalanceSettingsSections: View {
                         .tag(minutes)
                 }
             }
+            .labelsHidden()
             .accessibilityIdentifier(SettingsAccessibilityID.deepSeekRefreshInterval.rawValue)
         }
     }
@@ -572,8 +595,8 @@ struct DeepSeekBalanceSettingsSections: View {
     }
 }
 
-/// trae-cn 采集设置分区（并入「提供商」页展开卡）：opt-in 开关（默认关，SPEC R1）+ Cloud-IDE-JWT 手动输入（钥匙串）。
-struct TraeCnSettingsSections: View {
+/// trae-cn 配置卡（提供商行内展开）：opt-in 开关（默认关，SPEC R1）+ Cloud-IDE-JWT 手动输入（钥匙串）。
+struct TraeCnSettingsCard: View {
     @ObservedObject var preferences: TokenUsagePreferences
     let strings: Strings
 
@@ -585,9 +608,8 @@ struct TraeCnSettingsSections: View {
 
     private let keychain = TraeCnKeychainStore()
 
-    @ViewBuilder
     var body: some View {
-        Section {
+        VStack(alignment: .leading, spacing: 8) {
             Toggle(strings.tokenSettingsTraeCnSection, isOn: Binding(
                 get: { preferences.configuration.traeCnEnabled },
                 set: { enabled in preferences.setTraeCnEnabled(enabled) }
@@ -616,10 +638,9 @@ struct TraeCnSettingsSections: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-        } header: {
-            Text(strings.tokenSettingsTraeCnSection)
-        } footer: {
             Text(strings.tokenSettingsConfigureHintTraeCn)
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .onAppear { reloadKeychainState() }
     }
@@ -651,8 +672,8 @@ struct TraeCnSettingsSections: View {
     }
 }
 
-/// OpenCode Go 设置分区（并入「提供商」页展开卡）：API Key（钥匙串存储）。
-struct OpencodeSettingsSections: View {
+/// OpenCode Go 配置卡（提供商行内展开）：API Key（钥匙串存储）。
+struct OpencodeSettingsCard: View {
     @ObservedObject var preferences: TokenUsagePreferences
     var manager: TokenUsageManager? = nil
     /// 凭证变更（保存/清除）后通知父级刷新行状态缓存。
@@ -667,9 +688,8 @@ struct OpencodeSettingsSections: View {
 
     private let keychain = OpencodeKeychainAPIKeyStore()
 
-    @ViewBuilder
     var body: some View {
-        Section {
+        VStack(alignment: .leading, spacing: 8) {
             SecureField(strings.opencodeSettingsApiKeyPlaceholder, text: $apiKeyInput)
                 .textFieldStyle(.roundedBorder)
                 .onChange(of: apiKeyInput) { _, _ in
@@ -694,10 +714,9 @@ struct OpencodeSettingsSections: View {
                     .foregroundStyle(.secondary)
                     .font(.caption)
             }
-        } header: {
-            Text(strings.tokenSettingsOpencodeSection)
-        } footer: {
             Text(strings.opencodeSettingsApiKeyCaption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .onAppear { reloadKeychainState() }
     }
@@ -735,8 +754,8 @@ struct OpencodeSettingsSections: View {
     }
 }
 
-/// 方舟 Coding Plan 设置分区（并入「提供商」页展开卡）：AccessKey ID / SecretAccessKey（钥匙串）/ 保存 / 清除。
-struct ArkCodingPlanSettingsSections: View {
+/// 方舟 Coding Plan 配置卡（提供商行内展开）：AccessKey ID / SecretAccessKey（钥匙串）/ 保存 / 清除。
+struct ArkCodingPlanSettingsCard: View {
     @ObservedObject var preferences: TokenUsagePreferences
     var manager: TokenUsageManager? = nil
     /// 凭证变更（保存/清除）后通知父级刷新行状态缓存。
@@ -752,9 +771,8 @@ struct ArkCodingPlanSettingsSections: View {
 
     private let keychain = ArkKeychainStore()
 
-    @ViewBuilder
     var body: some View {
-        Section {
+        VStack(alignment: .leading, spacing: 8) {
             TextField(strings.arkSettingsAkPlaceholder, text: $akInput)
                 .textFieldStyle(.roundedBorder)
                 .onChange(of: akInput) { _, _ in
@@ -784,10 +802,9 @@ struct ArkCodingPlanSettingsSections: View {
                     .foregroundStyle(.secondary)
                     .font(.caption)
             }
-        } header: {
-            Text(strings.tokenSettingsArkSection)
-        } footer: {
             Text(strings.arkSettingsCaption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .onAppear { reloadKeychainState() }
     }

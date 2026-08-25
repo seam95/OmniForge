@@ -1180,13 +1180,10 @@ struct Strings: Equatable {
     let deepSeekBalanceFooterFormat: String
     let deepSeekAlertTitle: String
     let deepSeekAlertBodyFormat: String
-    let tokenSettingsDeepSeekSection: String
     let tokenSettingsTraeCnSection: String
     let tokenSettingsTraeCnJwtPlaceholder: String
-    let tokenSettingsOpencodeSection: String
     let opencodeSettingsApiKeyPlaceholder: String
     let opencodeSettingsApiKeyCaption: String
-    let tokenSettingsArkSection: String
     let arkSettingsAkPlaceholder: String
     let arkSettingsSkPlaceholder: String
     let arkSettingsCaption: String
