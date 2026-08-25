@@ -1187,8 +1187,9 @@ struct Strings: Equatable {
     let arkSettingsAkPlaceholder: String
     let arkSettingsSkPlaceholder: String
     let arkSettingsCaption: String
-    let deepSeekSettingsApiKeySection: String
     let deepSeekSettingsApiKeyPlaceholder: String
+    /// 凭证行小标题（如「API Key」），OpenCode / DeepSeek 等共用。
+    let tokenSettingsApiKeyTitle: String
     let deepSeekSettingsSaveKey: String
     let deepSeekSettingsClearKey: String
     let deepSeekSettingsKeySaved: String

@@ -361,6 +361,78 @@ struct TokenUsageProvidersSettingsView: View {
     }
 }
 
+/// 行内凭证输入行（API Key 等单字段凭证）：可选标题 + SecureField + 持久状态 + 保存/清除 + 错误反馈 + 说明。
+/// OpenCode / DeepSeek 等提供商凭证卡共用，保证交互与视觉一致。
+struct TokenCredentialRow: View {
+    enum Feedback: Equatable {
+        case none
+        case error(String)
+    }
+
+    /// 小标题（如「API Key」）；nil 不显示。
+    var title: String? = nil
+    let placeholder: String
+    @Binding var text: String
+    /// 钥匙串中是否已存凭证（驱动「已保存/未配置密钥」状态与清除按钮）。
+    let hasStoredValue: Bool
+    let caption: String
+    let canSave: Bool
+    var feedback: Feedback = .none
+    let onSave: () -> Void
+    let onClear: () -> Void
+    let strings: Strings
+    var fieldID: String? = nil
+    var saveID: String? = nil
+    var clearID: String? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let title {
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            SecureField(placeholder, text: $text)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier(fieldID ?? "")
+            HStack(spacing: 8) {
+                if hasStoredValue {
+                    Text(strings.deepSeekSettingsKeySaved)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(strings.deepSeekSettingsKeyMissing)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button(strings.deepSeekSettingsSaveKey) {
+                    onSave()
+                }
+                .disabled(!canSave)
+                .accessibilityIdentifier(saveID ?? "")
+                if hasStoredValue {
+                    Button(strings.deepSeekSettingsClearKey, role: .destructive) {
+                        onClear()
+                    }
+                    .accessibilityIdentifier(clearID ?? "")
+                }
+            }
+            switch feedback {
+            case .error(let message):
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            case .none:
+                EmptyView()
+            }
+            Text(caption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
 /// 告警：会话窗阈值（70/85/90/95 可配）与步速超前开关 + 通知权限申请入口。
 struct TokenUsageAlertsSettingsView: View {
     @ObservedObject var preferences: TokenUsagePreferences
@@ -455,44 +527,23 @@ struct DeepSeekBalanceSettingsCard: View {
     // MARK: - API Key
 
     private var apiKeyRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(strings.deepSeekSettingsApiKeySection)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            SecureField(strings.deepSeekSettingsApiKeyPlaceholder, text: $apiKeyInput)
-                .textFieldStyle(.roundedBorder)
-                .accessibilityIdentifier(SettingsAccessibilityID.deepSeekApiKeyField.rawValue)
-            HStack(spacing: 8) {
-                if manager.apiKeyConfigured {
-                    Text(strings.deepSeekSettingsKeySaved)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text(strings.deepSeekSettingsKeyMissing)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button(strings.deepSeekSettingsSaveKey) {
-                    saveKey()
-                }
-                .disabled(DeepSeekSettingsValidation.sanitizedAPIKey(apiKeyInput).isEmpty)
-                .accessibilityIdentifier(SettingsAccessibilityID.deepSeekSaveKey.rawValue)
-                if manager.apiKeyConfigured {
-                    Button(strings.deepSeekSettingsClearKey, role: .destructive) {
-                        clearKey()
-                    }
-                    .accessibilityIdentifier(SettingsAccessibilityID.deepSeekClearKey.rawValue)
-                }
-            }
-            if saveFailed {
-                Text(strings.deepSeekSettingsApiKeyInvalid)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            }
-            Text(strings.deepSeekSettingsApiKeyCaption)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        TokenCredentialRow(
+            title: strings.tokenSettingsApiKeyTitle,
+            placeholder: strings.deepSeekSettingsApiKeyPlaceholder,
+            text: $apiKeyInput,
+            hasStoredValue: manager.apiKeyConfigured,
+            caption: strings.deepSeekSettingsApiKeyCaption,
+            canSave: !DeepSeekSettingsValidation.sanitizedAPIKey(apiKeyInput).isEmpty,
+            feedback: saveFailed ? .error(strings.deepSeekSettingsApiKeyInvalid) : .none,
+            onSave: saveKey,
+            onClear: clearKey,
+            strings: strings,
+            fieldID: SettingsAccessibilityID.deepSeekApiKeyField.rawValue,
+            saveID: SettingsAccessibilityID.deepSeekSaveKey.rawValue,
+            clearID: SettingsAccessibilityID.deepSeekClearKey.rawValue
+        )
+        .onChange(of: apiKeyInput) { _, _ in
+            saveFailed = false
         }
     }
 
@@ -682,48 +733,32 @@ struct OpencodeSettingsCard: View {
 
     @State private var apiKeyInput = ""
     @State private var saveFailed = false
-    @State private var saveSuccess = false
     /// 钥匙串凭证状态缓存（onAppear 与保存/清除后刷新，渲染期不直接读 keychain）。
     @State private var hasStoredKey = false
 
     private let keychain = OpencodeKeychainAPIKeyStore()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            SecureField(strings.opencodeSettingsApiKeyPlaceholder, text: $apiKeyInput)
-                .textFieldStyle(.roundedBorder)
-                .onChange(of: apiKeyInput) { _, _ in
-                    saveSuccess = false
-                }
-            HStack {
-                Button(strings.deepSeekSettingsSaveKey) {
-                    save()
-                }
-                .disabled(DeepSeekSettingsValidation.sanitizedAPIKey(apiKeyInput).isEmpty)
-                Button(strings.deepSeekSettingsClearKey) {
-                    clearKey()
-                }
-                .disabled(apiKeyInput.isEmpty && !hasStoredKey)
-            }
-            if saveFailed {
-                Text(strings.tokenErrorTransient)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            } else if saveSuccess {
-                Text(strings.deepSeekSettingsKeySaved)
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
-            }
-            Text(strings.opencodeSettingsApiKeyCaption)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        TokenCredentialRow(
+            title: strings.tokenSettingsApiKeyTitle,
+            placeholder: strings.opencodeSettingsApiKeyPlaceholder,
+            text: $apiKeyInput,
+            hasStoredValue: hasStoredKey,
+            caption: strings.opencodeSettingsApiKeyCaption,
+            canSave: !DeepSeekSettingsValidation.sanitizedAPIKey(apiKeyInput).isEmpty,
+            feedback: saveFailed ? .error(strings.tokenErrorTransient) : .none,
+            onSave: save,
+            onClear: clearKey,
+            strings: strings
+        )
+        .onChange(of: apiKeyInput) { _, _ in
+            saveFailed = false
         }
         .onAppear { reloadKeychainState() }
     }
 
     private func reloadKeychainState() {
         let stored = (try? keychain.readAPIKey()) ?? ""
-        apiKeyInput = stored
         hasStoredKey = !stored.isEmpty
     }
 
@@ -732,14 +767,13 @@ struct OpencodeSettingsCard: View {
         guard !cleaned.isEmpty else { return }
         do {
             try keychain.writeAPIKey(cleaned)
+            apiKeyInput = ""
             saveFailed = false
-            saveSuccess = true
             hasStoredKey = true
             manager?.refreshNow()
             onCredentialsChanged()
         } catch {
             saveFailed = true
-            saveSuccess = false
         }
     }
 
@@ -747,7 +781,6 @@ struct OpencodeSettingsCard: View {
         try? keychain.deleteAPIKey()
         apiKeyInput = ""
         saveFailed = false
-        saveSuccess = false
         hasStoredKey = false
         manager?.refreshNow()
         onCredentialsChanged()
