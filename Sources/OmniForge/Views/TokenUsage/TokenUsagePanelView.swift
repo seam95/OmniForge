@@ -24,12 +24,22 @@ struct TokenUsagePanelView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if manager.usageBackfilling || manager.hasUsageData {
+                summaryCardsBlock
+            }
             headerRow
             content
         }
         .padding(.horizontal, 12)
         .padding(.top, 2)
         .padding(.bottom, 4)
+    }
+
+    private var summaryCardsBlock: some View {
+        TokenUsageSummaryCardsView(
+            cards: manager.summaryCards(filteredBy: nil),
+            strings: strings
+        )
     }
 
     // MARK: - 头部行
@@ -196,10 +206,6 @@ struct TokenUsagePanelView: View {
     private var usageBlock: some View {
         if manager.usageBackfilling || manager.hasUsageData {
             VStack(alignment: .leading, spacing: 10) {
-                TokenUsageSummaryCardsView(
-                    cards: manager.summaryCards(filteredBy: selectedProvider),
-                    strings: strings
-                )
                 VStack(alignment: .leading, spacing: 14) {
                     TokenUsageActivityHeatmapView(
                         heatmap: manager.activityHeatmap(filteredBy: selectedProvider),
