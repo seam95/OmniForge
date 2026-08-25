@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// 「Token 用量」设置页 — 两态：未安装仅安装开关；已安装为 [通用][提供商][告警] 子分段。
-/// 通用：菜单栏显示 / 限额刷新间隔 / 限额显示 / 用量统计周期默认；
-/// 提供商：5 家凭证状态行 + 「如何配置」引导；告警：两个开关 + 通知权限入口（引擎由 #11 接入）。
+/// 通用：菜单栏显示 / 限额刷新间隔 / 用量统计周期默认（限额口径与显隐排序在限额卡片齿轮弹层）；
+/// 提供商：15 家凭证状态行 + 「如何配置」展开引导（DeepSeek / Trae CN / OpenCode / 方舟展开为凭证配置卡）；
+/// 告警：会话窗阈值（70/85/90/95 可配）与步速超前开关 + 通知权限入口。
 struct TokenUsageSettingsView: View {
     @ObservedObject var state: AppState
     @ObservedObject private var runtime = FeatureRuntime.shared
@@ -51,31 +52,6 @@ struct TokenUsageSettingsView: View {
                             preferences: preferences,
                             strings: state.l10n.s
                         )
-                    case .deepSeek:
-                        if let balanceManager = state.deepSeekBalanceManager {
-                            DeepSeekBalanceSettingsView(
-                                preferences: preferences,
-                                manager: balanceManager,
-                                strings: state.l10n.s
-                            )
-                        }
-                    case .traeCn:
-                        TraeCnSettingsView(
-                            preferences: preferences,
-                            strings: state.l10n.s
-                        )
-                    case .opencode:
-                        OpencodeSettingsView(
-                            preferences: preferences,
-                            manager: manager,
-                            strings: state.l10n.s
-                        )
-                    case .arkCodingPlan:
-                        ArkCodingPlanSettingsView(
-                            preferences: preferences,
-                            manager: manager,
-                            strings: state.l10n.s
-                        )
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -103,7 +79,8 @@ struct TokenUsageSettingsView: View {
     }
 }
 
-/// 通用：菜单栏显示 / 限额刷新间隔 / 限额显示 / 用量统计周期默认。
+/// 通用：菜单栏显示 / 限额刷新间隔 / 用量统计周期默认。
+/// 限额口径（已用/剩余）与供应商显隐排序在限额卡片齿轮弹层（TokenUsageLimitsSettingsPopover）。
 struct TokenUsageGeneralSettingsView: View {
     @ObservedObject var preferences: TokenUsagePreferences
     let strings: Strings
@@ -135,17 +112,6 @@ struct TokenUsageGeneralSettingsView: View {
                 .accessibilityIdentifier(SettingsAccessibilityID.tokenUsageRefreshInterval.rawValue)
             }
 
-            Section(strings.tokenSettingsLimitsDisplay) {
-                Picker(strings.tokenSettingsLimitsDisplay, selection: Binding(
-                    get: { preferences.configuration.limitsDisplayMode },
-                    set: { mode in preferences.update { $0.limitsDisplayMode = mode } }
-                )) {
-                    Text(strings.tokenSettingsLimitsUsed).tag(TokenUsageLimitsDisplay.used)
-                    Text(strings.tokenSettingsLimitsRemaining).tag(TokenUsageLimitsDisplay.remaining)
-                }
-                .accessibilityIdentifier(SettingsAccessibilityID.tokenUsageLimitsDisplay.rawValue)
-            }
-
             Section(strings.tokenSettingsDefaultPeriod) {
                 Picker(strings.tokenSettingsDefaultPeriod, selection: Binding(
                     get: { preferences.configuration.trendPeriodDefault },
@@ -162,13 +128,26 @@ struct TokenUsageGeneralSettingsView: View {
     }
 }
 
-/// 提供商：各家凭证状态与自定义排序；未配置给「如何配置 ›」展开引导。
+/// 提供商：15 家凭证状态行；未配置行展开「如何配置」引导；
+/// DeepSeek / Trae CN / OpenCode / 方舟 展开为凭证配置卡（保存/清除即时反映到行状态）。
 struct TokenUsageProvidersSettingsView: View {
     @ObservedObject var preferences: TokenUsagePreferences
     @ObservedObject var manager: TokenUsageManager
     var balanceManager: DeepSeekBalanceManager? = nil
     let strings: Strings
     @State private var expandedProviders: Set<TokenUsageProvider> = []
+    /// 钥匙串凭证状态缓存：渲染期不直接读 keychain，onAppear 与凭证保存/清除后刷新一次。
+    @State private var opencodeHasKey = false
+    @State private var arkHasCredentials = false
+    /// DeepSeek 凭证状态（余额管理器 @Published 值缓存，渲染期不依赖 ObservableObject 链）。
+    @State private var deepSeekHasKey = false
+    /// trae-cn JWT 状态（无 limits fetcher，凭证存在性即配置态）。
+    @State private var traeCnHasJWT = false
+
+    /// 展开为凭证配置卡的提供商（其余展开仅显示「如何配置」提示文字）。
+    private var credentialProviders: Set<TokenUsageProvider> {
+        [.deepSeek, .traeCN, .opencode, .arkCodingPlan]
+    }
 
     var body: some View {
         Form {
@@ -177,15 +156,63 @@ struct TokenUsageProvidersSettingsView: View {
                     providerRow(provider)
                 }
             }
+
+            if expandedProviders.contains(.deepSeek), let balanceManager {
+                DeepSeekBalanceSettingsSections(
+                    preferences: preferences,
+                    manager: balanceManager,
+                    onCredentialsChanged: reloadCredentialStates,
+                    strings: strings
+                )
+            }
+            if expandedProviders.contains(.traeCN) {
+                TraeCnSettingsSections(
+                    preferences: preferences,
+                    strings: strings
+                )
+            }
+            if expandedProviders.contains(.opencode) {
+                OpencodeSettingsSections(
+                    preferences: preferences,
+                    manager: manager,
+                    onCredentialsChanged: reloadCredentialStates,
+                    strings: strings
+                )
+            }
+            if expandedProviders.contains(.arkCodingPlan) {
+                ArkCodingPlanSettingsSections(
+                    preferences: preferences,
+                    manager: manager,
+                    onCredentialsChanged: reloadCredentialStates,
+                    strings: strings
+                )
+            }
         }
         .settingsPageStyle()
+        .onAppear { reloadCredentialStates() }
     }
 
+    /// 渲染期不直接读钥匙串：onAppear 与凭证保存/清除后刷新一次缓存。
+    /// 环境变量（OPENCODE_GO_API_KEY / VOLCENGINE_ACCESS_KEY / ARK_AK）作为钥匙串的补充凭证来源。
+    private func reloadCredentialStates() {
+        deepSeekHasKey = balanceManager?.apiKeyConfigured ?? false
+        let opencodeStore = OpencodeKeychainAPIKeyStore()
+        opencodeHasKey = ((try? opencodeStore.readAPIKey())?.isEmpty == false)
+            || (ProcessInfo.processInfo.environment["OPENCODE_GO_API_KEY"]?.isEmpty == false)
+        let arkStore = ArkKeychainStore()
+        arkHasCredentials = ((try? arkStore.readCredentials())?.isValid == true)
+            || (ProcessInfo.processInfo.environment["VOLCENGINE_ACCESS_KEY"]?.isEmpty == false)
+            || (ProcessInfo.processInfo.environment["ARK_AK"]?.isEmpty == false)
+        let traeCnStore = TraeCnKeychainStore()
+        traeCnHasJWT = ((try? traeCnStore.readJWT())?.isEmpty == false)
+    }
+
+    /// 行尾状态与是否可展开。凭证类提供商恒可展开（含已配置，便于修改/清除凭证）；
+    /// 其余提供商仅未配置时给出「如何配置 ›」引导。
     private func providerRowInfo(_ provider: TokenUsageProvider) -> (statusText: String?, showsGuide: Bool) {
         if provider == .deepSeek {
-            let isConfigured = balanceManager?.apiKeyConfigured ?? false
-            if isConfigured {
-                return ("✓ " + strings.tokenSettingsLoggedIn, false)
+            if deepSeekHasKey {
+                return ("✓ " + strings.tokenSettingsLoggedIn, true)
             } else {
                 return (
                     String(
@@ -197,15 +224,12 @@ struct TokenUsageProvidersSettingsView: View {
                 )
             }
         } else if provider == .opencode {
-            let keyStore = OpencodeKeychainAPIKeyStore()
-            let hasKey = ((try? keyStore.readAPIKey())?.isEmpty == false)
-                || (ProcessInfo.processInfo.environment["OPENCODE_GO_API_KEY"]?.isEmpty == false)
             let limits = manager.limits[provider]
-            if hasKey || (limits?.configured == true) {
+            if opencodeHasKey || (limits?.configured == true) {
                 if limits?.issue == .reauthRequired {
-                    return (strings.tokenStatusReauth, false)
+                    return (strings.tokenStatusReauth, true)
                 }
-                return ("✓ " + strings.tokenSettingsLoggedIn, false)
+                return ("✓ " + strings.tokenSettingsLoggedIn, true)
             } else {
                 return (
                     String(
@@ -217,16 +241,25 @@ struct TokenUsageProvidersSettingsView: View {
                 )
             }
         } else if provider == .arkCodingPlan {
-            let keyStore = ArkKeychainStore()
-            let hasCreds = ((try? keyStore.readCredentials())?.isValid == true)
-                || (ProcessInfo.processInfo.environment["VOLCENGINE_ACCESS_KEY"]?.isEmpty == false)
-                || (ProcessInfo.processInfo.environment["ARK_AK"]?.isEmpty == false)
             let limits = manager.limits[provider]
-            if hasCreds || (limits?.configured == true) {
+            if arkHasCredentials || (limits?.configured == true) {
                 if limits?.issue == .reauthRequired {
-                    return (strings.tokenStatusReauth, false)
+                    return (strings.tokenStatusReauth, true)
                 }
-                return ("✓ " + strings.tokenSettingsLoggedIn, false)
+                return ("✓ " + strings.tokenSettingsLoggedIn, true)
+            } else {
+                return (
+                    String(
+                        format: strings.tokenSettingsProviderStatusFormat,
+                        strings.tokenSettingsNotConfigured,
+                        strings.tokenSettingsHowToConfigure
+                    ),
+                    true
+                )
+            }
+        } else if provider == .traeCN {
+            if traeCnHasJWT {
+                return ("✓ " + strings.tokenSettingsLoggedIn, true)
             } else {
                 return (
                     String(
@@ -238,6 +271,7 @@ struct TokenUsageProvidersSettingsView: View {
                 )
             }
         } else {
+            // 非凭证类提供商：未配置时给「如何配置 ›」展开引导。
             let limits = manager.limits[provider]
             return (
                 TokenUsageProviderStatusBuilder.statusText(limits: limits, strings: strings),
@@ -251,6 +285,7 @@ struct TokenUsageProvidersSettingsView: View {
         let info = providerRowInfo(provider)
         let statusText = info.statusText
         let showsGuide = info.showsGuide
+        let isExpanded = expandedProviders.contains(provider)
 
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
@@ -262,12 +297,15 @@ struct TokenUsageProvidersSettingsView: View {
                 if let statusText {
                     if showsGuide {
                         Button {
-                            toggleExpanded(provider)
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                toggleExpanded(provider)
+                            }
                         } label: {
                             HStack(spacing: 4) {
                                 Text(statusText)
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 10, weight: .semibold))
+                                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
                             }
                         }
                         .buttonStyle(.plain)
@@ -278,16 +316,24 @@ struct TokenUsageProvidersSettingsView: View {
                     }
                 }
             }
-            if showsGuide && expandedProviders.contains(provider) {
-                Text(TokenUsageProviderStatusBuilder.configureHint(for: provider, strings: strings))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.leading, 16)
+            if showsGuide && isExpanded {
+                guideContent(for: provider)
             }
         }
         .padding(.vertical, 2)
         .accessibilityIdentifier(SettingsAccessibilityID.tokenUsageProviderState(provider))
+    }
+
+    /// 展开内容：凭证类提供商由下方独立 Section 呈现（见 body），此处仅渲染非凭证类的提示文字。
+    @ViewBuilder
+    private func guideContent(for provider: TokenUsageProvider) -> some View {
+        if !credentialProviders.contains(provider) {
+            Text(TokenUsageProviderStatusBuilder.configureHint(for: provider, strings: strings))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, 16)
+        }
     }
 
     private func toggleExpanded(_ provider: TokenUsageProvider) {
@@ -299,7 +345,7 @@ struct TokenUsageProvidersSettingsView: View {
     }
 }
 
-/// 告警：会话窗 ≥85% / 步速超前 开关（本票只做 UI 与持久化，引擎由 #11 接入）+ 通知权限申请入口。
+/// 告警：会话窗阈值（70/85/90/95 可配）与步速超前开关 + 通知权限申请入口。
 struct TokenUsageAlertsSettingsView: View {
     @ObservedObject var preferences: TokenUsagePreferences
     @ObservedObject private var permissions = Permissions.shared
@@ -308,8 +354,26 @@ struct TokenUsageAlertsSettingsView: View {
     var body: some View {
         Form {
             Section(strings.tokenSettingsAlertsSection) {
-                Toggle(strings.tokenSettingsSessionAlert, isOn: alertBinding(\.sessionLimitAlertEnabled))
-                    .accessibilityIdentifier(SettingsAccessibilityID.tokenUsageSessionAlert.rawValue)
+                Toggle(
+                    String(
+                        format: strings.tokenSettingsSessionAlertFormat,
+                        preferences.configuration.sessionAlertThresholdPercent
+                    ),
+                    isOn: alertBinding(\.sessionLimitAlertEnabled)
+                )
+                .accessibilityIdentifier(SettingsAccessibilityID.tokenUsageSessionAlert.rawValue)
+
+                Picker(strings.tokenSettingsAlertThreshold, selection: Binding(
+                    get: { preferences.configuration.sessionAlertThresholdPercent },
+                    set: { percent in try? preferences.setSessionAlertThresholdPercent(percent) }
+                )) {
+                    ForEach(TokenUsageConfiguration.allowedSessionAlertThresholds, id: \.self) { percent in
+                        Text(String(format: strings.tokenSettingsAlertThresholdFormat, percent))
+                            .tag(percent)
+                    }
+                }
+                .accessibilityIdentifier(SettingsAccessibilityID.tokenUsageAlertThreshold.rawValue)
+
                 Toggle(strings.tokenSettingsPaceAlert, isOn: alertBinding(\.paceOverrunAlertEnabled))
                     .accessibilityIdentifier(SettingsAccessibilityID.tokenUsagePaceAlert.rawValue)
             }
@@ -345,24 +409,30 @@ struct TokenUsageAlertsSettingsView: View {
     }
 }
 
-/// DeepSeek 余额设置：API Key（钥匙串）/ 低余额通知（开关 + 阈值）/ 刷新间隔。
-struct DeepSeekBalanceSettingsView: View {
+/// DeepSeek 余额设置分区（并入「提供商」页展开卡）：API Key（钥匙串）/ 低余额通知（开关 + 阈值）/ 刷新间隔。
+struct DeepSeekBalanceSettingsSections: View {
     @ObservedObject var preferences: TokenUsagePreferences
     @ObservedObject var manager: DeepSeekBalanceManager
+    /// 凭证变更（保存/清除）后通知父级刷新行状态缓存。
+    var onCredentialsChanged: () -> Void = {}
     let strings: Strings
 
     @State private var apiKeyInput = ""
     @State private var saveFailed = false
     @State private var thresholdText = ""
+    @State private var thresholdError = false
+    @FocusState private var thresholdFocused: Bool
 
+    @ViewBuilder
     var body: some View {
-        Form {
+        Group {
             apiKeySection
             lowBalanceSection
             refreshSection
         }
-        .settingsPageStyle()
-        .onAppear { thresholdText = Self.formatThreshold(preferences.configuration.deepSeekBalanceSettings.lowBalanceThreshold) }
+        .onAppear {
+            thresholdText = Self.formatThreshold(preferences.configuration.deepSeekBalanceSettings.lowBalanceThreshold)
+        }
     }
 
     // MARK: - API Key
@@ -412,7 +482,7 @@ struct DeepSeekBalanceSettingsView: View {
 
     private var lowBalanceSection: some View {
         Section {
-            Toggle(strings.deepSeekSettingsLowBalanceAlert, isOn: Binding(
+            Toggle(strings.deepSeekSettingsLowBalanceAlertToggle, isOn: Binding(
                 get: { preferences.configuration.deepSeekBalanceSettings.lowBalanceAlertEnabled },
                 set: { preferences.setDeepSeekLowBalanceAlertEnabled($0) }
             ))
@@ -426,7 +496,19 @@ struct DeepSeekBalanceSettingsView: View {
                     .frame(width: 80)
                     .multilineTextAlignment(.trailing)
                     .accessibilityIdentifier(SettingsAccessibilityID.deepSeekThresholdField.rawValue)
+                    .focused($thresholdFocused)
                     .onSubmit { commitThreshold() }
+                    .onChange(of: thresholdFocused) { _, focused in
+                        if !focused { commitThreshold() }
+                    }
+                    .onChange(of: thresholdText) { _, _ in
+                        thresholdError = false
+                    }
+            }
+            if thresholdError {
+                Text(strings.deepSeekSettingsThresholdInvalid)
+                    .font(.caption)
+                    .foregroundStyle(.red)
             }
         } header: {
             Text(strings.deepSeekSettingsLowBalanceAlert)
@@ -460,6 +542,7 @@ struct DeepSeekBalanceSettingsView: View {
             try manager.saveAPIKey(DeepSeekSettingsValidation.sanitizedAPIKey(apiKeyInput))
             apiKeyInput = ""
             saveFailed = false
+            onCredentialsChanged()
         } catch {
             saveFailed = true
         }
@@ -469,13 +552,17 @@ struct DeepSeekBalanceSettingsView: View {
         try? manager.deleteAPIKey()
         apiKeyInput = ""
         saveFailed = false
+        onCredentialsChanged()
     }
 
+    /// 回车或失焦提交；非法输入红字提示并回退显示当前值，不静默丢弃。
     private func commitThreshold() {
         guard let value = DeepSeekSettingsValidation.parseThreshold(thresholdText) else {
+            thresholdError = true
             thresholdText = Self.formatThreshold(preferences.configuration.deepSeekBalanceSettings.lowBalanceThreshold)
             return
         }
+        thresholdError = false
         preferences.setDeepSeekThreshold(value)
         thresholdText = Self.formatThreshold(value)
     }
@@ -485,61 +572,73 @@ struct DeepSeekBalanceSettingsView: View {
     }
 }
 
-/// trae-cn 采集设置：opt-in 开关（默认关，SPEC R1）+ Cloud-IDE-JWT 手动输入（钥匙串）。
-struct TraeCnSettingsView: View {
+/// trae-cn 采集设置分区（并入「提供商」页展开卡）：opt-in 开关（默认关，SPEC R1）+ Cloud-IDE-JWT 手动输入（钥匙串）。
+struct TraeCnSettingsSections: View {
     @ObservedObject var preferences: TokenUsagePreferences
     let strings: Strings
 
     @State private var jwtInput = ""
     @State private var saveFailed = false
+    @State private var saveSuccess = false
+    /// 钥匙串凭证状态缓存（onAppear 与保存/清除后刷新，渲染期不直接读 keychain）。
+    @State private var hasStoredKey = false
 
     private let keychain = TraeCnKeychainStore()
 
+    @ViewBuilder
     var body: some View {
-        Form {
-            Section {
-                Toggle(strings.tokenSettingsTraeCnSection, isOn: Binding(
-                    get: { preferences.configuration.traeCnEnabled },
-                    set: { enabled in preferences.setTraeCnEnabled(enabled) }
-                ))
-                SecureField(strings.tokenSettingsTraeCnJwtPlaceholder, text: $jwtInput)
-                    .textFieldStyle(.roundedBorder)
-                HStack {
-                    Button(strings.deepSeekSettingsSaveKey) {
-                        save()
-                    }
-                    .disabled(DeepSeekSettingsValidation.sanitizedAPIKey(jwtInput).isEmpty)
-                    Button(strings.deepSeekSettingsClearKey) {
-                        clearKey()
-                    }
-                    .disabled(jwtInput.isEmpty && !hasStoredKey)
+        Section {
+            Toggle(strings.tokenSettingsTraeCnSection, isOn: Binding(
+                get: { preferences.configuration.traeCnEnabled },
+                set: { enabled in preferences.setTraeCnEnabled(enabled) }
+            ))
+            SecureField(strings.tokenSettingsTraeCnJwtPlaceholder, text: $jwtInput)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: jwtInput) { _, _ in
+                    saveSuccess = false
                 }
-                if saveFailed {
-                    Text(strings.tokenErrorTransient)
-                        .foregroundStyle(Theme.Stats.up)
+            HStack {
+                Button(strings.deepSeekSettingsSaveKey) {
+                    save()
                 }
-            } header: {
-                Text(strings.tokenSettingsTraeCnSection)
-            } footer: {
-                Text(strings.tokenSettingsConfigureHintTraeCn)
+                .disabled(DeepSeekSettingsValidation.sanitizedAPIKey(jwtInput).isEmpty)
+                Button(strings.deepSeekSettingsClearKey) {
+                    clearKey()
+                }
+                .disabled(jwtInput.isEmpty && !hasStoredKey)
             }
+            if saveFailed {
+                Text(strings.tokenErrorTransient)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            } else if saveSuccess {
+                Text(strings.deepSeekSettingsKeySaved)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text(strings.tokenSettingsTraeCnSection)
+        } footer: {
+            Text(strings.tokenSettingsConfigureHintTraeCn)
         }
-        .settingsPageStyle()
-        .onAppear {
-            jwtInput = (try? keychain.readJWT()) ?? ""
-        }
+        .onAppear { reloadKeychainState() }
     }
 
-    private var hasStoredKey: Bool {
-        ((try? keychain.readJWT()) ?? nil) != nil
+    private func reloadKeychainState() {
+        let stored = (try? keychain.readJWT()) ?? ""
+        jwtInput = stored
+        hasStoredKey = !stored.isEmpty
     }
 
     private func save() {
         do {
             try keychain.writeJWT(DeepSeekSettingsValidation.sanitizedAPIKey(jwtInput))
             saveFailed = false
+            saveSuccess = true
+            hasStoredKey = true
         } catch {
             saveFailed = true
+            saveSuccess = false
         }
     }
 
@@ -547,58 +646,66 @@ struct TraeCnSettingsView: View {
         try? keychain.deleteJWT()
         jwtInput = ""
         saveFailed = false
+        saveSuccess = false
+        hasStoredKey = false
     }
 }
 
-/// OpenCode Go 设置：API Key（钥匙串存储）。
-struct OpencodeSettingsView: View {
+/// OpenCode Go 设置分区（并入「提供商」页展开卡）：API Key（钥匙串存储）。
+struct OpencodeSettingsSections: View {
     @ObservedObject var preferences: TokenUsagePreferences
     var manager: TokenUsageManager? = nil
+    /// 凭证变更（保存/清除）后通知父级刷新行状态缓存。
+    var onCredentialsChanged: () -> Void = {}
     let strings: Strings
 
     @State private var apiKeyInput = ""
     @State private var saveFailed = false
     @State private var saveSuccess = false
+    /// 钥匙串凭证状态缓存（onAppear 与保存/清除后刷新，渲染期不直接读 keychain）。
+    @State private var hasStoredKey = false
 
     private let keychain = OpencodeKeychainAPIKeyStore()
 
+    @ViewBuilder
     var body: some View {
-        Form {
-            Section {
-                SecureField(strings.opencodeSettingsApiKeyPlaceholder, text: $apiKeyInput)
-                    .textFieldStyle(.roundedBorder)
-                HStack {
-                    Button(strings.deepSeekSettingsSaveKey) {
-                        save()
-                    }
-                    .disabled(DeepSeekSettingsValidation.sanitizedAPIKey(apiKeyInput).isEmpty)
-                    Button(strings.deepSeekSettingsClearKey) {
-                        clearKey()
-                    }
-                    .disabled(apiKeyInput.isEmpty && !hasStoredKey)
+        Section {
+            SecureField(strings.opencodeSettingsApiKeyPlaceholder, text: $apiKeyInput)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: apiKeyInput) { _, _ in
+                    saveSuccess = false
                 }
-                if saveFailed {
-                    Text(strings.tokenErrorTransient)
-                        .foregroundStyle(Theme.Stats.up)
-                } else if saveSuccess {
-                    Text(strings.deepSeekSettingsKeySaved)
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
+            HStack {
+                Button(strings.deepSeekSettingsSaveKey) {
+                    save()
                 }
-            } header: {
-                Text(strings.tokenSettingsOpencodeSection)
-            } footer: {
-                Text(strings.opencodeSettingsApiKeyCaption)
+                .disabled(DeepSeekSettingsValidation.sanitizedAPIKey(apiKeyInput).isEmpty)
+                Button(strings.deepSeekSettingsClearKey) {
+                    clearKey()
+                }
+                .disabled(apiKeyInput.isEmpty && !hasStoredKey)
             }
+            if saveFailed {
+                Text(strings.tokenErrorTransient)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            } else if saveSuccess {
+                Text(strings.deepSeekSettingsKeySaved)
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            }
+        } header: {
+            Text(strings.tokenSettingsOpencodeSection)
+        } footer: {
+            Text(strings.opencodeSettingsApiKeyCaption)
         }
-        .settingsPageStyle()
-        .onAppear {
-            apiKeyInput = (try? keychain.readAPIKey()) ?? ""
-        }
+        .onAppear { reloadKeychainState() }
     }
 
-    private var hasStoredKey: Bool {
-        ((try? keychain.readAPIKey()) ?? nil) != nil
+    private func reloadKeychainState() {
+        let stored = (try? keychain.readAPIKey()) ?? ""
+        apiKeyInput = stored
+        hasStoredKey = !stored.isEmpty
     }
 
     private func save() {
@@ -608,7 +715,9 @@ struct OpencodeSettingsView: View {
             try keychain.writeAPIKey(cleaned)
             saveFailed = false
             saveSuccess = true
+            hasStoredKey = true
             manager?.refreshNow()
+            onCredentialsChanged()
         } catch {
             saveFailed = true
             saveSuccess = false
@@ -620,65 +729,79 @@ struct OpencodeSettingsView: View {
         apiKeyInput = ""
         saveFailed = false
         saveSuccess = false
+        hasStoredKey = false
         manager?.refreshNow()
+        onCredentialsChanged()
     }
 }
 
-/// 方舟 Coding Plan 设置：AccessKey ID / SecretAccessKey（钥匙串）/ 保存 / 清除。
-struct ArkCodingPlanSettingsView: View {
+/// 方舟 Coding Plan 设置分区（并入「提供商」页展开卡）：AccessKey ID / SecretAccessKey（钥匙串）/ 保存 / 清除。
+struct ArkCodingPlanSettingsSections: View {
     @ObservedObject var preferences: TokenUsagePreferences
     var manager: TokenUsageManager? = nil
+    /// 凭证变更（保存/清除）后通知父级刷新行状态缓存。
+    var onCredentialsChanged: () -> Void = {}
     let strings: Strings
 
     @State private var akInput = ""
     @State private var skInput = ""
     @State private var saveFailed = false
     @State private var saveSuccess = false
+    /// 钥匙串凭证状态缓存（onAppear 与保存/清除后刷新，渲染期不直接读 keychain）。
+    @State private var hasStoredCredentials = false
 
     private let keychain = ArkKeychainStore()
 
+    @ViewBuilder
     var body: some View {
-        Form {
-            Section {
-                TextField(strings.arkSettingsAkPlaceholder, text: $akInput)
-                    .textFieldStyle(.roundedBorder)
-                SecureField(strings.arkSettingsSkPlaceholder, text: $skInput)
-                    .textFieldStyle(.roundedBorder)
-                HStack {
-                    Button(strings.deepSeekSettingsSaveKey) {
-                        save()
-                    }
-                    .disabled(akInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || skInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    Button(strings.deepSeekSettingsClearKey) {
-                        clear()
-                    }
-                    .disabled(akInput.isEmpty && skInput.isEmpty && !hasStoredCredentials)
+        Section {
+            TextField(strings.arkSettingsAkPlaceholder, text: $akInput)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: akInput) { _, _ in
+                    saveSuccess = false
                 }
-                if saveFailed {
-                    Text(strings.tokenErrorTransient)
-                        .foregroundStyle(Theme.Stats.up)
-                } else if saveSuccess {
-                    Text(strings.deepSeekSettingsKeySaved)
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
+            SecureField(strings.arkSettingsSkPlaceholder, text: $skInput)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: skInput) { _, _ in
+                    saveSuccess = false
                 }
-            } header: {
-                Text(strings.tokenSettingsArkSection)
-            } footer: {
-                Text(strings.arkSettingsCaption)
+            HStack {
+                Button(strings.deepSeekSettingsSaveKey) {
+                    save()
+                }
+                .disabled(akInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || skInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button(strings.deepSeekSettingsClearKey) {
+                    clear()
+                }
+                .disabled(akInput.isEmpty && skInput.isEmpty && !hasStoredCredentials)
             }
-        }
-        .settingsPageStyle()
-        .onAppear {
-            if let creds = try? keychain.readCredentials() {
-                akInput = creds.accessKeyId
-                skInput = creds.secretAccessKey
+            if saveFailed {
+                Text(strings.tokenErrorTransient)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            } else if saveSuccess {
+                Text(strings.deepSeekSettingsKeySaved)
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
             }
+        } header: {
+            Text(strings.tokenSettingsArkSection)
+        } footer: {
+            Text(strings.arkSettingsCaption)
         }
+        .onAppear { reloadKeychainState() }
     }
 
-    private var hasStoredCredentials: Bool {
-        ((try? keychain.readCredentials()) ?? nil) != nil
+    private func reloadKeychainState() {
+        if let creds = try? keychain.readCredentials() {
+            akInput = creds.accessKeyId
+            skInput = creds.secretAccessKey
+            hasStoredCredentials = true
+        } else {
+            akInput = ""
+            skInput = ""
+            hasStoredCredentials = false
+        }
     }
 
     private func save() {
@@ -689,7 +812,9 @@ struct ArkCodingPlanSettingsView: View {
             try keychain.writeCredentials(ArkCredentials(accessKeyId: ak, secretAccessKey: sk))
             saveFailed = false
             saveSuccess = true
+            hasStoredCredentials = true
             manager?.refreshNow()
+            onCredentialsChanged()
         } catch {
             saveFailed = true
             saveSuccess = false
@@ -702,7 +827,9 @@ struct ArkCodingPlanSettingsView: View {
         skInput = ""
         saveFailed = false
         saveSuccess = false
+        hasStoredCredentials = false
         manager?.refreshNow()
+        onCredentialsChanged()
     }
 }
 

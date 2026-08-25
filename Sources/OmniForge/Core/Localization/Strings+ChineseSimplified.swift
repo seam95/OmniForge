@@ -1067,7 +1067,9 @@ extension Strings {
         tokenSettingsLoggedIn: "已登录",
         tokenSettingsNotConfigured: "未登录",
         tokenSettingsHowToConfigure: "如何配置",
-        tokenSettingsSessionAlert: "会话窗用量 ≥85% 时通知",
+        tokenSettingsSessionAlertFormat: "会话窗用量 ≥%g%% 时通知",
+        tokenSettingsAlertThreshold: "会话窗告警阈值",
+        tokenSettingsAlertThresholdFormat: "%g%%",
         tokenSettingsPaceAlert: "步速超前时通知",
         tokenSettingsRequestPermission: "申请通知权限",
         tokenSettingsPermissionGranted: "已授权",
@@ -1112,8 +1114,10 @@ extension Strings {
         deepSeekSettingsApiKeyCaption: "密钥仅保存在 macOS 钥匙串，不写入磁盘",
         deepSeekSettingsApiKeyInvalid: "密钥无效，请检查后重试",
         deepSeekSettingsLowBalanceAlert: "低余额通知",
+        deepSeekSettingsLowBalanceAlertToggle: "余额低于阈值时通知",
         deepSeekSettingsThresholdLabel: "阈值（¥）",
         deepSeekSettingsThresholdHint: "余额低于阈值时通知一次；充值恢复后重新计数",
+        deepSeekSettingsThresholdInvalid: "请输入有效金额（大于 0）",
         deepSeekSettingsRefreshInterval: "余额刷新间隔"
     )
 }

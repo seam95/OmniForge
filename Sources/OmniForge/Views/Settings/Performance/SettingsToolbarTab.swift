@@ -90,15 +90,12 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
     }
 }
 
-/// Token 用量设置页内部分段（通用 / 提供商 / 告警 / DeepSeek 余额 / trae-cn / opencode / 方舟）。
+/// Token 用量设置页内部分段（通用 / 提供商 / 告警）。
+/// 4 家需凭证的提供商（DeepSeek / Trae CN / OpenCode / 方舟）配置入口并入「提供商」页展开卡。
 enum TokenUsageSettingsSection: String, CaseIterable, Identifiable {
     case general
     case providers
     case alerts
-    case deepSeek
-    case traeCn
-    case opencode
-    case arkCodingPlan
 
     var id: String { rawValue }
 
@@ -107,10 +104,6 @@ enum TokenUsageSettingsSection: String, CaseIterable, Identifiable {
         case .general: return strings.tokenSettingsGenericSection
         case .providers: return strings.tokenSettingsProvidersSection
         case .alerts: return strings.tokenSettingsAlertsSection
-        case .deepSeek: return strings.tokenSettingsDeepSeekSection
-        case .traeCn: return strings.tokenSettingsTraeCnSection
-        case .opencode: return strings.tokenSettingsOpencodeSection
-        case .arkCodingPlan: return strings.tokenSettingsArkSection
         }
     }
 }

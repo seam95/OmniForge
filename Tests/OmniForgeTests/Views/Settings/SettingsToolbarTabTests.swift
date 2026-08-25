@@ -20,21 +20,17 @@ final class SettingsToolbarTabTests: XCTestCase {
     }
 
     func test_tokenUsageSections_orderAndTitles() {
+        // 凭证配置已并入「提供商」页，分段收敛为通用 / 提供商 / 告警。
         XCTAssertEqual(
             TokenUsageSettingsSection.allCases,
-            [.general, .providers, .alerts, .deepSeek, .traeCn, .opencode, .arkCodingPlan]
+            [.general, .providers, .alerts]
         )
         XCTAssertEqual(TokenUsageSettingsSection.general.title(in: .en), "General")
+        XCTAssertEqual(TokenUsageSettingsSection.general.title(in: .zhHans), "通用")
+        XCTAssertEqual(TokenUsageSettingsSection.providers.title(in: .en), "Providers")
         XCTAssertEqual(TokenUsageSettingsSection.providers.title(in: .zhHans), "提供商")
+        XCTAssertEqual(TokenUsageSettingsSection.alerts.title(in: .en), "Alerts")
         XCTAssertEqual(TokenUsageSettingsSection.alerts.title(in: .zhHans), "告警")
-        XCTAssertEqual(TokenUsageSettingsSection.deepSeek.title(in: .zhHans), "DeepSeek 余额")
-        XCTAssertEqual(TokenUsageSettingsSection.deepSeek.title(in: .en), "DeepSeek Balance")
-        XCTAssertEqual(TokenUsageSettingsSection.traeCn.title(in: .en), "Trae CN")
-        XCTAssertEqual(TokenUsageSettingsSection.traeCn.title(in: .zhHans), "Trae CN")
-        XCTAssertEqual(TokenUsageSettingsSection.opencode.title(in: .en), "OpenCode Go")
-        XCTAssertEqual(TokenUsageSettingsSection.opencode.title(in: .zhHans), "OpenCode Go")
-        XCTAssertEqual(TokenUsageSettingsSection.arkCodingPlan.title(in: .en), "Ark Coding Plan")
-        XCTAssertEqual(TokenUsageSettingsSection.arkCodingPlan.title(in: .zhHans), "方舟 Coding Plan")
     }
 
     func test_keepAwakeSystemImageAndTitle() {

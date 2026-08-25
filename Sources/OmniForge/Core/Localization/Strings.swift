@@ -1148,7 +1148,11 @@ struct Strings: Equatable {
     let tokenSettingsLoggedIn: String
     let tokenSettingsNotConfigured: String
     let tokenSettingsHowToConfigure: String
-    let tokenSettingsSessionAlert: String
+    /// 会话窗阈值告警开关文案格式（%g = 当前阈值，如「会话窗用量 ≥90% 时通知」）。
+    let tokenSettingsSessionAlertFormat: String
+    let tokenSettingsAlertThreshold: String
+    /// 告警阈值选项文案格式（%g = 百分比）。
+    let tokenSettingsAlertThresholdFormat: String
     let tokenSettingsPaceAlert: String
     let tokenSettingsRequestPermission: String
     let tokenSettingsPermissionGranted: String
@@ -1195,7 +1199,11 @@ struct Strings: Equatable {
     let deepSeekSettingsApiKeyCaption: String
     let deepSeekSettingsApiKeyInvalid: String
     let deepSeekSettingsLowBalanceAlert: String
+    /// 低余额通知开关文案（与 Section 标题区分）。
+    let deepSeekSettingsLowBalanceAlertToggle: String
     let deepSeekSettingsThresholdLabel: String
     let deepSeekSettingsThresholdHint: String
+    /// 阈值输入非法时的错误提示。
+    let deepSeekSettingsThresholdInvalid: String
     let deepSeekSettingsRefreshInterval: String
 }

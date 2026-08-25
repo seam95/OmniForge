@@ -1067,7 +1067,9 @@ extension Strings {
         tokenSettingsLoggedIn: "Signed in",
         tokenSettingsNotConfigured: "Not signed in",
         tokenSettingsHowToConfigure: "How to configure",
-        tokenSettingsSessionAlert: "Notify when session usage is 85% or more",
+        tokenSettingsSessionAlertFormat: "Notify when session usage is ≥%g%%",
+        tokenSettingsAlertThreshold: "Session alert threshold",
+        tokenSettingsAlertThresholdFormat: "%g%%",
         tokenSettingsPaceAlert: "Notify when running ahead of pace",
         tokenSettingsRequestPermission: "Request notification permission",
         tokenSettingsPermissionGranted: "Authorized",
@@ -1112,8 +1114,10 @@ extension Strings {
         deepSeekSettingsApiKeyCaption: "Stored only in your macOS Keychain, never on disk",
         deepSeekSettingsApiKeyInvalid: "Invalid key, check it and try again",
         deepSeekSettingsLowBalanceAlert: "Low balance alert",
+        deepSeekSettingsLowBalanceAlertToggle: "Notify when balance falls below threshold",
         deepSeekSettingsThresholdLabel: "Threshold (¥)",
         deepSeekSettingsThresholdHint: "Notifies once below the threshold; re-arms after balance recovers",
+        deepSeekSettingsThresholdInvalid: "Enter a valid amount (>0)",
         deepSeekSettingsRefreshInterval: "Balance refresh interval"
     )
 }
