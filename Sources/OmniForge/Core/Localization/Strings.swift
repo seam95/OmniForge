@@ -1167,7 +1167,6 @@ struct Strings: Equatable {
     let deepSeekBalanceUnavailable: String
     let deepSeekStatusBelowThreshold: String
     let deepSeekStatusReauthKey: String
-    let deepSeekBalanceDetailFormat: String
     let deepSeekBalanceFooterFormat: String
     let deepSeekAlertTitle: String
     let deepSeekAlertBodyFormat: String

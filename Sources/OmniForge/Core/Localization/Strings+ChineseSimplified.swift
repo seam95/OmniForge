@@ -1087,7 +1087,6 @@ extension Strings {
         deepSeekBalanceUnavailable: "余额暂不可用",
         deepSeekStatusBelowThreshold: "低于阈值",
         deepSeekStatusReauthKey: "密钥已失效",
-        deepSeekBalanceDetailFormat: "赠送 %@ · 充值 %@",
         deepSeekBalanceFooterFormat: "%@ · %@",
         deepSeekAlertTitle: "DeepSeek 余额告警",
         deepSeekAlertBodyFormat: "DeepSeek 余额仅剩 %@，低于阈值 %@。",

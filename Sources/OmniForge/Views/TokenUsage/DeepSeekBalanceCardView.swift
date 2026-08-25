@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// 控制中心「Token」页的 DeepSeek 余额区块（去卡片化透明布局）：16x16 品牌图标 + 标题 + 右侧总金额、
-/// 赠送/充值明细行与错误行。
+/// 多币种列表（如适用）与错误行。
 struct DeepSeekBalanceCardView: View {
     let snapshot: DeepSeekBalanceSnapshot?
     /// 低余额阈值（面板从偏好注入，徽章「低于阈值」口径与通知一致）。
@@ -59,7 +59,7 @@ struct DeepSeekBalanceCardView: View {
     }
 
     private var primaryTotalBalanceText: String? {
-        guard let snapshot, let first = snapshot.infos.first else { return nil }
+        guard let snapshot, snapshot.infos.count <= 1, let first = snapshot.infos.first else { return nil }
         return DeepSeekBalanceFormat.amount(first.totalBalance, rawText: first.totalBalanceText, currency: first.currency)
     }
 
@@ -68,18 +68,7 @@ struct DeepSeekBalanceCardView: View {
     @ViewBuilder
     private func currencyBody(_ snapshot: DeepSeekBalanceSnapshot) -> some View {
         let infos = snapshot.infos
-        if infos.count <= 1, let first = infos.first {
-            // 单币种精简展示：一行副文本「赠送 ¥0.00 · 充值 ¥42.42」
-            if first.grantedBalance != nil || first.toppedUpBalance != nil {
-                Text(String(
-                    format: strings.deepSeekBalanceDetailFormat,
-                    DeepSeekBalanceFormat.amount(first.grantedBalance, rawText: nil, currency: first.currency),
-                    DeepSeekBalanceFormat.amount(first.toppedUpBalance, rawText: nil, currency: first.currency)
-                ))
-                .font(Theme.Stats.font11Regular)
-                .foregroundColor(Theme.Stats.text3)
-            }
-        } else {
+        if infos.count > 1 {
             // 多币种展示
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(infos.indices, id: \.self) { index in
@@ -93,26 +82,15 @@ struct DeepSeekBalanceCardView: View {
     }
 
     private func currencyRow(_ info: DeepSeekBalanceInfo) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(info.currency)
-                    .font(Theme.Stats.font11Regular)
-                    .foregroundColor(Theme.Stats.text2)
-                Spacer()
-                Text(DeepSeekBalanceFormat.amount(info.totalBalance, rawText: info.totalBalanceText, currency: info.currency))
-                    .font(Theme.Stats.font12Medium)
-                    .foregroundColor(Theme.Stats.text1)
-                    .monospacedDigit()
-            }
-            if info.grantedBalance != nil || info.toppedUpBalance != nil {
-                Text(String(
-                    format: strings.deepSeekBalanceDetailFormat,
-                    DeepSeekBalanceFormat.amount(info.grantedBalance, rawText: nil, currency: info.currency),
-                    DeepSeekBalanceFormat.amount(info.toppedUpBalance, rawText: nil, currency: info.currency)
-                ))
-                .font(Theme.Stats.font10Regular)
-                .foregroundColor(Theme.Stats.text3)
-            }
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(info.currency)
+                .font(Theme.Stats.font11Regular)
+                .foregroundColor(Theme.Stats.text2)
+            Spacer()
+            Text(DeepSeekBalanceFormat.amount(info.totalBalance, rawText: info.totalBalanceText, currency: info.currency))
+                .font(Theme.Stats.font12Medium)
+                .foregroundColor(Theme.Stats.text1)
+                .monospacedDigit()
         }
     }
 

@@ -1087,7 +1087,6 @@ extension Strings {
         deepSeekBalanceUnavailable: "Balance unavailable",
         deepSeekStatusBelowThreshold: "Below threshold",
         deepSeekStatusReauthKey: "API key invalid",
-        deepSeekBalanceDetailFormat: "Granted %@ · Topped up %@",
         deepSeekBalanceFooterFormat: "%@ · %@",
         deepSeekAlertTitle: "DeepSeek balance alert",
         deepSeekAlertBodyFormat: "DeepSeek balance is %@, below the %@ threshold.",

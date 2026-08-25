@@ -99,7 +99,7 @@ final class DeepSeekBalanceCardStateTests: XCTestCase {
 
     func test_footerText_officialSourceAndRelativeUpdate() {
         let capturedAt = Date(timeIntervalSince1970: 1_800_000_000)
-        let snapshot = DeepSeekBalanceSnapshot(
+        let _ = DeepSeekBalanceSnapshot(
             configured: true,
             isAvailable: true,
             infos: [cnyInfo("18.22")],
