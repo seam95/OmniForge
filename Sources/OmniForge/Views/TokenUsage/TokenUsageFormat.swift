@@ -142,6 +142,28 @@ enum TokenUsageFormat {
         return "\(days)d"
     }
 
+    /// 窗口重置时间三级分级显示（四段式布局右侧列）：
+    /// - 剩余 > 24h → "Nd"（如 6d）
+    /// - 6h ≤ 剩余 ≤ 24h → "Nh"（如 6h、12h）
+    /// - < 6h → "HH:mm"（如 13:42）
+    static func windowResetTimeTiered(
+        resetAt: Date?,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> String? {
+        guard let resetAt, resetAt > now else { return nil }
+        let seconds = resetAt.timeIntervalSince(now)
+        if seconds > 24 * 3600 {
+            let days = max(1, Int(seconds / 86400))
+            return "\(days)d"
+        } else if seconds >= 6 * 3600 {
+            let hours = Int(seconds / 3600)
+            return "\(hours)h"
+        } else {
+            return sameDayTimeFormatter.string(from: resetAt)
+        }
+    }
+
     /// 星期简称（周日前置，配合 `tokenWeekdayNames`）。
     static func weekdayName(for date: Date, strings: Strings) -> String {
         let weekday = Calendar.current.component(.weekday, from: date) // 1 = 周日
@@ -229,18 +251,14 @@ enum TokenUsageFormat {
         provider: TokenUsageProvider,
         strings: Strings
     ) -> String {
-        if provider == .cursor {
-            if label.caseInsensitiveCompare("Auto") == .orderedSame {
-                return strings.tokenWindowAutoShort
-            }
-            if label.caseInsensitiveCompare("API") == .orderedSame {
-                return "API"
-            }
-        }
-        return label
+        label
     }
 
-    /// 限额行状态条颜色：根据剩余/已用口径自适应（剩余低于 10% 警示红，低于 25% 警示橙，正常绿；已用高于 90% 警示红）。
+    static let limitBarNormalGreen = Color(red: 0x34 / 255.0, green: 0xC7 / 255.0, blue: 0x59 / 255.0)
+    static let limitBarCriticalRed = Color(red: 0xFF / 255.0, green: 0x45 / 255.0, blue: 0x3A / 255.0)
+    static let limitBarWarningOrange = Color(red: 0xFF / 255.0, green: 0x95 / 255.0, blue: 0x00 / 255.0)
+
+    /// 限额行状态条颜色：根据剩余/已用口径自适应（剩余低于 10% 警示红 #FF453A，低于 25% 警示橙 #FF9500，正常统一绿 #34C759）。
     static func limitBarStatusColor(
         percent: Double,
         displayMode: TokenUsageLimitsDisplay,
@@ -248,20 +266,20 @@ enum TokenUsageFormat {
     ) -> Color {
         if displayMode == .remaining {
             if percent <= 10 {
-                return Theme.Stats.up
+                return limitBarCriticalRed
             }
             if percent <= 25 {
-                return Theme.Stats.ram
+                return limitBarWarningOrange
             }
-            return Theme.Stats.statusNormal
+            return limitBarNormalGreen
         } else {
             if percent >= 90 {
-                return Theme.Stats.up
+                return limitBarCriticalRed
             }
             if percent >= 70 {
-                return Theme.Stats.ram
+                return limitBarWarningOrange
             }
-            return Theme.Stats.statusNormal
+            return limitBarNormalGreen
         }
     }
 }
@@ -303,12 +321,6 @@ extension LimitWindowKind {
     }
 
     func shortTitle(for provider: TokenUsageProvider? = nil, strings: Strings) -> String {
-        if provider == .kimi && self == .weekly {
-            return strings.tokenWindowWeeklyShort
-        }
-        if provider == .cursor && self == .monthly {
-            return strings.tokenWindowPlanShort
-        }
         switch self {
         case .session: return "5h"
         case .weekly: return "7d"

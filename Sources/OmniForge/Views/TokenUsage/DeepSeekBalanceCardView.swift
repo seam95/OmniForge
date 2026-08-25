@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// 控制中心「Token」页的 DeepSeek 余额卡：18x18 品牌图标 + 标题 + 右侧总金额、
-/// 赠送/充值明细行与错误行（stale 标注回退）。
+/// 控制中心「Token」页的 DeepSeek 余额区块（去卡片化透明布局）：16x16 品牌图标 + 标题 + 右侧总金额、
+/// 赠送/充值明细行与错误行。
 struct DeepSeekBalanceCardView: View {
     let snapshot: DeepSeekBalanceSnapshot?
     /// 低余额阈值（面板从偏好注入，徽章「低于阈值」口径与通知一致）。
@@ -16,10 +16,10 @@ struct DeepSeekBalanceCardView: View {
     }
 
     /// DeepSeek 品牌色。
-    static let brandColor = Color(red: 0x4D / 255.0, green: 0x6B / 255.0, blue: 0xFE / 255.0)
+    static let brandColor = Color(red: 0x4D / 255.0, green: 0x6B / 255.0, blue: 0xF5 / 255.0)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             header
             if let snapshot {
                 if snapshot.issue != nil && snapshot.infos.isEmpty && !snapshot.stale {
@@ -38,26 +38,22 @@ struct DeepSeekBalanceCardView: View {
                     .foregroundStyle(Theme.Stats.text3)
             }
         }
-        .padding(12)
-        .omniCardStyle()
     }
 
     // MARK: - 头部
 
     private var header: some View {
         HStack(spacing: 8) {
-            TokenUsageProviderIconView(provider: .deepSeek, size: 18, cornerRadius: 4)
+            TokenUsageProviderIconView(provider: .deepSeek, size: 16, cornerRadius: 4)
             Text(strings.deepSeekBalanceCardTitle)
-                .font(Theme.Stats.font13SemiBold)
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(Theme.Stats.text1)
             Spacer()
             if let primaryBalance = primaryTotalBalanceText {
                 Text(primaryBalance)
-                    .font(Theme.Stats.font13SemiBold)
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(Theme.Stats.text1)
                     .monospacedDigit()
-            } else if status != .normal {
-                StatusTintBadge(text: status.label(strings), tint: status.tint)
             }
         }
     }
@@ -85,7 +81,7 @@ struct DeepSeekBalanceCardView: View {
             }
         } else {
             // 多币种展示
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
                 ForEach(infos.indices, id: \.self) { index in
                     if index > 0 {
                         currencySeparator
@@ -97,7 +93,7 @@ struct DeepSeekBalanceCardView: View {
     }
 
     private func currencyRow(_ info: DeepSeekBalanceInfo) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(info.currency)
                     .font(Theme.Stats.font11Regular)
@@ -124,7 +120,7 @@ struct DeepSeekBalanceCardView: View {
         Rectangle()
             .fill(Theme.Stats.separator)
             .frame(height: 0.5)
-            .padding(.vertical, 2)
+            .padding(.vertical, 1)
     }
 
     // MARK: - 错误

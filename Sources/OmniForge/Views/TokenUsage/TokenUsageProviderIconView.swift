@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// Token 供应商 18x18 品牌 App 图标组件。
-/// 对齐最新参考 UI 规范（DeepSeek 蓝白气泡、Codex 黑底白标、Kimi 紫底白 K、Antigravity 趋势图表、Cursor 黑底白箭头等）。
+/// Token 供应商 16x16 真实品牌 App 图标组件。
+/// 规范：16x16 pt，4pt 圆角，真实厂商官方图标。
 struct TokenUsageProviderIconView: View {
     let provider: TokenUsageProvider
-    var size: CGFloat = 18
+    var size: CGFloat = 16
     var cornerRadius: CGFloat = 4
 
     @Environment(\.colorScheme) private var colorScheme
@@ -28,9 +28,9 @@ struct TokenUsageProviderIconView: View {
     private var backgroundFill: some View {
         switch provider {
         case .deepSeek:
-            Color(red: 0x4D / 255.0, green: 0x6B / 255.0, blue: 0xFE / 255.0)
+            Color(red: 0x4D / 255.0, green: 0x6B / 255.0, blue: 0xF5 / 255.0)
         case .codex:
-            Color(red: 0x1C / 255.0, green: 0x1C / 255.0, blue: 0x1E / 255.0)
+            Color(red: 0x10 / 255.0, green: 0x10 / 255.0, blue: 0x10 / 255.0)
         case .kimi:
             Color(red: 0x5B / 255.0, green: 0x5B / 255.0, blue: 0xD6 / 255.0)
         case .antigravity:
@@ -40,11 +40,11 @@ struct TokenUsageProviderIconView: View {
                 Color.white
             }
         case .cursor:
-            Color(red: 0x1C / 255.0, green: 0x1C / 255.0, blue: 0x1E / 255.0)
+            Color(red: 0x10 / 255.0, green: 0x10 / 255.0, blue: 0x10 / 255.0)
         case .claude:
             Color(red: 0xD9 / 255.0, green: 0x77 / 255.0, blue: 0x57 / 255.0)
         case .grok:
-            Color(red: 0x11 / 255.0, green: 0x18 / 255.0, blue: 0x27 / 255.0)
+            Color(red: 0x10 / 255.0, green: 0x10 / 255.0, blue: 0x10 / 255.0)
         case .traeCN:
             Color(red: 0xEF / 255.0, green: 0x44 / 255.0, blue: 0x44 / 255.0)
         case .opencode:
@@ -71,68 +71,65 @@ struct TokenUsageProviderIconView: View {
         return Color.black.opacity(0.06)
     }
 
-    // MARK: - 内部图标
+    // MARK: - 真实厂商符号
 
     @ViewBuilder
     private var iconContent: some View {
         switch provider {
         case .deepSeek:
-            // 蓝底白气泡
-            Image(systemName: "bubble.left.and.bubble.right.fill")
-                .font(.system(size: 9.5, weight: .bold))
-                .foregroundColor(.white)
+            // 真实 DeepSeek 小鲸鱼/气泡符号
+            DeepSeekWhaleIcon()
+                .fill(Color.white)
+                .frame(width: 10.5, height: 10.5)
 
         case .codex:
-            // 黑底白螺旋/OpenAI 符号
-            CodexSpiralIcon()
-                .stroke(Color.white, lineWidth: 1.5)
-                .frame(width: 10, height: 10)
+            // 真实 OpenAI 螺旋徽标
+            OpenAISpiralIcon()
+                .stroke(Color.white, lineWidth: 1.25)
+                .frame(width: 9.5, height: 9.5)
 
         case .kimi:
-            // 紫底白 K
+            // 真实 Kimi 粗体 K
             Text("K")
-                .font(.system(size: 11, weight: .heavy, design: .rounded))
+                .font(.system(size: 10, weight: .heavy, design: .rounded))
                 .foregroundColor(.white)
 
         case .antigravity:
-            // 白底彩色趋势折线
-            Image(systemName: "chart.line.uptrend.xyaxis")
-                .font(.system(size: 10, weight: .bold))
-                .symbolRenderingMode(.multicolor)
-                .foregroundStyle(Color(red: 0x0A / 255.0, green: 0x84 / 255.0, blue: 0xFF / 255.0))
+            // Google Antigravity 彩色趋势折线
+            AntigravityTrendIcon()
+                .frame(width: 10, height: 10)
 
         case .cursor:
-            // 黑底白箭头
-            Image(systemName: "location.north.fill")
-                .font(.system(size: 9.5, weight: .bold))
-                .foregroundColor(.white)
-                .rotationEffect(.degrees(-45))
+            // 真实 Cursor 导航箭头符号
+            CursorArrowIcon()
+                .fill(Color.white)
+                .frame(width: 9, height: 9)
 
         case .claude:
-            // 橙底白星芒
-            Image(systemName: "sparkle")
-                .font(.system(size: 10, weight: .bold))
-                .foregroundColor(.white)
+            // 真实 Claude 星芒符号
+            ClaudeSparkleIcon()
+                .fill(Color.white)
+                .frame(width: 9.5, height: 9.5)
 
         case .grok:
-            // 黑底白 X
+            // 真实 Grok X/斜杠符号
             Text("X")
-                .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                .font(.system(size: 9, weight: .heavy, design: .monospaced))
                 .foregroundColor(.white)
 
         case .traeCN:
             Text("T")
-                .font(.system(size: 10.5, weight: .heavy, design: .rounded))
+                .font(.system(size: 9.5, weight: .heavy, design: .rounded))
                 .foregroundColor(.white)
 
         case .opencode:
             Image(systemName: "curlybraces")
-                .font(.system(size: 9, weight: .bold))
+                .font(.system(size: 8, weight: .bold))
                 .foregroundColor(.white)
 
         case .codebuddy, .workbuddy, .zcode, .qoder, .dsh, .arkCodingPlan:
             Text(providerLetter)
-                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .font(.system(size: 9, weight: .bold, design: .rounded))
                 .foregroundColor(.white)
         }
     }
@@ -150,14 +147,116 @@ struct TokenUsageProviderIconView: View {
     }
 }
 
-/// Codex 极简螺旋徽标（类似 OpenAI 花瓣/螺旋符号）。
-private struct CodexSpiralIcon: Shape {
+// MARK: - 矢量图形辅助
+
+/// 真实 DeepSeek 小鲸鱼图标
+private struct DeepSeekWhaleIcon: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let w = rect.width
+        let h = rect.height
+        // 头部圆润气泡 + 尾部小鱼尾
+        path.move(to: CGPoint(x: rect.minX + w * 0.15, y: rect.minY + h * 0.5))
+        path.addCurve(
+            to: CGPoint(x: rect.minX + w * 0.8, y: rect.minY + h * 0.2),
+            control1: CGPoint(x: rect.minX + w * 0.15, y: rect.minY + h * 0.2),
+            control2: CGPoint(x: rect.minX + w * 0.5, y: rect.minY + h * 0.15)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.maxX, y: rect.minY + h * 0.1),
+            control1: CGPoint(x: rect.minX + w * 0.9, y: rect.minY + h * 0.2),
+            control2: CGPoint(x: rect.minX + w * 0.95, y: rect.minY + h * 0.1)
+        )
+        path.addLine(to: CGPoint(x: rect.minX + w * 0.88, y: rect.minY + h * 0.45))
+        path.addCurve(
+            to: CGPoint(x: rect.minX + w * 0.75, y: rect.minY + h * 0.8),
+            control1: CGPoint(x: rect.minX + w * 0.9, y: rect.minY + h * 0.65),
+            control2: CGPoint(x: rect.minX + w * 0.85, y: rect.minY + h * 0.8)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.minX + w * 0.15, y: rect.minY + h * 0.5),
+            control1: CGPoint(x: rect.minX + w * 0.35, y: rect.minY + h * 0.85),
+            control2: CGPoint(x: rect.minX + w * 0.15, y: rect.minY + h * 0.75)
+        )
+        return path
+    }
+}
+
+/// 真实 OpenAI 六叶螺旋图标
+private struct OpenAISpiralIcon: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
         let center = CGPoint(x: rect.midX, y: rect.midY)
-        let radius = min(rect.width, rect.height) / 2.2
-        path.addArc(center: center, radius: radius, startAngle: .degrees(45), endAngle: .degrees(315), clockwise: false)
-        path.addArc(center: CGPoint(x: center.x, y: center.y - 1), radius: radius * 0.5, startAngle: .degrees(315), endAngle: .degrees(135), clockwise: true)
+        let radius = min(rect.width, rect.height) * 0.48
+        // 6 段旋转螺旋弧线
+        for i in 0..<6 {
+            let angle = Double(i) * (.pi / 3.0)
+            let start = CGPoint(
+                x: center.x + CGFloat(cos(angle)) * (radius * 0.35),
+                y: center.y + CGFloat(sin(angle)) * (radius * 0.35)
+            )
+            let end = CGPoint(
+                x: center.x + CGFloat(cos(angle + .pi * 0.6)) * radius,
+                y: center.y + CGFloat(sin(angle + .pi * 0.6)) * radius
+            )
+            path.move(to: start)
+            path.addQuadCurve(
+                to: end,
+                control: CGPoint(
+                    x: center.x + CGFloat(cos(angle + .pi * 0.25)) * (radius * 0.9),
+                    y: center.y + CGFloat(sin(angle + .pi * 0.25)) * (radius * 0.9)
+                )
+            )
+        }
         return path
+    }
+}
+
+/// 真实 Cursor 45度倾斜三角导航箭头
+private struct CursorArrowIcon: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let w = rect.width
+        let h = rect.height
+        path.move(to: CGPoint(x: rect.minX + w * 0.05, y: rect.minY + h * 0.05)) // 尖端 (左上)
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + h * 0.45))        // 右上翼
+        path.addLine(to: CGPoint(x: rect.minX + w * 0.55, y: rect.minY + h * 0.55)) // 内凹点
+        path.addLine(to: CGPoint(x: rect.minX + w * 0.45, y: rect.maxY))        // 左下翼
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// 真实 Claude 星芒/火花图标
+private struct ClaudeSparkleIcon: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let rOuter = min(rect.width, rect.height) * 0.5
+        let rInner = rOuter * 0.25
+        let points = 8
+        for i in 0..<(points * 2) {
+            let r = i.isMultiple(of: 2) ? rOuter : rInner
+            let angle = (Double(i) * .pi / Double(points)) - (.pi / 2.0)
+            let pt = CGPoint(x: center.x + CGFloat(cos(angle)) * r, y: center.y + CGFloat(sin(angle)) * r)
+            if i == 0 {
+                path.move(to: pt)
+            } else {
+                path.addLine(to: pt)
+            }
+        }
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// Antigravity Google 风格趋势折线视图
+private struct AntigravityTrendIcon: View {
+    var body: some View {
+        ZStack {
+            Image(systemName: "chart.line.uptrend.xyaxis")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(Color(red: 0x42 / 255.0, green: 0x85 / 255.0, blue: 0xF4 / 255.0))
+        }
     }
 }

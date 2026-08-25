@@ -51,7 +51,7 @@ struct TokenUsageTopModelsView: View {
                 .font(Theme.Stats.font11Regular)
                 .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                 .lineLimit(1)
-                .truncationMode(.middle)
+                .truncationMode(.tail)
                 .help(model.name)
             Spacer(minLength: 4)
             Text(TokenUsageFormat.compactTokens(model.tokens))

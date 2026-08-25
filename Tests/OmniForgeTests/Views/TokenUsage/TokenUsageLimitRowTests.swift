@@ -168,6 +168,35 @@ final class TokenUsageLimitRowTests: XCTestCase {
         XCTAssertNil(TokenUsageFormat.windowResetTime(resetAt: nil, now: now, calendar: calendar), "nil 时间返回 nil")
     }
 
+    func test_windowResetTimeTiered_boundaries() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 8 * 3600)!
+
+        let nowComponents = DateComponents(year: 2026, month: 8, day: 25, hour: 10, minute: 0, second: 0)
+        let now = calendar.date(from: nowComponents)!
+
+        // 场景 1：剩余 > 24h（如 6 天后） -> "6d"
+        let date6d = calendar.date(from: DateComponents(year: 2026, month: 8, day: 31, hour: 10, minute: 0, second: 0))!
+        XCTAssertEqual(TokenUsageFormat.windowResetTimeTiered(resetAt: date6d, now: now, calendar: calendar), "6d")
+
+        // 场景 2：6h ≤ 剩余 ≤ 24h（如 12h 后） -> "12h"
+        let date12h = calendar.date(from: DateComponents(year: 2026, month: 8, day: 25, hour: 22, minute: 0, second: 0))!
+        XCTAssertEqual(TokenUsageFormat.windowResetTimeTiered(resetAt: date12h, now: now, calendar: calendar), "12h")
+
+        // 场景 3：6h 边界 -> "6h"
+        let date6h = calendar.date(from: DateComponents(year: 2026, month: 8, day: 25, hour: 16, minute: 0, second: 0))!
+        XCTAssertEqual(TokenUsageFormat.windowResetTimeTiered(resetAt: date6h, now: now, calendar: calendar), "6h")
+
+        // 场景 4：< 6h（如 4h 30m 后，即 14:30） -> "14:30"
+        let date4h = calendar.date(from: DateComponents(year: 2026, month: 8, day: 25, hour: 14, minute: 30, second: 0))!
+        XCTAssertEqual(TokenUsageFormat.windowResetTimeTiered(resetAt: date4h, now: now, calendar: calendar), "14:30")
+
+        // 场景 5：已过期或 nil -> nil
+        let past = calendar.date(from: DateComponents(year: 2026, month: 8, day: 25, hour: 9, minute: 0, second: 0))!
+        XCTAssertNil(TokenUsageFormat.windowResetTimeTiered(resetAt: past, now: now, calendar: calendar))
+        XCTAssertNil(TokenUsageFormat.windowResetTimeTiered(resetAt: nil, now: now, calendar: calendar))
+    }
+
     func test_limitWindowKind_shortTitle() {
         XCTAssertEqual(LimitWindowKind.session.shortTitle(strings), "5h")
         XCTAssertEqual(LimitWindowKind.weekly.shortTitle(strings), "7d")
@@ -180,17 +209,9 @@ final class TokenUsageLimitRowTests: XCTestCase {
         XCTAssertEqual(LimitWindowKind.monthly.shortTitle(enStrings), "30d")
         XCTAssertEqual(LimitWindowKind.credits.shortTitle(enStrings), "Credits")
 
-        // Provider 专属短标签
-        XCTAssertEqual(LimitWindowKind.weekly.shortTitle(for: .kimi, strings: strings), "周")
-        XCTAssertEqual(LimitWindowKind.weekly.shortTitle(for: .kimi, strings: enStrings), "Week")
-        XCTAssertEqual(LimitWindowKind.monthly.shortTitle(for: .cursor, strings: strings), "套餐")
-        XCTAssertEqual(LimitWindowKind.monthly.shortTitle(for: .cursor, strings: enStrings), "Plan")
-
-        // 标签窗口本地化
-        XCTAssertEqual(TokenUsageFormat.labeledWindowShortTitle(label: "Auto", provider: .cursor, strings: strings), "自动")
-        XCTAssertEqual(TokenUsageFormat.labeledWindowShortTitle(label: "Auto", provider: .cursor, strings: enStrings), "Auto")
-        XCTAssertEqual(TokenUsageFormat.labeledWindowShortTitle(label: "API", provider: .cursor, strings: strings), "API")
-        XCTAssertEqual(TokenUsageFormat.labeledWindowShortTitle(label: "Cl 7d", provider: .antigravity, strings: strings), "Cl 7d")
+        // 无论何种 Provider，weekly 统一为 7d
+        XCTAssertEqual(LimitWindowKind.weekly.shortTitle(for: .kimi, strings: strings), "7d")
+        XCTAssertEqual(LimitWindowKind.weekly.shortTitle(for: .codex, strings: strings), "7d")
     }
 
     func test_differentDayTime() {
@@ -203,14 +224,14 @@ final class TokenUsageLimitRowTests: XCTestCase {
 
     func test_limitBarStatusColor() {
         // Remaining 模式：低额度为危险红/警告橙，高额度为正常绿
-        XCTAssertEqual(TokenUsageFormat.limitBarStatusColor(percent: 9, displayMode: .remaining), Theme.Stats.up)
-        XCTAssertEqual(TokenUsageFormat.limitBarStatusColor(percent: 20, displayMode: .remaining), Theme.Stats.ram)
-        XCTAssertEqual(TokenUsageFormat.limitBarStatusColor(percent: 31, displayMode: .remaining), Theme.Stats.statusNormal)
-        XCTAssertEqual(TokenUsageFormat.limitBarStatusColor(percent: 98, displayMode: .remaining), Theme.Stats.statusNormal)
+        XCTAssertEqual(TokenUsageFormat.limitBarStatusColor(percent: 9, displayMode: .remaining), TokenUsageFormat.limitBarCriticalRed)
+        XCTAssertEqual(TokenUsageFormat.limitBarStatusColor(percent: 20, displayMode: .remaining), TokenUsageFormat.limitBarWarningOrange)
+        XCTAssertEqual(TokenUsageFormat.limitBarStatusColor(percent: 31, displayMode: .remaining), TokenUsageFormat.limitBarNormalGreen)
+        XCTAssertEqual(TokenUsageFormat.limitBarStatusColor(percent: 98, displayMode: .remaining), TokenUsageFormat.limitBarNormalGreen)
 
         // Used 模式：高用量为危险红/警告橙，低用量为正常绿
-        XCTAssertEqual(TokenUsageFormat.limitBarStatusColor(percent: 95, displayMode: .used), Theme.Stats.up)
-        XCTAssertEqual(TokenUsageFormat.limitBarStatusColor(percent: 75, displayMode: .used), Theme.Stats.ram)
-        XCTAssertEqual(TokenUsageFormat.limitBarStatusColor(percent: 10, displayMode: .used), Theme.Stats.statusNormal)
+        XCTAssertEqual(TokenUsageFormat.limitBarStatusColor(percent: 95, displayMode: .used), TokenUsageFormat.limitBarCriticalRed)
+        XCTAssertEqual(TokenUsageFormat.limitBarStatusColor(percent: 75, displayMode: .used), TokenUsageFormat.limitBarWarningOrange)
+        XCTAssertEqual(TokenUsageFormat.limitBarStatusColor(percent: 10, displayMode: .used), TokenUsageFormat.limitBarNormalGreen)
     }
 }

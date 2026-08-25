@@ -158,26 +158,33 @@ struct TokenUsagePanelView: View {
         }
         if hasCards {
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(providers) { provider in
-                    if let limits = manager.limits[provider] {
-                        TokenUsageLimitCardView(
-                            limits: limits,
-                            strings: strings,
-                            displayMode: preferences.configuration.limitsDisplayMode,
-                            now: Date()
-                        )
-                    }
-                    if provider == .deepSeek,
-                       let balanceManager,
-                       balanceManager.showingBalanceCard {
-                        DeepSeekBalanceCardView(
-                            snapshot: balanceManager.snapshot,
-                            threshold: preferences.configuration.deepSeekBalanceSettings.lowBalanceThreshold,
-                            strings: strings,
-                            now: Date()
-                        )
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(providers) { provider in
+                        if let limits = manager.limits[provider] {
+                            TokenUsageLimitCardView(
+                                limits: limits,
+                                strings: strings,
+                                displayMode: preferences.configuration.limitsDisplayMode,
+                                now: Date()
+                            )
+                        }
+                        if provider == .deepSeek,
+                           let balanceManager,
+                           balanceManager.showingBalanceCard {
+                            DeepSeekBalanceCardView(
+                                snapshot: balanceManager.snapshot,
+                                threshold: preferences.configuration.deepSeekBalanceSettings.lowBalanceThreshold,
+                                strings: strings,
+                                now: Date()
+                            )
+                        }
                     }
                 }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color.white)
+                )
                 footerLine
             }
         }

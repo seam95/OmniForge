@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// 单个 provider 的限额卡：头部（18x18 品牌图标 + 名称/订阅计划）+ 窗口行（短标签 /
-/// 进度条 + 步速刻度 / 百分比）+ 重置权益独立行。错误态时卡片体降级为错误说明行。
+/// 单个 provider 的限额区块（去卡片化透明布局，单行四段式窗口行）。
+/// 布局：标题行（16x16 图标 + 名称 + 右侧附加信息）+ 窗口行（标签 40pt / 5pt 进度条 / 百分比 34pt / 重置时间 30pt）。
 struct TokenUsageLimitCardView: View {
     let limits: ProviderUsageLimits
     let strings: Strings
@@ -10,8 +10,6 @@ struct TokenUsageLimitCardView: View {
     /// 注入「现在」以便说明行文案可测。
     let now: Date
 
-    @State private var labelColumnWidth: CGFloat = 24
-
     private var status: TokenUsageCardStatus {
         TokenUsageCardStatus.derive(from: limits)
     }
@@ -19,12 +17,8 @@ struct TokenUsageLimitCardView: View {
     private var orderedWindows: [(kind: LimitWindowKind, window: UsageWindow)] {
         let preferredOrder: [LimitWindowKind]
         switch limits.provider {
-        case .kimi:
-            preferredOrder = [.weekly, .session, .monthly, .credits]
         case .codex:
             preferredOrder = [.weekly, .session, .monthly, .credits]
-        case .cursor:
-            preferredOrder = [.monthly, .session, .weekly, .credits]
         default:
             preferredOrder = [.weekly, .session, .monthly, .credits]
         }
@@ -39,11 +33,10 @@ struct TokenUsageLimitCardView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             header
             if let issue = limits.issue {
                 if limits.stale, !orderedWindows.isEmpty {
-                    // 断网/超时/冷却回退：显示上一次成功快照 + 行内错误提示（stale 标注见徽章与脚注）。
                     windowsBody
                     if !labeledWindows.isEmpty {
                         labeledWindowsBody
@@ -63,29 +56,21 @@ struct TokenUsageLimitCardView: View {
                 resetBankRow
             }
         }
-        .padding(12)
-        .omniCardStyle()
-        .onPreferenceChange(LimitLabelWidthKey.self) { labelColumnWidth = ceil($0) }
     }
 
     // MARK: - 头部
 
     private var header: some View {
         HStack(spacing: 8) {
-            TokenUsageProviderIconView(provider: limits.provider, size: 18, cornerRadius: 4)
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(headerTitle)
-                    .font(Theme.Stats.font13SemiBold)
-                    .foregroundColor(Theme.Stats.text1)
-                if let planSubtitle {
-                    Text(planSubtitle)
-                        .font(Theme.Stats.font11Regular)
-                        .foregroundColor(Theme.Stats.text3)
-                }
-            }
+            TokenUsageProviderIconView(provider: limits.provider, size: 16, cornerRadius: 4)
+            Text(headerTitle)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(Theme.Stats.text1)
             Spacer()
-            if status != .normal {
-                StatusTintBadge(text: status.label(strings), tint: status.tint)
+            if let planSubtitle {
+                Text(planSubtitle)
+                    .font(.system(size: 10, weight: .regular))
+                    .foregroundColor(Theme.Stats.text3)
             }
         }
     }
@@ -104,7 +89,7 @@ struct TokenUsageLimitCardView: View {
     // MARK: - 窗口行
 
     private var windowsBody: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 6) {
             ForEach(orderedWindows.indices, id: \.self) { index in
                 windowRow(orderedWindows[index].kind, window: orderedWindows[index].window)
             }
@@ -112,7 +97,7 @@ struct TokenUsageLimitCardView: View {
     }
 
     private var labeledWindowsBody: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 6) {
             ForEach(labeledWindows.indices, id: \.self) { index in
                 labeledWindowRow(labeledWindows[index])
             }
@@ -120,12 +105,11 @@ struct TokenUsageLimitCardView: View {
     }
 
     private func windowRow(_ kind: LimitWindowKind, window: UsageWindow) -> some View {
-        let pace = computePace(kind: kind, window: window)
         let label = kind.shortTitle(for: limits.provider, strings: strings)
         let valueText = TokenUsageFormat.limitValueText(kind: kind, window: window, displayMode: displayMode, strings: strings)
-        let progress = displayMode == .used
-            ? TokenUsageFormat.limitBarProgress(for: window)
-            : max(0, 100 - window.usedPercent) / 100
+        let resetTime = TokenUsageFormat.windowResetTimeTiered(resetAt: window.resetAt, now: now)
+        // 进度条宽度统一表达剩余百分比（100% 为满条）
+        let progress = max(0, 100 - window.usedPercent) / 100
         let percentValue = displayMode == .used ? window.usedPercent : max(0, 100 - window.usedPercent)
         let barColor = TokenUsageFormat.limitBarStatusColor(
             percent: percentValue,
@@ -137,9 +121,8 @@ struct TokenUsageLimitCardView: View {
             label: label,
             valueText: valueText,
             progress: progress,
-            tint: barColor,
-            pacePercent: pace.pacePercent,
-            paceOver: pace.paceOver
+            barColor: barColor,
+            resetTime: resetTime
         )
     }
 
@@ -151,9 +134,8 @@ struct TokenUsageLimitCardView: View {
         )
         let percentValue = displayMode == .used ? entry.window.usedPercent : max(0, 100 - entry.window.usedPercent)
         let valueText = TokenUsageFormat.percent(percentValue)
-        let progress = displayMode == .used
-            ? TokenUsageFormat.limitBarProgress(for: entry.window)
-            : max(0, 100 - entry.window.usedPercent) / 100
+        let resetTime = TokenUsageFormat.windowResetTimeTiered(resetAt: entry.window.resetAt, now: now)
+        let progress = max(0, 100 - entry.window.usedPercent) / 100
         let barColor = TokenUsageFormat.limitBarStatusColor(
             percent: percentValue,
             displayMode: displayMode,
@@ -164,45 +146,42 @@ struct TokenUsageLimitCardView: View {
             label: label,
             valueText: valueText,
             progress: progress,
-            tint: barColor,
-            pacePercent: nil,
-            paceOver: false
+            barColor: barColor,
+            resetTime: resetTime
         )
     }
 
+    /// 单行四段式窗口行：[标签 40pt] [进度条 弹性] [已用/剩余% 34pt] [重置时间 30pt]
     private func limitRow(
         label: String,
         valueText: String,
         progress: Double,
-        tint: Color,
-        pacePercent: Double?,
-        paceOver: Bool
+        barColor: Color,
+        resetTime: String?
     ) -> some View {
         HStack(spacing: 8) {
             Text(label)
                 .font(Theme.Stats.font11Regular)
                 .foregroundColor(Theme.Stats.text2)
                 .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .background(GeometryReader { proxy in
-                    Color.clear.preference(key: LimitLabelWidthKey.self, value: proxy.size.width)
-                })
-                .frame(width: max(24, labelColumnWidth), alignment: .leading)
+                .frame(width: 40, alignment: .leading)
 
-            LimitBarWithPace(
+            LimitBar(
                 value: progress,
-                barColor: tint,
-                pacePercent: pacePercent,
-                paceOver: paceOver
+                barColor: barColor
             )
 
             Text(valueText)
-                .font(Theme.Stats.font12Medium)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundColor(Theme.Stats.text1)
-                .monospacedDigit()
                 .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .frame(minWidth: 32, alignment: .trailing)
+                .frame(width: 34, alignment: .trailing)
+
+            Text(resetTime ?? "")
+                .font(.system(size: 10, weight: .regular, design: .monospaced))
+                .foregroundColor(Theme.Stats.text3)
+                .lineLimit(1)
+                .frame(width: 30, alignment: .trailing)
         }
         .frame(height: 16)
     }
@@ -214,30 +193,18 @@ struct TokenUsageLimitCardView: View {
         if limits.provider == .codex,
            let resetBank = limits.resetBank,
            let earliest = resetBank.credits.first?.expiresAt {
-            HStack {
+            HStack(spacing: 8) {
                 Text(strings.tokenResetBankTitle)
                     .font(Theme.Stats.font11Regular)
                     .foregroundColor(Theme.Stats.text2)
+                    .frame(width: 60, alignment: .leading)
                 Spacer()
                 Text(TokenUsageFormat.differentDayTime(earliest))
-                    .font(Theme.Stats.font11Regular)
+                    .font(.system(size: 10, weight: .regular, design: .monospaced))
                     .foregroundColor(Theme.Stats.text3)
-                    .monospacedDigit()
             }
             .frame(height: 16)
         }
-    }
-
-    private func computePace(kind: LimitWindowKind, window: UsageWindow) -> LimitPace.Result {
-        // SPEC：仅窗口秒数可信的会话/周窗画步速刻度；月度/计费周期不画。
-        guard kind == .session || kind == .weekly else { return LimitPace.Result() }
-        let secondsUntilReset = window.resetAt?.timeIntervalSince(now) ?? 0
-        return LimitPace.compute(
-            usedFraction: window.usedPercent / 100,
-            windowSeconds: window.windowSeconds ?? 0,
-            secondsUntilReset: secondsUntilReset,
-            remainingMode: displayMode == .remaining
-        )
     }
 
     // MARK: - 错误态
@@ -254,50 +221,31 @@ struct TokenUsageLimitCardView: View {
     }
 }
 
-/// 进度条 + 步速刻度：胶囊形态（高 6pt），刻度以细竖线跨在条上（超前红 / 正常绿）。
-private struct LimitBarWithPace: View {
+/// 连续式极简进度条：高 5pt，圆角 2.5，底轨 #EDEDEF。
+private struct LimitBar: View {
     let value: Double
     let barColor: Color
-    let pacePercent: Double?
-    let paceOver: Bool
 
     var body: some View {
         GeometryReader { proxy in
             let width = proxy.size.width
-            let clamped = MetricBar.clamp(value)
+            let clamped = min(max(value, 0), 1)
             let fillWidth = max(0, min(width, width * clamped))
 
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(Color.primary.opacity(0.08))
-                    .frame(height: 6)
+                    .fill(Color(red: 0xED / 255.0, green: 0xED / 255.0, blue: 0xEF / 255.0))
+                    .frame(height: 5)
 
                 if fillWidth > 0 {
                     Capsule()
                         .fill(barColor)
-                        .frame(width: fillWidth, height: 6)
-                }
-
-                if let pacePercent {
-                    let clampedPace = min(max(pacePercent, 0), 100)
-                    let xPos = width * clampedPace / 100
-                    RoundedRectangle(cornerRadius: 1)
-                        .fill(paceOver ? Theme.Stats.up : Theme.Stats.statusNormal)
-                        .frame(width: 2, height: 8)
-                        .offset(x: max(0, min(max(0, width - 2), xPos - 1)))
+                        .frame(width: fillWidth, height: 5)
                 }
             }
             .frame(maxHeight: .infinity, alignment: .center)
         }
-        .frame(height: 8)
+        .frame(height: 5)
         .animation(.easeOut(duration: 0.25), value: value)
-    }
-}
-
-/// 统一单卡内所有行标签的列宽偏好键。
-private struct LimitLabelWidthKey: PreferenceKey {
-    static var defaultValue: CGFloat = 24
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
     }
 }
