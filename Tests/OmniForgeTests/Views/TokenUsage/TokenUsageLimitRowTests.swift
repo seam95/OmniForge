@@ -153,11 +153,11 @@ final class TokenUsageLimitRowTests: XCTestCase {
         let sameDayResult = TokenUsageFormat.windowResetTime(resetAt: sameDayDate, now: now, calendar: calendar)
         XCTAssertEqual(sameDayResult, "13:42", "同日重置显示 HH:mm")
 
-        // 场景 2：跨日重置（如 8/31 16:42）
+        // 场景 2：跨日重置（如 7 天后，显示 7d）
         let diffDayComponents = DateComponents(year: 2026, month: 8, day: 31, hour: 16, minute: 42, second: 0)
         let diffDayDate = calendar.date(from: diffDayComponents)!
         let diffDayResult = TokenUsageFormat.windowResetTime(resetAt: diffDayDate, now: now, calendar: calendar)
-        XCTAssertEqual(diffDayResult, "8/31 16:42", "跨日重置显示 M/d HH:mm")
+        XCTAssertEqual(diffDayResult, "7d", "跨日重置显示 Xd")
 
         // 场景 3：已过期（resetAt <= now）
         let pastComponents = DateComponents(year: 2026, month: 8, day: 24, hour: 9, minute: 0, second: 0)
@@ -166,5 +166,18 @@ final class TokenUsageLimitRowTests: XCTestCase {
 
         // 场景 4：nil 时间
         XCTAssertNil(TokenUsageFormat.windowResetTime(resetAt: nil, now: now, calendar: calendar), "nil 时间返回 nil")
+    }
+
+    func test_limitWindowKind_shortTitle() {
+        XCTAssertEqual(LimitWindowKind.session.shortTitle(strings), "5h")
+        XCTAssertEqual(LimitWindowKind.weekly.shortTitle(strings), "7d")
+        XCTAssertEqual(LimitWindowKind.monthly.shortTitle(strings), "30d")
+        XCTAssertEqual(LimitWindowKind.credits.shortTitle(strings), "额度")
+
+        let enStrings = Strings.en
+        XCTAssertEqual(LimitWindowKind.session.shortTitle(enStrings), "5h")
+        XCTAssertEqual(LimitWindowKind.weekly.shortTitle(enStrings), "7d")
+        XCTAssertEqual(LimitWindowKind.monthly.shortTitle(enStrings), "30d")
+        XCTAssertEqual(LimitWindowKind.credits.shortTitle(enStrings), "Credits")
     }
 }

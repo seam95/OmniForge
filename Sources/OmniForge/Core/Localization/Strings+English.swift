@@ -1003,6 +1003,7 @@ extension Strings {
         tokenWindowWeekly: "Weekly window",
         tokenWindowMonthly: "Monthly window",
         tokenWindowCredits: "Extra credits",
+        tokenWindowCreditsShort: "Credits",
         tokenStatusNormal: "Normal",
         tokenStatusApproaching: "Approaching limit",
         tokenStatusExceeded: "Limit exceeded",

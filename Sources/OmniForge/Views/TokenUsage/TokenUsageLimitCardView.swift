@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// 单个 provider 的限额卡：头部（色块 + 名称 + 订阅计划 + 状态徽章）+ 窗口行（名称 / 百分比 /
-/// 进度条 + 步速刻度 + 说明行）。错误态时卡片体降级为错误说明行。
+/// 单个 provider 的限额卡：头部（色块 + 名称 + 订阅计划 + 状态徽章）+ 窗口行（短标签 /
+/// 进度条 + 步速刻度 / 百分比 / 重置时间）。错误态时卡片体降级为错误说明行。
 struct TokenUsageLimitCardView: View {
     let limits: ProviderUsageLimits
     let strings: Strings
@@ -9,6 +9,8 @@ struct TokenUsageLimitCardView: View {
     let displayMode: TokenUsageLimitsDisplay
     /// 注入「现在」以便说明行文案可测。
     let now: Date
+
+    @State private var labelColumnWidth: CGFloat = 20
 
     private var status: TokenUsageCardStatus {
         TokenUsageCardStatus.derive(from: limits)
@@ -47,6 +49,7 @@ struct TokenUsageLimitCardView: View {
         }
         .padding(12)
         .omniCardStyle()
+        .onPreferenceChange(LimitLabelWidthKey.self) { labelColumnWidth = ceil($0) }
     }
 
     // MARK: - 头部
@@ -72,96 +75,110 @@ struct TokenUsageLimitCardView: View {
     // MARK: - 窗口行
 
     private var windowsBody: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 7) {
             ForEach(orderedWindows.indices, id: \.self) { index in
-                if index > 0 {
-                    windowSeparator
-                }
                 windowRow(orderedWindows[index].kind, window: orderedWindows[index].window)
             }
         }
     }
 
-    /// 附加带标签窗口行：标题用 label + 重置时间，进度条同主窗样式；无 kind → 不画 pace 刻度。
-    /// 注意：labeled 窗固定按已用口径展示数值（无 kind，剩余换算可能产生负数/误导）。
     private var labeledWindowsBody: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if !orderedWindows.isEmpty {
-                windowSeparator
-            }
+        VStack(alignment: .leading, spacing: 7) {
             ForEach(labeledWindows.indices, id: \.self) { index in
-                if index > 0 {
-                    windowSeparator
-                }
-                let entry = labeledWindows[index]
-                let resetTime = TokenUsageFormat.windowResetTime(resetAt: entry.window.resetAt, now: now)
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(entry.label)
-                            .font(Theme.Stats.font11Regular)
-                            .foregroundColor(Theme.Stats.text2)
-                        if let resetTime {
-                            Text(resetTime)
-                                .font(Theme.Stats.font11Regular)
-                                .foregroundColor(Theme.Stats.text3)
-                        }
-                        Spacer()
-                        // labeled 窗固定按已用口径展示（无 kind，剩余换算可能产生负数/误导）。
-                        Text(TokenUsageFormat.percent(entry.window.usedPercent))
-                            .font(Theme.Stats.font12Medium)
-                            .foregroundColor(Theme.Stats.text1)
-                            .monospacedDigit()
-                    }
-                    MetricBar(
-                        value: TokenUsageFormat.limitBarProgress(for: entry.window),
-                        warning: 70,
-                        critical: 90,
-                        tint: limits.provider.accentColor
-                    )
-                }
+                labeledWindowRow(labeledWindows[index])
             }
         }
-    }
-
-
-
-    private var windowSeparator: some View {
-        Rectangle()
-            .fill(Theme.Stats.separator)
-            .frame(height: 0.5)
-            .padding(.vertical, 2)
     }
 
     private func windowRow(_ kind: LimitWindowKind, window: UsageWindow) -> some View {
         let pace = computePace(kind: kind, window: window)
         let resetTime = TokenUsageFormat.windowResetTime(resetAt: window.resetAt, now: now)
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(kind.title(strings))
-                    .font(Theme.Stats.font11Regular)
-                    .foregroundColor(Theme.Stats.text2)
-                if let resetTime {
-                    Text(resetTime)
-                        .font(Theme.Stats.font11Regular)
-                        .foregroundColor(Theme.Stats.text3)
-                }
-                Spacer()
-                Text(TokenUsageFormat.limitValueText(kind: kind, window: window, displayMode: displayMode, strings: strings))
-                    .font(Theme.Stats.font12Medium)
-                    .foregroundColor(Theme.Stats.text1)
-                    .monospacedDigit()
-            }
-            // 条固定表达「已用消耗进度」：染色与填充始终按 usedPercent，
-            // 与行内数值的显示口径（used/remaining）解耦——条满 = 用完 = 危险。
+        let label = kind.shortTitle(strings)
+        let valueText = TokenUsageFormat.limitValueText(kind: kind, window: window, displayMode: displayMode, strings: strings)
+        let tint = kind == .credits ? Theme.Stats.statusNormal : limits.provider.accentColor
+        let warning: Double = kind == .credits ? 101 : 70
+        let critical: Double = kind == .credits ? 102 : 90
+
+        return limitRow(
+            label: label,
+            valueText: valueText,
+            progress: TokenUsageFormat.limitBarProgress(for: window),
+            tint: tint,
+            warning: warning,
+            critical: critical,
+            pacePercent: pace.pacePercent,
+            paceOver: pace.paceOver,
+            resetTime: resetTime
+        )
+    }
+
+    private func labeledWindowRow(_ entry: LabeledUsageWindow) -> some View {
+        let resetTime = TokenUsageFormat.windowResetTime(resetAt: entry.window.resetAt, now: now)
+        let valueText = TokenUsageFormat.percent(entry.window.usedPercent)
+
+        return limitRow(
+            label: entry.label,
+            valueText: valueText,
+            progress: TokenUsageFormat.limitBarProgress(for: entry.window),
+            tint: limits.provider.accentColor,
+            warning: 70,
+            critical: 90,
+            pacePercent: nil,
+            paceOver: false,
+            resetTime: resetTime
+        )
+    }
+
+    private func limitRow(
+        label: String,
+        valueText: String,
+        progress: Double,
+        tint: Color,
+        warning: Double,
+        critical: Double,
+        pacePercent: Double?,
+        paceOver: Bool,
+        resetTime: String?
+    ) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(Theme.Stats.font11Regular)
+                .foregroundColor(Theme.Stats.text2)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .background(GeometryReader { proxy in
+                    Color.clear.preference(key: LimitLabelWidthKey.self, value: proxy.size.width)
+                })
+                .frame(width: max(20, labelColumnWidth), alignment: .leading)
+
             LimitBarWithPace(
-                value: TokenUsageFormat.limitBarProgress(for: window),
-                tint: kind == .credits ? Theme.Stats.statusNormal : limits.provider.accentColor,
-                warning: kind == .credits ? 101 : 70,
-                critical: kind == .credits ? 102 : 90,
-                pacePercent: pace.pacePercent,
-                paceOver: pace.paceOver
+                value: progress,
+                tint: tint,
+                warning: warning,
+                critical: critical,
+                pacePercent: pacePercent,
+                paceOver: paceOver
             )
+
+            Text(valueText)
+                .font(Theme.Stats.font12Medium)
+                .foregroundColor(Theme.Stats.text1)
+                .monospacedDigit()
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(minWidth: 36, alignment: .trailing)
+
+            if let resetTime {
+                Text(resetTime)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundColor(Theme.Stats.text3)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(minWidth: 36, alignment: .trailing)
+            }
         }
+        .frame(height: 16)
     }
 
     private func computePace(kind: LimitWindowKind, window: UsageWindow) -> LimitPace.Result {
@@ -190,7 +207,7 @@ struct TokenUsageLimitCardView: View {
     }
 }
 
-/// 进度条 + 步速刻度：刻度以细竖线跨在条上（超前红 / 正常绿），位置 = 期望用量百分比。
+/// 进度条 + 步速刻度：胶囊形态（高 6pt），刻度以细竖线跨在条上（超前红 / 正常绿）。
 private struct LimitBarWithPace: View {
     let value: Double
     let tint: Color
@@ -199,19 +216,52 @@ private struct LimitBarWithPace: View {
     let pacePercent: Double?
     let paceOver: Bool
 
+    private var statusColor: Color {
+        MetricBar.resolvedColor(
+            percent: value * 100,
+            warning: warning,
+            critical: critical,
+            tint: tint
+        )
+    }
+
     var body: some View {
         GeometryReader { proxy in
+            let width = proxy.size.width
+            let clamped = MetricBar.clamp(value)
+            let fillWidth = max(0, min(width, width * clamped))
+
             ZStack(alignment: .leading) {
-                MetricBar(value: value, warning: warning, critical: critical, tint: tint)
+                Capsule()
+                    .fill(Color.primary.opacity(0.08))
+                    .frame(height: 6)
+
+                if fillWidth > 0 {
+                    Capsule()
+                        .fill(statusColor)
+                        .frame(width: fillWidth, height: 6)
+                }
+
                 if let pacePercent {
+                    let clampedPace = min(max(pacePercent, 0), 100)
+                    let xPos = width * clampedPace / 100
                     RoundedRectangle(cornerRadius: 1)
                         .fill(paceOver ? Theme.Stats.up : Theme.Stats.statusNormal)
-                        .frame(width: 2, height: 10)
-                        .offset(x: proxy.size.width * min(max(pacePercent, 0), 100) / 100 - 1)
+                        .frame(width: 2, height: 8)
+                        .offset(x: max(0, min(max(0, width - 2), xPos - 1)))
                 }
             }
             .frame(maxHeight: .infinity, alignment: .center)
         }
-        .frame(height: 10)
+        .frame(height: 8)
+        .animation(.easeOut(duration: 0.25), value: value)
+    }
+}
+
+/// 统一单卡内所有行标签的列宽偏好键。
+private struct LimitLabelWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 20
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }

@@ -1003,6 +1003,7 @@ extension Strings {
         tokenWindowWeekly: "本周窗口",
         tokenWindowMonthly: "本月窗口",
         tokenWindowCredits: "额外额度",
+        tokenWindowCreditsShort: "额度",
         tokenStatusNormal: "正常",
         tokenStatusApproaching: "接近限额",
         tokenStatusExceeded: "已超额",

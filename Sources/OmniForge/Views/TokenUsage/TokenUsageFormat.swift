@@ -96,7 +96,7 @@ enum TokenUsageFormat {
         return formatter
     }()
 
-    /// 窗口重置时间紧凑显示（用于窗口行标题旁）：同天显示 "HH:mm"（如 13:42），不同天显示 "M/d HH:mm"（如 8/31 16:42）。
+    /// 窗口重置时间紧凑显示（用于窗口行右侧）：同天显示 "HH:mm"（如 13:42），跨天显示 "Xd"（如 6d）。
     static func windowResetTime(
         resetAt: Date?,
         now: Date = Date(),
@@ -106,7 +106,9 @@ enum TokenUsageFormat {
         if calendar.isDate(resetAt, inSameDayAs: now) {
             return sameDayTimeFormatter.string(from: resetAt)
         }
-        return differentDayTimeFormatter.string(from: resetAt)
+        let seconds = resetAt.timeIntervalSince(now)
+        let days = max(1, Int(seconds / 86400))
+        return "\(days)d"
     }
 
     /// 星期简称（周日前置，配合 `tokenWeekdayNames`）。
@@ -233,6 +235,15 @@ extension LimitWindowKind {
         case .weekly: return strings.tokenWindowWeekly
         case .monthly: return strings.tokenWindowMonthly
         case .credits: return strings.tokenWindowCredits
+        }
+    }
+
+    func shortTitle(_ strings: Strings) -> String {
+        switch self {
+        case .session: return "5h"
+        case .weekly: return "7d"
+        case .monthly: return "30d"
+        case .credits: return strings.tokenWindowCreditsShort
         }
     }
 }
