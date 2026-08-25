@@ -47,6 +47,9 @@ enum TokenUsageProviderStatusBuilder {
         if provider == .deepSeek {
             return strings.deepSeekSettingsApiKeyCaption
         }
+        if provider == .opencode {
+            return strings.opencodeSettingsApiKeyCaption
+        }
         if provider == .traeCN {
             return strings.tokenSettingsConfigureHintTraeCn
         }
@@ -60,7 +63,7 @@ enum TokenUsageProviderStatusBuilder {
 // MARK: - Provider 设置引导
 
 extension TokenUsageProvider {
-    /// 「如何配置」引导涉及的 CLI 命令名（Cursor / Antigravity / DeepSeek / trae-cn 无对应 CLI，返回空）。
+    /// 「如何配置」引导涉及的 CLI 命令名（Cursor / Antigravity / DeepSeek / opencode / trae-cn 无对应 CLI，返回空）。
     var setupCLICommand: String {
         switch self {
         case .claude: return "claude"
@@ -69,7 +72,7 @@ extension TokenUsageProvider {
         case .kimi: return "kimi"
         case .cursor: return ""
         case .deepSeek: return ""
-        case .opencode: return "opencode"
+        case .opencode: return ""
         case .codebuddy: return "codebuddy"
         case .workbuddy: return "workbuddy"
         case .grok: return "grok"

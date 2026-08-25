@@ -1179,6 +1179,9 @@ struct Strings: Equatable {
     let tokenSettingsDeepSeekSection: String
     let tokenSettingsTraeCnSection: String
     let tokenSettingsTraeCnJwtPlaceholder: String
+    let tokenSettingsOpencodeSection: String
+    let opencodeSettingsApiKeyPlaceholder: String
+    let opencodeSettingsApiKeyCaption: String
     let deepSeekSettingsApiKeySection: String
     let deepSeekSettingsApiKeyPlaceholder: String
     let deepSeekSettingsSaveKey: String

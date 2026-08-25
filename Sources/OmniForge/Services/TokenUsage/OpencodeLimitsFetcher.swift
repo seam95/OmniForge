@@ -37,11 +37,11 @@ enum OpencodeGoParsing {
 
 // MARK: - Fetcher
 
-/// opencode Go 限额（官方 API 档）：`OPENCODE_GO_API_KEY`（环境变量）→
+/// opencode Go 限额（官方 API 档）：钥匙串存储 API Key（优先）/ `OPENCODE_GO_API_KEY`（环境变量兜底）→
 /// `opencode.ai/zen/go/v1/usage` Bearer → rolling/weekly/monthly 三窗。
 ///
 /// 说明（范围收敛）：网页抓取与本地 DB 估算两档本期不接（SPEC §4.3 三级降级
-/// 仅实现 API 档）；无环境变量 API key → `configured: false`，零网络请求。
+/// 仅实现 API 档）；无 API key → `configured: false`，零网络请求。
 final class OpencodeLimitsFetcher: LimitsFetching {
     let provider: TokenUsageProvider = .opencode
 
@@ -49,16 +49,28 @@ final class OpencodeLimitsFetcher: LimitsFetching {
 
     var timeout: TimeInterval = 10
     private let session: URLSession
+    private let keyStore: OpencodeAPIKeyStoring?
     private let environment: [String: String]
 
-    init(session: URLSession = .shared, environment: [String: String] = ProcessInfo.processInfo.environment) {
+    init(
+        session: URLSession = .shared,
+        keyStore: OpencodeAPIKeyStoring? = OpencodeKeychainAPIKeyStore(),
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) {
         self.session = session
+        self.keyStore = keyStore
         self.environment = environment
     }
 
     func fetchLimits(force: Bool) async throws -> ProviderUsageLimits? {
-        guard let apiKey = environment["OPENCODE_GO_API_KEY"]?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !apiKey.isEmpty else {
+        let keychainKey = (try? keyStore?.readAPIKey())?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let effectiveKey: String?
+        if let keychainKey, !keychainKey.isEmpty {
+            effectiveKey = keychainKey
+        } else {
+            effectiveKey = environment["OPENCODE_GO_API_KEY"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard let apiKey = effectiveKey, !apiKey.isEmpty else {
             return nil
         }
         var request = URLRequest(url: Self.usageURL)

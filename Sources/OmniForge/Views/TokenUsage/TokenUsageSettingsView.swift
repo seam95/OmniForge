@@ -64,6 +64,12 @@ struct TokenUsageSettingsView: View {
                             preferences: preferences,
                             strings: state.l10n.s
                         )
+                    case .opencode:
+                        OpencodeSettingsView(
+                            preferences: preferences,
+                            manager: manager,
+                            strings: state.l10n.s
+                        )
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -173,6 +179,26 @@ struct TokenUsageProvidersSettingsView: View {
         if provider == .deepSeek {
             let isConfigured = balanceManager?.apiKeyConfigured ?? false
             if isConfigured {
+                return ("✓ " + strings.tokenSettingsLoggedIn, false)
+            } else {
+                return (
+                    String(
+                        format: strings.tokenSettingsProviderStatusFormat,
+                        strings.tokenSettingsNotConfigured,
+                        strings.tokenSettingsHowToConfigure
+                    ),
+                    true
+                )
+            }
+        } else if provider == .opencode {
+            let keyStore = OpencodeKeychainAPIKeyStore()
+            let hasKey = ((try? keyStore.readAPIKey())?.isEmpty == false)
+                || (ProcessInfo.processInfo.environment["OPENCODE_GO_API_KEY"]?.isEmpty == false)
+            let limits = manager.limits[provider]
+            if hasKey || (limits?.configured == true) {
+                if limits?.issue == .reauthRequired {
+                    return (strings.tokenStatusReauth, false)
+                }
                 return ("✓ " + strings.tokenSettingsLoggedIn, false)
             } else {
                 return (
@@ -496,3 +522,78 @@ struct TraeCnSettingsView: View {
         saveFailed = false
     }
 }
+
+/// OpenCode Go 设置：API Key（钥匙串存储）。
+struct OpencodeSettingsView: View {
+    @ObservedObject var preferences: TokenUsagePreferences
+    var manager: TokenUsageManager? = nil
+    let strings: Strings
+
+    @State private var apiKeyInput = ""
+    @State private var saveFailed = false
+    @State private var saveSuccess = false
+
+    private let keychain = OpencodeKeychainAPIKeyStore()
+
+    var body: some View {
+        Form {
+            Section {
+                SecureField(strings.opencodeSettingsApiKeyPlaceholder, text: $apiKeyInput)
+                    .textFieldStyle(.roundedBorder)
+                HStack {
+                    Button(strings.deepSeekSettingsSaveKey) {
+                        save()
+                    }
+                    .disabled(DeepSeekSettingsValidation.sanitizedAPIKey(apiKeyInput).isEmpty)
+                    Button(strings.deepSeekSettingsClearKey) {
+                        clearKey()
+                    }
+                    .disabled(apiKeyInput.isEmpty && !hasStoredKey)
+                }
+                if saveFailed {
+                    Text(strings.tokenErrorTransient)
+                        .foregroundStyle(Theme.Stats.up)
+                } else if saveSuccess {
+                    Text(strings.deepSeekSettingsKeySaved)
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                }
+            } header: {
+                Text(strings.tokenSettingsOpencodeSection)
+            } footer: {
+                Text(strings.opencodeSettingsApiKeyCaption)
+            }
+        }
+        .settingsPageStyle()
+        .onAppear {
+            apiKeyInput = (try? keychain.readAPIKey()) ?? ""
+        }
+    }
+
+    private var hasStoredKey: Bool {
+        ((try? keychain.readAPIKey()) ?? nil) != nil
+    }
+
+    private func save() {
+        let cleaned = DeepSeekSettingsValidation.sanitizedAPIKey(apiKeyInput)
+        guard !cleaned.isEmpty else { return }
+        do {
+            try keychain.writeAPIKey(cleaned)
+            saveFailed = false
+            saveSuccess = true
+            manager?.refreshNow()
+        } catch {
+            saveFailed = true
+            saveSuccess = false
+        }
+    }
+
+    private func clearKey() {
+        try? keychain.deleteAPIKey()
+        apiKeyInput = ""
+        saveFailed = false
+        saveSuccess = false
+        manager?.refreshNow()
+    }
+}
+
