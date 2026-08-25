@@ -1182,6 +1182,10 @@ struct Strings: Equatable {
     let tokenSettingsOpencodeSection: String
     let opencodeSettingsApiKeyPlaceholder: String
     let opencodeSettingsApiKeyCaption: String
+    let tokenSettingsArkSection: String
+    let arkSettingsAkPlaceholder: String
+    let arkSettingsSkPlaceholder: String
+    let arkSettingsCaption: String
     let deepSeekSettingsApiKeySection: String
     let deepSeekSettingsApiKeyPlaceholder: String
     let deepSeekSettingsSaveKey: String

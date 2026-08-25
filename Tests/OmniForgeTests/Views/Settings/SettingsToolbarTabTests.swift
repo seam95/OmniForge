@@ -22,7 +22,7 @@ final class SettingsToolbarTabTests: XCTestCase {
     func test_tokenUsageSections_orderAndTitles() {
         XCTAssertEqual(
             TokenUsageSettingsSection.allCases,
-            [.general, .providers, .alerts, .deepSeek, .traeCn, .opencode]
+            [.general, .providers, .alerts, .deepSeek, .traeCn, .opencode, .arkCodingPlan]
         )
         XCTAssertEqual(TokenUsageSettingsSection.general.title(in: .en), "General")
         XCTAssertEqual(TokenUsageSettingsSection.providers.title(in: .zhHans), "提供商")
@@ -33,6 +33,8 @@ final class SettingsToolbarTabTests: XCTestCase {
         XCTAssertEqual(TokenUsageSettingsSection.traeCn.title(in: .zhHans), "Trae CN")
         XCTAssertEqual(TokenUsageSettingsSection.opencode.title(in: .en), "OpenCode Go")
         XCTAssertEqual(TokenUsageSettingsSection.opencode.title(in: .zhHans), "OpenCode Go")
+        XCTAssertEqual(TokenUsageSettingsSection.arkCodingPlan.title(in: .en), "Ark Coding Plan")
+        XCTAssertEqual(TokenUsageSettingsSection.arkCodingPlan.title(in: .zhHans), "方舟 Coding Plan")
     }
 
     func test_keepAwakeSystemImageAndTitle() {

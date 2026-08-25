@@ -2,23 +2,39 @@ import Foundation
 import XCTest
 @testable import OmniForge
 
-/// 方舟 Coding Plan 限额 fetcher：无安装→未配置（零 spawn）、usage plan 主路径、
+private final class FakeArkCredentialsStore: ArkCredentialsStoring {
+    var storedCredentials: ArkCredentials?
+    func readCredentials() throws -> ArkCredentials? { storedCredentials }
+    func writeCredentials(_ credentials: ArkCredentials) throws { storedCredentials = credentials }
+    func deleteCredentials() throws { storedCredentials = nil }
+}
+
+/// 方舟 Coding Plan 限额 fetcher：AK/SK 直连、无安装→未配置（零 spawn）、usage plan 主路径、
 /// tier 兜底、失败磁盘缓存、缓存过期。
 final class ArkCodingPlanLimitsFetcherTests: XCTestCase {
     private var runner: FakeArkCliRunner!
+    private var credentialsStore: FakeArkCredentialsStore!
     private var cacheURL: URL!
     private var fetcher: ArkCodingPlanLimitsFetcher!
 
     override func setUpWithError() throws {
         runner = FakeArkCliRunner()
+        credentialsStore = FakeArkCredentialsStore()
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("ArkCodingPlanLimitsFetcherTests_\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         cacheURL = dir.appendingPathComponent("ark-coding-plan-limits-cache.json")
-        fetcher = ArkCodingPlanLimitsFetcher(runner: runner, cacheURL: cacheURL)
+        fetcher = ArkCodingPlanLimitsFetcher(
+            runner: runner,
+            credentialsStore: credentialsStore,
+            session: URLProtocolStub.makeSession(),
+            environment: [:],
+            cacheURL: cacheURL
+        )
     }
 
     override func tearDownWithError() throws {
+        URLProtocolStub.reset()
         try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent())
     }
 
@@ -33,6 +49,39 @@ final class ArkCodingPlanLimitsFetcherTests: XCTestCase {
         return #"""
         {"items":[{"product":"coding-plan","subscribed":\#(subscribed),\#(tierJSON)\#(periods)}]}
         """#
+    }
+
+    // MARK: - AK/SK OpenAPI 直连
+
+    func test_openApi_validCredentials_buildsLimits() async throws {
+        credentialsStore.storedCredentials = ArkCredentials(accessKeyId: "AK-LIVE", secretAccessKey: "SK-LIVE")
+        URLProtocolStub.stub = .init(statusCode: 200, data: Data("""
+        {"Result":{"items":[{"product":"coding-plan","subscribed":true,"tier":"pro","periods":[{"label":"session","percent":50,"reset_at":"2026-08-25T12:00:00Z"}]}]}}
+        """.utf8))
+
+        let result = try await fetcher.fetchLimits(force: false)
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.configured, true)
+        XCTAssertEqual(result?.planLabel, "Pro")
+        XCTAssertEqual(result?.windows[.session]?.usedPercent, 50)
+        XCTAssertEqual(runner.runCount, 0, "AK/SK OpenAPI 成功时零 spawn")
+
+        let request = URLProtocolStub.recordedRequests.first
+        XCTAssertTrue(request?.value(forHTTPHeaderField: "Authorization")?.contains("Credential=AK-LIVE") == true)
+    }
+
+    func test_openApi_unauthorized_throwsReauth() async {
+        credentialsStore.storedCredentials = ArkCredentials(accessKeyId: "AK-BAD", secretAccessKey: "SK-BAD")
+        URLProtocolStub.stub = .init(statusCode: 401)
+
+        do {
+            _ = try await fetcher.fetchLimits(force: false)
+            XCTFail("401 应抛出 reauthRequired")
+        } catch let error as LimitError {
+            XCTAssertEqual(error, .reauthRequired)
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
     }
 
     // MARK: - 未安装

@@ -50,6 +50,9 @@ enum TokenUsageProviderStatusBuilder {
         if provider == .opencode {
             return strings.opencodeSettingsApiKeyCaption
         }
+        if provider == .arkCodingPlan {
+            return strings.arkSettingsCaption
+        }
         if provider == .traeCN {
             return strings.tokenSettingsConfigureHintTraeCn
         }

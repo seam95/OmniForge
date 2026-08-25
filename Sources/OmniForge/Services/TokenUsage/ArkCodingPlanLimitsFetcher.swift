@@ -48,9 +48,10 @@ final class ProcessArkCliRunner: ArkCliCommandRunning {
 
 /// arkcli 输出归一化（usage plan / plans get / profile show）。
 enum ArkCodingPlanParsing {
-    /// `usage plan` 的 coding-plan 条目 → 窗口字典；无订阅 → nil。
-    static func usageWindows(from body: [String: Any]?) -> ([LimitWindowKind: UsageWindow], tier: String?)? {
-        guard let body else { return nil }
+    /// `usage plan` 或 OpenAPI 的 coding-plan 条目 → 窗口字典；无订阅 → nil。
+    static func usageWindows(from rawBody: [String: Any]?) -> ([LimitWindowKind: UsageWindow], tier: String?)? {
+        guard let rawBody else { return nil }
+        let body = (rawBody["Result"] as? [String: Any]) ?? rawBody
         let items = body["items"] as? [[String: Any]] ?? []
         guard let item = items.first(where: { ($0["product"] as? String) == "coding-plan" }),
               (item["subscribed"] as? Bool) == true else {
@@ -140,12 +141,18 @@ final class ArkCodingPlanLimitsFetcher: LimitsFetching {
     static let unknownResetCacheTTL: TimeInterval = 12 * 3600
     static let cacheFileURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".omniforge/ark-coding-plan-limits-cache.json")
+    static let openApiEndpoint = URL(string: "https://open.volcengineapi.com/?Action=GetCodingPlanUsage&Version=2024-01-01")!
 
+    var apiTimeout: TimeInterval = 10
     var usageTimeout: TimeInterval = 10
     var profileTimeout: TimeInterval = 2.5
     var plansTimeout: TimeInterval = 5
 
     private let runner: ArkCliCommandRunning
+    private let credentialsStore: ArkCredentialsStoring?
+    private let session: URLSession
+    private let signer: VolcengineSigV4Signer
+    private let environment: [String: String]
     private let cacheURL: URL
     private let fileManager: FileManager
     /// 测试注入：非 nil 时跳过二进制探测直接使用。
@@ -155,48 +162,121 @@ final class ArkCodingPlanLimitsFetcher: LimitsFetching {
 
     init(
         runner: ArkCliCommandRunning = ProcessArkCliRunner(),
+        credentialsStore: ArkCredentialsStoring? = ArkKeychainStore(),
+        session: URLSession = .shared,
+        signer: VolcengineSigV4Signer = VolcengineSigV4Signer(),
+        environment: [String: String] = ProcessInfo.processInfo.environment,
         cacheURL: URL = ArkCodingPlanLimitsFetcher.cacheFileURL,
         fileManager: FileManager = .default
     ) {
         self.runner = runner
+        self.credentialsStore = credentialsStore
+        self.session = session
+        self.signer = signer
+        self.environment = environment
         self.cacheURL = cacheURL
         self.fileManager = fileManager
     }
 
     func fetchLimits(force: Bool) async throws -> ProviderUsageLimits? {
-        // 1. 安装证据：配置目录或全局 bin 目录里找到 arkcli；都没有 → 未配置（零 spawn）。
-        guard let binary = resolveBinaryPath() else {
-            return nil
+        // 1. 第一优先级：AK/SK OpenAPI 直连（若已配置 AK/SK）
+        if let creds = effectiveCredentials() {
+            do {
+                if let limits = try await fetchOpenApiLimits(credentials: creds) {
+                    return limits
+                }
+            } catch let error as LimitError where error == .reauthRequired {
+                throw error
+            } catch {
+                // 网络/临时错误：若本地有 arkcli 或缓存，继续向下回退尝试
+            }
         }
 
-        // 2. 主路径：usage plan。
-        do {
-            let usageBody = try await runJSON(binary, ["usage", "plan", "--format", "json"], timeout: usageTimeout)
-            guard let (windows, inlineTier) = ArkCodingPlanParsing.usageWindows(from: usageBody) else {
-                return nil // 无订阅 → configured: false
+        // 2. 第二优先级：本地 arkcli 命令行子进程
+        if let binary = resolveBinaryPath() {
+            do {
+                let usageBody = try await runJSON(binary, ["usage", "plan", "--format", "json"], timeout: usageTimeout)
+                guard let (windows, inlineTier) = ArkCodingPlanParsing.usageWindows(from: usageBody) else {
+                    return nil // 无订阅 → configured: false
+                }
+                var planLabel = inlineTier
+                if planLabel == nil {
+                    let plansBody = try? await runJSON(binary, ["plans", "get", "--format", "json"], timeout: plansTimeout)
+                    planLabel = ArkCodingPlanParsing.tier(fromPlans: plansBody)
+                        .flatMap { ArkCodingPlanParsing.planLabelForTier($0) }
+                }
+                let identity = try? await profileIdentity(binary: binary)
+                let limits = makeLimits(
+                    windows: windows,
+                    planLabel: planLabel,
+                    stale: false,
+                    issue: nil
+                )
+                writeCache(limits, identity: identity)
+                return limits
+            } catch {
+                // 3. 兜底：磁盘缓存（身份守卫）。
+                if let cached = readCache(identity: try? await profileIdentity(binary: binary), now: Date()) {
+                    return cached
+                }
+                throw error
             }
-            var planLabel = inlineTier
-            if planLabel == nil {
-                let plansBody = try? await runJSON(binary, ["plans", "get", "--format", "json"], timeout: plansTimeout)
-                planLabel = ArkCodingPlanParsing.tier(fromPlans: plansBody)
-                    .flatMap { ArkCodingPlanParsing.planLabelForTier($0) }
-            }
-            let identity = try? await profileIdentity(binary: binary)
-            let limits = makeLimits(
-                windows: windows,
-                planLabel: planLabel,
-                stale: false,
-                issue: nil
-            )
-            writeCache(limits, identity: identity)
-            return limits
-        } catch {
-            // 3. 兜底：磁盘缓存（身份守卫）。
-            if let cached = readCache(identity: try? await profileIdentity(binary: binary), now: Date()) {
-                return cached
-            }
-            throw error
         }
+
+        // 4. 若无 binary 但有磁盘缓存（例如之前 AK/SK 或 arkcli 存留的有效快照）
+        if let cached = readCache(identity: effectiveCredentials()?.accessKeyId, now: Date()) {
+            return cached
+        }
+
+        // 无凭证、无 arkcli 且无缓存 → 未配置
+        return nil
+    }
+
+    // MARK: - OpenAPI 直连
+
+    private func effectiveCredentials() -> ArkCredentials? {
+        if let stored = try? credentialsStore?.readCredentials(), stored.isValid {
+            return stored
+        }
+        let ak = environment["VOLCENGINE_ACCESS_KEY"] ?? environment["ARK_AK"] ?? environment["VOLCENGINE_AK"]
+        let sk = environment["VOLCENGINE_SECRET_KEY"] ?? environment["ARK_SK"] ?? environment["VOLCENGINE_SK"]
+        if let ak = ak?.trimmingCharacters(in: .whitespacesAndNewlines), !ak.isEmpty,
+           let sk = sk?.trimmingCharacters(in: .whitespacesAndNewlines), !sk.isEmpty {
+            return ArkCredentials(accessKeyId: ak, secretAccessKey: sk)
+        }
+        return nil
+    }
+
+    private func fetchOpenApiLimits(credentials: ArkCredentials) async throws -> ProviderUsageLimits? {
+        var request = URLRequest(url: Self.openApiEndpoint)
+        request.httpMethod = "GET"
+        request.timeoutInterval = apiTimeout
+        request = signer.sign(request: request, credentials: credentials)
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw LimitError.network("Volcengine OpenAPI request failed")
+        }
+        if http.statusCode == 401 || http.statusCode == 403 {
+            throw LimitError.reauthRequired
+        }
+        guard http.statusCode == 200 else {
+            throw LimitError.network("Volcengine OpenAPI returned HTTP \(http.statusCode)")
+        }
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw LimitError.decoding("Volcengine OpenAPI returned non-JSON")
+        }
+        guard let (windows, tier) = ArkCodingPlanParsing.usageWindows(from: json) else {
+            return nil
+        }
+        let limits = makeLimits(
+            windows: windows,
+            planLabel: tier,
+            stale: false,
+            issue: nil
+        )
+        writeCache(limits, identity: credentials.accessKeyId)
+        return limits
     }
 
     // MARK: - 子进程

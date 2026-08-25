@@ -70,6 +70,12 @@ struct TokenUsageSettingsView: View {
                             manager: manager,
                             strings: state.l10n.s
                         )
+                    case .arkCodingPlan:
+                        ArkCodingPlanSettingsView(
+                            preferences: preferences,
+                            manager: manager,
+                            strings: state.l10n.s
+                        )
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -196,6 +202,27 @@ struct TokenUsageProvidersSettingsView: View {
                 || (ProcessInfo.processInfo.environment["OPENCODE_GO_API_KEY"]?.isEmpty == false)
             let limits = manager.limits[provider]
             if hasKey || (limits?.configured == true) {
+                if limits?.issue == .reauthRequired {
+                    return (strings.tokenStatusReauth, false)
+                }
+                return ("✓ " + strings.tokenSettingsLoggedIn, false)
+            } else {
+                return (
+                    String(
+                        format: strings.tokenSettingsProviderStatusFormat,
+                        strings.tokenSettingsNotConfigured,
+                        strings.tokenSettingsHowToConfigure
+                    ),
+                    true
+                )
+            }
+        } else if provider == .arkCodingPlan {
+            let keyStore = ArkKeychainStore()
+            let hasCreds = ((try? keyStore.readCredentials())?.isValid == true)
+                || (ProcessInfo.processInfo.environment["VOLCENGINE_ACCESS_KEY"]?.isEmpty == false)
+                || (ProcessInfo.processInfo.environment["ARK_AK"]?.isEmpty == false)
+            let limits = manager.limits[provider]
+            if hasCreds || (limits?.configured == true) {
                 if limits?.issue == .reauthRequired {
                     return (strings.tokenStatusReauth, false)
                 }
@@ -596,4 +623,87 @@ struct OpencodeSettingsView: View {
         manager?.refreshNow()
     }
 }
+
+/// 方舟 Coding Plan 设置：AccessKey ID / SecretAccessKey（钥匙串）/ 保存 / 清除。
+struct ArkCodingPlanSettingsView: View {
+    @ObservedObject var preferences: TokenUsagePreferences
+    var manager: TokenUsageManager? = nil
+    let strings: Strings
+
+    @State private var akInput = ""
+    @State private var skInput = ""
+    @State private var saveFailed = false
+    @State private var saveSuccess = false
+
+    private let keychain = ArkKeychainStore()
+
+    var body: some View {
+        Form {
+            Section {
+                TextField(strings.arkSettingsAkPlaceholder, text: $akInput)
+                    .textFieldStyle(.roundedBorder)
+                SecureField(strings.arkSettingsSkPlaceholder, text: $skInput)
+                    .textFieldStyle(.roundedBorder)
+                HStack {
+                    Button(strings.deepSeekSettingsSaveKey) {
+                        save()
+                    }
+                    .disabled(akInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || skInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button(strings.deepSeekSettingsClearKey) {
+                        clear()
+                    }
+                    .disabled(akInput.isEmpty && skInput.isEmpty && !hasStoredCredentials)
+                }
+                if saveFailed {
+                    Text(strings.tokenErrorTransient)
+                        .foregroundStyle(Theme.Stats.up)
+                } else if saveSuccess {
+                    Text(strings.deepSeekSettingsKeySaved)
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                }
+            } header: {
+                Text(strings.tokenSettingsArkSection)
+            } footer: {
+                Text(strings.arkSettingsCaption)
+            }
+        }
+        .settingsPageStyle()
+        .onAppear {
+            if let creds = try? keychain.readCredentials() {
+                akInput = creds.accessKeyId
+                skInput = creds.secretAccessKey
+            }
+        }
+    }
+
+    private var hasStoredCredentials: Bool {
+        ((try? keychain.readCredentials()) ?? nil) != nil
+    }
+
+    private func save() {
+        let ak = akInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sk = skInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ak.isEmpty, !sk.isEmpty else { return }
+        do {
+            try keychain.writeCredentials(ArkCredentials(accessKeyId: ak, secretAccessKey: sk))
+            saveFailed = false
+            saveSuccess = true
+            manager?.refreshNow()
+        } catch {
+            saveFailed = true
+            saveSuccess = false
+        }
+    }
+
+    private func clear() {
+        try? keychain.deleteCredentials()
+        akInput = ""
+        skInput = ""
+        saveFailed = false
+        saveSuccess = false
+        manager?.refreshNow()
+    }
+}
+
 
