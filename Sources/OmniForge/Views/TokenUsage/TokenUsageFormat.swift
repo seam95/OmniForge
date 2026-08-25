@@ -200,6 +200,52 @@ enum TokenUsageFormat {
         if unit.contains("USD") { return "$" }
         return "\(unit) "
     }
+
+    static func differentDayTime(_ date: Date) -> String {
+        differentDayTimeFormatter.string(from: date)
+    }
+
+    /// 标签窗口本地化短标签（如 Cursor Auto -> 自动）。
+    static func labeledWindowShortTitle(
+        label: String,
+        provider: TokenUsageProvider,
+        strings: Strings
+    ) -> String {
+        if provider == .cursor {
+            if label.caseInsensitiveCompare("Auto") == .orderedSame {
+                return strings.tokenWindowAutoShort
+            }
+            if label.caseInsensitiveCompare("API") == .orderedSame {
+                return "API"
+            }
+        }
+        return label
+    }
+
+    /// 限额行状态条颜色：根据剩余/已用口径自适应（剩余低于 10% 警示红，低于 25% 警示橙，正常绿；已用高于 90% 警示红）。
+    static func limitBarStatusColor(
+        percent: Double,
+        displayMode: TokenUsageLimitsDisplay,
+        tint: Color? = nil
+    ) -> Color {
+        if displayMode == .remaining {
+            if percent <= 10 {
+                return Theme.Stats.up
+            }
+            if percent <= 25 {
+                return Theme.Stats.ram
+            }
+            return Theme.Stats.statusNormal
+        } else {
+            if percent >= 90 {
+                return Theme.Stats.up
+            }
+            if percent >= 70 {
+                return Theme.Stats.ram
+            }
+            return Theme.Stats.statusNormal
+        }
+    }
 }
 
 /// Provider 视觉风格 — 模块色 + 状态色。
@@ -238,13 +284,23 @@ extension LimitWindowKind {
         }
     }
 
-    func shortTitle(_ strings: Strings) -> String {
+    func shortTitle(for provider: TokenUsageProvider? = nil, strings: Strings) -> String {
+        if provider == .kimi && self == .weekly {
+            return strings.tokenWindowWeeklyShort
+        }
+        if provider == .cursor && self == .monthly {
+            return strings.tokenWindowPlanShort
+        }
         switch self {
         case .session: return "5h"
         case .weekly: return "7d"
         case .monthly: return "30d"
         case .credits: return strings.tokenWindowCreditsShort
         }
+    }
+
+    func shortTitle(_ strings: Strings) -> String {
+        shortTitle(for: nil, strings: strings)
     }
 }
 

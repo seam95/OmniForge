@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// 控制中心「Token」页的 DeepSeek 余额卡：品牌色块 + 标题 + 状态徽章、
-/// 多币种金额行、赠送/充值明细行与错误行（stale 徽章标注回退）。
+/// 控制中心「Token」页的 DeepSeek 余额卡：18x18 品牌图标 + 标题 + 右侧总金额、
+/// 赠送/充值明细行与错误行（stale 标注回退）。
 struct DeepSeekBalanceCardView: View {
     let snapshot: DeepSeekBalanceSnapshot?
     /// 低余额阈值（面板从偏好注入，徽章「低于阈值」口径与通知一致）。
@@ -15,18 +15,18 @@ struct DeepSeekBalanceCardView: View {
         ), threshold: threshold)
     }
 
-    /// DeepSeek 品牌色（不进 TokenUsageProvider.accentColor——那是 provider 枚举的扩展）。
+    /// DeepSeek 品牌色。
     static let brandColor = Color(red: 0x4D / 255.0, green: 0x6B / 255.0, blue: 0xFE / 255.0)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             header
             if let snapshot {
                 if snapshot.issue != nil && snapshot.infos.isEmpty && !snapshot.stale {
                     // 从未成功：无数值可展示，只渲染错误行
                     errorRow(snapshot.issue!)
                 } else {
-                    currencyRows(snapshot)
+                    currencyBody(snapshot)
                     if let issue = snapshot.issue {
                         errorRow(issue) // 有旧值保留时的行内错误提示
                     }
@@ -45,35 +45,59 @@ struct DeepSeekBalanceCardView: View {
     // MARK: - 头部
 
     private var header: some View {
-        HStack(spacing: 6) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(Self.brandColor)
-                .frame(width: 6, height: 6)
+        HStack(spacing: 8) {
+            TokenUsageProviderIconView(provider: .deepSeek, size: 18, cornerRadius: 4)
             Text(strings.deepSeekBalanceCardTitle)
                 .font(Theme.Stats.font13SemiBold)
                 .foregroundColor(Theme.Stats.text1)
             Spacer()
-            StatusTintBadge(text: status.label(strings), tint: status.tint)
+            if let primaryBalance = primaryTotalBalanceText {
+                Text(primaryBalance)
+                    .font(Theme.Stats.font13SemiBold)
+                    .foregroundColor(Theme.Stats.text1)
+                    .monospacedDigit()
+            } else if status != .normal {
+                StatusTintBadge(text: status.label(strings), tint: status.tint)
+            }
         }
     }
 
-    // MARK: - 币种行
+    private var primaryTotalBalanceText: String? {
+        guard let snapshot, let first = snapshot.infos.first else { return nil }
+        return DeepSeekBalanceFormat.amount(first.totalBalance, rawText: first.totalBalanceText, currency: first.currency)
+    }
+
+    // MARK: - 币种明细
 
     @ViewBuilder
-    private func currencyRows(_ snapshot: DeepSeekBalanceSnapshot) -> some View {
+    private func currencyBody(_ snapshot: DeepSeekBalanceSnapshot) -> some View {
         let infos = snapshot.infos
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(infos.indices, id: \.self) { index in
-                if index > 0 {
-                    currencySeparator
+        if infos.count <= 1, let first = infos.first {
+            // 单币种精简展示：一行副文本「赠送 ¥0.00 · 充值 ¥42.42」
+            if first.grantedBalance != nil || first.toppedUpBalance != nil {
+                Text(String(
+                    format: strings.deepSeekBalanceDetailFormat,
+                    DeepSeekBalanceFormat.amount(first.grantedBalance, rawText: nil, currency: first.currency),
+                    DeepSeekBalanceFormat.amount(first.toppedUpBalance, rawText: nil, currency: first.currency)
+                ))
+                .font(Theme.Stats.font11Regular)
+                .foregroundColor(Theme.Stats.text3)
+            }
+        } else {
+            // 多币种展示
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(infos.indices, id: \.self) { index in
+                    if index > 0 {
+                        currencySeparator
+                    }
+                    currencyRow(infos[index])
                 }
-                currencyRow(infos[index])
             }
         }
     }
 
     private func currencyRow(_ info: DeepSeekBalanceInfo) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(info.currency)
                     .font(Theme.Stats.font11Regular)

@@ -179,5 +179,38 @@ final class TokenUsageLimitRowTests: XCTestCase {
         XCTAssertEqual(LimitWindowKind.weekly.shortTitle(enStrings), "7d")
         XCTAssertEqual(LimitWindowKind.monthly.shortTitle(enStrings), "30d")
         XCTAssertEqual(LimitWindowKind.credits.shortTitle(enStrings), "Credits")
+
+        // Provider 专属短标签
+        XCTAssertEqual(LimitWindowKind.weekly.shortTitle(for: .kimi, strings: strings), "周")
+        XCTAssertEqual(LimitWindowKind.weekly.shortTitle(for: .kimi, strings: enStrings), "Week")
+        XCTAssertEqual(LimitWindowKind.monthly.shortTitle(for: .cursor, strings: strings), "套餐")
+        XCTAssertEqual(LimitWindowKind.monthly.shortTitle(for: .cursor, strings: enStrings), "Plan")
+
+        // 标签窗口本地化
+        XCTAssertEqual(TokenUsageFormat.labeledWindowShortTitle(label: "Auto", provider: .cursor, strings: strings), "自动")
+        XCTAssertEqual(TokenUsageFormat.labeledWindowShortTitle(label: "Auto", provider: .cursor, strings: enStrings), "Auto")
+        XCTAssertEqual(TokenUsageFormat.labeledWindowShortTitle(label: "API", provider: .cursor, strings: strings), "API")
+        XCTAssertEqual(TokenUsageFormat.labeledWindowShortTitle(label: "Cl 7d", provider: .antigravity, strings: strings), "Cl 7d")
+    }
+
+    func test_differentDayTime() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 8 * 3600)!
+        let components = DateComponents(year: 2026, month: 9, day: 21, hour: 7, minute: 12, second: 0)
+        let date = calendar.date(from: components)!
+        XCTAssertEqual(TokenUsageFormat.differentDayTime(date), "9/21 07:12")
+    }
+
+    func test_limitBarStatusColor() {
+        // Remaining 模式：低额度为危险红/警告橙，高额度为正常绿
+        XCTAssertEqual(TokenUsageFormat.limitBarStatusColor(percent: 9, displayMode: .remaining), Theme.Stats.up)
+        XCTAssertEqual(TokenUsageFormat.limitBarStatusColor(percent: 20, displayMode: .remaining), Theme.Stats.ram)
+        XCTAssertEqual(TokenUsageFormat.limitBarStatusColor(percent: 31, displayMode: .remaining), Theme.Stats.statusNormal)
+        XCTAssertEqual(TokenUsageFormat.limitBarStatusColor(percent: 98, displayMode: .remaining), Theme.Stats.statusNormal)
+
+        // Used 模式：高用量为危险红/警告橙，低用量为正常绿
+        XCTAssertEqual(TokenUsageFormat.limitBarStatusColor(percent: 95, displayMode: .used), Theme.Stats.up)
+        XCTAssertEqual(TokenUsageFormat.limitBarStatusColor(percent: 75, displayMode: .used), Theme.Stats.ram)
+        XCTAssertEqual(TokenUsageFormat.limitBarStatusColor(percent: 10, displayMode: .used), Theme.Stats.statusNormal)
     }
 }

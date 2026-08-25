@@ -1082,6 +1082,9 @@ struct Strings: Equatable {
     let tokenWindowMonthly: String
     let tokenWindowCredits: String
     let tokenWindowCreditsShort: String
+    let tokenWindowWeeklyShort: String
+    let tokenWindowPlanShort: String
+    let tokenWindowAutoShort: String
     let tokenStatusNormal: String
     let tokenStatusApproaching: String
     let tokenStatusExceeded: String
