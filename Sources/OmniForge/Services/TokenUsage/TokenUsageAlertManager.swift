@@ -1,13 +1,10 @@
 import Foundation
 
-/// Token 用量告警触发器 — 会话窗阈值（≥85%）与步速超前（LimitPace.paceOver）。
+/// Token 用量告警触发器 — 会话窗阈值（`TokenUsageConfiguration.sessionAlertThresholdPercent`，缺省 90）与步速超前（LimitPace.paceOver）。
 /// 随 `TokenUsageManager` 限额刷新同频调用 `evaluate`；未授权通知静默降级（失败不报错，对齐 MonitorAlertManager）。
 final class TokenUsageAlertManager {
-    /// 会话窗阈值告警判据（对齐 TokenTracker 红色阈值 90%）。
-    static let sessionThresholdPercent = 90.0
-
     enum AlertKind: Hashable {
-        /// 会话窗用量 ≥90%。
+        /// 会话窗用量 ≥ 配置阈值（缺省 90%）。
         case sessionThreshold
         /// LimitPace 判定按当前步速将提前用尽。
         case paceOverrun
@@ -58,7 +55,8 @@ final class TokenUsageAlertManager {
         guard let window = limits.windows[.session] else { return }
         let configuration = configurationProvider()
 
-        if configuration.sessionLimitAlertEnabled, window.usedPercent >= Self.sessionThresholdPercent {
+        if configuration.sessionLimitAlertEnabled,
+           window.usedPercent >= configuration.sessionAlertThresholdPercent {
             report(kind: .sessionThreshold, provider: limits.provider, window: window)
         }
 

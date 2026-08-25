@@ -61,6 +61,42 @@ final class TokenUsagePreferencesTests: XCTestCase {
         XCTAssertTrue(reloaded.configuration.sessionLimitAlertEnabled)
     }
 
+    func test_sessionAlertThreshold_defaultsTo90() {
+        let suite = "TokenUsagePreferencesTestsThreshold.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let preferences = TokenUsagePreferences(userDefaults: defaults)
+        XCTAssertEqual(preferences.configuration.sessionAlertThresholdPercent, 90)
+    }
+
+    func test_sessionAlertThreshold_roundTripAcrossAllowedValues() {
+        let suite = "TokenUsagePreferencesTestsThreshold.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let preferences = TokenUsagePreferences(userDefaults: defaults)
+        for percent in TokenUsageConfiguration.allowedSessionAlertThresholds {
+            XCTAssertNoThrow(try preferences.setSessionAlertThresholdPercent(percent))
+            XCTAssertEqual(preferences.configuration.sessionAlertThresholdPercent, percent)
+
+            let reloaded = TokenUsagePreferences(userDefaults: defaults)
+            XCTAssertEqual(reloaded.configuration.sessionAlertThresholdPercent, percent, "持久化回读 \(percent)")
+        }
+    }
+
+    func test_sessionAlertThreshold_invalidValuesRejected() {
+        let suite = "TokenUsagePreferencesTestsThreshold.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let preferences = TokenUsagePreferences(userDefaults: defaults)
+        for percent in [0.0, 50.0, 89.0, 100.0, -1.0] {
+            XCTAssertThrowsError(try preferences.setSessionAlertThresholdPercent(percent))
+            XCTAssertEqual(preferences.configuration.sessionAlertThresholdPercent, 90, "非法值 \(percent) 不应写入")
+        }
+    }
+
     func test_deepSeekSettings_defaultsAndRoundTrip() {
         let suite = "TokenUsagePreferencesTestsDeepSeek.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

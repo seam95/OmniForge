@@ -81,6 +81,30 @@ final class TokenUsageAlertManagerTests: XCTestCase {
         XCTAssertTrue(client.posted.isEmpty, "阈值告警关闭时应静默不推送")
     }
 
+    func test_sessionThreshold_custom70PostsAt75() {
+        let client = FakeTokenUsageNotificationClient()
+        var config = TokenUsageConfiguration()
+        config.sessionAlertThresholdPercent = 70
+        let manager = makeManager(client: client, configuration: config)
+        let snapshot = makeLimits(sessionWindow: thresholdWindow(percent: 75))
+        manager.evaluate(snapshot, at: thresholdTestPoint)
+        XCTAssertEqual(client.posted.count, 1)
+        XCTAssertEqual(
+            client.posted[0].body,
+            String(format: Strings.en.tokenAlertSessionBodyFormat, "Claude", 75)
+        )
+    }
+
+    func test_sessionThreshold_custom70NotPostBelow() {
+        let client = FakeTokenUsageNotificationClient()
+        var config = TokenUsageConfiguration()
+        config.sessionAlertThresholdPercent = 70
+        let manager = makeManager(client: client, configuration: config)
+        let snapshot = makeLimits(sessionWindow: thresholdWindow(percent: 69.9))
+        manager.evaluate(snapshot, at: thresholdTestPoint)
+        XCTAssertTrue(client.posted.isEmpty, "低于自定义阈值 70% 不应推送")
+    }
+
     // MARK: - 步速告警（LimitPace 将提前用尽）
 
     func test_paceOverrunPostsNotification() {

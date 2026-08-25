@@ -46,6 +46,9 @@ struct TokenUsageConfiguration: Equatable, Codable {
     var resetConfettiEnabledStored: Bool?
     /// 限额区块隐藏的供应商集合（显隐开关）。存储层可选，旧配置无此键 → 解码回 nil，走计算属性默认（空）。
     var hiddenProvidersStored: Set<TokenUsageProvider>?
+    /// 会话窗阈值告警判据（缺省 90，对齐 TokenTracker 红色阈值；设置页可调整为 70/85/90/95）。
+    /// 存储层可选，旧配置无此键 → 解码回 nil，走计算属性默认值。
+    var sessionAlertThresholdPercentStored: Double?
 
     /// 趋势图默认周期（缺省 .month，对齐 TokenTracker）。
     var trendPeriodDefault: TokenTrendPeriod {
@@ -77,6 +80,12 @@ struct TokenUsageConfiguration: Equatable, Codable {
         set { hiddenProvidersStored = newValue }
     }
 
+    /// 会话窗阈值告警判据（缺省 90）。
+    var sessionAlertThresholdPercent: Double {
+        get { sessionAlertThresholdPercentStored ?? Self.sessionThresholdPercentDefault }
+        set { sessionAlertThresholdPercentStored = newValue }
+    }
+
     /// 供应商展示顺序（包含全部已知供应商；未在自定义顺序中的供应商自动按默认顺序追加在末尾）。
     var providerOrder: [TokenUsageProvider] {
         get {
@@ -106,6 +115,12 @@ struct TokenUsageConfiguration: Equatable, Codable {
 
     /// 限额刷新间隔合法值。
     static let allowedRefreshIntervals = [1, 5, 15]
+
+    /// 会话窗告警阈值合法值（对齐 TokenTracker 红色阈值 90% 及周边档位）。
+    static let allowedSessionAlertThresholds = [70.0, 85.0, 90.0, 95.0]
+
+    /// 会话窗告警阈值缺省值（对齐 TokenTracker 红色阈值 90%）。
+    static let sessionThresholdPercentDefault = 90.0
 
     init() {}
 }
@@ -182,6 +197,14 @@ final class TokenUsagePreferences: ObservableObject {
             settings.refreshMinutes = minutes
             config.deepSeekBalance = settings
         }
+    }
+
+    /// 设置会话窗告警阈值（%），仅接受 70 / 85 / 90 / 95。
+    func setSessionAlertThresholdPercent(_ percent: Double) throws {
+        guard TokenUsageConfiguration.allowedSessionAlertThresholds.contains(percent) else {
+            throw TokenUsagePreferenceError.invalidAlertThreshold(percent)
+        }
+        update { $0.sessionAlertThresholdPercent = percent }
     }
 
     /// 调整供应商位置（如上移 delta = -1，下移 delta = 1）。
@@ -265,11 +288,14 @@ final class TokenUsagePreferences: ObservableObject {
 
 enum TokenUsagePreferenceError: Error, Equatable, LocalizedError {
     case invalidRefreshInterval(Int)
+    case invalidAlertThreshold(Double)
 
     var errorDescription: String? {
         switch self {
         case .invalidRefreshInterval(let value):
             return "Invalid refresh interval: \(value). Only 1, 5, or 15 minutes are allowed."
+        case .invalidAlertThreshold(let value):
+            return "Invalid session alert threshold: \(value). Only 70, 85, 90, or 95 percent are allowed."
         }
     }
 }
