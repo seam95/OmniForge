@@ -1244,6 +1244,10 @@ struct Strings: Equatable {
     let providerInUseBadge: String
     let providerEdit: String
     let providerDelete: String
+    /// 菜单栏档案卡片复制指定配置启动命令。
+    let providerCopyLaunchCommand: String
+    let providerLaunchCommandCopied: String
+    let providerLaunchCommandCopyFailed: String
     /// 顶部新增供应商按钮。
     let providerAddProvider: String
     /// 新增按钮（%@ = 工具名）。

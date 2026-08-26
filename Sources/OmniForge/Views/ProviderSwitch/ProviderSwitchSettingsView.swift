@@ -25,6 +25,16 @@ enum ProviderSwitchPresentation: Equatable {
         self == .menuBar
     }
 
+    /// 供应商编辑/删除只在独立设置窗口提供。
+    var showsProfileManagementMenu: Bool {
+        self == .settings
+    }
+
+    /// 菜单栏供应商卡片提供 CCQ 风格启动命令复制入口。
+    var showsLaunchCommandCopyButton: Bool {
+        self == .menuBar
+    }
+
     var addProviderRoute: ProviderSwitchAddProviderRoute {
         switch self {
         case .settings:
@@ -43,9 +53,9 @@ enum ProviderSwitchAddProviderRoute: Equatable {
 
 /// 供应商切换设置页（卡片式 UI 对齐稿子设计）：
 /// - 分段选择器：Claude Code / Codex 全宽胶囊分段切换
-/// - 卡片列表：官方卡片 + Profile 卡片栈，激活项带有系统蓝外边框与「使用中」绿色胶囊微章，未激活项展示品牌字母 Logo 与「...」操作菜单
+/// - 卡片列表：官方卡片 + Profile 卡片栈，激活项带有系统蓝外边框与「使用中」绿色胶囊微章；设置页显示管理菜单，菜单栏显示复制入口
 /// - 设置窗口：展示全宽「+ 新增供应商」主按钮并打开新增表单
-/// - 菜单栏：将新增操作放入底部链接并路由到供应商设置页
+/// - 菜单栏：将新增操作放入底部链接，并以复制图标提供 CCQ 风格启动命令
 /// - 底部辅助：居中展示供应商相关文字链接
 /// - 异常状态：未托管 / 损坏卡片视觉融入卡片体系
 struct ProviderSwitchSettingsView: View {
@@ -53,6 +63,7 @@ struct ProviderSwitchSettingsView: View {
     let strings: Strings
     var presentation: ProviderSwitchPresentation = .settings
     var onOpenSettings: (SettingsToolbarTab?) -> Void = { _ in }
+    var commandCopier: ProviderLaunchCommandCopying = ProviderLaunchCommandCopier()
 
     @State private var selectedTool: ProviderTool = .claudeCode
     @State private var addingProfileForTool: ProviderTool?
@@ -277,9 +288,14 @@ struct ProviderSwitchSettingsView: View {
             .buttonStyle(.plain)
             .disabled(active || !profile.hasCompleteConnection)
 
-            if active {
+            if presentation.showsLaunchCommandCopyButton {
+                if active {
+                    inUseBadge
+                }
+                copyLaunchCommandButton(for: profile)
+            } else if active {
                 inUseBadge
-            } else {
+            } else if presentation.showsProfileManagementMenu {
                 Menu {
                     Button(strings.providerEdit) { editingProfile = profile }
                     Button(strings.providerDelete, role: .destructive) {
@@ -303,6 +319,22 @@ struct ProviderSwitchSettingsView: View {
         .background(cardBackground(isActive: active))
         .overlay(cardBorder(isActive: active))
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func copyLaunchCommandButton(for profile: ProviderProfile) -> some View {
+        Button {
+            copyLaunchCommand(for: profile)
+        } label: {
+            Image(systemName: "doc.on.doc")
+                .font(.system(size: 13.5, weight: .medium))
+                .foregroundStyle(Color.secondary.opacity(0.85))
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(strings.providerCopyLaunchCommand)
+        .accessibilityLabel(strings.providerCopyLaunchCommand)
+        .fixedSize()
     }
 
     private func isActive(_ profile: ProviderProfile) -> Bool {
@@ -509,6 +541,13 @@ struct ProviderSwitchSettingsView: View {
         } catch {
             showToast(String(format: strings.providerSwitchFailedFormat, error.localizedDescription))
         }
+    }
+
+    private func copyLaunchCommand(for profile: ProviderProfile) {
+        let message = commandCopier.copyLaunchCommand(for: profile)
+            ? strings.providerLaunchCommandCopied
+            : strings.providerLaunchCommandCopyFailed
+        showToast(message)
     }
 
     private func present(outcome: ProviderSwitchOutcome) {

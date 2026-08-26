@@ -19,4 +19,22 @@ final class ProviderSwitchSettingsViewTests: XCTestCase {
             .providerSettings
         )
     }
+
+    func test_settingsPresentation_keepsProfileManagementActions() {
+        XCTAssertTrue(ProviderSwitchPresentation.settings.showsProfileManagementMenu)
+        XCTAssertFalse(ProviderSwitchPresentation.settings.showsLaunchCommandCopyButton)
+    }
+
+    func test_menuBarPresentation_exposesOnlyLaunchCommandCopyAction() {
+        XCTAssertFalse(ProviderSwitchPresentation.menuBar.showsProfileManagementMenu)
+        XCTAssertTrue(ProviderSwitchPresentation.menuBar.showsLaunchCommandCopyButton)
+    }
+
+    func test_launchCommandCopyLocalization_isAvailable() {
+        for strings in [Strings.zhHans, Strings.en] {
+            XCTAssertFalse(strings.providerCopyLaunchCommand.isEmpty)
+            XCTAssertFalse(strings.providerLaunchCommandCopied.isEmpty)
+            XCTAssertFalse(strings.providerLaunchCommandCopyFailed.isEmpty)
+        }
+    }
 }
