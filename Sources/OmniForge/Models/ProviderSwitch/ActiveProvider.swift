@@ -10,6 +10,8 @@ enum ActiveProvider: Equatable {
     case profile(profileID: String)
     /// 未托管配置：目标配置文件里存在、但匹配不到任何 profile 的供应商设置（SPEC 2.6）。
     case unmanaged(summary: String)
+    /// 目标配置文件 JSON/TOML 损坏 → 不硬写，提示「备份并重建」（SPEC 2.8.2）。
+    case unreadable
 
     var profileID: String? {
         if case .profile(let id) = self { return id }
