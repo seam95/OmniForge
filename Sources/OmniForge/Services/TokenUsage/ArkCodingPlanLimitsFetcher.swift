@@ -46,21 +46,19 @@ final class ProcessArkCliRunner: ArkCliCommandRunning {
 
 // MARK: - 解析纯函数
 
-/// arkcli 输出归一化（usage plan / plans get / profile show）。
+/// 方舟 Coding Plan 输出归一化（GetCodingPlanUsage / profile show）。
 enum ArkCodingPlanParsing {
-    /// `usage plan` 或 OpenAPI 的 coding-plan 条目 → 窗口字典；无订阅 → nil。
+    /// OpenAPI `Result.QuotaUsage` → 窗口字典；非运行态或无有效窗口 → nil。
     static func usageWindows(from rawBody: [String: Any]?) -> ([LimitWindowKind: UsageWindow], tier: String?)? {
         guard let rawBody else { return nil }
         let body = (rawBody["Result"] as? [String: Any]) ?? rawBody
-        let items = body["items"] as? [[String: Any]] ?? []
-        guard let item = items.first(where: { ($0["product"] as? String) == "coding-plan" }),
-              (item["subscribed"] as? Bool) == true else {
+        guard (body["Status"] as? String)?.lowercased() == "running" else {
             return nil
         }
         var windows: [LimitWindowKind: UsageWindow] = [:]
-        let periods = item["periods"] as? [[String: Any]] ?? []
-        for period in periods {
-            let label = period["label"] as? String
+        let quotaUsage = body["QuotaUsage"] as? [[String: Any]] ?? []
+        for quota in quotaUsage {
+            let label = (quota["Level"] as? String)?.lowercased()
             let slot: LimitWindowKind
             switch label {
             case "session": slot = .session
@@ -68,29 +66,23 @@ enum ArkCodingPlanParsing {
             case "monthly": slot = .monthly
             default: continue
             }
-            guard let percent = (period["percent"] as? NSNumber)?.doubleValue, percent.isFinite else {
+            guard let percent = UsageWindowParsing.numeric(quota["Percent"]), percent.isFinite else {
                 continue
             }
+            let cap = UsageWindowParsing.numeric(quota["Cap"])
+            let used = cap.map { $0 * percent / 100 }
             windows[slot] = UsageWindow(
                 usedPercent: UsageWindowParsing.clampPercent(percent) ?? 0,
-                resetAt: UsageWindowParsing.parseResetDate(period["reset_at"]),
-                limit: nil,
-                used: nil,
-                remaining: nil,
+                resetAt: UsageWindowParsing.parseResetDate(quota["ResetTimestamp"]),
+                limit: cap,
+                used: used,
+                remaining: cap.flatMap { cap in used.map { max(cap - $0, 0) } },
                 unit: "calls",
                 windowSeconds: nil
             )
         }
         guard !windows.isEmpty else { return nil }
-        let tier = (item["tier"] as? String).flatMap { planLabelForTier($0) }
-        return (windows, tier)
-    }
-
-    /// `plans get` 的 coding-plan tier → 套餐名。
-    static func tier(fromPlans body: [String: Any]?) -> String? {
-        let plans = body?["plans"] as? [[String: Any]] ?? []
-        let plan = plans.first { ($0["key"] as? String) == "coding-plan" }
-        return plan?["tier"] as? String
+        return (windows, nil)
     }
 
     /// `profile show` → 身份（用户 id 或 owner_trn/identity_key 的数字段）。
@@ -115,15 +107,6 @@ enum ArkCodingPlanParsing {
         let identity = [name, userID].compactMap { $0 }.joined(separator: ":")
         return identity.isEmpty ? nil : identity
     }
-
-    static func planLabelForTier(_ tier: String?) -> String? {
-        switch tier?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-        case "pro": return "Pro"
-        case "lite": return "Lite"
-        case let other where other?.isEmpty == false: return tier
-        default: return nil
-        }
-    }
 }
 
 // MARK: - Fetcher
@@ -146,7 +129,6 @@ final class ArkCodingPlanLimitsFetcher: LimitsFetching {
     var apiTimeout: TimeInterval = 10
     var usageTimeout: TimeInterval = 10
     var profileTimeout: TimeInterval = 2.5
-    var plansTimeout: TimeInterval = 5
 
     private let runner: ArkCliCommandRunning
     private let credentialsStore: ArkCredentialsStoring?
@@ -196,14 +178,8 @@ final class ArkCodingPlanLimitsFetcher: LimitsFetching {
         if let binary = resolveBinaryPath() {
             do {
                 let usageBody = try await runJSON(binary, ["usage", "plan", "--format", "json"], timeout: usageTimeout)
-                guard let (windows, inlineTier) = ArkCodingPlanParsing.usageWindows(from: usageBody) else {
+                guard let (windows, planLabel) = ArkCodingPlanParsing.usageWindows(from: usageBody) else {
                     return nil // 无订阅 → configured: false
-                }
-                var planLabel = inlineTier
-                if planLabel == nil {
-                    let plansBody = try? await runJSON(binary, ["plans", "get", "--format", "json"], timeout: plansTimeout)
-                    planLabel = ArkCodingPlanParsing.tier(fromPlans: plansBody)
-                        .flatMap { ArkCodingPlanParsing.planLabelForTier($0) }
                 }
                 let identity = try? await profileIdentity(binary: binary)
                 let limits = makeLimits(

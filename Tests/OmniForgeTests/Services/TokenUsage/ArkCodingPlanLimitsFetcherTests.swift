@@ -38,16 +38,16 @@ final class ArkCodingPlanLimitsFetcherTests: XCTestCase {
         try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent())
     }
 
-    private func usagePlanJSON(subscribed: Bool = true, tier: String? = "pro") -> String {
-        let tierJSON = tier.map { #""tier":"\#($0)","# } ?? ""
-        let periods = subscribed
+    private func usagePlanJSON(subscribed: Bool = true) -> String {
+        let status = subscribed ? "Running" : "Stopped"
+        let quotaUsage = subscribed
             ? #"""
-              "periods":[{"label":"session","percent":42,"reset_at":"2026-08-25T08:00:00Z"},
-                          {"label":"weekly","percent":10,"reset_at":"2026-08-31T00:00:00Z"}]
+              "QuotaUsage":[{"Level":"session","Percent":42,"ResetTimestamp":1787725175,"Cap":100},
+                            {"Level":"weekly","Percent":10,"ResetTimestamp":1788105600,"Cap":100}]
               """#
-            : #""periods":[]"#
+            : #""QuotaUsage":[]"#
         return #"""
-        {"items":[{"product":"coding-plan","subscribed":\#(subscribed),\#(tierJSON)\#(periods)}]}
+        {"Result":{"Status":"\#(status)",\#(quotaUsage)}}
         """#
     }
 
@@ -56,14 +56,18 @@ final class ArkCodingPlanLimitsFetcherTests: XCTestCase {
     func test_openApi_validCredentials_buildsLimits() async throws {
         credentialsStore.storedCredentials = ArkCredentials(accessKeyId: "AK-LIVE", secretAccessKey: "SK-LIVE")
         URLProtocolStub.stub = .init(statusCode: 200, data: Data("""
-        {"Result":{"items":[{"product":"coding-plan","subscribed":true,"tier":"pro","periods":[{"label":"session","percent":50,"reset_at":"2026-08-25T12:00:00Z"}]}]}}
+        {"Result":{"Status":"Running","QuotaUsage":[{"Level":"session","Percent":50,"ResetTimestamp":1787725175,"Cap":100}]}}
         """.utf8))
 
         let result = try await fetcher.fetchLimits(force: false)
         XCTAssertNotNil(result)
         XCTAssertEqual(result?.configured, true)
-        XCTAssertEqual(result?.planLabel, "Pro")
+        XCTAssertNil(result?.planLabel)
         XCTAssertEqual(result?.windows[.session]?.usedPercent, 50)
+        XCTAssertEqual(result?.windows[.session]?.resetAt, Date(timeIntervalSince1970: 1_787_725_175))
+        XCTAssertEqual(result?.windows[.session]?.limit, 100)
+        XCTAssertEqual(result?.windows[.session]?.used, 50)
+        XCTAssertEqual(result?.windows[.session]?.remaining, 50)
         XCTAssertEqual(runner.runCount, 0, "AK/SK OpenAPI 成功时零 spawn")
 
         let request = URLProtocolStub.recordedRequests.first
@@ -97,11 +101,11 @@ final class ArkCodingPlanLimitsFetcherTests: XCTestCase {
 
     func test_liveUsagePlan_buildsWindowsAndLabel() async throws {
         fetcher.binaryOverride = "/usr/local/bin/arkcli"
-        runner.responses = ["usage plan --format json": usagePlanJSON(tier: "pro")]
+        runner.responses = ["usage plan --format json": usagePlanJSON()]
         let result = try await fetcher.fetchLimits(force: false)
         XCTAssertNotNil(result)
         XCTAssertEqual(result?.configured, true)
-        XCTAssertEqual(result?.planLabel, "Pro")
+        XCTAssertNil(result?.planLabel)
         XCTAssertEqual(result?.windows[.session]?.usedPercent, 42)
         XCTAssertEqual(result?.windows[.weekly]?.usedPercent, 10)
         XCTAssertEqual(result?.windows[.session]?.unit, "calls")
@@ -115,14 +119,15 @@ final class ArkCodingPlanLimitsFetcherTests: XCTestCase {
         XCTAssertNil(result, "无订阅 → configured: false")
     }
 
-    func test_tierFallback_plansGet() async throws {
+    func test_newStructureDoesNotUsePlansGetFallback() async throws {
         fetcher.binaryOverride = "/usr/local/bin/arkcli"
         runner.responses = [
-            "usage plan --format json": usagePlanJSON(tier: nil),
+            "usage plan --format json": usagePlanJSON(),
             "plans get --format json": #"{"plans":[{"key":"coding-plan","tier":"lite"}]}"#,
         ]
         let result = try await fetcher.fetchLimits(force: false)
-        XCTAssertEqual(result?.planLabel, "Lite", "usage 无 tier 时 plans get 兜底")
+        XCTAssertNil(result?.planLabel, "新结构不再从 plans get 补套餐名")
+        XCTAssertEqual(runner.runCount, 1, "新结构不再调用 plans get")
     }
 
     // MARK: - 磁盘缓存兜底
@@ -170,7 +175,9 @@ final class ArkCodingPlanLimitsFetcherTests: XCTestCase {
         let (windows, tier) = ArkCodingPlanParsing.usageWindows(from: body)!
         XCTAssertEqual(windows.count, 2)
         XCTAssertEqual(windows[.session]?.usedPercent, 42)
-        XCTAssertEqual(tier, "Pro")
+        XCTAssertEqual(windows[.session]?.resetAt, Date(timeIntervalSince1970: 1_787_725_175))
+        XCTAssertEqual(windows[.session]?.limit, 100)
+        XCTAssertNil(tier)
     }
 
     func test_profileIdentity_extractsTrnAndKey() {

@@ -40,9 +40,9 @@ final class OpencodeLimitsFetcherTests: XCTestCase {
 
     func test_keychainKeyPreferredOverEnvKey() async throws {
         URLProtocolStub.stub = .init(statusCode: 200, data: Data("""
-        {"rollingUsage":{"usagePercent":0.2,"resetInSec":3600},\
-        "weeklyUsage":{"usagePercent":55,"resetInSec":604800},\
-        "monthlyUsage":{"usagePercent":80,"resetInSec":2592000}}
+        {"usage":{"rolling":{"status":"ok","percent":20,"resetsAt":"2026-08-26T06:56:50.539Z"},\
+        "weekly":{"status":"ok","percent":55,"resetsAt":"2026-08-31T00:00:00.539Z"},\
+        "monthly":{"status":"ok","percent":80,"resetsAt":"2026-09-14T05:19:55.539Z"}}}
         """.utf8))
         let result = try await makeFetcher(keychainKey: "keychain-token", envKey: "env-token").fetchLimits(force: false)
         XCTAssertNotNil(result)
@@ -52,15 +52,19 @@ final class OpencodeLimitsFetcherTests: XCTestCase {
 
     func test_validEnvKey_fallbackWhenKeychainEmpty() async throws {
         URLProtocolStub.stub = .init(statusCode: 200, data: Data("""
-        {"rollingUsage":{"usagePercent":0.2,"resetInSec":3600},\
-        "weeklyUsage":{"usagePercent":55,"resetInSec":604800},\
-        "monthlyUsage":{"usagePercent":80,"resetInSec":2592000}}
+        {"usage":{"rolling":{"status":"ok","percent":20,"resetsAt":"2026-08-26T06:56:50.539Z"},\
+        "weekly":{"status":"ok","percent":55,"resetsAt":"2026-08-31T00:00:00.539Z"},\
+        "monthly":{"status":"ok","percent":80,"resetsAt":"2026-09-14T05:19:55.539Z"}}}
         """.utf8))
         let result = try await makeFetcher(keychainKey: nil, envKey: "env-token").fetchLimits(force: false)
         XCTAssertNotNil(result)
-        XCTAssertEqual(result?.windows[.session]?.usedPercent, 20, "0.2 小数 → 20%")
+        XCTAssertEqual(result?.windows[.session]?.usedPercent, 20)
         XCTAssertEqual(result?.windows[.weekly]?.usedPercent, 55)
         XCTAssertEqual(result?.windows[.monthly]?.usedPercent, 80)
+        XCTAssertEqual(
+            result?.windows[.session]?.resetAt,
+            UsageWindowParsing.parseResetDate("2026-08-26T06:56:50.539Z")
+        )
         let request = URLProtocolStub.recordedRequests.first
         XCTAssertEqual(request?.value(forHTTPHeaderField: "Authorization"), "Bearer env-token")
         XCTAssertEqual(request?.url?.absoluteString, "https://opencode.ai/zen/go/v1/usage")

@@ -4,18 +4,15 @@ import Foundation
 
 /// opencode Go usage API 归一化 — 纯函数。
 enum OpencodeGoParsing {
-    /// `usagePercent`（0–1 或 0–100）+ `resetInSec` → UsageWindow；缺值 → nil。
+    /// `percent`（0–100）+ `resetsAt` → UsageWindow；缺值 → nil。
     static func window(_ usage: [String: Any]?) -> UsageWindow? {
         guard let usage,
-              let rawPercent = (usage["usagePercent"] as? NSNumber)?.doubleValue ?? double(usage["usage_percent"]) else {
+              let rawPercent = UsageWindowParsing.numeric(usage["percent"]) else {
             return nil
         }
-        let percent = clamp(rawPercent)
-        let resetInSec = (usage["resetInSec"] as? NSNumber)?.doubleValue ?? double(usage["reset_in_sec"])
-        let resetAt = resetInSec.flatMap { $0 >= 0 ? Date().addingTimeInterval($0) : nil }
         return UsageWindow(
-            usedPercent: percent,
-            resetAt: resetAt,
+            usedPercent: UsageWindowParsing.clampPercent(rawPercent) ?? 0,
+            resetAt: UsageWindowParsing.parseResetDate(usage["resetsAt"]),
             limit: nil,
             used: nil,
             remaining: nil,
@@ -23,22 +20,12 @@ enum OpencodeGoParsing {
             windowSeconds: nil
         )
     }
-
-    static func clamp(_ value: Double) -> Double {
-        // 0–1 小数按百分比放大（0.02 → 2%）；1 保持 1%。
-        let scaled = value > 0 && value < 1 ? value * 100 : value
-        return min(max(scaled, 0), 100)
-    }
-
-    private static func double(_ value: Any?) -> Double? {
-        (value as? NSNumber)?.doubleValue
-    }
 }
 
 // MARK: - Fetcher
 
 /// opencode Go 限额（官方 API 档）：钥匙串存储 API Key（优先）/ `OPENCODE_GO_API_KEY`（环境变量兜底）→
-/// `opencode.ai/zen/go/v1/usage` Bearer → rolling/weekly/monthly 三窗。
+/// `opencode.ai/zen/go/v1/usage` Bearer → `usage.rolling/weekly/monthly` 三窗。
 ///
 /// 说明（范围收敛）：网页抓取与本地 DB 估算两档本期不接（SPEC §4.3 三级降级
 /// 仅实现 API 档）；无 API key → `configured: false`，零网络请求。
@@ -93,13 +80,14 @@ final class OpencodeLimitsFetcher: LimitsFetching {
         }
 
         var windows: [LimitWindowKind: UsageWindow] = [:]
-        if let rolling = OpencodeGoParsing.window(payload["rollingUsage"] as? [String: Any]) {
+        let usage = payload["usage"] as? [String: Any]
+        if let rolling = OpencodeGoParsing.window(usage?["rolling"] as? [String: Any]) {
             windows[.session] = rolling
         }
-        if let weekly = OpencodeGoParsing.window(payload["weeklyUsage"] as? [String: Any]) {
+        if let weekly = OpencodeGoParsing.window(usage?["weekly"] as? [String: Any]) {
             windows[.weekly] = weekly
         }
-        if let monthly = OpencodeGoParsing.window(payload["monthlyUsage"] as? [String: Any]) {
+        if let monthly = OpencodeGoParsing.window(usage?["monthly"] as? [String: Any]) {
             windows[.monthly] = monthly
         }
         guard !windows.isEmpty else {
