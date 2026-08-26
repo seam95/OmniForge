@@ -1287,6 +1287,7 @@ struct Strings: Equatable {
     let providerModelHint: String
     /// 角色模型映射分组标题（Claude Code）。
     let providerModelMappingLabel: String
+    let providerModelMappingSectionTitle: String
     let providerSonnetModelLabel: String
     let providerSonnetNameLabel: String
     let providerOpusModelLabel: String
@@ -1297,8 +1298,15 @@ struct Strings: Equatable {
     let providerHaikuNameLabel: String
     let providerSubagentModelLabel: String
     let providerPresetLabel: String
+    let providerPresetSectionTitle: String
+    let providerPresetHint: String
     /// 预设下拉「自定义」项。
     let providerPresetNone: String
+    let providerBasicInfoSectionTitle: String
+    let providerModelMappingDefaultHint: String
+    let providerModelFallbackLabel: String
+    let providerModelMappingRoleHint: String
+    let providerModelCustomDisplayNames: String
     /// 撞名写入被拒提示。
     let providerFormNameConflict: String
     let providerFormSave: String

@@ -554,11 +554,15 @@ enum ProviderBrandVisual {
     }
 
     static func resolve(for profile: ProviderProfile) -> Visual {
-        let nameLower = profile.name.lowercased()
-        let urlLower = profile.baseURL.lowercased()
+        visual(name: profile.name, baseURL: profile.baseURL)
+    }
+
+    static func visual(name: String, baseURL: String = "") -> Visual {
+        let nameLower = name.lowercased()
+        let urlLower = baseURL.lowercased()
 
         if nameLower.contains("glm") || nameLower.contains("智谱") || urlLower.contains("bigmodel") {
-            return Visual(letter: "G", color: Color(red: 0x2F / 255.0, green: 0x80 / 255.0, blue: 0xED / 255.0))
+            return Visual(letter: "G", color: Color(red: 0x3B / 255.0, green: 0x82 / 255.0, blue: 0xF6 / 255.0))
         }
         if nameLower.contains("kimi") || nameLower.contains("月之暗面") || urlLower.contains("moonshot") {
             return Visual(letter: "K", color: Color(red: 0x18 / 255.0, green: 0x18 / 255.0, blue: 0x1B / 255.0))
@@ -584,7 +588,7 @@ enum ProviderBrandVisual {
 
         // 自定义 / 兜底
         let initial: String
-        if let first = profile.name.first(where: { $0.isLetter || $0.isNumber }) {
+        if let first = name.first(where: { $0.isLetter || $0.isNumber }) {
             initial = String(first).uppercased()
         } else {
             initial = "P"
@@ -600,7 +604,7 @@ enum ProviderBrandVisual {
             Color(red: 0x10 / 255.0, green: 0xB9 / 255.0, blue: 0x81 / 255.0),
             Color(red: 0x06 / 255.0, green: 0xB6 / 255.0, blue: 0xD4 / 255.0),
         ]
-        let hash = abs(profile.name.hashValue)
+        let hash = abs(name.hashValue)
         let color = palette[hash % palette.count]
         return Visual(letter: initial, color: color)
     }

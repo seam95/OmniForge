@@ -37,7 +37,17 @@ enum ProviderPresetCatalog {
         claudeCode: PresetConnection(
             baseURL: "https://open.bigmodel.cn/api/anthropic",
             defaultModel: "glm-5.3",
-            modelMapping: nil,
+            modelMapping: ProviderModelMapping(
+                sonnet: "glm-5.3",
+                sonnetName: nil,
+                opus: "glm-5.3",
+                opusName: nil,
+                fable: "glm-5.3",
+                fableName: nil,
+                haiku: "glm-5.3-flash",
+                haikuName: nil,
+                subagent: "glm-5.3"
+            ),
             extraEnv: [:]
         ),
         codex: PresetConnection(

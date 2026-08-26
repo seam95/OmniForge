@@ -1,9 +1,12 @@
 import SwiftUI
 
-/// 供应商档案表单（新增 / 编辑，SPEC 2.9）：
-/// 名称、Base URL、凭证、可选模型。Claude Code 另展示角色模型映射（对齐 ccswitch：Sonnet / Opus /
-/// Fable / Haiku / Subagent 及其显示名）；Codex 保持单模型字段。可从内置 preset 一键带入连接参数。
-/// 新增模式带「预设」下拉（选择后带入 base URL / 默认模型 / 映射 / 额外 env）；编辑模式隐藏预设。
+/// 供应商档案表单（新增 / 编辑）：
+/// 按照设计稿重构现代卡片式布局：
+/// - 顶部清晰标题
+/// - 预设供应商下拉（仅新增模式，带品牌色徽章图标与自动填充提示）
+/// - 基础信息（名称、Base URL、带明密文切换的凭证）
+/// - 模型映射（Claude Code 角色网格：默认兜底、Sonnet、Opus、Fable、Haiku、Subagent 及可折叠显示名）
+/// - 底部取消与高亮保存主按钮
 struct ProfileEditorView: View {
     @ObservedObject var manager: ProviderSwitchManager
     let strings: Strings
@@ -12,6 +15,8 @@ struct ProfileEditorView: View {
     var profile: ProviderProfile?
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+
     @State private var name = ""
     @State private var baseURL = ""
     @State private var token = ""
@@ -27,82 +32,355 @@ struct ProfileEditorView: View {
     @State private var subagent = ""
     @State private var extraEnv: [String: String] = [:]
     @State private var presetID: String?
+    @State private var isTokenVisible = false
+    @State private var showDisplayNames = false
     @State private var errorMessage: String?
 
     private var isEditing: Bool { profile != nil }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             Text(title)
-                .font(.headline)
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(Color.primary)
+                .padding(.top, 2)
 
             if !isEditing {
-                Picker(strings.providerPresetLabel, selection: $presetID) {
-                    Text(strings.providerPresetNone).tag(String?.none)
-                    ForEach(ProviderPresetCatalog.builtins) { preset in
-                        Text(preset.displayName).tag(String?.some(preset.id))
-                    }
-                }
-                .pickerStyle(.menu)
-                .frame(maxWidth: 260, alignment: .leading)
-                .onChange(of: presetID) { _, newValue in
-                    applyPreset(newValue)
-                }
+                presetSection
+                sectionDivider
             }
 
-            VStack(alignment: .leading, spacing: 4) {
-                TextField(strings.providerNameLabel, text: $name)
-                TextField(strings.providerBaseURLLabel, text: $baseURL)
-                    .textContentType(.URL)
-                SecureField(strings.providerTokenLabel, text: $token)
-                    .textContentType(.password)
-                TextField(strings.providerModelLabel, text: $model)
-                if tool == .claudeCode {
-                    modelMappingFields
-                }
-                Text(strings.providerModelHint)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .textFieldStyle(.roundedBorder)
+            basicInfoSection
+
+            sectionDivider
+
+            modelMappingSection
 
             if let errorMessage {
                 Text(errorMessage)
-                    .font(.callout)
+                    .font(.system(size: 12.5))
                     .foregroundStyle(.red)
+                    .padding(.top, 2)
             }
 
-            HStack {
-                Button(strings.providerFormCancel) { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Spacer()
-                Button(strings.providerFormSave, action: save)
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!canSave)
-            }
+            sectionDivider
+
+            footerActions
         }
-        .padding(16)
-        .frame(width: 440)
+        .padding(20)
+        .frame(width: 520)
+        .background(
+            colorScheme == .dark
+                ? Color(nsColor: .windowBackgroundColor)
+                : Color(red: 0xF5 / 255.0, green: 0xF5 / 255.0, blue: 0xF7 / 255.0)
+        )
         .onAppear(perform: loadInitialValues)
     }
 
-    /// Claude Code 角色模型映射字段组（对齐 ccswitch）。
-    @ViewBuilder
-    private var modelMappingFields: some View {
-        Divider()
-        Text(strings.providerModelMappingLabel)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        TextField(strings.providerSonnetModelLabel, text: $sonnet)
-        TextField(strings.providerSonnetNameLabel, text: $sonnetName)
-        TextField(strings.providerOpusModelLabel, text: $opus)
-        TextField(strings.providerOpusNameLabel, text: $opusName)
-        TextField(strings.providerFableModelLabel, text: $fable)
-        TextField(strings.providerFableNameLabel, text: $fableName)
-        TextField(strings.providerHaikuModelLabel, text: $haiku)
-        TextField(strings.providerHaikuNameLabel, text: $haikuName)
-        TextField(strings.providerSubagentModelLabel, text: $subagent)
+    // MARK: - 预设供应商分组
+
+    private var presetSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(strings.providerPresetSectionTitle)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color.primary)
+
+            Menu {
+                ForEach(ProviderPresetCatalog.builtins) { preset in
+                    Button {
+                        presetID = preset.id
+                        applyPreset(preset.id)
+                    } label: {
+                        if presetID == preset.id {
+                            Label(preset.displayName, systemImage: "checkmark")
+                        } else {
+                            Text(preset.displayName)
+                        }
+                    }
+                }
+
+                Divider()
+
+                Button {
+                    presetID = nil
+                } label: {
+                    if presetID == nil {
+                        Label(strings.providerPresetNone, systemImage: "checkmark")
+                    } else {
+                        Text(strings.providerPresetNone)
+                    }
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    let visual = currentPresetVisual
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 3.5, style: .continuous)
+                            .fill(visual.color)
+                            .frame(width: 18, height: 18)
+                        Text(visual.letter)
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+
+                    Text(currentPresetDisplayName)
+                        .font(.system(size: 13.5, weight: .regular))
+                        .foregroundStyle(Color.primary)
+
+                    Spacer()
+
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color(red: 0x6E / 255.0, green: 0x6E / 255.0, blue: 0x73 / 255.0))
+                }
+                .padding(.horizontal, 12)
+                .frame(height: 38)
+                .background(inputBackground)
+                .overlay(inputBorder)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Text(strings.providerPresetHint)
+                .font(.system(size: 12))
+                .foregroundStyle(Color(red: 0x8E / 255.0, green: 0x8E / 255.0, blue: 0x93 / 255.0))
+        }
+    }
+
+    private var currentPresetDisplayName: String {
+        guard let id = presetID, let preset = ProviderPresetCatalog.preset(id: id) else {
+            return strings.providerPresetNone
+        }
+        return preset.displayName
+    }
+
+    private var currentPresetVisual: ProviderBrandVisual.Visual {
+        if let id = presetID, let preset = ProviderPresetCatalog.preset(id: id) {
+            return ProviderBrandVisual.visual(name: preset.displayName, baseURL: preset.claudeCode?.baseURL ?? "")
+        }
+        return ProviderBrandVisual.visual(name: name.isEmpty ? strings.providerPresetNone : name, baseURL: baseURL)
+    }
+
+    // MARK: - 基础信息分组
+
+    private var basicInfoSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(strings.providerBasicInfoSectionTitle)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color.primary)
+
+            // 名称
+            VStack(alignment: .leading, spacing: 5) {
+                Text(strings.providerNameLabel)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Color(red: 0x6E / 255.0, green: 0x6E / 255.0, blue: 0x73 / 255.0))
+
+                TextField("GLM 智谱", text: $name)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13.5))
+                    .padding(.horizontal, 12)
+                    .frame(height: 36)
+                    .background(inputBackground)
+                    .overlay(inputBorder)
+            }
+
+            // Base URL
+            VStack(alignment: .leading, spacing: 5) {
+                Text(strings.providerBaseURLLabel)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Color(red: 0x6E / 255.0, green: 0x6E / 255.0, blue: 0x73 / 255.0))
+
+                TextField("https://open.bigmodel.cn/api/anthropic", text: $baseURL)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13.5))
+                    .textContentType(.URL)
+                    .padding(.horizontal, 12)
+                    .frame(height: 36)
+                    .background(inputBackground)
+                    .overlay(inputBorder)
+            }
+
+            // 凭证
+            VStack(alignment: .leading, spacing: 5) {
+                Text(strings.providerTokenLabel)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Color(red: 0x6E / 255.0, green: 0x6E / 255.0, blue: 0x73 / 255.0))
+
+                HStack(spacing: 8) {
+                    if isTokenVisible {
+                        TextField(strings.providerTokenPlaceholder, text: $token)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 13.5))
+                    } else {
+                        SecureField(strings.providerTokenPlaceholder, text: $token)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 13.5))
+                            .textContentType(.password)
+                    }
+
+                    Button {
+                        isTokenVisible.toggle()
+                    } label: {
+                        Image(systemName: isTokenVisible ? "eye.slash" : "eye")
+                            .font(.system(size: 13.5))
+                            .foregroundStyle(Color(red: 0x8E / 255.0, green: 0x8E / 255.0, blue: 0x93 / 255.0))
+                    }
+                    .buttonStyle(.plain)
+                    .help(isTokenVisible ? "隐藏凭证" : "显示明文")
+                }
+                .padding(.horizontal, 12)
+                .frame(height: 36)
+                .background(inputBackground)
+                .overlay(inputBorder)
+            }
+        }
+    }
+
+    // MARK: - 模型映射分组
+
+    private var modelMappingSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if tool == .claudeCode {
+                HStack {
+                    Text(strings.providerModelMappingSectionTitle)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color.primary)
+
+                    Spacer()
+
+                    Text(strings.providerModelMappingDefaultHint)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color(red: 0x8E / 255.0, green: 0x8E / 255.0, blue: 0x93 / 255.0))
+                }
+
+                VStack(spacing: 8) {
+                    mappingRow(label: strings.providerModelFallbackLabel, text: $model, placeholder: "glm-5.3")
+                    mappingRow(label: strings.providerSonnetModelLabel, text: $sonnet, placeholder: "glm-5.3")
+                    mappingRow(label: strings.providerOpusModelLabel, text: $opus, placeholder: "glm-5.3")
+                    mappingRow(label: strings.providerFableModelLabel, text: $fable, placeholder: "glm-5.3")
+                    mappingRow(label: strings.providerHaikuModelLabel, text: $haiku, placeholder: "glm-5.3-flash")
+                    mappingRow(label: strings.providerSubagentModelLabel, text: $subagent, placeholder: "glm-5.3")
+                }
+
+                Text(strings.providerModelMappingRoleHint)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color(red: 0x8E / 255.0, green: 0x8E / 255.0, blue: 0x93 / 255.0))
+                    .padding(.top, 2)
+
+                DisclosureGroup(isExpanded: $showDisplayNames) {
+                    VStack(spacing: 8) {
+                        mappingRow(label: strings.providerSonnetNameLabel, text: $sonnetName, placeholder: "", labelWidth: 92)
+                        mappingRow(label: strings.providerOpusNameLabel, text: $opusName, placeholder: "", labelWidth: 92)
+                        mappingRow(label: strings.providerFableNameLabel, text: $fableName, placeholder: "", labelWidth: 92)
+                        mappingRow(label: strings.providerHaikuNameLabel, text: $haikuName, placeholder: "", labelWidth: 92)
+                    }
+                    .padding(.top, 6)
+                } label: {
+                    Text(strings.providerModelCustomDisplayNames)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.secondary)
+                }
+            } else {
+                // Codex
+                Text(strings.providerModelLabel)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color.primary)
+
+                mappingRow(label: strings.providerModelLabel, text: $model, placeholder: "")
+
+                Text(strings.providerModelHint)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color(red: 0x8E / 255.0, green: 0x8E / 255.0, blue: 0x93 / 255.0))
+            }
+        }
+    }
+
+    private func mappingRow(label: String, text: Binding<String>, placeholder: String, labelWidth: CGFloat = 74) -> some View {
+        HStack(spacing: 12) {
+            Text(label)
+                .font(.system(size: 13))
+                .foregroundStyle(Color(red: 0x6E / 255.0, green: 0x6E / 255.0, blue: 0x73 / 255.0))
+                .lineLimit(1)
+                .frame(width: labelWidth, alignment: .leading)
+
+            TextField(placeholder, text: text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .padding(.horizontal, 10)
+                .frame(height: 32)
+                .background(mappingInputBackground)
+                .overlay(mappingInputBorder)
+        }
+    }
+
+    // MARK: - 底部操作栏
+
+    private var footerActions: some View {
+        HStack {
+            Button(strings.providerFormCancel) {
+                dismiss()
+            }
+            .buttonStyle(ProviderCancelButtonStyle())
+            .keyboardShortcut(.cancelAction)
+
+            Spacer()
+
+            Button(strings.providerFormSave, action: save)
+                .buttonStyle(ProviderSaveButtonStyle(enabled: canSave))
+                .keyboardShortcut(.defaultAction)
+                .disabled(!canSave)
+        }
+        .padding(.top, 2)
+    }
+
+    // MARK: - 视觉样式辅助
+
+    private var sectionDivider: some View {
+        Rectangle()
+            .fill(
+                colorScheme == .dark
+                    ? Color.white.opacity(0.08)
+                    : Color(red: 0xE5 / 255.0, green: 0xE5 / 255.0, blue: 0xEA / 255.0)
+            )
+            .frame(height: 1)
+            .padding(.vertical, 2)
+    }
+
+    private var inputBackground: some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(
+                colorScheme == .dark
+                    ? Color(nsColor: .controlBackgroundColor)
+                    : Color.white
+            )
+    }
+
+    private var inputBorder: some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .strokeBorder(
+                colorScheme == .dark
+                    ? Color.white.opacity(0.14)
+                    : Color(red: 0xD1 / 255.0, green: 0xD1 / 255.0, blue: 0xD6 / 255.0),
+                lineWidth: 1
+            )
+    }
+
+    private var mappingInputBackground: some View {
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(
+                colorScheme == .dark
+                    ? Color(nsColor: .controlBackgroundColor)
+                    : Color.white
+            )
+    }
+
+    private var mappingInputBorder: some View {
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .strokeBorder(
+                colorScheme == .dark
+                    ? Color.white.opacity(0.14)
+                    : Color(red: 0xD1 / 255.0, green: 0xD1 / 255.0, blue: 0xD6 / 255.0),
+                lineWidth: 1
+            )
     }
 
     private var title: String {
@@ -142,6 +420,10 @@ struct ProfileEditorView: View {
         haikuName = profile.modelMapping?.haikuName ?? ""
         subagent = profile.modelMapping?.subagent ?? ""
         extraEnv = profile.extraEnv
+
+        if !sonnetName.isEmpty || !opusName.isEmpty || !fableName.isEmpty || !haikuName.isEmpty {
+            showDisplayNames = true
+        }
     }
 
     /// 从 preset 带入连接参数（仅新增模式；编辑模式下 preset 下拉隐藏）。
@@ -150,21 +432,23 @@ struct ProfileEditorView: View {
         switch tool {
         case .claudeCode:
             if let connection = preset.claudeCode {
+                name = preset.displayName
                 baseURL = connection.baseURL
                 model = connection.defaultModel
-                sonnet = connection.modelMapping?.sonnet ?? ""
+                sonnet = connection.modelMapping?.sonnet ?? connection.defaultModel
                 sonnetName = connection.modelMapping?.sonnetName ?? ""
-                opus = connection.modelMapping?.opus ?? ""
+                opus = connection.modelMapping?.opus ?? connection.defaultModel
                 opusName = connection.modelMapping?.opusName ?? ""
-                fable = connection.modelMapping?.fable ?? ""
+                fable = connection.modelMapping?.fable ?? connection.defaultModel
                 fableName = connection.modelMapping?.fableName ?? ""
-                haiku = connection.modelMapping?.haiku ?? ""
+                haiku = connection.modelMapping?.haiku ?? connection.defaultModel
                 haikuName = connection.modelMapping?.haikuName ?? ""
-                subagent = connection.modelMapping?.subagent ?? ""
+                subagent = connection.modelMapping?.subagent ?? connection.defaultModel
                 extraEnv = connection.extraEnv
             }
         case .codex:
             if let connection = preset.codex {
+                name = preset.displayName
                 baseURL = connection.baseURL
                 model = connection.defaultModel
             }
@@ -217,5 +501,47 @@ struct ProfileEditorView: View {
 
     private func emptyToNil(_ value: String) -> String? {
         value.isEmpty ? nil : value
+    }
+}
+
+// MARK: - 按钮样式
+
+/// 取消按钮样式
+private struct ProviderCancelButtonStyle: ButtonStyle {
+    @State private var isHovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13.5, weight: .regular))
+            .foregroundStyle(isHovered ? Color.primary : Color(red: 0x6E / 255.0, green: 0x6E / 255.0, blue: 0x73 / 255.0))
+            .opacity(configuration.isPressed ? 0.7 : 1.0)
+            .onHover { isHovered = $0 }
+            .padding(.vertical, 6)
+            .padding(.horizontal, 8)
+            .contentShape(Rectangle())
+    }
+}
+
+/// 保存主按钮样式
+private struct ProviderSaveButtonStyle: ButtonStyle {
+    let enabled: Bool
+    @State private var isHovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13.5, weight: .medium))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(
+                        enabled
+                            ? (isHovered ? Color(red: 0x00 / 255.0, green: 0x77 / 255.0, blue: 0xED / 255.0) : Color(red: 0x0A / 255.0, green: 0x84 / 255.0, blue: 0xFF / 255.0))
+                            : Color.gray.opacity(0.35)
+                    )
+            )
+            .opacity(configuration.isPressed ? 0.85 : 1.0)
+            .onHover { isHovered = $0 }
     }
 }
