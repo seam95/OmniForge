@@ -1124,7 +1124,7 @@ extension Strings {
         featureHubGroupAI: "AI",
         settingsTabProviderSwitch: "Provider Switch",
         controlcenterTabProviderSwitch: "Provider",
-        controlcenterNavProviderSwitch: "Provider Switch",
+        controlcenterNavProviderSwitch: "Provider",
         providerToolClaudeCode: "Claude Code",
         providerToolCodex: "Codex",
         providerOfficial: "Official",

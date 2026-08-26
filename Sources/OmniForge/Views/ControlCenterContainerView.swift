@@ -3,9 +3,9 @@ import SwiftUI
 
 /// 控制中心内容区高度策略：所有页按内容自适应收缩并设滚动上限。
 enum ControlCenterContentMetrics {
-    static let panelWidth: CGFloat = 380
+    static let panelWidth: CGFloat = 420
     /// 各页滚动上限。
-    static let maxContentHeight: CGFloat = 525
+    static let maxContentHeight: CGFloat = 530
     /// 空状态 / 不可用页的最小内容高度，避免 popover 过扁。
     static let emptyContentMinHeight: CGFloat = 120
 
@@ -116,38 +116,34 @@ struct ControlCenterContainerView: View {
         .idle
     }
 
-    /// 对齐 macOS 控制中心分段导航：紧凑单元 + 柔和背景 + 选中 accent 悬浮底块。
+    /// 对齐 macOS 控制中心分段导航：紧凑等分单元 + 柔和背景 + 选中 accent 悬浮底块。
     private func panelNavigation(visiblePanels: [MenuPanel]) -> some View {
-        HStack {
-            Spacer(minLength: 0)
-            HStack(spacing: 3) {
-                ForEach(visiblePanels) { panel in
-                    let isActive = selectedPanel == panel
-                    let title = panel.navTitle(in: state.l10n.s)
-                    ControlCenterNavButton(
-                        panel: panel,
-                        title: title,
-                        isActive: isActive,
-                        activeFill: navigationActiveFill,
-                        colorScheme: colorScheme
-                    ) {
-                        withAnimation(Theme.Animation.spring) {
-                            selectedPanelRawValue = panel.rawValue
-                        }
+        HStack(spacing: 2) {
+            ForEach(visiblePanels) { panel in
+                let isActive = selectedPanel == panel
+                let title = panel.navTitle(in: state.l10n.s)
+                ControlCenterNavButton(
+                    panel: panel,
+                    title: title,
+                    isActive: isActive,
+                    activeFill: navigationActiveFill,
+                    colorScheme: colorScheme
+                ) {
+                    withAnimation(Theme.Animation.spring) {
+                        selectedPanelRawValue = panel.rawValue
                     }
                 }
             }
-            .padding(3)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-                    .fill(navigationTrackFill)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-                    .strokeBorder(navigationTrackBorder, lineWidth: 0.8)
-            )
-            Spacer(minLength: 0)
         }
+        .padding(3)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                .fill(navigationTrackFill)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                .strokeBorder(navigationTrackBorder, lineWidth: 0.8)
+        )
     }
 
     @ViewBuilder
@@ -425,14 +421,16 @@ private struct ControlCenterNavButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
+            HStack(spacing: 4) {
                 Image(systemName: panel.symbolName)
                     .font(.system(size: 11.5, weight: .semibold))
                 Text(title)
                     .font(Theme.Stats.font12Medium)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 5.5)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
             .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous))
         }
         .buttonStyle(.plain)

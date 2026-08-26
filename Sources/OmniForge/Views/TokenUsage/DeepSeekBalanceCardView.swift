@@ -8,6 +8,7 @@ struct DeepSeekBalanceCardView: View {
     let threshold: Double
     let strings: Strings
     let now: Date
+    @Environment(\.colorScheme) private var colorScheme
 
     private var status: DeepSeekBalanceCardState {
         DeepSeekBalanceCardState.derive(snapshot: snapshot ?? DeepSeekBalanceSnapshot(
@@ -96,7 +97,7 @@ struct DeepSeekBalanceCardView: View {
 
     private var currencySeparator: some View {
         Rectangle()
-            .fill(Theme.Stats.separator)
+            .fill(colorScheme == .light ? Theme.Stats.separator : Color.white.opacity(0.08))
             .frame(height: 0.5)
             .padding(.vertical, 1)
     }

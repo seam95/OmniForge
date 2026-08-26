@@ -1124,7 +1124,7 @@ extension Strings {
         featureHubGroupAI: "AI",
         settingsTabProviderSwitch: "供应商切换",
         controlcenterTabProviderSwitch: "供应商",
-        controlcenterNavProviderSwitch: "供应商切换",
+        controlcenterNavProviderSwitch: "供应商",
         providerToolClaudeCode: "Claude Code",
         providerToolCodex: "Codex",
         providerOfficial: "官方",
