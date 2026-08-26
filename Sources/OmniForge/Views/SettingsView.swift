@@ -21,11 +21,23 @@ struct SettingsView: View {
 
     var body: some View {
         let visibleTabs = SettingsToolbarTab.visibleCases(isAvailable: runtime.isAvailable)
+        let visibleSections = SettingsToolbarTab.visibleSections(isAvailable: runtime.isAvailable)
 
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            List(visibleTabs, selection: $navigation.selectedTab) { tab in
-                Label(tab.title(in: state.l10n.s), systemImage: tab.systemImage)
-                    .tag(tab)
+            List(selection: $navigation.selectedTab) {
+                ForEach(visibleTabs.filter { $0.sidebarGroup == nil }) { tab in
+                    Label(tab.title(in: state.l10n.s), systemImage: tab.systemImage)
+                        .tag(tab)
+                }
+
+                ForEach(visibleSections) { section in
+                    Section(section.title(in: state.l10n.s)) {
+                        ForEach(section.tabs) { tab in
+                            Label(tab.title(in: state.l10n.s), systemImage: tab.systemImage)
+                                .tag(tab)
+                        }
+                    }
+                }
             }
             .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)

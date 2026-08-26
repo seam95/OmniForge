@@ -13,6 +13,37 @@ final class SettingsToolbarTabTests: XCTestCase {
         )
     }
 
+    func test_visibleSections_groupsSettingsTabsByFeatureGroup() {
+        XCTAssertEqual(
+            SettingsToolbarTab.visibleSections(isAvailable: { _ in true }),
+            [
+                SettingsSidebarSection(group: .input, tabs: [.inputMethod]),
+                SettingsSidebarSection(group: .clipboard, tabs: [.clipboard]),
+                SettingsSidebarSection(group: .monitor, tabs: [.performance, .tokenUsage]),
+                SettingsSidebarSection(group: .productivity, tabs: [.shelf, .cleaner, .uninstaller]),
+                SettingsSidebarSection(group: .mouse, tabs: [.mouse]),
+                SettingsSidebarSection(group: .energy, tabs: [.keepAwake]),
+                SettingsSidebarSection(group: .capture, tabs: [.screenshot]),
+                SettingsSidebarSection(group: .ai, tabs: [.providerSwitch]),
+            ]
+        )
+    }
+
+    func test_visibleSections_skipsEmptyGroupsAndKeepsStandaloneTabsOutOfSections() {
+        XCTAssertEqual(
+            SettingsToolbarTab.visibleSections(isAvailable: { $0 == .systemMonitor }),
+            [
+                SettingsSidebarSection(group: .monitor, tabs: [.performance]),
+            ]
+        )
+
+        XCTAssertEqual(
+            SettingsToolbarTab.visibleCases(isAvailable: { _ in false }).filter { $0.sidebarGroup == nil },
+            [.general, .features]
+        )
+        XCTAssertEqual(SettingsToolbarTab.visibleSections(isAvailable: { _ in false }), [])
+    }
+
     func test_tokenUsageSystemImageAndTitle() {
         XCTAssertEqual(SettingsToolbarTab.tokenUsage.systemImage, "chart.line.uptrend.xyaxis")
         XCTAssertEqual(SettingsToolbarTab.tokenUsage.title(in: .en), "Token Usage")

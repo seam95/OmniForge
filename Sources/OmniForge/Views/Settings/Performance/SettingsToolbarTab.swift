@@ -47,6 +47,15 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
         }
     }
 
+    static func visibleSections(isAvailable: (AppFeature) -> Bool) -> [SettingsSidebarSection] {
+        let visibleTabs = visibleCases(isAvailable: isAvailable)
+        return FeatureGroup.allCases.compactMap { group in
+            let tabs = visibleTabs.filter { $0.sidebarGroup == group }
+            guard !tabs.isEmpty else { return nil }
+            return SettingsSidebarSection(group: group, tabs: tabs)
+        }
+    }
+
     static func resolvedSelection(
         _ selection: SettingsToolbarTab?,
         in visibleCases: [SettingsToolbarTab]
@@ -57,6 +66,29 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
     }
 
     var id: String { rawValue }
+
+    var sidebarGroup: FeatureGroup? {
+        switch self {
+        case .general, .features:
+            return nil
+        case .inputMethod:
+            return .input
+        case .clipboard:
+            return .clipboard
+        case .shelf, .cleaner, .uninstaller:
+            return .productivity
+        case .screenshot:
+            return .capture
+        case .mouse:
+            return .mouse
+        case .performance, .tokenUsage:
+            return .monitor
+        case .keepAwake:
+            return .energy
+        case .providerSwitch:
+            return .ai
+        }
+    }
 
     var systemImage: String {
         switch self {
@@ -92,6 +124,17 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
         case .uninstaller: return strings.uninstallerName
         case .features: return strings.settingsTabFeatures
         }
+    }
+}
+
+struct SettingsSidebarSection: Identifiable, Equatable {
+    let group: FeatureGroup
+    let tabs: [SettingsToolbarTab]
+
+    var id: FeatureGroup { group }
+
+    func title(in strings: Strings) -> String {
+        group.hubTitle(in: strings)
     }
 }
 
