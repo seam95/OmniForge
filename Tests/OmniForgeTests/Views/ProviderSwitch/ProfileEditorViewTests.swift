@@ -4,6 +4,24 @@ import AppKit
 @testable import OmniForge
 
 final class ProfileEditorViewTests: XCTestCase {
+    func test_layout_maxHeightRespectsSmallAndLargeScreens() {
+        XCTAssertEqual(ProfileEditorLayout.maxHeight(for: 600), 536)
+        XCTAssertEqual(ProfileEditorLayout.maxHeight(for: 900), 720)
+        XCTAssertEqual(ProfileEditorLayout.maxHeight(for: 300), 300)
+    }
+
+    func test_layout_scrollViewportReservesFixedFooter() {
+        let visibleScreenHeight: CGFloat = 600
+        let maxHeight = ProfileEditorLayout.maxHeight(for: visibleScreenHeight)
+        let scrollHeight = ProfileEditorLayout.scrollViewportHeight(for: visibleScreenHeight)
+
+        XCTAssertEqual(
+            maxHeight - scrollHeight,
+            ProfileEditorLayout.footerHeight + ProfileEditorLayout.separatorHeight
+        )
+        XCTAssertLessThan(scrollHeight, maxHeight)
+    }
+
     func test_brandVisual_knownBrands() {
         let glm = ProviderBrandVisual.visual(name: "GLM 智谱", baseURL: "https://open.bigmodel.cn/api/anthropic")
         XCTAssertEqual(glm.letter, "G")
@@ -75,6 +93,11 @@ final class ProfileEditorViewTests: XCTestCase {
 
         let hostingView = NSHostingView(rootView: view)
         let size = hostingView.fittingSize
+        XCTAssertLessThanOrEqual(
+            size.height,
+            720,
+            "新增供应商表单不能按全部内容无限撑高，否则小屏幕下底部操作栏不可见"
+        )
         hostingView.frame = NSRect(origin: .zero, size: size)
         hostingView.layoutSubtreeIfNeeded()
 

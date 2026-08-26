@@ -1,4 +1,35 @@
+import AppKit
 import SwiftUI
+
+/// 供应商表单的窗口布局策略。
+///
+/// 将屏幕边界计算与 SwiftUI 视图分离，便于用纯单元测试锁定小屏幕行为。
+enum ProfileEditorLayout {
+    static let editorWidth: CGFloat = 520
+    static let preferredMaximumHeight: CGFloat = 720
+    static let minimumHeight: CGFloat = 420
+    static let footerHeight: CGFloat = 56
+    static let separatorHeight: CGFloat = 1
+    static let verticalScreenInset: CGFloat = 64
+    static let fallbackVisibleScreenHeight: CGFloat = 900
+
+    static func maxHeight(for visibleScreenHeight: CGFloat) -> CGFloat {
+        guard visibleScreenHeight.isFinite, visibleScreenHeight > 0 else {
+            return preferredMaximumHeight
+        }
+
+        let availableHeight = max(0, visibleScreenHeight - verticalScreenInset)
+        let preferredHeight = min(preferredMaximumHeight, max(minimumHeight, availableHeight))
+        return min(preferredHeight, visibleScreenHeight)
+    }
+
+    static func scrollViewportHeight(for visibleScreenHeight: CGFloat) -> CGFloat {
+        max(
+            0,
+            maxHeight(for: visibleScreenHeight) - footerHeight - separatorHeight
+        )
+    }
+}
 
 /// 供应商档案表单（新增 / 编辑）：
 /// 按照设计稿重构现代卡片式布局：
@@ -39,6 +70,27 @@ struct ProfileEditorView: View {
     private var isEditing: Bool { profile != nil }
 
     var body: some View {
+        VStack(spacing: 0) {
+            ScrollView(.vertical, showsIndicators: true) {
+                formContent
+                    .padding(20)
+            }
+            .frame(maxHeight: scrollViewportHeight)
+
+            Divider()
+                .padding(.horizontal, 20)
+
+            footerActions
+                .padding(.horizontal, 20)
+                .frame(maxWidth: .infinity, minHeight: ProfileEditorLayout.footerHeight)
+        }
+        .frame(width: ProfileEditorLayout.editorWidth)
+        .frame(maxHeight: maxEditorHeight)
+        .background(editorBackground)
+        .onAppear(perform: loadInitialValues)
+    }
+
+    private var formContent: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(title)
                 .font(.system(size: 17, weight: .bold))
@@ -62,19 +114,26 @@ struct ProfileEditorView: View {
                     .foregroundStyle(.red)
                     .padding(.top, 2)
             }
-
-            sectionDivider
-
-            footerActions
         }
-        .padding(20)
-        .frame(width: 520)
-        .background(
-            colorScheme == .dark
-                ? Color(nsColor: .windowBackgroundColor)
-                : Color(red: 0xF5 / 255.0, green: 0xF5 / 255.0, blue: 0xF7 / 255.0)
-        )
-        .onAppear(perform: loadInitialValues)
+    }
+
+    private var visibleScreenHeight: CGFloat {
+        let screen = NSApp.keyWindow?.screen ?? NSScreen.main ?? NSScreen.screens.first
+        return screen?.visibleFrame.height ?? ProfileEditorLayout.fallbackVisibleScreenHeight
+    }
+
+    private var maxEditorHeight: CGFloat {
+        ProfileEditorLayout.maxHeight(for: visibleScreenHeight)
+    }
+
+    private var scrollViewportHeight: CGFloat {
+        ProfileEditorLayout.scrollViewportHeight(for: visibleScreenHeight)
+    }
+
+    private var editorBackground: Color {
+        colorScheme == .dark
+            ? Color(nsColor: .windowBackgroundColor)
+            : Color(red: 0xF5 / 255.0, green: 0xF5 / 255.0, blue: 0xF7 / 255.0)
     }
 
     // MARK: - 预设供应商分组
