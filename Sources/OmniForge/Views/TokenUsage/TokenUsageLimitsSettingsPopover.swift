@@ -8,16 +8,19 @@ struct TokenUsageLimitsSettingsPopover: View {
     @ObservedObject var preferences: TokenUsagePreferences
     @ObservedObject var manager: TokenUsageManager
     var balanceManager: DeepSeekBalanceManager? = nil
+    var credentialConfiguredProviders: Set<TokenUsageProvider> = []
     let strings: Strings
     var onOpenSettings: (() -> Void)? = nil
     @State private var draggingId: TokenUsageProvider?
 
     private var configuredProviders: [TokenUsageProvider] {
-        var providers = Set(manager.configuredProviders)
-        if let balanceManager, balanceManager.showingBalanceCard {
-            providers.insert(.deepSeek)
-        }
-        return preferences.configuration.providerOrder.filter { providers.contains($0) }
+        TokenUsageProviderDisplayPolicy.providers(
+            providerOrder: preferences.configuration.providerOrder,
+            configuredLimitProviders: Set(manager.configuredProviders),
+            credentialConfiguredProviders: credentialConfiguredProviders,
+            showingDeepSeekBalance: balanceManager?.showingBalanceCard ?? false,
+            hiddenProviders: []
+        )
     }
 
     var body: some View {

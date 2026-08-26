@@ -204,6 +204,89 @@ final class TokenUsagePanelFilteringTests: XCTestCase {
         let singleSeparators = singleSelectActive.enumerated().compactMap { index, _ in index > 0 ? index : nil }
         XCTAssertTrue(singleSeparators.isEmpty, "单个供应商卡片不应有分割线")
     }
+
+    // MARK: - 凭证类 provider 展示候选（2026-08-26）
+
+    func test_displayPolicy_includesCredentialConfiguredArkAndOpencodeWithoutConfiguredLimitSnapshots() {
+        let visible = TokenUsageProviderDisplayPolicy.providers(
+            providerOrder: TokenUsageProvider.allCases,
+            configuredLimitProviders: [.codex],
+            credentialConfiguredProviders: [.opencode, .arkCodingPlan],
+            showingDeepSeekBalance: false,
+            hiddenProviders: []
+        )
+
+        XCTAssertEqual(visible, [.codex, .opencode, .arkCodingPlan], "有凭证但暂无有效限额窗口时仍应进入胶囊与弹层候选")
+    }
+
+    func test_displayPolicy_hiddenProviderExcludedFromPanelButCanRemainInPopoverCandidate() {
+        let panelVisible = TokenUsageProviderDisplayPolicy.providers(
+            providerOrder: TokenUsageProvider.allCases,
+            configuredLimitProviders: [],
+            credentialConfiguredProviders: [.opencode, .arkCodingPlan],
+            showingDeepSeekBalance: false,
+            hiddenProviders: [.opencode]
+        )
+        let popoverVisible = TokenUsageProviderDisplayPolicy.providers(
+            providerOrder: TokenUsageProvider.allCases,
+            configuredLimitProviders: [],
+            credentialConfiguredProviders: [.opencode, .arkCodingPlan],
+            showingDeepSeekBalance: false,
+            hiddenProviders: []
+        )
+
+        XCTAssertEqual(panelVisible, [.arkCodingPlan], "主面板尊重隐藏开关")
+        XCTAssertEqual(popoverVisible, [.opencode, .arkCodingPlan], "弹层保留隐藏 provider 以便重新打开")
+    }
+
+    func test_displayableCardProviders_includesCredentialConfiguredProviderBeforeLimitSnapshotArrives() {
+        let displayable = TokenUsageProviderDisplayPolicy.displayableCardProviders(
+            from: [.opencode, .arkCodingPlan],
+            limits: [:],
+            credentialConfiguredProviders: [.opencode],
+            showingDeepSeekBalance: false
+        )
+
+        XCTAssertEqual(displayable, [.opencode], "保存凭证后限额快照尚未返回时仍保留状态卡位置")
+    }
+
+    func test_credentialStateReader_detectsKeychainAndEnvironmentCredentials() {
+        let opencodeStore = PanelFilteringOpencodeStore(key: "  opencode-key  ")
+        let arkStore = PanelFilteringArkStore(credentials: nil)
+        let providers = TokenUsageCredentialStateReader.configuredProviders(
+            opencodeStore: opencodeStore,
+            arkStore: arkStore,
+            environment: [
+                "ARK_AK": "ark-ak",
+                "ARK_SK": "ark-sk",
+            ]
+        )
+
+        XCTAssertEqual(providers, [.opencode, .arkCodingPlan])
+    }
 }
 
+private final class PanelFilteringOpencodeStore: OpencodeAPIKeyStoring {
+    var key: String?
+
+    init(key: String?) {
+        self.key = key
+    }
+
+    func readAPIKey() throws -> String? { key }
+    func writeAPIKey(_ apiKey: String) throws { key = apiKey }
+    func deleteAPIKey() throws { key = nil }
+}
+
+private final class PanelFilteringArkStore: ArkCredentialsStoring {
+    var credentials: ArkCredentials?
+
+    init(credentials: ArkCredentials?) {
+        self.credentials = credentials
+    }
+
+    func readCredentials() throws -> ArkCredentials? { credentials }
+    func writeCredentials(_ credentials: ArkCredentials) throws { self.credentials = credentials }
+    func deleteCredentials() throws { credentials = nil }
+}
 

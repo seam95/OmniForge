@@ -22,6 +22,8 @@ struct TokenUsagePanelView: View {
     @State private var selectedProvider: TokenUsageProvider?
     /// 齿轮弹层（限额显示）展示状态。
     @State private var showsLimitsSettings = false
+    /// 凭证已配置但暂无有效限额窗口的 provider（OpenCode / 方舟 Coding Plan）。
+    @State private var credentialConfiguredProviders: Set<TokenUsageProvider> = []
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -35,6 +37,10 @@ struct TokenUsagePanelView: View {
         .padding(.horizontal, 12)
         .padding(.top, 2)
         .padding(.bottom, 4)
+        .onAppear { reloadCredentialConfiguredProviders() }
+        .onChange(of: manager.limits) { _, _ in
+            reloadCredentialConfiguredProviders()
+        }
         .onChange(of: preferences.configuration.hiddenProviders) { _, hidden in
             // 弹层隐藏了当前选中的 provider → 清除选中，回到「全部」视图
             if let selected = selectedProvider, hidden.contains(selected) {
@@ -83,6 +89,7 @@ struct TokenUsagePanelView: View {
                 preferences: preferences,
                 manager: manager,
                 balanceManager: balanceManager,
+                credentialConfiguredProviders: credentialConfiguredProviders,
                 strings: strings,
                 onOpenSettings: {
                     showsLimitsSettings = false
@@ -95,12 +102,13 @@ struct TokenUsagePanelView: View {
     /// 所有已配置的 provider（含常规 limits provider 与 DeepSeek 余额 provider，按用户设置排序），
     /// 过滤掉用户在「限额显示」弹层中隐藏的 provider。
     private var visibleProviders: [TokenUsageProvider] {
-        var providers = Set(manager.configuredProviders)
-        if let balanceManager, balanceManager.showingBalanceCard {
-            providers.insert(.deepSeek)
-        }
-        let hidden = preferences.configuration.hiddenProviders
-        return preferences.configuration.providerOrder.filter { providers.contains($0) && !hidden.contains($0) }
+        TokenUsageProviderDisplayPolicy.providers(
+            providerOrder: preferences.configuration.providerOrder,
+            configuredLimitProviders: Set(manager.configuredProviders),
+            credentialConfiguredProviders: credentialConfiguredProviders,
+            showingDeepSeekBalance: balanceManager?.showingBalanceCard ?? false,
+            hiddenProviders: preferences.configuration.hiddenProviders
+        )
     }
 
     /// Provider 分段胶囊（仅已配置 provider + 「全部」）。
@@ -207,9 +215,12 @@ struct TokenUsagePanelView: View {
     @ViewBuilder
     private var providerCardsBlock: some View {
         let providers = selectedProvider.map { [$0] } ?? visibleProviders
-        let displayableProviders = providers.filter { provider in
-            (manager.limits[provider] != nil) || (provider == .deepSeek && (balanceManager?.showingBalanceCard ?? false))
-        }
+        let displayableProviders = TokenUsageProviderDisplayPolicy.displayableCardProviders(
+            from: providers,
+            limits: manager.limits,
+            credentialConfiguredProviders: credentialConfiguredProviders,
+            showingDeepSeekBalance: balanceManager?.showingBalanceCard ?? false
+        )
         if !displayableProviders.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 10) {
@@ -217,7 +228,7 @@ struct TokenUsagePanelView: View {
                         if index > 0 {
                             providerSeparator
                         }
-                        if let limits = manager.limits[provider] {
+                        if let limits = limitSnapshot(for: provider) {
                             TokenUsageLimitCardView(
                                 limits: limits,
                                 strings: strings,
@@ -245,6 +256,21 @@ struct TokenUsagePanelView: View {
                 footerLine
             }
         }
+    }
+
+    private func limitSnapshot(for provider: TokenUsageProvider) -> ProviderUsageLimits? {
+        if let limits = manager.limits[provider] {
+            return limits
+        }
+        guard TokenUsageProviderDisplayPolicy.credentialDrivenProviders.contains(provider),
+              credentialConfiguredProviders.contains(provider) else {
+            return nil
+        }
+        return .notConfigured(provider)
+    }
+
+    private func reloadCredentialConfiguredProviders() {
+        credentialConfiguredProviders = TokenUsageCredentialStateReader.configuredProviders()
     }
 
     private var providerSeparator: some View {
@@ -306,7 +332,14 @@ struct TokenUsagePanelView: View {
 
     /// 来源脚注：「10 分钟前更新 · 官方来源 · 5 家已配置 4 家」（ⓘ 提示可打开的设置页，参考 UI 稿）。
     private var footerLine: some View {
-        let activeCount = manager.configuredProviders.filter { provider in
+        let allConfiguredProviders = TokenUsageProviderDisplayPolicy.providers(
+            providerOrder: preferences.configuration.providerOrder,
+            configuredLimitProviders: Set(manager.configuredProviders),
+            credentialConfiguredProviders: credentialConfiguredProviders,
+            showingDeepSeekBalance: balanceManager?.showingBalanceCard ?? false,
+            hiddenProviders: []
+        )
+        let activeCount = allConfiguredProviders.filter { provider in
             guard let limits = manager.limits[provider] else { return false }
             return limits.issue == nil && !limits.windows.isEmpty
         }.count
@@ -319,7 +352,7 @@ struct TokenUsagePanelView: View {
                     format: strings.tokenFooterFormat,
                     updated,
                     strings.tokenSourceOfficial,
-                    manager.configuredProviders.count,
+                    allConfiguredProviders.count,
                     activeCount
                 )
             )

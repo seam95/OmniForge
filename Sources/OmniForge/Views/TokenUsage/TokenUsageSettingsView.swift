@@ -165,13 +165,9 @@ struct TokenUsageProvidersSettingsView: View {
     /// 环境变量（OPENCODE_GO_API_KEY / VOLCENGINE_ACCESS_KEY / ARK_AK）作为钥匙串的补充凭证来源。
     private func reloadCredentialStates() {
         deepSeekHasKey = balanceManager?.apiKeyConfigured ?? false
-        let opencodeStore = OpencodeKeychainAPIKeyStore()
-        opencodeHasKey = ((try? opencodeStore.readAPIKey())?.isEmpty == false)
-            || (ProcessInfo.processInfo.environment["OPENCODE_GO_API_KEY"]?.isEmpty == false)
-        let arkStore = ArkKeychainStore()
-        arkHasCredentials = ((try? arkStore.readCredentials())?.isValid == true)
-            || (ProcessInfo.processInfo.environment["VOLCENGINE_ACCESS_KEY"]?.isEmpty == false)
-            || (ProcessInfo.processInfo.environment["ARK_AK"]?.isEmpty == false)
+        let credentialProviders = TokenUsageCredentialStateReader.configuredProviders()
+        opencodeHasKey = credentialProviders.contains(.opencode)
+        arkHasCredentials = credentialProviders.contains(.arkCodingPlan)
         let traeCnStore = TraeCnKeychainStore()
         traeCnHasJWT = ((try? traeCnStore.readJWT())?.isEmpty == false)
     }
@@ -866,5 +862,4 @@ struct ArkCodingPlanSettingsCard: View {
         onCredentialsChanged()
     }
 }
-
 

@@ -35,7 +35,9 @@ struct TokenUsageLimitCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             header
-            if let issue = limits.issue {
+            if !limits.configured {
+                errorRow(unavailableCaption)
+            } else if let issue = limits.issue {
                 if limits.stale, !orderedWindows.isEmpty {
                     windowsBody
                     if !labeledWindows.isEmpty {
@@ -84,6 +86,17 @@ struct TokenUsageLimitCardView: View {
 
     private var planSubtitle: String? {
         nil
+    }
+
+    private var unavailableCaption: String {
+        switch limits.provider {
+        case .arkCodingPlan:
+            return strings.tokenSettingsNoSubscription
+        case .opencode:
+            return strings.tokenSettingsNoQuotaAvailable
+        default:
+            return strings.tokenSettingsNotConfigured
+        }
     }
 
     // MARK: - 窗口行
@@ -210,11 +223,15 @@ struct TokenUsageLimitCardView: View {
     // MARK: - 错误态
 
     private func errorRow(_ issue: LimitError) -> some View {
+        errorRow(TokenUsageFormat.errorCaption(for: issue, now: now, strings: strings), tint: status.tint)
+    }
+
+    private func errorRow(_ caption: String, tint: Color = Theme.Stats.text3) -> some View {
         HStack(spacing: 5) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 9))
-                .foregroundColor(status.tint)
-            Text(TokenUsageFormat.errorCaption(for: issue, now: now, strings: strings))
+                .foregroundColor(tint)
+            Text(caption)
                 .font(Theme.Stats.font10Regular)
                 .foregroundColor(Theme.Stats.text2)
         }
