@@ -7,11 +7,17 @@ import AppKit
 struct TokenUsageLimitsSettingsPopover: View {
     @ObservedObject var preferences: TokenUsagePreferences
     @ObservedObject var manager: TokenUsageManager
+    var balanceManager: DeepSeekBalanceManager? = nil
     let strings: Strings
+    var onOpenSettings: (() -> Void)? = nil
     @State private var draggingId: TokenUsageProvider?
 
     private var configuredProviders: [TokenUsageProvider] {
-        manager.configuredProviders
+        var providers = Set(manager.configuredProviders)
+        if let balanceManager, balanceManager.showingBalanceCard {
+            providers.insert(.deepSeek)
+        }
+        return preferences.configuration.providerOrder.filter { providers.contains($0) }
     }
 
     var body: some View {
@@ -71,6 +77,30 @@ struct TokenUsageLimitsSettingsPopover: View {
                 }
             }
             .padding(.bottom, 6)
+
+            if let onOpenSettings {
+                Divider()
+                    .opacity(0.35)
+
+                Button {
+                    onOpenSettings()
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(strings.tokenSettingsManageMoreProviders)
+                            .font(.system(.caption, design: .default))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier(SettingsAccessibilityID.tokenUsagePopoverManageMore.rawValue)
+            }
         }
         .frame(width: 240)
     }

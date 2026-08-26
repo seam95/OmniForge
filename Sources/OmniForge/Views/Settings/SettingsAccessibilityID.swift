@@ -21,6 +21,7 @@ enum SettingsAccessibilityID: String, CaseIterable {
     case tokenUsagePopoverDisplayMode = "tokenUsage.popover.displayMode"
     case tokenUsagePopoverResetToast = "tokenUsage.popover.resetToast"
     case tokenUsagePopoverResetConfetti = "tokenUsage.popover.resetConfetti"
+    case tokenUsagePopoverManageMore = "tokenUsage.popover.manageMore"
     case deepSeekApiKeyField = "deepSeek.apiKeyField"
     case deepSeekSaveKey = "deepSeek.saveKey"
     case deepSeekClearKey = "deepSeek.clearKey"

@@ -180,65 +180,49 @@ struct TokenUsageProvidersSettingsView: View {
     /// 其余提供商仅未配置时给出「如何配置 ›」引导。
     private func providerRowInfo(_ provider: TokenUsageProvider) -> (statusText: String?, showsGuide: Bool) {
         if provider == .deepSeek {
-            if deepSeekHasKey {
-                return ("✓ " + strings.tokenSettingsLoggedIn, true)
-            } else {
-                return (
-                    String(
-                        format: strings.tokenSettingsProviderStatusFormat,
-                        strings.tokenSettingsNotConfigured,
-                        strings.tokenSettingsHowToConfigure
-                    ),
-                    true
-                )
-            }
+            let isReauth = balanceManager?.snapshot?.issue == .reauthRequired
+            return (
+                TokenUsageProviderStatusBuilder.credentialStatusText(
+                    provider: provider,
+                    hasCredentials: deepSeekHasKey,
+                    limits: nil,
+                    isReauth: isReauth,
+                    strings: strings
+                ),
+                true
+            )
         } else if provider == .opencode {
             let limits = manager.limits[provider]
-            if opencodeHasKey || (limits?.configured == true) {
-                if limits?.issue == .reauthRequired {
-                    return (strings.tokenStatusReauth, true)
-                }
-                return ("✓ " + strings.tokenSettingsLoggedIn, true)
-            } else {
-                return (
-                    String(
-                        format: strings.tokenSettingsProviderStatusFormat,
-                        strings.tokenSettingsNotConfigured,
-                        strings.tokenSettingsHowToConfigure
-                    ),
-                    true
-                )
-            }
+            return (
+                TokenUsageProviderStatusBuilder.credentialStatusText(
+                    provider: provider,
+                    hasCredentials: opencodeHasKey,
+                    limits: limits,
+                    strings: strings
+                ),
+                true
+            )
         } else if provider == .arkCodingPlan {
             let limits = manager.limits[provider]
-            if arkHasCredentials || (limits?.configured == true) {
-                if limits?.issue == .reauthRequired {
-                    return (strings.tokenStatusReauth, true)
-                }
-                return ("✓ " + strings.tokenSettingsLoggedIn, true)
-            } else {
-                return (
-                    String(
-                        format: strings.tokenSettingsProviderStatusFormat,
-                        strings.tokenSettingsNotConfigured,
-                        strings.tokenSettingsHowToConfigure
-                    ),
-                    true
-                )
-            }
+            return (
+                TokenUsageProviderStatusBuilder.credentialStatusText(
+                    provider: provider,
+                    hasCredentials: arkHasCredentials,
+                    limits: limits,
+                    strings: strings
+                ),
+                true
+            )
         } else if provider == .traeCN {
-            if traeCnHasJWT {
-                return ("✓ " + strings.tokenSettingsLoggedIn, true)
-            } else {
-                return (
-                    String(
-                        format: strings.tokenSettingsProviderStatusFormat,
-                        strings.tokenSettingsNotConfigured,
-                        strings.tokenSettingsHowToConfigure
-                    ),
-                    true
-                )
-            }
+            return (
+                TokenUsageProviderStatusBuilder.credentialStatusText(
+                    provider: provider,
+                    hasCredentials: traeCnHasJWT,
+                    limits: nil,
+                    strings: strings
+                ),
+                true
+            )
         } else {
             // 非凭证类提供商：未配置时给「如何配置 ›」展开引导。
             let limits = manager.limits[provider]

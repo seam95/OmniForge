@@ -30,6 +30,49 @@ enum TokenUsageProviderStatusBuilder {
         )
     }
 
+    /// 凭证类提供商（方舟 Coding Plan / OpenCode / DeepSeek / Trae CN）行尾状态文本。
+    static func credentialStatusText(
+        provider: TokenUsageProvider,
+        hasCredentials: Bool,
+        limits: ProviderUsageLimits?,
+        isReauth: Bool = false,
+        strings: Strings
+    ) -> String {
+        guard hasCredentials else {
+            return String(
+                format: strings.tokenSettingsProviderStatusFormat,
+                strings.tokenSettingsNotConfigured,
+                strings.tokenSettingsHowToConfigure
+            )
+        }
+        if isReauth || limits?.issue == .reauthRequired {
+            return strings.tokenStatusReauth
+        }
+        if let limits, limits.configured {
+            let signedIn = "✓ " + strings.tokenSettingsLoggedIn
+            if let planLabel = limits.planLabel, !planLabel.isEmpty {
+                return String(format: strings.tokenSettingsProviderStatusFormat, planLabel, signedIn)
+            }
+            return signedIn
+        }
+        switch provider {
+        case .arkCodingPlan:
+            return String(
+                format: strings.tokenSettingsProviderStatusFormat,
+                strings.tokenSettingsNoSubscription,
+                strings.tokenSettingsHowToConfigure
+            )
+        case .opencode:
+            return String(
+                format: strings.tokenSettingsProviderStatusFormat,
+                strings.tokenSettingsNoQuotaAvailable,
+                strings.tokenSettingsHowToConfigure
+            )
+        default:
+            return "✓ " + strings.tokenSettingsLoggedIn
+        }
+    }
+
     /// 是否显示「如何配置 ›」引导（仅未配置；尚未拉取快照时不打扰）。
     static func showsConfigureGuide(_ limits: ProviderUsageLimits?) -> Bool {
         guard let limits else { return false }

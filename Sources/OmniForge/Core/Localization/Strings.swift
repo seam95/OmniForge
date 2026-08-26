@@ -1148,6 +1148,9 @@ struct Strings: Equatable {
     let tokenSettingsLoggedIn: String
     let tokenSettingsNotConfigured: String
     let tokenSettingsHowToConfigure: String
+    let tokenSettingsNoSubscription: String
+    let tokenSettingsNoQuotaAvailable: String
+    let tokenSettingsManageMoreProviders: String
     /// 会话窗阈值告警开关文案格式（%g = 当前阈值，如「会话窗用量 ≥90% 时通知」）。
     let tokenSettingsSessionAlertFormat: String
     let tokenSettingsAlertThreshold: String

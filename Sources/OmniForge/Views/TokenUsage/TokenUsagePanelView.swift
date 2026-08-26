@@ -82,7 +82,12 @@ struct TokenUsagePanelView: View {
             TokenUsageLimitsSettingsPopover(
                 preferences: preferences,
                 manager: manager,
-                strings: strings
+                balanceManager: balanceManager,
+                strings: strings,
+                onOpenSettings: {
+                    showsLimitsSettings = false
+                    onOpenSettings(.tokenUsage)
+                }
             )
         }
     }
@@ -202,13 +207,16 @@ struct TokenUsagePanelView: View {
     @ViewBuilder
     private var providerCardsBlock: some View {
         let providers = selectedProvider.map { [$0] } ?? visibleProviders
-        let hasCards = providers.contains { provider in
+        let displayableProviders = providers.filter { provider in
             (manager.limits[provider] != nil) || (provider == .deepSeek && (balanceManager?.showingBalanceCard ?? false))
         }
-        if hasCards {
+        if !displayableProviders.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(providers) { provider in
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array(displayableProviders.enumerated()), id: \.element.id) { index, provider in
+                        if index > 0 {
+                            providerSeparator
+                        }
                         if let limits = manager.limits[provider] {
                             TokenUsageLimitCardView(
                                 limits: limits,
@@ -237,6 +245,12 @@ struct TokenUsagePanelView: View {
                 footerLine
             }
         }
+    }
+
+    private var providerSeparator: some View {
+        Rectangle()
+            .fill(colorScheme == .light ? Theme.Stats.separator : Color.white.opacity(0.08))
+            .frame(height: 0.5)
     }
 
     /// 用量仪表盘区块（2026-08-25 重设计）：汇总卡 + 活跃度 + 趋势 + 模型 + 本地统计脚注。

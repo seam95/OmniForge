@@ -132,28 +132,78 @@ final class TokenUsagePanelFilteringTests: XCTestCase {
         XCTAssertEqual(visible, [.claude, .codex], "隐藏的 kimi 从胶囊与卡片中剔除")
     }
 
-    func test_visibleProviders_hiddenAllLimitsProvidersLeavesOnlyBalance() {
-        // 全部限额 provider 被隐藏后，DeepSeek 余额卡仍展示（余额显隐不归限额弹层管）
-        let configured: Set<TokenUsageProvider> = [.codex, .claude]
-        let hidden: Set<TokenUsageProvider> = [.codex, .claude]
+    func test_popover_configuredProviders_includesDeepSeekWhenShowingBalance() {
+        let limitsConfigured: [TokenUsageProvider] = [.codex, .kimi]
+        let showingBalanceCard = true
 
-        var providers = configured
-        providers.insert(.deepSeek)
-        let visible = TokenUsageProvider.allCases.filter { providers.contains($0) && !hidden.contains($0) }
+        var providers = Set(limitsConfigured)
+        if showingBalanceCard {
+            providers.insert(.deepSeek)
+        }
+        let popoverList = TokenUsageProvider.allCases.filter { providers.contains($0) }
 
-        XCTAssertEqual(visible, [.deepSeek])
+        XCTAssertEqual(popoverList, [.codex, .kimi, .deepSeek], "齿轮弹层包含显示中的 DeepSeek 余额提供商")
     }
 
-    func test_visibleProviders_deepSeekNeverHiddenByLimitsPopover() {
-        // hidden 集合只含限额 provider；deepSeek 不在其中 → 恒通过过滤
-        let configured: Set<TokenUsageProvider> = [.deepSeek]
-        let hidden: Set<TokenUsageProvider> = [.codex, .kimi]
+    func test_visibleProviders_deepSeekCanBeHiddenViaPopover() {
+        let configured: Set<TokenUsageProvider> = [.codex, .deepSeek]
+        let hidden: Set<TokenUsageProvider> = [.deepSeek]
 
-        var providers = configured
-        providers.insert(.deepSeek)
-        let visible = TokenUsageProvider.allCases.filter { providers.contains($0) && !hidden.contains($0) }
+        let visible = TokenUsageProvider.allCases.filter { configured.contains($0) && !hidden.contains($0) }
 
-        XCTAssertEqual(visible, [.deepSeek])
+        XCTAssertEqual(visible, [.codex], "DeepSeek 在弹层中被隐藏后从主面板过滤")
+    }
+
+    // MARK: - 供应商卡片分割线逻辑（2026-08-26）
+
+    func test_displayableProviders_filtersAndDeterminesSeparators() {
+        let visibleProviders: [TokenUsageProvider] = [.deepSeek, .codex, .kimi, .antigravity]
+        let limits: [TokenUsageProvider: ProviderUsageLimits] = [
+            .codex: ProviderUsageLimits(
+                provider: .codex,
+                configured: true,
+                subscriptionStatus: .active,
+                planLabel: "Plus",
+                windows: [:],
+                confidence: .official,
+                capturedAt: Date(),
+                stale: false,
+                issue: nil
+            ),
+            .kimi: ProviderUsageLimits(
+                provider: .kimi,
+                configured: true,
+                subscriptionStatus: .active,
+                planLabel: nil,
+                windows: [:],
+                confidence: .official,
+                capturedAt: Date(),
+                stale: false,
+                issue: nil
+            ),
+        ]
+        let showingBalanceCard = true
+
+        func displayable(from providers: [TokenUsageProvider]) -> [TokenUsageProvider] {
+            providers.filter { provider in
+                (limits[provider] != nil) || (provider == .deepSeek && showingBalanceCard)
+            }
+        }
+
+        // 全部视图：deepSeek, codex, kimi 有有效卡片；antigravity 无数据被过滤
+        let active = displayable(from: visibleProviders)
+        XCTAssertEqual(active, [.deepSeek, .codex, .kimi])
+
+        // 分割线条件：大于 0 索引处插入分割线
+        let separatorIndices = active.enumerated().compactMap { index, _ in index > 0 ? index : nil }
+        XCTAssertEqual(separatorIndices, [1, 2], "3 个供应商卡片之间应有 2 条分割线")
+
+        // 单选 Codex 时：仅展示 1 个卡片，无分割线
+        let singleSelectActive = displayable(from: [.codex])
+        XCTAssertEqual(singleSelectActive, [.codex])
+        let singleSeparators = singleSelectActive.enumerated().compactMap { index, _ in index > 0 ? index : nil }
+        XCTAssertTrue(singleSeparators.isEmpty, "单个供应商卡片不应有分割线")
     }
 }
+
 
