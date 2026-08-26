@@ -40,3 +40,9 @@ tools/
 
 # 临时与日志
 *.log
+
+.scratch/
+
+.workbuddy/
+
+outputs/
