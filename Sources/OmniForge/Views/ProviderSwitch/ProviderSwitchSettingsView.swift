@@ -247,7 +247,10 @@ struct ProviderSwitchSettingsView: View {
             } else {
                 Menu {
                     Button(strings.providerEdit) { editingProfile = profile }
-                    Button(strings.providerDelete, role: .destructive) { deletingProfile = profile }
+                    Button(strings.providerDelete, role: .destructive) {
+                        deletingProfile = profile
+                        deletePromptPresented = true
+                    }
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 14, weight: .semibold))
