@@ -229,8 +229,7 @@ struct FeatureFactory {
                     preflightAccess: {
                         Permissions.shared.screenRecording || CGPreflightScreenCaptureAccess()
                     }
-                )
-                // 阶段 5 输出子系统：创建编码 / 剪贴板 / 保存实例，透传到编辑器。
+                )                // 阶段 5 输出子系统：创建编码 / 剪贴板 / 保存实例，透传到编辑器。
                 let outputEncoder = ImageOutputEncoder()
                 let clipboardWriter = ClipboardImageWriter()
                 let screenshotSaver = ScreenshotSaver()
@@ -275,6 +274,10 @@ struct FeatureFactory {
                 manager.pinnedScreenshotRegistry = pinRegistry
                 manager.pinPipelineBridge = pinBridge
                 runtime.register(.screenshot, manager: manager)
+            }
+        case .providerSwitch:
+            if runtime.manager(for: .providerSwitch, as: ProviderSwitchManager.self) == nil {
+                runtime.register(.providerSwitch, manager: ProviderSwitchManager.production())
             }
         }
     }
@@ -353,6 +356,9 @@ struct FeatureFactory {
             break
         case .screenshot:
             runtime.manager(for: .screenshot, as: ScreenshotFeatureManager.self)?.teardown()
+        case .providerSwitch:
+            // 无后台工作；视图持有引用，卸注册即释放
+            break
         }
         runtime.unregisterAll(for: feature)
     }

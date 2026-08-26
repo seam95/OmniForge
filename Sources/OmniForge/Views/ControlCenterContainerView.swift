@@ -211,6 +211,19 @@ struct ControlCenterContainerView: View {
                 AdaptiveHeightScroll(maxHeight: ControlCenterContentMetrics.maxContentHeight) {
                     UtilityToolsView(strings: state.l10n.s)
                 }
+            case .providerSwitch:
+                if let manager = state.providerSwitchManager,
+                   runtime.isAvailable(.providerSwitch) {
+                    AdaptiveHeightScroll(maxHeight: ControlCenterContentMetrics.maxContentHeight) {
+                        ProviderSwitchSettingsView(
+                            manager: manager,
+                            strings: state.l10n.s,
+                            onOpenSettings: onOpenSettings
+                        )
+                    }
+                } else {
+                    unavailablePanel
+                }
             }
         } else {
             unavailablePanel

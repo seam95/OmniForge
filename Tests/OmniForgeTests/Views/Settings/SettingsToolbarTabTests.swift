@@ -3,12 +3,12 @@ import XCTest
 
 final class SettingsToolbarTabTests: XCTestCase {
     func test_sidebarContainsStableTabs() {
-        XCTAssertEqual(SettingsToolbarTab.allCases.count, 12)
+        XCTAssertEqual(SettingsToolbarTab.allCases.count, 13)
         XCTAssertEqual(
             SettingsToolbarTab.allCases,
             [
                 .general, .features, .inputMethod, .clipboard, .shelf, .screenshot, .mouse,
-                .performance, .tokenUsage, .keepAwake, .cleaner, .uninstaller
+                .performance, .tokenUsage, .keepAwake, .providerSwitch, .cleaner, .uninstaller
             ]
         )
     }

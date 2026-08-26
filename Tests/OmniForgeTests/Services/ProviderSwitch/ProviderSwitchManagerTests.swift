@@ -373,4 +373,26 @@ final class ProviderSwitchManagerTests: XCTestCase {
         try manager.restoreBackup(backup)
         XCTAssertEqual(backupStore.restored.map(\.id), [backup.id])
     }
+
+    // MARK: - 损坏配置重建（SPEC 2.8.2）
+
+    func test_rebuildCorruptedConfig_snapshotsAndRemovesCorruptedFile() throws {
+        try Data("not json".utf8).write(to: claudeConfigURL)
+        claudeStore.envError = .corrupted(path: "settings.json")
+        manager.refresh()
+        XCTAssertEqual(manager.active(tool: .claudeCode), .unreadable)
+
+        try manager.rebuildCorruptedConfig(tool: .claudeCode)
+        XCTAssertEqual(backupStore.snapshots, [.claudeCode], "坏文件先复制进备份目录")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: claudeConfigURL.path), "坏文件被移除")
+        // 坏文件移除后配置可读 → 回到无 override 状态
+        claudeStore.envError = nil
+        manager.refresh()
+        XCTAssertEqual(manager.active(tool: .claudeCode), .official, "重建后回到无 override 状态")
+    }
+
+    func test_rebuildCorruptedConfig_missingFileIsNoop() throws {
+        try manager.rebuildCorruptedConfig(tool: .claudeCode)
+        XCTAssertTrue(backupStore.snapshots.isEmpty, "文件不存在时不产生备份")
+    }
 }

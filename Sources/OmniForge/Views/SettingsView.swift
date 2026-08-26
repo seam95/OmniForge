@@ -75,6 +75,14 @@ struct SettingsView: View {
         case .keepAwake:
             KeepAwakeSettingsView(state: state)
                 .navigationTitle(tab.title(in: state.l10n.s))
+        case .providerSwitch:
+            if let manager = state.providerSwitchManager {
+                ProviderSwitchSettingsView(
+                    manager: manager,
+                    strings: state.l10n.s
+                )
+                .navigationTitle(tab.title(in: state.l10n.s))
+            }
         case .cleaner:
             CleanerView(strings: state.l10n.s)
                 .navigationTitle(tab.title(in: state.l10n.s))

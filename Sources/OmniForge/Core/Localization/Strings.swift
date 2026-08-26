@@ -1207,4 +1207,102 @@ struct Strings: Equatable {
     /// 阈值输入非法时的错误提示。
     let deepSeekSettingsThresholdInvalid: String
     let deepSeekSettingsRefreshInterval: String
+    // MARK: - Provider Switch
+    /// 特性名（功能中心 / 侧栏 tab 共用）。
+    let featureHubNameProviderSwitch: String
+    /// 特性描述（功能中心）。
+    let featureHubDescProviderSwitch: String
+    /// AI 分组标题。
+    let featureHubGroupAI: String
+    let settingsTabProviderSwitch: String
+    /// 控制中心分段标题。
+    let controlcenterTabProviderSwitch: String
+    /// 控制中心导航标题。
+    let controlcenterNavProviderSwitch: String
+    let providerToolClaudeCode: String
+    let providerToolCodex: String
+    /// 官方供应商行标题。
+    let providerOfficial: String
+    let providerOfficialClaudeCaption: String
+    let providerOfficialCodexCaption: String
+    /// 「切换到官方」按钮。
+    let providerSwitchBackToOfficial: String
+    /// 激活项标注（%@ = profile 名）。
+    let providerActiveProfileFormat: String
+    /// 未托管配置卡标题。
+    let providerActiveUnmanagedTitle: String
+    /// 未托管摘要（%@ = base URL / provider 键）。
+    let providerActiveUnmanagedSummaryFormat: String
+    /// 损坏配置卡标题。
+    let providerActiveUnreadableTitle: String
+    let providerActiveUnreadableCaption: String
+    /// profile 行「设为激活」。
+    let providerSetActive: String
+    /// profile 行激活打勾的无障碍标注。
+    let providerActiveMark: String
+    let providerEdit: String
+    let providerDelete: String
+    /// 新增按钮（%@ = 工具名）。
+    let providerAddProfileFormat: String
+    /// 无 profile 时的引导文案。
+    let providerEmptyProfilesHint: String
+    /// 收编按钮 / 动作。
+    let providerUnmanagedAdopt: String
+    /// 收编命名弹窗标题。
+    let providerUnmanagedAdoptPrompt: String
+    let providerUnmanagedAdoptPlaceholder: String
+    /// 缺 base URL / 凭证无法收编。
+    let providerUnmanagedAdoptError: String
+    /// 损坏配置「备份并重建」。
+    let providerCorruptedBackupAndRebuild: String
+    let providerCorruptedRebuildConfirmTitle: String
+    let providerCorruptedRebuildConfirmMessage: String
+    /// 切换结果 toast（%@ = profile 名）。
+    let providerSwitchDoneFormat: String
+    let providerSwitchDoneOfficial: String
+    /// 切换完成后的重启提示。
+    let providerRestartHint: String
+    /// 检测到 CLI 运行时的额外提醒（%@ = 工具名）。
+    let providerRestartRunningHintFormat: String
+    /// 切换失败 toast（%@ = 错误描述）。
+    let providerSwitchFailedFormat: String
+    let providerEditConfigFile: String
+    let providerRestoreBackup: String
+    /// 恢复备份成功 toast。
+    let providerBackupRestored: String
+    let providerDeleteConfirmTitle: String
+    /// 删除确认（%@ = profile 名）。
+    let providerDeleteConfirmMessageFormat: String
+    let providerDeleteConfirmButton: String
+    let providerNameLabel: String
+    let providerBaseURLLabel: String
+    let providerTokenLabel: String
+    let providerTokenPlaceholder: String
+    /// 模型覆盖（可选）。
+    let providerModelLabel: String
+    let providerModelHint: String
+    let providerSmallFastModelLabel: String
+    let providerPresetLabel: String
+    /// 预设下拉「自定义」项。
+    let providerPresetNone: String
+    /// 撞名写入被拒提示。
+    let providerFormNameConflict: String
+    let providerFormSave: String
+    let providerFormCancel: String
+    /// 表单标题（%@ = 工具名）。
+    let providerFormTitleNewFormat: String
+    let providerFormTitleEditFormat: String
+    /// 编辑器标题（%@ = 工具名）。
+    let providerEditorTitleFormat: String
+    /// 非法内容拒绝保存。
+    let providerEditorInvalidContent: String
+    let providerEditorSaved: String
+    let providerEditorHint: String
+    let providerBackupListTitle: String
+    let providerBackupEmpty: String
+    let providerBackupRestoreConfirmTitle: String
+    /// 恢复确认（%@ = 备份名）。
+    let providerBackupRestoreConfirmMessageFormat: String
+    let providerBackupRestore: String
+    let providerBackupRestoreFailed: String
 }

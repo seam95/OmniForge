@@ -22,6 +22,7 @@ enum AppFeature: String, CaseIterable {
     case dockClick
     case keepAwake
     case screenshot
+    case providerSwitch
 
     /// 设置「鼠标」分区与相关入口共用的功能集合。
     static let mouseFeatures: [AppFeature] = [
@@ -42,6 +43,7 @@ enum FeatureGroup: String, CaseIterable {
     case mouse        // 鼠标与触控板
     case energy       // 电源与唤醒
     case capture      // 截图与捕获
+    case ai           // AI CLI 供应商切换
 }
 
 /// 权限用途：区分“可能使用 / 已配置 / 可选 / 当前未使用”
@@ -74,6 +76,7 @@ extension AppFeature {
         case .scrollInverter, .smoothScroll, .mouseNavigation, .dockClick: return .mouse
         case .keepAwake: return .energy
         case .screenshot: return .capture
+        case .providerSwitch: return .ai
         }
     }
 
@@ -100,6 +103,7 @@ extension AppFeature {
         case .dockClick: return [UserDefaultsKeys.dockClickMinimize, UserDefaultsKeys.dockClickCycleWindows]
         case .keepAwake: return []
         case .screenshot: return [UserDefaultsKeys.screenshotEnabled]
+        case .providerSwitch: return []
         }
     }
 
@@ -119,6 +123,7 @@ extension AppFeature {
         case .scrollInverter, .smoothScroll, .mouseNavigation, .dockClick: return [.accessibility]
         case .keepAwake: return [.accessibility, .notifications]
         case .screenshot: return [.screenRecording]
+        case .providerSwitch: return []
         }
     }
 
@@ -152,6 +157,8 @@ extension AppFeature {
             return nil
         case .screenshot:
             return permission == .screenRecording ? .required : nil
+        case .providerSwitch:
+            return nil
         case .clipboardHistory, .quickPhrase, .shelf, .launchAtLogin:
             return nil
         }
@@ -194,6 +201,7 @@ extension AppFeature {
         case .dockClick: return "dock.arrow.down.rectangle"
         case .keepAwake: return "moon.zzz.fill"
         case .screenshot: return "camera.viewfinder"
+        case .providerSwitch: return "arrow.triangle.swap"
         }
     }
 
@@ -218,6 +226,7 @@ extension AppFeature {
         case .dockClick: return strings.featureHubNameDockClick
         case .keepAwake: return strings.featureHubNameKeepAwake
         case .screenshot: return strings.featureHubNameScreenshot
+        case .providerSwitch: return strings.featureHubNameProviderSwitch
         }
     }
 
@@ -242,6 +251,7 @@ extension AppFeature {
         case .dockClick: return strings.featureHubDescDockClick
         case .keepAwake: return strings.featureHubDescKeepAwake
         case .screenshot: return strings.featureHubDescScreenshot
+        case .providerSwitch: return strings.featureHubDescProviderSwitch
         }
     }
 
@@ -259,6 +269,7 @@ extension FeatureGroup {
         case .mouse: return strings.featureHubGroupMouse
         case .energy: return strings.featureHubGroupEnergy
         case .capture: return strings.featureHubGroupCapture
+        case .ai: return strings.featureHubGroupAI
         }
     }
 

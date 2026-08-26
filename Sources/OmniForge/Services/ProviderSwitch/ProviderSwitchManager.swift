@@ -40,6 +40,8 @@ final class ProviderSwitchManager: ObservableObject {
     private let codexConfigURL: URL
     private let processDetector: RunningProcessDetecting
     private let fileManager: FileManager
+    /// 配置文件原文编辑器（进阶出口，SPEC 2.10）；测试可省略。
+    private(set) var configFileEditor: ConfigFileEditing?
 
     init(
         claudeStore: ClaudeSettingsStoring,
@@ -49,7 +51,8 @@ final class ProviderSwitchManager: ObservableObject {
         claudeConfigURL: URL,
         codexConfigURL: URL,
         processDetector: RunningProcessDetecting = RunningProcessDetector(),
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        configFileEditor: ConfigFileEditing? = nil
     ) {
         self.claudeStore = claudeStore
         self.codexStore = codexStore
@@ -59,6 +62,7 @@ final class ProviderSwitchManager: ObservableObject {
         self.codexConfigURL = codexConfigURL
         self.processDetector = processDetector
         self.fileManager = fileManager
+        self.configFileEditor = configFileEditor
         refresh()
     }
 
@@ -81,19 +85,25 @@ final class ProviderSwitchManager: ObservableObject {
                 create: true
             ).appendingPathComponent("app.omniforge", isDirectory: true))
             ?? FileManager.default.temporaryDirectory
+        let backupStore = ProviderBackupStore(
+            backupDirectory: ProviderSwitchPaths.backupDirectory(applicationSupportRoot: root)
+        )
         return ProviderSwitchManager(
             claudeStore: ClaudeSettingsStore(settingsURL: settingsURL),
             codexStore: CodexConfigStore(configURL: configURL),
-            backupStore: ProviderBackupStore(
-                backupDirectory: ProviderSwitchPaths.backupDirectory(applicationSupportRoot: root)
-            ),
+            backupStore: backupStore,
             profileStore: ProviderProfileStore(
                 claudeProfileDirectory: claudeProfiles,
                 codexProfileDirectory: codexProfiles
             ),
             claudeConfigURL: settingsURL,
             codexConfigURL: configURL,
-            processDetector: processDetector
+            processDetector: processDetector,
+            configFileEditor: ConfigFileEditorStore(
+                claudeConfigURL: settingsURL,
+                codexConfigURL: configURL,
+                backupStore: backupStore
+            )
         )
     }
 
@@ -208,6 +218,18 @@ final class ProviderSwitchManager: ObservableObject {
     /// 手动恢复备份：快照内容原子写回目标配置文件（SPEC 2.5）。
     func restoreBackup(_ backup: ProviderBackup) throws {
         try backupStore.restore(backup, to: configURL(for: backup.tool))
+        refresh()
+    }
+
+    // MARK: - 损坏配置重建（SPEC 2.8.2）
+
+    /// 损坏配置「备份并重建」：坏文件复制到备份目录后移除，回到无 override 状态
+    /// （下次切换会创建最小配置文件）。不硬写损坏文件。
+    func rebuildCorruptedConfig(tool: ProviderTool) throws {
+        let url = configURL(for: tool)
+        guard fileManager.fileExists(atPath: url.path) else { return }
+        _ = try backupStore.snapshot(tool: tool, of: url)
+        try fileManager.removeItem(at: url)
         refresh()
     }
 

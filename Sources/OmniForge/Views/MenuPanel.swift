@@ -4,14 +4,15 @@ enum MenuPanel: String, CaseIterable, Identifiable {
     case systemMonitor
     case tokenUsage
     case keepAwake
+    case providerSwitch
     case clipboard = "utilities"
 
     /// 兼容历史命名；控制中心实用工具页。
     static let utilities: MenuPanel = .clipboard
 
-    /// 系统监控 → Token 用量 → 保持唤醒 → 实用工具
+    /// 系统监控 → Token 用量 → 保持唤醒 → 供应商切换 → 实用工具
     static let primaryCases: [MenuPanel] = [
-        .systemMonitor, .tokenUsage, .keepAwake, .utilities,
+        .systemMonitor, .tokenUsage, .keepAwake, .providerSwitch, .utilities,
     ]
 
     static func visibleCases(isAvailable: (AppFeature) -> Bool) -> [MenuPanel] {
@@ -25,6 +26,9 @@ enum MenuPanel: String, CaseIterable, Identifiable {
         }
         if isAvailable(.keepAwake) {
             result.append(.keepAwake)
+        }
+        if isAvailable(.providerSwitch) {
+            result.append(.providerSwitch)
         }
         if isAvailable(.cleaner)
             || isAvailable(.uninstaller)
@@ -53,6 +57,7 @@ enum MenuPanel: String, CaseIterable, Identifiable {
         case .systemMonitor: return "waveform.path.ecg"
         case .tokenUsage: return "chart.line.uptrend.xyaxis"
         case .keepAwake: return "moon.fill"
+        case .providerSwitch: return "arrow.triangle.swap"
         case .clipboard: return "wrench.fill"
         }
     }
@@ -62,6 +67,7 @@ enum MenuPanel: String, CaseIterable, Identifiable {
         case .systemMonitor: return strings.controlcenterTabSystemMonitor
         case .tokenUsage: return strings.controlcenterTabTokenUsage
         case .keepAwake: return strings.featureHubNameKeepAwake
+        case .providerSwitch: return strings.controlcenterTabProviderSwitch
         case .clipboard: return strings.controlcenterTabUtilities
         }
     }
@@ -71,6 +77,7 @@ enum MenuPanel: String, CaseIterable, Identifiable {
         case .systemMonitor: return strings.controlcenterNavMonitor
         case .tokenUsage: return strings.controlcenterNavTokenUsage
         case .keepAwake: return strings.controlcenterNavKeepAwake
+        case .providerSwitch: return strings.controlcenterNavProviderSwitch
         case .clipboard: return strings.controlcenterNavUtilities
         }
     }

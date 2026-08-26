@@ -22,6 +22,7 @@ final class AppState: ObservableObject {
     private(set) var tokenUsagePreferences: TokenUsagePreferences?
     private(set) var deepSeekBalanceManager: DeepSeekBalanceManager?
     private(set) var keepAwakeManager: KeepAwakeManager?
+    private(set) var providerSwitchManager: ProviderSwitchManager?
     /// 始终装载；可由 composition root 注入。
     private(set) var clamshellRecoveryCoordinator: ClamshellRecoveryCoordinator?
 
@@ -176,6 +177,7 @@ final class AppState: ObservableObject {
         tokenUsagePreferences = runtime.manager(for: .tokenUsage, as: TokenUsagePreferences.self)
         deepSeekBalanceManager = runtime.manager(for: .tokenUsage, as: DeepSeekBalanceManager.self)
         keepAwakeManager = runtime.manager(for: .keepAwake, as: KeepAwakeManager.self)
+        providerSwitchManager = runtime.manager(for: .providerSwitch, as: ProviderSwitchManager.self)
 
         startClipboardMonitoring = { [weak self] in
             self?.clipboardHistory?.startMonitoring()
@@ -208,6 +210,9 @@ final class AppState: ObservableObject {
         }
         if let keepAwakeManager {
             forwardObjectWillChange(from: keepAwakeManager, storeIn: &featureCancellables)
+        }
+        if let providerSwitchManager {
+            forwardObjectWillChange(from: providerSwitchManager, storeIn: &featureCancellables)
         }
 
         refreshInputSources()

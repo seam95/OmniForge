@@ -5,12 +5,12 @@ final class NavigationRoutesTests: XCTestCase {
     func test_menuPanels_followFeatureAvailabilityAndStableOrder() {
         XCTAssertEqual(
             MenuPanel.primaryCases,
-            [.systemMonitor, .tokenUsage, .keepAwake, .utilities]
+            [.systemMonitor, .tokenUsage, .keepAwake, .providerSwitch, .utilities]
         )
 
         XCTAssertEqual(
             MenuPanel.visibleCases(isAvailable: { _ in true }),
-            [.systemMonitor, .tokenUsage, .keepAwake, .utilities]
+            [.systemMonitor, .tokenUsage, .keepAwake, .providerSwitch, .utilities]
         )
 
         XCTAssertEqual(
@@ -31,6 +31,12 @@ final class NavigationRoutesTests: XCTestCase {
         XCTAssertEqual(
             MenuPanel.visibleCases(isAvailable: { $0 == .tokenUsage }),
             [.tokenUsage]
+        )
+
+        // 仅 providerSwitch 可用 → 独立页签出现，不并入实用工具
+        XCTAssertEqual(
+            MenuPanel.visibleCases(isAvailable: { $0 == .providerSwitch }),
+            [.providerSwitch]
         )
 
         XCTAssertEqual(
@@ -130,10 +136,13 @@ final class NavigationRoutesTests: XCTestCase {
         XCTAssertEqual(MenuPanel.systemMonitor.symbolName, "waveform.path.ecg")
         XCTAssertEqual(MenuPanel.tokenUsage.symbolName, "chart.line.uptrend.xyaxis")
         XCTAssertEqual(MenuPanel.keepAwake.symbolName, "moon.fill")
+        XCTAssertEqual(MenuPanel.providerSwitch.symbolName, "arrow.triangle.swap")
         XCTAssertEqual(MenuPanel.utilities.symbolName, "wrench.fill")
         XCTAssertEqual(MenuPanel.systemMonitor.title(in: .zhHans), Strings.zhHans.controlcenterTabSystemMonitor)
         XCTAssertEqual(MenuPanel.utilities.title(in: .en), Strings.en.controlcenterTabUtilities)
         XCTAssertEqual(MenuPanel.keepAwake.title(in: .en), Strings.en.featureHubNameKeepAwake)
+        XCTAssertEqual(MenuPanel.providerSwitch.title(in: .zhHans), Strings.zhHans.controlcenterTabProviderSwitch)
+        XCTAssertEqual(MenuPanel.providerSwitch.navTitle(in: .en), Strings.en.controlcenterNavProviderSwitch)
         XCTAssertEqual(MenuPanel.tokenUsage.title(in: .en), "Token")
         XCTAssertEqual(MenuPanel.tokenUsage.navTitle(in: .zhHans), "Token")
         XCTAssertEqual(MenuPanel.systemMonitor.navTitle(in: .zhHans), "监控")
@@ -146,7 +155,7 @@ final class NavigationRoutesTests: XCTestCase {
             SettingsToolbarTab.visibleCases(isAvailable: { _ in true }),
             [
                 .general, .features, .inputMethod, .clipboard, .shelf, .screenshot, .mouse,
-                .performance, .tokenUsage, .keepAwake, .cleaner, .uninstaller
+                .performance, .tokenUsage, .keepAwake, .providerSwitch, .cleaner, .uninstaller
             ]
         )
 

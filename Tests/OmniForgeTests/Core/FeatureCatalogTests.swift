@@ -302,4 +302,24 @@ final class FeatureCatalogTests: XCTestCase {
         XCTAssertTrue(FeatureGroup.features(in: .productivity).contains(.networkDiagnostics))
     }
 
+    func test_providerSwitch_catalogContract() {
+        // 独立一级功能，归新 FeatureGroup.ai，不归 .monitor（SPEC 2.1）
+        XCTAssertEqual(AppFeature.providerSwitch.group, .ai)
+        XCTAssertEqual(
+            FeatureGroup.features(in: .ai),
+            [.providerSwitch]
+        )
+        XCTAssertTrue(AppFeature.providerSwitch.enabledKeys.isEmpty)
+        XCTAssertTrue(AppFeature.providerSwitch.possiblePermissions.isEmpty)
+        XCTAssertEqual(AppFeature.providerSwitch.symbolName, "arrow.triangle.swap")
+        XCTAssertEqual(
+            AppFeature.providerSwitch.hubName(in: .zhHans),
+            Strings.zhHans.featureHubNameProviderSwitch
+        )
+        XCTAssertFalse(AppFeature.providerSwitch.hubName(in: .zhHans).isEmpty)
+        XCTAssertFalse(AppFeature.providerSwitch.hubDescription(in: .zhHans).isEmpty)
+        XCTAssertEqual(FeatureGroup.ai.hubTitle(in: .zhHans), Strings.zhHans.featureHubGroupAI)
+        XCTAssertEqual(AppFeature.providerSwitch.availabilityKey, "featureAvailable.providerSwitch")
+    }
+
 }

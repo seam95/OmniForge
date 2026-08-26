@@ -12,6 +12,7 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
     case performance
     case tokenUsage
     case keepAwake
+    case providerSwitch
     case cleaner
     case uninstaller
 
@@ -36,6 +37,8 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
                 return isAvailable(.tokenUsage)
             case .keepAwake:
                 return isAvailable(.keepAwake)
+            case .providerSwitch:
+                return isAvailable(.providerSwitch)
             case .cleaner:
                 return isAvailable(.cleaner)
             case .uninstaller:
@@ -66,6 +69,7 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
         case .performance: return "gauge.with.dots.needle.33percent"
         case .tokenUsage: return "chart.line.uptrend.xyaxis"
         case .keepAwake: return "moon.zzz.fill"
+        case .providerSwitch: return "arrow.triangle.swap"
         case .cleaner: return "sparkles"
         case .uninstaller: return "trash"
         case .features: return "puzzlepiece.extension"
@@ -83,6 +87,7 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
         case .performance: return strings.settingsTabPerformance
         case .tokenUsage: return strings.settingsTabTokenUsage
         case .keepAwake: return strings.featureHubNameKeepAwake
+        case .providerSwitch: return strings.settingsTabProviderSwitch
         case .cleaner: return strings.cleanerName
         case .uninstaller: return strings.uninstallerName
         case .features: return strings.settingsTabFeatures
