@@ -62,7 +62,7 @@ enum QoderLimitsParsing {
 // MARK: - IPC 客户端（JSON-RPC over unix socket）
 
 /// Qoder 本地服务的 JSON-RPC 客户端：`Content-Length` 帧 + Unix domain socket。
-/// 协议参考 TokenTracker qoderRpcRequest；TokenTracker 私有协议（R5）——
+/// 私有协议（R5）——
 /// 连接/响应异常一律 fail-soft 抛错，由 fetcher 走磁盘缓存兜底。
 enum QoderRPCClient {
     static func request(
@@ -163,7 +163,7 @@ enum QoderRPCClient {
 /// （`~/.omniforge/qoder-limits-cache.json`）。
 ///
 /// 说明（范围收敛）：activity 端点（big_model_credits 次要窗口）本期不接（R5：
-/// TokenTracker 私有协议漂移风险）；RPC 主路径 + 缓存兜底已覆盖「今日/周/月」限额卡。
+/// 私有协议漂移风险）；RPC 主路径 + 缓存兜底已覆盖「今日/周/月」限额卡。
 final class QoderLimitsFetcher: LimitsFetching {
     let provider: TokenUsageProvider = .qoder
 

@@ -20,7 +20,7 @@ struct UsageActivityHeatmap: Equatable {
 
 /// 从日聚合（已按 provider 过滤）构建年度热力图 — 纯函数。
 ///
-/// 语义（对齐 TokenTracker GitHub 风格热力图）：
+/// 语义（GitHub 风格热力图）：
 /// - 窗口 = 含本周在内的 `weekCount` 周；起始列从 `calendar.firstWeekday` 对齐的周一起排；
 /// - 网格覆盖 [gridStart, 今日] 的真实日，未来日与窗口外占位为 nil；
 /// - 强度档位：0 = 无数据；有数据按 `tokens / 窗口最大日` 比例取 `ceil(fraction * 4)` 夹到 1...4；

@@ -46,11 +46,11 @@ struct TokenUsageConfiguration: Equatable, Codable {
     var resetConfettiEnabledStored: Bool?
     /// 限额区块隐藏的供应商集合（显隐开关）。存储层可选，旧配置无此键 → 解码回 nil，走计算属性默认（空）。
     var hiddenProvidersStored: Set<TokenUsageProvider>?
-    /// 会话窗阈值告警判据（缺省 90，对齐 TokenTracker 红色阈值；设置页可调整为 70/85/90/95）。
+    /// 会话窗阈值告警判据（缺省 90；设置页可调整为 70/85/90/95）。
     /// 存储层可选，旧配置无此键 → 解码回 nil，走计算属性默认值。
     var sessionAlertThresholdPercentStored: Double?
 
-    /// 趋势图默认周期（缺省 .month，对齐 TokenTracker）。
+    /// 趋势图默认周期（缺省 .month）。
     var trendPeriodDefault: TokenTrendPeriod {
         get { trendPeriodDefaultStored ?? .month }
         set { trendPeriodDefaultStored = newValue }
@@ -62,13 +62,13 @@ struct TokenUsageConfiguration: Equatable, Codable {
         set { traeCnEnabledStored = newValue }
     }
 
-    /// 额度重置时显示提示（缺省 true，对齐 TokenTracker toastEnabledDefault）。
+    /// 额度重置时显示提示（缺省 true）。
     var resetToastEnabled: Bool {
         get { resetToastEnabledStored ?? true }
         set { resetToastEnabledStored = newValue }
     }
 
-    /// 额度重置时撒花（缺省 true，对齐 TokenTracker confettiEnabledDefault）。
+    /// 额度重置时撒花（缺省 true）。
     var resetConfettiEnabled: Bool {
         get { resetConfettiEnabledStored ?? true }
         set { resetConfettiEnabledStored = newValue }
@@ -116,10 +116,10 @@ struct TokenUsageConfiguration: Equatable, Codable {
     /// 限额刷新间隔合法值。
     static let allowedRefreshIntervals = [1, 5, 15]
 
-    /// 会话窗告警阈值合法值（对齐 TokenTracker 红色阈值 90% 及周边档位）。
+    /// 会话窗告警阈值合法值（红色阈值 90% 及周边档位）。
     static let allowedSessionAlertThresholds = [70.0, 85.0, 90.0, 95.0]
 
-    /// 会话窗告警阈值缺省值（对齐 TokenTracker 红色阈值 90%）。
+    /// 会话窗告警阈值缺省值（红色阈值 90%）。
     static let sessionThresholdPercentDefault = 90.0
 
     init() {}
@@ -325,7 +325,7 @@ enum TokenUsageProviderOrdering {
         }
     }
 
-    /// 子集内的标准 move（对齐 TokenTracker `reorderedProviderOrder` 语义）。
+    /// 子集内的标准 move。
     /// `destination` 遵循 SwiftUI `move(fromOffsets:toOffset:)` 在原始数组上的语义。
     private static func moveWithinSubset(
         _ subset: [TokenUsageProvider],

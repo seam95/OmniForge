@@ -7,7 +7,7 @@ import Foundation
 /// - Cursor 无本地逐条日志，用量只有云端账单口径（非实时）→ **无目录监听、无增量游标、
 ///   无去重**；只做定时轮询（SPEC 4.2 / 参考 08）。
 /// - CSV 每轮重新导出即「权威快照」：桶值按本轮导出内该桶的全部行重算，导出窗口外的
-///   旧桶保持不动（绝不回零覆盖，对齐 TokenTracker windowed-export 防线）。
+///   旧桶保持不动（绝不回零覆盖）。
 /// - 失败（凭证缺失/网络/改版）→ 静默跳过本轮：不写库、不通知、不报错，单家失败不连坐。
 ///
 /// 隐私红线（SPEC 2.6）：只把行内 token 数字与时间写库；正文、Cost 等字段永不读取落盘。
@@ -17,7 +17,7 @@ final class CursorUsageCollector: UsageCollecting {
     var onUsageDidChange: ((TokenUsageProvider) -> Void)?
     var onBackfillStateChange: ((Bool) -> Void)?
 
-    /// 定时轮询兜底间隔（云端账单非实时，30 分钟足够；参考 TokenTracker 同步节奏）。
+    /// 定时轮询兜底间隔（云端账单非实时，30 分钟足够）。
     static let defaultPollInterval: TimeInterval = 30 * 60
 
     /// 轮询计数（测试断言）。

@@ -4,7 +4,7 @@ import Foundation
 
 /// DeepSeek Harness（dsh）`session.jsonl` 单行 — 只声明路由/用量字段。
 ///
-/// 事件类型（参考 TokenTracker rollout `extractDshSessionUsage`）：
+/// 事件类型：
 /// - `session`：会话头，`id` 记会话号；
 /// - `request/header`：`data.header.config.model` 记请求级模型归属；
 /// - `assistant/message`：`data.message.source.model`（或回退 header 模型）

@@ -144,7 +144,7 @@ final class LimitPaceTests: XCTestCase {
         XCTAssertFalse(result.paceOver)
     }
 
-    // MARK: - durationString 边界（> 24 才进位天，整 24h 显示 "24h" — 对齐 TokenTracker）
+    // MARK: - durationString 边界（> 24 才进位天，整 24h 显示 "24h"）
 
     func test_durationString_boundaries() {
         XCTAssertEqual(LimitPace.durationString(0), "0m")
@@ -159,7 +159,7 @@ final class LimitPaceTests: XCTestCase {
         XCTAssertEqual(LimitPace.durationString(2 * 86400 + 3600), "2d")
     }
 
-    // MARK: - 投影守卫（expected > 0.02 才投影 — 对齐 TokenTracker）
+    // MARK: - 投影守卫（expected > 0.02 才投影）
 
     func test_compute_noProjectionWhenExpectedNearZero() {
         // 窗口刚开始（期望 ≈1%）时比例失真 → 无 ETA / projectedEnd。

@@ -34,7 +34,7 @@ final class TokenUsageCardStatusTests: XCTestCase {
     }
 
     func test_derive_thresholdBoundariesUseInclusiveComparison() {
-        // 与 MetricBar（>= warning/critical）和告警（>= 90，对齐 TokenTracker）口径一致：恰好 90/70 即升级。
+        // 与 MetricBar（>= warning/critical）和告警（>= 90）口径一致：恰好 90/70 即升级。
         XCTAssertEqual(
             TokenUsageCardStatus.derive(from: snapshot(windows: sessionWindow(percent: 90))),
             .exceeded

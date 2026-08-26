@@ -17,7 +17,7 @@ struct UsageTrendPoint: Equatable, Identifiable {
 /// - `day`：当日逐时（半小时桶按小时归并；补零至当前小时，保证曲线连续）；
 /// - `week`：近 7 日逐日（含今日，缺日补零）；
 /// - `month`：近 30 日逐日（含今日，缺日补零）；
-/// - `total`：全部历史按月（含缺月补零；视觉上最多展示近 24 个月，对齐 TokenTracker）。
+/// - `total`：全部历史按月（含缺月补零；视觉上最多展示近 24 个月）。
 /// 对应周期无任何数据时返回空序列（视图显示占位）。
 enum UsageTrendBuilder {
     static let totalMonthSpan = 24

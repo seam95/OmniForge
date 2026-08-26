@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 模型 Top 列表（对齐 TokenTracker `TopModelsView`）：彩色圆点（按名次五色循环）+
+/// 模型 Top 列表：彩色圆点（按名次五色循环）+
 /// 名称 + tokens 缩写 + 1 位小数占比% + 行底 12% 比例条（占比可视化）。
 /// 仅按模型聚合（SPEC 2.4）；空列表时整块不显示。
 struct TokenUsageTopModelsView: View {
@@ -8,7 +8,7 @@ struct TokenUsageTopModelsView: View {
     let strings: Strings
     @Environment(\.colorScheme) private var colorScheme
 
-    /// 名次圆点五色循环（对齐 TokenTracker modelDotPalette 气质）。
+    /// 名次圆点五色循环。
     private static let dotPalette: [Color] = [
         Color(.sRGB, red: 0.35, green: 0.55, blue: 0.95, opacity: 1.0),  // soft blue
         Color(.sRGB, red: 0.60, green: 0.45, blue: 0.90, opacity: 1.0),  // lavender

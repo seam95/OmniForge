@@ -2,7 +2,7 @@ import Foundation
 
 /// 限额缓存策略 — 纯函数（TTL + reset 边界提前过期 + 过期窗口丢弃），独立可测（参考 06）。
 enum LimitsCachePolicy {
-    /// 内存 TTL：对齐 TokenTracker CACHE_TTL_MS（2 分钟）。
+    /// 内存 TTL：2 分钟。
     static let defaultTTL: TimeInterval = 2 * 60
     /// 下限 5 秒：防「reset 就在此刻」导致每次调用都全量拉取。
     static let minTTL: TimeInterval = 5
@@ -114,7 +114,7 @@ final class TokenUsageLimitsCache: LimitsCaching {
     }
 
     func storeSuccess(_ limits: ProviderUsageLimits) {
-        // 契约守卫：错误快照绝不落缓存 —— 否则会覆盖磁盘 last-good（对齐 TokenTracker 拒绝写 error 缓存）。
+        // 契约守卫：错误快照绝不落缓存 —— 否则会覆盖磁盘 last-good。
         guard limits.issue == nil else { return }
         let expiresAt = LimitsCachePolicy.expirationDate(
             now: now(),

@@ -86,11 +86,11 @@ struct CodexTokenCounts: Decodable, Equatable {
 /// `cached` 是其子集；六列 schema 里 `input` 应为纯非缓存输入，必须
 /// `input = max(0, input - cached)`，否则缓存部分被双重计费、成本虚增 6~7 倍。
 ///
-/// 口径说明：TokenTracker 的多流恢复状态机（codex-token-usage.js）在此简化为
+/// 口径说明：多流恢复状态机在此简化为
 /// 「单流 per 文件」——按事件顺序维护上一轮累计差值，配合 (session, timestamp,
 /// 用量签名) 跨 sync 去重，同文件多流交错场景保守跳过。
 enum CodexUsageProcessing {
-    /// 默认模型名（与 TokenTracker 对齐）。
+    /// 默认模型名。
     static let defaultModel = "unknown"
 
     // MARK: 归一化 + cached 减法

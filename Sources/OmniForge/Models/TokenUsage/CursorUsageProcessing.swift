@@ -143,7 +143,7 @@ enum CursorUsageProcessing {
 
     // MARK: CSV 底层
 
-    /// 支持引号分隔（引号内逗号不断行）；与 TokenTracker parseCsvLine 对齐。
+    /// 支持引号分隔（引号内逗号不断行）。
     private static func parseCSVLine(_ line: String) -> [String] {
         var fields: [String] = []
         var current = ""

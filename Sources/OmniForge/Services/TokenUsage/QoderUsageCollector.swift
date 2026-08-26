@@ -5,7 +5,7 @@ import GRDB
 /// qoder 用量采集器（B 类 SQLite）。
 ///
 /// 数据源：`~/Library/Application Support/Qoder/SharedClientCache/cache/db/local.db`
-/// （`$QODER_HOME` / `$QODER_DB_PATH` 覆盖）。SQL 参考 TokenTracker QODER_USAGE_SQL：
+/// （`$QODER_HOME` / `$QODER_DB_PATH` 覆盖）。SQL：
 /// JOIN chat_message / chat_record / chat_session，只取 assistant 且有 token_info 的行。
 ///
 /// 差分语义（PLAN §3.4）：**变化整行减旧加新**（非逐列差分）——状态账本记上次入桶的

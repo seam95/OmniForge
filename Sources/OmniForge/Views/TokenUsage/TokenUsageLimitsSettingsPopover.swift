@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// 「限额显示」齿轮弹层 — 对齐 TokenTracker `LimitsSettingsView`：
+/// 「限额显示」齿轮弹层：
 /// 剩余/已用口径 + 额度重置提示/撒花开关 + 已配置 provider 的显隐开关与拖拽排序。
 /// 排序结果写回 `providerOrder`（未配置项保持原位）；显隐写回 `hiddenProviders`。
 struct TokenUsageLimitsSettingsPopover: View {
@@ -125,7 +125,7 @@ struct TokenUsageLimitsSettingsPopover: View {
     }
 }
 
-// MARK: - 平滑拖拽排序（对齐 TokenTracker ReorderDropDelegate）
+// MARK: - 平滑拖拽排序
 
 private struct TokenUsageProviderReorderDropDelegate: DropDelegate {
     let target: TokenUsageProvider

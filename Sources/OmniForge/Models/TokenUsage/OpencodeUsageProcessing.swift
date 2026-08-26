@@ -6,7 +6,7 @@ import Foundation
 /// opencode `message.data` JSON — 只声明身份/模型/时间/用量字段；消息正文不声明。
 ///
 /// `tokens` 为消息级**累积值**（`cache.read/write` 与 input/output 分列）：
-/// 采集侧按「每消息上次 totals 差分」求增量（参考 TokenTracker normalizeOpencodeTokens）。
+/// 采集侧按「每消息上次 totals 差分」求增量。
 struct OpencodeMessageData: Decodable, Equatable {
     let id: String?
     let sessionID: String?

@@ -10,7 +10,7 @@ struct LimitResetEvent: Equatable {
     let previousPercent: Double
 }
 
-/// 检测限额窗口「重置」（rollover）— 移植 TokenTracker `WeeklyLimitResetDetector`。
+/// 检测限额窗口「重置」（rollover）。
 ///
 /// 判据：窗口的 `resetAt` 前进超过容差（确认真 rollover），且已用百分比下降超过
 /// `minDrop`（确认窗口确实清空，兼防 resetAt 持续滑动的 provider 误报）。

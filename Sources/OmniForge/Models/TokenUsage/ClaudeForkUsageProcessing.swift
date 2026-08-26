@@ -6,7 +6,7 @@ import Foundation
 ///
 /// 用量挂在**任意**记录的 `providerData.rawUsage` 上（assistant 消息与 function_call
 /// 记录均携带一次 LLM 往返用量）；`providerData.messageId` 为响应级 id，同往返的
-/// function_call/message 记录共享，是最稳的去重 key（参考 TokenTracker rollout.js）。
+/// function_call/message 记录共享，是最稳的去重 key。
 struct ClaudeForkTranscriptEntry: Decodable, Equatable {
     let type: String?
     let sessionId: String?
@@ -68,7 +68,7 @@ struct ClaudeForkTranscriptEntry: Decodable, Equatable {
 
 /// Claude-fork transcript 解析归一化 — codebuddy / workbuddy 共享（PLAN 期 2）。
 ///
-/// 减法语义（参考 TokenTracker rollout）：
+/// 减法语义：
 /// - `prompt_tokens` 为完整 prompt（含缓存）→ 减 cacheRead 与 cacheCreation；
 /// - 缓存读有三种镜像（Anthropic `cache_read_input_tokens` / OpenAI
 ///   `prompt_tokens_details.cached_tokens` / DeepSeek `prompt_cache_hit_tokens`），取最大；

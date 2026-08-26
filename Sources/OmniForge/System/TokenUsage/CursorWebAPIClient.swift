@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - 浏览器伪装头（集中定义；网页 API 需过 Cloudflare，参考 08/cursor-config.js）
 
-/// Cursor 网页 API 的浏览器伪装头 — 与 TokenTracker 对齐（UA / Referer / Accept）。
+/// Cursor 网页 API 的浏览器伪装头（UA / Referer / Accept）。
 enum CursorBrowserHeaders {
     static let userAgent = """
     Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 \

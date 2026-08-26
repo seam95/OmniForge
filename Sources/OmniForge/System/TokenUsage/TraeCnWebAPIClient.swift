@@ -20,7 +20,7 @@ enum TraeCnFetchError: Error {
 
 /// 官方用量 API 客户端：POST `query_user_usage_group_by_session`，`Cloud-IDE-JWT` 头。
 ///
-/// 分页语义（参考 TokenTracker fetchTraeCnUsage）：串行翻页直到声明的 total 或空页；
+/// 分页语义：串行翻页直到声明的 total 或空页；
 /// 超过页数上限（容量超限）时按 [start,mid] + [mid+1,end] 递归二分。JWT 只进
 /// 请求头，绝不落盘/入日志。
 final class TraeCnWebAPIClient: TraeCnUsageFetching {

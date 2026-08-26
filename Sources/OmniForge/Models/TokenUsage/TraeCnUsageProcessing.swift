@@ -4,7 +4,7 @@ import Foundation
 
 /// TRAE CN 用量 API 单行会话 — 只声明用量/模型字段。
 ///
-/// 语义（参考 TokenTracker normalizeTraeCnSession）：
+/// 语义：
 /// - `input_token` 为**含缓存**的口径 → 拆出 cache_read / cache_write 后余量为纯输入；
 /// - 缓存字段对无 prompt-cache 概念的模型可缺省（视为 0）；
 /// - `usage_time` 为 epoch 秒；半小时桶按其对齐。

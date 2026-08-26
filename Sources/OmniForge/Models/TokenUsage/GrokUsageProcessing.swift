@@ -99,7 +99,7 @@ struct GrokSignals: Decodable, Equatable {
 /// 时间秒/毫秒自适应、六列映射、模型规范化、兜底估算。
 enum GrokUsageProcessing {
     static let defaultModel = "grok-build"
-    /// 兜底估算的输入占比（对齐 TokenTracker GROK_ESTIMATED_INPUT_RATIO）。
+    /// 兜底估算的输入占比。
     static let estimatedInputRatio = 0.8
 
     /// 单个 turn 事件（按 modelUsage 拆分后）。
@@ -113,7 +113,7 @@ enum GrokUsageProcessing {
 
     // MARK: 模型规范化
 
-    /// Free Build SKU 不得模糊匹配付费 grok-4.5 定价（对齐 TokenTracker canonicalizeGrokUsageModel）。
+    /// Free Build SKU 不得模糊匹配付费 grok-4.5 定价。
     static func canonicalizeModelName(_ raw: String?) -> String {
         guard let raw, !raw.isEmpty else { return defaultModel }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -165,7 +165,7 @@ enum GrokUsageProcessing {
 
     // MARK: turn 用量 → 六列
 
-    /// 六列归一化（口径对齐 TokenTracker normalizeGrokTurnUsage）：
+    /// 六列归一化：
     /// grok 的 `inputTokens` 含缓存命中 → 拆分出纯非缓存 input 与 cached；
     /// total 取「input + cached + creation + output」四列之和（OmniForge 桶语义）。
     static func tokenUsage(from usage: GrokTurnUsage?) -> TokenUsage? {

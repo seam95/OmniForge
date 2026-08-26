@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - 趋势周期
 
-/// 趋势图统计周期（日 / 周 / 月 / 总计）— 对齐 TokenTracker 仪表盘趋势切换器。
+/// 趋势图统计周期（日 / 周 / 月 / 总计）。
 ///
 /// - `day`：当日逐时；`week`：近 7 日逐日；`month`：近 30 日逐日；`total`：全部历史按月。
 enum TokenTrendPeriod: String, Codable, CaseIterable, Identifiable {

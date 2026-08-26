@@ -48,7 +48,7 @@ enum TokenUsageFormat {
         String(format: "%.1f%%", value)
     }
 
-    /// 仪表盘口径计数缩写（对齐 TokenTracker `formatCompact`）：大写 K/M/B、
+    /// 仪表盘口径计数缩写：大写 K/M/B、
     /// 1 位小数并去掉尾随 `.0`。789 → "789"；1500 → "1.5K"；2_300_000 → "2.3M"；
     /// 8_800_000_000 → "8.8B"。供汇总卡 / 趋势轴 / 模型行。
     static func compactTokens(_ count: Int) -> String {
@@ -337,7 +337,7 @@ extension LimitWindowKind {
 /// 卡片整体状态 — 驱动 StatusTintBadge 文案与颜色。
 ///
 /// 分工契约（SPEC 2.1）：
-/// - 徽章仅依据会话窗（Session Window）派生卡片全局状态（总览），对齐 TokenTracker 阈值（≥70 approaching / ≥90 exceeded）。
+/// - 徽章仅依据会话窗（Session Window）派生卡片全局状态（总览），阈值（≥70 approaching / ≥90 exceeded）。
 /// - 行内进度条（MetricBar）则对每一行窗口（含 weekly / monthly / labeled 窗）独立按 70/90 阈值染色提示。
 enum TokenUsageCardStatus {
     case normal
@@ -365,7 +365,7 @@ enum TokenUsageCardStatus {
             return .normal
         }
         let percent = session.usedPercent
-        // 阈值对齐 TokenTracker：≥70 approaching / ≥90 exceeded。
+        // 阈值：≥70 approaching / ≥90 exceeded。
         if percent >= 90 { return .exceeded }
         if percent >= 70 { return .approaching }
         return .normal

@@ -1,7 +1,7 @@
 import Charts
 import SwiftUI
 
-/// 趋势面积图（对齐 TokenTracker `UsageTrendChart`）：AreaMark 渐变 + LineMark 平滑插值，
+/// 趋势面积图：AreaMark 渐变 + LineMark 平滑插值，
 /// 区头右侧自带 日/周/月/总计 切换器；hover 画 RuleMark + PointMark 并把该点数值内联到区头
 /// （NSPopover 内无法悬浮 tooltip）。空数据时显示占位块。
 struct TokenUsageTrendChartView: View {

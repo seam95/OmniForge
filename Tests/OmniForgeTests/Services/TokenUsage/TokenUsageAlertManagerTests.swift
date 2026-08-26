@@ -1,7 +1,7 @@
 import XCTest
 @testable import OmniForge
 
-/// #11：Token 用量告警 — 会话窗阈值（≥90%，对齐 TokenTracker）/ 步速超前（LimitPace.paceOver）/
+/// #11：Token 用量告警 — 会话窗阈值（≥90%）/ 步速超前（LimitPace.paceOver）/
 /// 同窗防抖 / 独立开关 / 未授权静默降级。
 @MainActor
 final class TokenUsageAlertManagerTests: XCTestCase {

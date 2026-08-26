@@ -5,9 +5,8 @@ import Foundation
 ///
 /// 数据源：`~/.zcode/cli/db/db.sqlite`（`$ZCODE_HOME` 覆盖）。复用 opencode 的
 /// `message` 表读取与差分；按 `providerID` **黑名单**过滤 anthropic/openai/google
-/// 子代理（这些 turn 由 Claude/Codex/Gemini 独立采集，避免重复计数；参考
-/// TokenTracker isZcodeNativeMessage —— 黑名单而非白名单，自定义 provider 的
-/// 随机 UUID 不会被静默丢弃）。
+/// 子代理（这些 turn 由 Claude/Codex/Gemini 独立采集，避免重复计数；黑名单而非
+/// 白名单，自定义 provider 的随机 UUID 不会被静默丢弃）。
 ///
 /// 隐私红线（SPEC 2.6）：DB 只读打开，只读身份/模型/时间/用量字段。
 final class ZcodeUsageCollector: OpencodeSchemaCollectorBase {

@@ -5,7 +5,7 @@ import SwiftUI
 /// 多供应商接入（2026-08-24）—— 9 家新 provider 的 rawValue / displayName / accentColor。
 final class TokenUsageProviderTests: XCTestCase {
 
-    func test_newProviderRawValuesAlignWithTokenTrackerSourceNames() {
+    func test_newProviderRawValuesAlignWithSourceNames() {
         XCTAssertEqual(TokenUsageProvider.opencode.rawValue, "opencode")
         XCTAssertEqual(TokenUsageProvider.codebuddy.rawValue, "codebuddy")
         XCTAssertEqual(TokenUsageProvider.workbuddy.rawValue, "workbuddy")

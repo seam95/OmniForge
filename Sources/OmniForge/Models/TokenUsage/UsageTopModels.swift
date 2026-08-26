@@ -14,7 +14,7 @@ struct UsageTopModelEntry: Equatable, Identifiable {
 
 /// 从模型聚合（已按 provider 过滤）派生 Top N — 纯函数。
 ///
-/// 逻辑对齐 TokenTracker `buildTopModels`：只保留 token > 0 的行，
+/// 逻辑：只保留 token > 0 的行，
 /// 占比 = 该模型 / 全部模型总量；按总量降序、同名按字典序升序，取前 `limit`。
 enum UsageTopModelsBuilder {
     static func make(

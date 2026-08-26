@@ -6,7 +6,7 @@ import Foundation
 ///
 /// 窗口口径：网页 API 只给「计费周期」一个主窗（计划总用量百分比），映射为 `.monthly`；
 /// `billingCycleEnd` 为 reset、`billingCycleEnd - billingCycleStart` 秒数为窗口秒数。
-/// 百分比优先级（对齐 TokenTracker）：
+/// 百分比优先级：
 /// ① `totalPercentUsed`；② Auto/API 车道均值 → API → Auto；③ plan used/limit cents 反推；
 /// ④ individualUsage.onDemand；⑤ teamUsage.onDemand；⑥ plan 为 0 时取各车道正数；
 /// ⑦ team/enterprise 时优先团队池。任何变体 → 无窗口（降级不崩）。

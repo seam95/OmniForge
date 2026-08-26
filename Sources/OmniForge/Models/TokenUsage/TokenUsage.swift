@@ -90,7 +90,7 @@ struct ClaudeTranscriptEntry: Decodable, Equatable {
 
 /// Claude 行解析归一化 — 纯函数；去重 key / 六列转换 / 半小时桶。
 enum ClaudeUsageProcessing {
-    /// 默认模型名（与 TokenTracker 的 DEFAULT_MODEL 对齐）。
+    /// 默认模型名。
     static let defaultModel = "unknown"
 
     /// 消息级去重 key：`message.id` 唯一即可，有 `requestId` 才拼接

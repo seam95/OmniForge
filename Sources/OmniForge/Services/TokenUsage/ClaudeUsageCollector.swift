@@ -72,7 +72,7 @@ final class ClaudeUsageCollector: JSONLUsageCollectorBase {
                   let bucketStart = ClaudeUsageProcessing.bucketStart(from: entry.timestamp) else {
                 return
             }
-            // 无 message.id 的行不给去重保护，照常计数（与 TokenTracker 一致）。
+            // 无 message.id 的行不给去重保护，照常计数。
             scan.ingest(
                 dedupKey: ClaudeUsageProcessing.deduplicationKey(
                     messageID: entry.message?.id,

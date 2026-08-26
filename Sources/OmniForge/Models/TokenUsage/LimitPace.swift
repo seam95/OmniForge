@@ -64,7 +64,7 @@ enum LimitPace {
         }
 
         // 投影：rate = used / elapsed；projectedAtReset = used / expected
-        // （窗口刚开始时期望≈0，比例失真 → expected > 0.02 才投影，对齐 TokenTracker）。
+        // （窗口刚开始时期望≈0，比例失真 → expected > 0.02 才投影）。
         let elapsed = windowSeconds - secondsUntilReset
         if elapsed > 0, used > 0, expected > 0.02 {
             let rate = used / elapsed
@@ -80,7 +80,7 @@ enum LimitPace {
         return result
     }
 
-    /// ④ 紧凑时长格式化：`45m` / `3h` / `2d`（整 24h 显示 "24h"，> 24 才进位天 — 对齐 TokenTracker）。
+    /// ④ 紧凑时长格式化：`45m` / `3h` / `2d`（整 24h 显示 "24h"，> 24 才进位天）。
     static func durationString(_ seconds: TimeInterval) -> String {
         let s = Int(max(0, seconds))
         let h = s / 3600

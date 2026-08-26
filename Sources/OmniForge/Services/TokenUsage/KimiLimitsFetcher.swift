@@ -4,7 +4,7 @@ import Foundation
 
 /// Kimi usages 响应解码 — 纯函数，独立可测（参考 normalizeKimiUsageResponse）。
 ///
-/// 槽位映射（对齐 TokenTracker UI 标注）：`usage` → weekly（7d，604800s）、
+/// 槽位映射：`usage` → weekly（7d，604800s）、
 /// `limits[0].detail ?? limits[0]` → session（5h，18000s）、
 /// `totalQuota`（订阅总额度）→ monthly。
 /// 窗口废弃规则（参考 kimiWindowFromUsage）：limit 必须 > 0；used 缺时用 `limit - remaining`
@@ -67,7 +67,7 @@ enum KimiUsageResponseDecoder {
 
 /// Kimi 限额取数器：kimi-code.json → 临期自刷新 → `GET coding/v1/usages`（参考 08/fetchKimiLimits）。
 ///
-/// 刷新语义：`expires_at` 30 秒容差（对齐 TokenTracker）；401/403 → `reauthRequired`；
+/// 刷新语义：`expires_at` 30 秒容差；401/403 → `reauthRequired`；
 /// 网络/HTTP 类刷新失败回退旧 token 继续（best-effort）。
 final class KimiLimitsFetcher: LimitsFetching {
     let provider: TokenUsageProvider = .kimi

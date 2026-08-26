@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// 全屏重置庆祝：额度窗口 rollover 后播撒花（原生 CAEmitterLayer，不引入粒子库）+ 可选 toast 横幅。
-/// 对齐 TokenTracker `ScreenConfettiOverlayController`：每屏一个 borderless、点击穿透的
+/// 每屏一个 borderless、点击穿透的
 /// `NSPanel` 悬浮在 status-bar 层级、跨所有 Space；不抢焦点、不拦截鼠标，用户可继续工作；
 /// 展示数秒后自动拆除，机器睡眠/息屏时立即结束。
 @MainActor

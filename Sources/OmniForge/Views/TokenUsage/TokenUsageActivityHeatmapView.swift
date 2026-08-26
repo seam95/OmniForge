@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 活跃度年度热力图：月标签行 + 周列 × 7 行网格 + 「少/多」图例 + hover 内联提示。
 ///
-/// 对齐 TokenTracker `ActivityHeatmapView`：NSPopover 内无法悬浮 tooltip，
+/// NSPopover 内无法悬浮 tooltip，
 /// hover 某格时区头内联显示「M月d日 · X tokens」，否则显示「N 活跃日」。
 /// 无数据时（`heatmap == nil`）显示占位块。
 struct TokenUsageActivityHeatmapView: View {
@@ -13,7 +13,7 @@ struct TokenUsageActivityHeatmapView: View {
     private let cellSize: CGFloat = 11
     private let spacing: CGFloat = 3
 
-    /// 五档色阶（0 = 空 / 1...4 = 数据强度）— 对齐 TokenTracker heatmapLevels，用主强调蓝。
+    /// 五档色阶（0 = 空 / 1...4 = 数据强度），用主强调蓝。
     private static let levelColors: [Color] = [
         Theme.Stats.cpu.opacity(0.10),
         Theme.Stats.cpu.opacity(0.25),

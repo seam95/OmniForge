@@ -4,7 +4,7 @@ import Foundation
 
 /// wire.jsonl 单行 — 只声明身份/用量字段；未声明键（对话正文等）由 JSONDecoder 丢弃。
 ///
-/// 兼容两种协议（参考 TokenTracker parseKimiIncremental / parseKimiCodeIncremental）：
+/// 兼容两种协议：
 /// - Kimi Code（`~/.kimi-code/sessions/**/agents/*/wire.jsonl`）：`config.update` +
 ///   `context.append_loop_event`（step.end 带 usage，`time` 为 epoch 毫秒）。
 /// - 旧版 kimi-cli（`~/.kimi/sessions/**/wire.jsonl`）：`message.type == StatusUpdate`，
@@ -48,7 +48,7 @@ struct KimiWireEntry: Decodable, Equatable {
     }
 }
 
-/// 跨形状 union 的 token 用量字段（参考 TokenTracker 三种口径）。
+/// 跨形状 union 的 token 用量字段。
 struct KimiWireTokenUsage: Decodable, Equatable {
     /// Anthropic 形状：input_tokens / output_tokens / cache_read_input_tokens / cache_creation_input_tokens。
     var inputTokens: Int?
@@ -125,7 +125,7 @@ enum KimiUsageProcessing {
 
     // MARK: 六列归一化
 
-    /// 归一化（口径对齐 TokenTracker 三种形状）：
+    /// 归一化（对齐三种形状口径）：
     /// - Anthropic 形状：input 与 cache_read 分列，**不**做减法；
     /// - OpenAI 兼容：cached 折叠进 input_tokens → 减法；
     /// - camelCase / 旧版：inputOther/input_other 已是纯非缓存输入，不做减法。

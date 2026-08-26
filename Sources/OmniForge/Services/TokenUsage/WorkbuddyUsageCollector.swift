@@ -5,7 +5,7 @@ import Foundation
 ///
 /// 数据源：`~/.workbuddy/projects/**/*.jsonl`（`$WORKBUDDY_HOME` 覆盖，transcript
 /// 格式与 CodeBuddy 相同）+ `~/.workbuddy/traces/**/trace_*.json` 无损兜底。
-/// 互斥（参考 TokenTracker）：同一会话 JSONL 有 rawUsage（`workbuddy:detailed:<sid>`）
+/// 互斥：同一会话 JSONL 有 rawUsage（`workbuddy:detailed:<sid>`）
 /// 或 trace 已消费（`workbuddy:traced:<sid>`）时另一来源跳过，绝不叠加。
 ///
 /// 隐私红线（SPEC 2.6）：只接触身份/`providerData.rawUsage`/timestamp/model 与

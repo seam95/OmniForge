@@ -1,7 +1,7 @@
 import XCTest
 @testable import OmniForge
 
-/// 限额重置检测器 — rollover 判据、防抖与读数提取纯逻辑测试（移植自 TokenTracker WeeklyLimitResetDetectorTests）。
+/// 限额重置检测器 — rollover 判据、防抖与读数提取纯逻辑测试。
 final class LimitResetDetectorTests: XCTestCase {
 
     private func reading(

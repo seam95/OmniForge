@@ -220,7 +220,7 @@ enum CodexWhamResponseDecoder {
 /// 请求序：① wham/usage（主计数）→ ② wham/rate-limit-reset-credits（补 reset，
 /// 短超时 + 失败降级）；401/403/429 语义与 Claude 一致（复用 ProviderAPIClient）。
 /// 刷新失败细分：401 类（expired/reused/invalidated）→ `reauthRequired`（prompt codex login），
-/// 网络类失败回退旧 token 继续（best-effort，与 TokenTracker 一致）。
+/// 网络类失败回退旧 token 继续（best-effort）。
 final class CodexLimitsFetcher: LimitsFetching {
     let provider: TokenUsageProvider = .codex
 

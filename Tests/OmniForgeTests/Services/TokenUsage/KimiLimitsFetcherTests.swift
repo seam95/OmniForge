@@ -2,8 +2,8 @@ import Foundation
 import XCTest
 @testable import OmniForge
 
-/// Kimi 限额取数器：coding/v1/usages 解码（usage→周窗 / detail→5h 会话窗 / totalQuota→月窗，
-/// 对齐 TokenTracker UI 标注）、expires_at 临期自刷新、401/429 语义与失败细分。
+/// Kimi 限额取数器：coding/v1/usages 解码（usage→周窗 / detail→5h 会话窗 / totalQuota→月窗）、
+/// expires_at 临期自刷新、401/429 语义与失败细分。
 final class KimiLimitsFetcherTests: XCTestCase {
     private var fixedNow: Date!
     private var persistenceCalls: [(bundle: KimiAuthBundle, tokens: KimiRefreshedTokens, date: Date)] = []

@@ -5,7 +5,7 @@ import SwiftUI
 /// 顶部 provider 切换器始终保留；两区块任一无数据时整块隐藏，
 /// 均为空时走 `TokenUsageEmptyStateView` 空态（SPEC 4.2 / 4.3 / 4.6）。
 ///
-/// 用量区块为 TokenTracker 化仪表盘（SPEC 2026-08-25）：
+/// 用量区块为仪表盘（SPEC 2026-08-25）：
 /// 汇总卡 ×4 + 活跃度热力图 + 趋势图（日/周/月/总计，自带切换器）+ 模型 Top 列表；
 /// provider 切换器过滤全部四个子区块。
 struct TokenUsagePanelView: View {

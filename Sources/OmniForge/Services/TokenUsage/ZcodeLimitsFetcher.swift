@@ -39,8 +39,8 @@ enum ZcodeLimitsParsing {
 /// zcode 限额：`~/.zcode/v2/credentials.json` 的 `zcodejwttoken`（enc:v1 AES-256-GCM
 /// 解密或明文）→ `zcode.z.ai/api/v1/zcode-plan/billing/balance` → GLM 额度桶。
 ///
-/// 解密失败/凭证缺失 → `configured: false`（fail-soft，SPEC R5：TokenTracker 私有
-/// 实现可能漂移，绝不崩溃）。
+/// 解密失败/凭证缺失 → `configured: false`（fail-soft，SPEC R5：私有实现
+/// 可能漂移，绝不崩溃）。
 final class ZcodeLimitsFetcher: LimitsFetching {
     let provider: TokenUsageProvider = .zcode
 
