@@ -196,13 +196,15 @@ private struct ConfettiEmitterView: NSViewRepresentable {
     func updateNSView(_ nsView: ConfettiEmitterNSView, context: Context) {}
 }
 
-private final class ConfettiEmitterNSView: NSView {
-    private let emitter = CAEmitterLayer()
+final class ConfettiEmitterNSView: NSView {
+    let emitter = CAEmitterLayer()
     private static let shapeContents: [CGImage?] = [
         makeShapeImage(size: NSSize(width: 8, height: 12), cornerRadius: 1),
         makeShapeImage(size: NSSize(width: 10, height: 10), cornerRadius: 5),
         makeShapeImage(size: NSSize(width: 6, height: 14), cornerRadius: 1),
     ]
+
+    override var isFlipped: Bool { true }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -215,16 +217,18 @@ private final class ConfettiEmitterNSView: NSView {
         ]
         let cells: [CAEmitterCell] = palette.enumerated().map { index, color in
             let cell = CAEmitterCell()
-            cell.birthRate = 5
-            cell.lifetime = 6
-            cell.velocity = 130
-            cell.velocityRange = 45
+            cell.birthRate = 6
+            cell.lifetime = 7.0
+            cell.lifetimeRange = 2.0
+            cell.velocity = 180
+            cell.velocityRange = 80
+            cell.yAcceleration = 120                  // 重力下落加速度
             cell.emissionLongitude = .pi / 2          // 向下发射
-            cell.emissionRange = 0.5
-            cell.spin = .pi / 4
-            cell.spinRange = .pi
-            cell.scale = 0.5
-            cell.scaleRange = 0.35
+            cell.emissionRange = .pi / 4
+            cell.spin = .pi
+            cell.spinRange = 2 * .pi
+            cell.scale = 0.6
+            cell.scaleRange = 0.3
             cell.contents = Self.shapeContents[index % Self.shapeContents.count]
             cell.color = color.cgColor
             return cell
