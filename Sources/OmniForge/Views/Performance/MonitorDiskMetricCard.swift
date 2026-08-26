@@ -13,7 +13,7 @@ struct MonitorDiskMetricCard: View {
     var body: some View {
         Button(action: action) {
             MonitorDashboardCardChrome(accent: accent, height: height, isInteractive: true) {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 6) {
                     header
 
                     if let issueText = model.issueText {
@@ -24,7 +24,7 @@ struct MonitorDiskMetricCard: View {
                             .minimumScaleFactor(0.8)
                         Spacer(minLength: 0)
                     } else {
-                        HStack(spacing: 10) {
+                        HStack(spacing: 8) {
                             diskBox(
                                 label: strings.monitorMetricRead,
                                 value: model.chipTexts.indices.contains(0) ? model.chipTexts[0] : "--"
@@ -46,18 +46,19 @@ struct MonitorDiskMetricCard: View {
     }
 
     private func diskBox(label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 2) {
             Text(label)
                 .font(Theme.Stats.font10Regular)
                 .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                .lineLimit(1)
             Text(value)
-                .font(.system(size: 15, weight: .bold).monospacedDigit())
+                .font(.system(size: 14, weight: .bold).monospacedDigit())
                 .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)

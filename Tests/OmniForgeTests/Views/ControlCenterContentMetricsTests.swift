@@ -4,7 +4,7 @@ import XCTest
 final class ControlCenterContentMetricsTests: XCTestCase {
     func test_metrics_matchControlCenterShellContract() {
         XCTAssertEqual(ControlCenterContentMetrics.panelWidth, 420)
-        XCTAssertEqual(ControlCenterContentMetrics.maxContentHeight, 530)
+        XCTAssertEqual(ControlCenterContentMetrics.maxContentHeight, 580)
         XCTAssertEqual(ControlCenterContentMetrics.emptyContentMinHeight, 120)
     }
 

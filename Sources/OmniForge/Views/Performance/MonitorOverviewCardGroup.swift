@@ -86,7 +86,7 @@ enum MonitorOverviewRow: Equatable, Identifiable {
         case "row.batteryGPU":
             return 110
         case "row.disk":
-            return 86
+            return 96
         default:
             return 110
         }

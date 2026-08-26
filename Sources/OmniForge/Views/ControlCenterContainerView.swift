@@ -5,7 +5,7 @@ import SwiftUI
 enum ControlCenterContentMetrics {
     static let panelWidth: CGFloat = 420
     /// 各页滚动上限。
-    static let maxContentHeight: CGFloat = 530
+    static let maxContentHeight: CGFloat = 580
     /// 空状态 / 不可用页的最小内容高度，避免 popover 过扁。
     static let emptyContentMinHeight: CGFloat = 120
 
