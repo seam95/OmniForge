@@ -30,6 +30,7 @@ xcuserdata/
 # AI 协作配置与内部文档（开源仓库不需要）
 AGENTS.md
 CLAUDE.md
+CONTEXT.md
 docs/
 
 # 仓库辅助脚本（不属于应用运行时）
