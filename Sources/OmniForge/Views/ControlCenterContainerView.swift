@@ -214,6 +214,7 @@ struct ControlCenterContainerView: View {
                         ProviderSwitchSettingsView(
                             manager: manager,
                             strings: state.l10n.s,
+                            presentation: .menuBar,
                             onOpenSettings: onOpenSettings
                         )
                     }

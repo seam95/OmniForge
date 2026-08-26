@@ -10,15 +10,48 @@ extension ProviderTool {
     }
 }
 
+/// 供应商页面的宿主场景。
+///
+/// 菜单栏空间有限，只负责把新增操作路由到设置页；完整表单仅在设置窗口中展示。
+enum ProviderSwitchPresentation: Equatable {
+    case settings
+    case menuBar
+
+    var showsInlineAddProviderButton: Bool {
+        self == .settings
+    }
+
+    var showsFooterAddProviderLink: Bool {
+        self == .menuBar
+    }
+
+    var addProviderRoute: ProviderSwitchAddProviderRoute {
+        switch self {
+        case .settings:
+            return .profileEditor
+        case .menuBar:
+            return .providerSettings
+        }
+    }
+}
+
+/// 「新增供应商」入口的目标，用于保持菜单栏与设置页行为明确且可测试。
+enum ProviderSwitchAddProviderRoute: Equatable {
+    case profileEditor
+    case providerSettings
+}
+
 /// 供应商切换设置页（卡片式 UI 对齐稿子设计）：
 /// - 分段选择器：Claude Code / Codex 全宽胶囊分段切换
 /// - 卡片列表：官方卡片 + Profile 卡片栈，激活项带有系统蓝外边框与「使用中」绿色胶囊微章，未激活项展示品牌字母 Logo 与「...」操作菜单
-/// - 主操作：全宽「+ 新增供应商」主按钮
-/// - 底部辅助：居中「编辑配置文件 · 恢复备份」辅助操作
+/// - 设置窗口：展示全宽「+ 新增供应商」主按钮并打开新增表单
+/// - 菜单栏：将新增操作放入底部链接并路由到供应商设置页
+/// - 底部辅助：居中展示供应商相关文字链接
 /// - 异常状态：未托管 / 损坏卡片视觉融入卡片体系
 struct ProviderSwitchSettingsView: View {
     @ObservedObject var manager: ProviderSwitchManager
     let strings: Strings
+    var presentation: ProviderSwitchPresentation = .settings
     var onOpenSettings: (SettingsToolbarTab?) -> Void = { _ in }
 
     @State private var selectedTool: ProviderTool = .claudeCode
@@ -50,7 +83,9 @@ struct ProviderSwitchSettingsView: View {
             unmanagedCard
             corruptedCard
 
-            addProviderButton
+            if presentation.showsInlineAddProviderButton {
+                addProviderButton
+            }
 
             footerLinks
         }
@@ -313,11 +348,9 @@ struct ProviderSwitchSettingsView: View {
 
     private var addProviderButton: some View {
         Button {
-            addingProfileForTool = selectedTool
+            addProvider()
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "plus")
-                    .font(.system(size: 13, weight: .semibold))
                 Text(strings.providerAddProvider)
                     .font(.system(size: 13.5, weight: .medium))
             }
@@ -339,10 +372,21 @@ struct ProviderSwitchSettingsView: View {
         .buttonStyle(ProviderAddButtonStyle())
     }
 
-    // MARK: - 居中辅助链接（编辑配置文件 · 恢复备份）
+    // MARK: - 居中辅助链接
 
     private var footerLinks: some View {
         HStack(spacing: 8) {
+            if presentation.showsFooterAddProviderLink {
+                Button(strings.providerAddProvider) {
+                    addProvider()
+                }
+                .buttonStyle(ProviderFooterLinkButtonStyle())
+
+                Text("·")
+                    .font(.system(size: 12.5, weight: .bold))
+                    .foregroundStyle(Color.secondary.opacity(0.5))
+            }
+
             Button(strings.providerEditConfigFile) {
                 editorTool = selectedTool
             }
@@ -436,6 +480,15 @@ struct ProviderSwitchSettingsView: View {
     }
 
     // MARK: - 动作
+
+    private func addProvider() {
+        switch presentation.addProviderRoute {
+        case .profileEditor:
+            addingProfileForTool = selectedTool
+        case .providerSettings:
+            onOpenSettings(.providerSwitch)
+        }
+    }
 
     private var unmanagedSummary: String {
         guard case .unmanaged(let summary) = manager.active(tool: selectedTool) else { return "" }
