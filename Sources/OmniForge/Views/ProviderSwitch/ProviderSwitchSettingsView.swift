@@ -10,12 +10,12 @@ extension ProviderTool {
     }
 }
 
-/// 供应商切换设置页（控制中心独立页 + 设置侧栏共用，SPEC 2.9）：
-/// - 顶部：大标题「供应商」+ 右侧高亮「+ 新增供应商」主按钮
-/// - 分段选择器：Claude Code / Codex 胶囊状分段切换
-/// - 列表：官方行 + Profile 列表，包含精致分割线、激活状态（蓝色对勾 vs 灰色圆圈）、设为激活按钮与操作菜单（...）
-/// - 底部：左侧「编辑配置文件」与「恢复备份」蓝色链接，右侧「切换后需重启 CLI 生效」提示
-/// - 未托管 / 损坏卡：一键收编与备份重建
+/// 供应商切换设置页（卡片式 UI 对齐稿子设计）：
+/// - 分段选择器：Claude Code / Codex 全宽胶囊分段切换
+/// - 卡片列表：官方卡片 + Profile 卡片栈，激活项带有系统蓝外边框与「使用中」绿色胶囊微章，未激活项展示品牌字母 Logo 与「...」操作菜单
+/// - 主操作：全宽「+ 新增供应商」主按钮
+/// - 底部辅助：居中「编辑配置文件 · 恢复备份」辅助操作
+/// - 异常状态：未托管 / 损坏卡片视觉融入卡片体系
 struct ProviderSwitchSettingsView: View {
     @ObservedObject var manager: ProviderSwitchManager
     let strings: Strings
@@ -32,16 +32,30 @@ struct ProviderSwitchSettingsView: View {
     @State private var toastMessage: String?
     @State private var toastDismissTask: Task<Void, Never>?
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            headerView
+        VStack(alignment: .leading, spacing: 12) {
             toolSegment
-            providerList
+
+            VStack(spacing: 8) {
+                officialCard
+
+                let profiles = manager.profiles(for: selectedTool)
+                ForEach(profiles) { profile in
+                    profileCard(profile)
+                }
+            }
+
             unmanagedCard
             corruptedCard
-            footerActions
+
+            addProviderButton
+
+            footerLinks
         }
-        .padding(20)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .providerToast(message: $toastMessage)
         .sheet(item: $addingProfileForTool) { tool in
             ProfileEditorView(manager: manager, strings: strings, tool: tool)
@@ -87,38 +101,7 @@ struct ProviderSwitchSettingsView: View {
         }
     }
 
-    // MARK: - 顶部 Header
-
-    private var headerView: some View {
-        HStack(alignment: .center) {
-            Text(strings.controlcenterTabProviderSwitch)
-                .font(.system(size: 24, weight: .bold))
-                .foregroundStyle(.primary)
-
-            Spacer()
-
-            Button {
-                addingProfileForTool = selectedTool
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 13, weight: .semibold))
-                    Text(strings.providerAddProvider)
-                        .font(.system(size: 13, weight: .medium))
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.accentColor)
-                )
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    // MARK: - 分段
+    // MARK: - 分段选择器
 
     private var toolSegment: some View {
         HStack(spacing: 0) {
@@ -130,16 +113,16 @@ struct ProviderSwitchSettingsView: View {
                     }
                 } label: {
                     Text(tool.displayName(in: strings))
-                        .font(.system(size: 13, weight: isSelected ? .medium : .regular))
+                        .font(.system(size: 13.5, weight: isSelected ? .semibold : .medium))
                         .foregroundStyle(isSelected ? Color.primary : Color.secondary)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
+                        .padding(.vertical, 7)
                         .background(
                             Group {
                                 if isSelected {
-                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                        .fill(Color(nsColor: .controlColor))
-                                        .shadow(color: .black.opacity(0.08), radius: 2, x: 0, y: 1)
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .fill(colorScheme == .dark ? Color.white.opacity(0.18) : Color.white)
+                                        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.0 : 0.06), radius: 2, x: 0, y: 1)
                                 } else {
                                     Color.clear
                                 }
@@ -150,35 +133,15 @@ struct ProviderSwitchSettingsView: View {
             }
         }
         .padding(3)
-        .frame(width: 250)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.primary.opacity(0.06))
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color(red: 0xEB / 255.0, green: 0xEB / 255.0, blue: 0xED / 255.0))
         )
     }
 
-    // MARK: - 列表
+    // MARK: - 官方卡片
 
-    private var providerList: some View {
-        VStack(spacing: 0) {
-            officialRow
-            Divider()
-
-            let profiles = manager.profiles(for: selectedTool)
-            if profiles.isEmpty {
-                // 如果没有第三方 profile，只展示官方行和分割线
-            } else {
-                ForEach(profiles) { profile in
-                    profileRow(profile)
-                    Divider()
-                }
-            }
-        }
-    }
-
-    // MARK: - 官方行
-
-    private var officialRow: some View {
+    private var officialCard: some View {
         let isActive = isOfficialActive
         return HStack(spacing: 12) {
             Button {
@@ -187,15 +150,23 @@ struct ProviderSwitchSettingsView: View {
                 }
             } label: {
                 HStack(spacing: 12) {
-                    statusMark(isActive: isActive)
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(ProviderBrandVisual.officialColor(for: selectedTool))
+                            .frame(width: 36, height: 36)
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text(strings.providerOfficial)
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(.primary)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Color.primary)
                         Text(officialCaption)
-                            .font(.system(size: 13))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(Color.secondary)
+                            .lineLimit(1)
                     }
 
                     Spacer(minLength: 0)
@@ -205,14 +176,15 @@ struct ProviderSwitchSettingsView: View {
             .buttonStyle(.plain)
             .disabled(isActive)
 
-            if !isActive {
-                Button(strings.providerSetActive) {
-                    activateOfficial()
-                }
-                .buttonStyle(ProviderActionPillButtonStyle())
+            if isActive {
+                inUseBadge
             }
         }
-        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(cardBackground(isActive: isActive))
+        .overlay(cardBorder(isActive: isActive))
+        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private var officialCaption: String {
@@ -229,10 +201,13 @@ struct ProviderSwitchSettingsView: View {
         }
     }
 
-    // MARK: - Profile 行
+    // MARK: - Profile 卡片
 
-    private func profileRow(_ profile: ProviderProfile) -> some View {
+    private func profileCard(_ profile: ProviderProfile) -> some View {
         let active = isActive(profile)
+        let visual = ProviderBrandVisual.resolve(for: profile)
+        let hostSummary = ProviderURLFormatter.hostOrSummary(from: profile.baseURL)
+
         return HStack(spacing: 12) {
             Button {
                 if !active && profile.hasCompleteConnection {
@@ -240,15 +215,22 @@ struct ProviderSwitchSettingsView: View {
                 }
             } label: {
                 HStack(spacing: 12) {
-                    statusMark(isActive: active)
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(visual.color)
+                            .frame(width: 36, height: 36)
+                        Text(visual.letter)
+                            .font(.system(size: 17, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                    }
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text(profile.name)
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(.primary)
-                        Text(profile.baseURL)
-                            .font(.system(size: 13))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Color.primary)
+                        Text(hostSummary)
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(Color.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
@@ -260,65 +242,136 @@ struct ProviderSwitchSettingsView: View {
             .buttonStyle(.plain)
             .disabled(active || !profile.hasCompleteConnection)
 
-            if !active {
-                Button(strings.providerSetActive) {
-                    activate(profile)
-                }
-                .buttonStyle(ProviderActionPillButtonStyle())
-                .disabled(!profile.hasCompleteConnection)
-            }
-
-            Menu {
-                Button(strings.providerEdit) { editingProfile = profile }
-                Button(strings.providerDelete, role: .destructive) { deletingProfile = profile }
-            } label: {
-                ZStack {
-                    Circle()
-                        .strokeBorder(Color.secondary.opacity(0.3), lineWidth: 1)
-                        .background(Circle().fill(Color(nsColor: .controlBackgroundColor).opacity(0.6)))
-                        .frame(width: 26, height: 26)
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-        }
-        .padding(.vertical, 10)
-    }
-
-    /// 行首激活标记：激活蓝色实心打勾，未激活灰色空心圆。
-    private func statusMark(isActive: Bool) -> some View {
-        Group {
-            if isActive {
-                Image(systemName: "checkmark.circle.fill")
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 20, height: 20)
-                    .accessibilityLabel(strings.providerActiveMark)
+            if active {
+                inUseBadge
             } else {
-                Circle()
-                    .strokeBorder(Color.secondary.opacity(0.4), lineWidth: 1.5)
-                    .frame(width: 20, height: 20)
+                Menu {
+                    Button(strings.providerEdit) { editingProfile = profile }
+                    Button(strings.providerDelete, role: .destructive) { deletingProfile = profile }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.secondary.opacity(0.8))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
             }
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(cardBackground(isActive: active))
+        .overlay(cardBorder(isActive: active))
+        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private func isActive(_ profile: ProviderProfile) -> Bool {
         manager.active(tool: selectedTool) == .profile(profileID: profile.id)
     }
 
-    // MARK: - 未托管 / 损坏卡
+    // MARK: - 徽章与卡片底板
+
+    private var inUseBadge: some View {
+        Text(strings.providerInUseBadge)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(Color(red: 0x16 / 255.0, green: 0xA3 / 255.0, blue: 0x4A / 255.0))
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background(
+                Capsule()
+                    .fill(Color.green.opacity(0.12))
+            )
+    }
+
+    private func cardBackground(isActive: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(colorScheme == .dark ? Color(nsColor: .controlBackgroundColor) : Color.white)
+            .shadow(
+                color: Color.black.opacity(colorScheme == .dark || isActive ? 0.0 : 0.03),
+                radius: 2,
+                x: 0,
+                y: 1
+            )
+    }
+
+    private func cardBorder(isActive: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .strokeBorder(
+                isActive
+                    ? Color.accentColor
+                    : (colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06)),
+                lineWidth: isActive ? 1.6 : 0.8
+            )
+    }
+
+    // MARK: - 「+ 新增供应商」主按钮
+
+    private var addProviderButton: some View {
+        Button {
+            addingProfileForTool = selectedTool
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "plus")
+                    .font(.system(size: 13, weight: .semibold))
+                Text(strings.providerAddProvider)
+                    .font(.system(size: 13.5, weight: .medium))
+            }
+            .foregroundStyle(Color.accentColor)
+            .frame(maxWidth: .infinity)
+            .frame(height: 42)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(colorScheme == .dark ? Color(nsColor: .controlBackgroundColor) : Color.white)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(
+                        colorScheme == .dark ? Color.white.opacity(0.12) : Color.primary.opacity(0.12),
+                        lineWidth: 1
+                    )
+            )
+        }
+        .buttonStyle(ProviderAddButtonStyle())
+    }
+
+    // MARK: - 居中辅助链接（编辑配置文件 · 恢复备份）
+
+    private var footerLinks: some View {
+        HStack(spacing: 8) {
+            Button(strings.providerEditConfigFile) {
+                editorTool = selectedTool
+            }
+            .buttonStyle(ProviderFooterLinkButtonStyle())
+
+            Text("·")
+                .font(.system(size: 12.5, weight: .bold))
+                .foregroundStyle(Color.secondary.opacity(0.5))
+
+            Button(strings.providerRestoreBackup) {
+                backupTool = selectedTool
+            }
+            .buttonStyle(ProviderFooterLinkButtonStyle())
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.top, 4)
+    }
+
+    // MARK: - 未托管 / 损坏卡片
 
     @ViewBuilder
     private var unmanagedCard: some View {
         if case .unmanaged(let summary) = manager.active(tool: selectedTool) {
-            card(title: strings.providerActiveUnmanagedTitle) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text(strings.providerActiveUnmanagedTitle)
+                        .font(.system(size: 13.5, weight: .semibold))
+                }
                 Text(String(format: strings.providerActiveUnmanagedSummaryFormat, summary))
-                    .font(.callout)
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                 HStack {
                     Spacer()
@@ -330,15 +383,31 @@ struct ProviderSwitchSettingsView: View {
                     .controlSize(.small)
                 }
             }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(colorScheme == .dark ? Color(nsColor: .controlBackgroundColor) : Color.white)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Color.orange.opacity(0.4), lineWidth: 1)
+            )
         }
     }
 
     @ViewBuilder
     private var corruptedCard: some View {
         if case .unreadable = manager.active(tool: selectedTool) {
-            card(title: strings.providerActiveUnreadableTitle) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Image(systemName: "xmark.octagon.fill")
+                        .foregroundStyle(.red)
+                    Text(strings.providerActiveUnreadableTitle)
+                        .font(.system(size: 13.5, weight: .semibold))
+                }
                 Text(strings.providerActiveUnreadableCaption)
-                    .font(.callout)
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                 HStack {
                     Spacer()
@@ -350,46 +419,17 @@ struct ProviderSwitchSettingsView: View {
                     .controlSize(.small)
                 }
             }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(colorScheme == .dark ? Color(nsColor: .controlBackgroundColor) : Color.white)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Color.red.opacity(0.4), lineWidth: 1)
+            )
         }
-    }
-
-    private func card(title: String, @ViewBuilder content: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-            content()
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
-    }
-
-    // MARK: - 底部操作
-
-    private var footerActions: some View {
-        HStack(alignment: .center) {
-            HStack(spacing: 16) {
-                Button(strings.providerEditConfigFile) {
-                    editorTool = selectedTool
-                }
-                .buttonStyle(ProviderLinkButtonStyle())
-
-                Button(strings.providerRestoreBackup) {
-                    backupTool = selectedTool
-                }
-                .buttonStyle(ProviderLinkButtonStyle())
-            }
-
-            Spacer()
-
-            Text(strings.providerRestartHint)
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-        }
-        .padding(.top, 6)
     }
 
     // MARK: - 动作
@@ -461,7 +501,7 @@ struct ProviderSwitchSettingsView: View {
         }
     }
 
-    // MARK: - 弹窗绑定（alert 的 isPresented 需要独立 @State 驱动）
+    // MARK: - 弹窗绑定
 
     @State private var adoptPromptPresented = false
     @State private var deletePromptPresented = false
@@ -480,39 +520,122 @@ struct ProviderSwitchSettingsView: View {
     }
 }
 
-/// 药丸/圆角小操作按钮样式（如「设为激活」）。
-private struct ProviderActionPillButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
+// MARK: - 辅助样式与视觉解析
 
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 13, weight: .regular))
-            .foregroundStyle(isEnabled ? Color.primary : Color.secondary.opacity(0.6))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 5)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.primary.opacity(configuration.isPressed ? 0.12 : 0.05))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(Color.secondary.opacity(0.25), lineWidth: 1)
-            )
-            .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1.0) : 0.5)
-    }
-}
-
-/// 蓝色链接文字按钮样式（如「编辑配置文件」、「恢复备份」）。
-private struct ProviderLinkButtonStyle: ButtonStyle {
+/// 新增供应商按钮样式（带 Hover 微反馈）
+private struct ProviderAddButtonStyle: ButtonStyle {
     @State private var isHovered = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13))
-            .foregroundStyle(Color.accentColor)
-            .underline(isHovered)
+            .opacity(configuration.isPressed ? 0.75 : (isHovered ? 0.88 : 1.0))
+            .onHover { isHovered = $0 }
+    }
+}
+
+/// 底部副操作链接按钮样式（带 Hover 颜色过渡）
+private struct ProviderFooterLinkButtonStyle: ButtonStyle {
+    @State private var isHovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12.5, weight: .regular))
+            .foregroundStyle(isHovered ? Color.primary : Color.secondary)
             .opacity(configuration.isPressed ? 0.7 : 1.0)
             .onHover { isHovered = $0 }
+    }
+}
+
+/// 供应商品牌色与首字母视觉计算
+enum ProviderBrandVisual {
+    struct Visual {
+        let letter: String
+        let color: Color
+    }
+
+    static func resolve(for profile: ProviderProfile) -> Visual {
+        let nameLower = profile.name.lowercased()
+        let urlLower = profile.baseURL.lowercased()
+
+        if nameLower.contains("glm") || nameLower.contains("智谱") || urlLower.contains("bigmodel") {
+            return Visual(letter: "G", color: Color(red: 0x2F / 255.0, green: 0x80 / 255.0, blue: 0xED / 255.0))
+        }
+        if nameLower.contains("kimi") || nameLower.contains("月之暗面") || urlLower.contains("moonshot") {
+            return Visual(letter: "K", color: Color(red: 0x18 / 255.0, green: 0x18 / 255.0, blue: 0x1B / 255.0))
+        }
+        if nameLower.contains("deepseek") || nameLower.contains("深度求索") || urlLower.contains("deepseek") {
+            return Visual(letter: "D", color: Color(red: 0x3B / 255.0, green: 0x82 / 255.0, blue: 0xF6 / 255.0))
+        }
+        if nameLower.contains("minimax") || urlLower.contains("minimax") {
+            return Visual(letter: "M", color: Color(red: 0xEA / 255.0, green: 0x58 / 255.0, blue: 0x0C / 255.0))
+        }
+        if nameLower.contains("openai") || nameLower.contains("chatgpt") || urlLower.contains("openai") {
+            return Visual(letter: "O", color: Color(red: 0x10 / 255.0, green: 0xA3 / 255.0, blue: 0x7F / 255.0))
+        }
+        if nameLower.contains("anthropic") || nameLower.contains("claude") || urlLower.contains("anthropic") {
+            return Visual(letter: "A", color: Color(red: 0xD9 / 255.0, green: 0x77 / 255.0, blue: 0x57 / 255.0))
+        }
+        if nameLower.contains("qwen") || nameLower.contains("通义千问") || urlLower.contains("dashscope") || urlLower.contains("aliyun") {
+            return Visual(letter: "Q", color: Color(red: 0x61 / 255.0, green: 0x5C / 255.0, blue: 0xED / 255.0))
+        }
+        if nameLower.contains("ollama") || urlLower.contains("11434") {
+            return Visual(letter: "O", color: Color(red: 0x18 / 255.0, green: 0x18 / 255.0, blue: 0x1B / 255.0))
+        }
+
+        // 自定义 / 兜底
+        let initial: String
+        if let first = profile.name.first(where: { $0.isLetter || $0.isNumber }) {
+            initial = String(first).uppercased()
+        } else {
+            initial = "P"
+        }
+
+        let palette: [Color] = [
+            Color(red: 0x2F / 255.0, green: 0x80 / 255.0, blue: 0xED / 255.0),
+            Color(red: 0x3B / 255.0, green: 0x82 / 255.0, blue: 0xF6 / 255.0),
+            Color(red: 0x63 / 255.0, green: 0x66 / 255.0, blue: 0xF1 / 255.0),
+            Color(red: 0x8B / 255.0, green: 0x5C / 255.0, blue: 0xF6 / 255.0),
+            Color(red: 0xEC / 255.0, green: 0x48 / 255.0, blue: 0x99 / 255.0),
+            Color(red: 0xF9 / 255.0, green: 0x73 / 255.0, blue: 0x16 / 255.0),
+            Color(red: 0x10 / 255.0, green: 0xB9 / 255.0, blue: 0x81 / 255.0),
+            Color(red: 0x06 / 255.0, green: 0xB6 / 255.0, blue: 0xD4 / 255.0),
+        ]
+        let hash = abs(profile.name.hashValue)
+        let color = palette[hash % palette.count]
+        return Visual(letter: initial, color: color)
+    }
+
+    static func officialColor(for tool: ProviderTool) -> Color {
+        switch tool {
+        case .claudeCode:
+            return Color(red: 0xD9 / 255.0, green: 0x77 / 255.0, blue: 0x57 / 255.0) // 陶土色
+        case .codex:
+            return Color(red: 0x18 / 255.0, green: 0x18 / 255.0, blue: 0x1B / 255.0) // 曜石黑
+        }
+    }
+}
+
+/// URL 格式化工具（提取简洁的 host/域名）
+enum ProviderURLFormatter {
+    static func hostOrSummary(from urlString: String) -> String {
+        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        if let url = URL(string: trimmed), let host = url.host, !host.isEmpty {
+            if let port = url.port, port != 80, port != 443 {
+                return "\(host):\(port)"
+            }
+            return host
+        }
+        var cleaned = trimmed
+        if cleaned.hasPrefix("https://") {
+            cleaned = String(cleaned.dropFirst("https://".count))
+        } else if cleaned.hasPrefix("http://") {
+            cleaned = String(cleaned.dropFirst("http://".count))
+        }
+        if let slashIndex = cleaned.firstIndex(of: "/") {
+            cleaned = String(cleaned[..<slashIndex])
+        }
+        return cleaned.isEmpty ? trimmed : cleaned
     }
 }
 

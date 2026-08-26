@@ -1240,6 +1240,8 @@ struct Strings: Equatable {
     let providerSetActive: String
     /// profile 行激活打勾的无障碍标注。
     let providerActiveMark: String
+    /// 激活卡片右上角「使用中」微章。
+    let providerInUseBadge: String
     let providerEdit: String
     let providerDelete: String
     /// 顶部新增供应商按钮。
