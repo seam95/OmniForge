@@ -61,6 +61,7 @@ struct TokenUsageTrendChartView: View {
         HStack(spacing: 2) {
             ForEach(TokenTrendPeriod.allCases) { item in
                 Button {
+                    period = item
                     onPeriodChange(item)
                 } label: {
                     Text(item.label(strings))
