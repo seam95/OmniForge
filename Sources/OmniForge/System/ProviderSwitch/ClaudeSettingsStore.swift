@@ -41,17 +41,36 @@ final class ClaudeSettingsStore: ClaudeSettingsStoring {
 
         env["ANTHROPIC_AUTH_TOKEN"] = profile.token
         env["ANTHROPIC_BASE_URL"] = profile.baseURL
+        // 默认兜底模型：profile 指定才写，否则清掉旧值。
         if let model = profile.modelOverride, !model.isEmpty {
             env["ANTHROPIC_MODEL"] = model
-            if let small = profile.smallFastModelOverride, !small.isEmpty {
-                env["ANTHROPIC_SMALL_FAST_MODEL"] = small
-            } else {
-                env.removeValue(forKey: "ANTHROPIC_SMALL_FAST_MODEL")
-            }
         } else {
             env.removeValue(forKey: "ANTHROPIC_MODEL")
-            env.removeValue(forKey: "ANTHROPIC_SMALL_FAST_MODEL")
         }
+        // 角色模型映射：仅写非空字段；profile 无映射时清掉全部映射键。
+        if let mapping = profile.modelMapping {
+            for (key, value) in mapping.envEntries {
+                if let value, !value.isEmpty {
+                    env[key] = value
+                } else {
+                    env.removeValue(forKey: key)
+                }
+            }
+        } else {
+            for key in ProviderModelMapping.allEnvKeys {
+                env.removeValue(forKey: key)
+            }
+        }
+        // 额外 env：随 profile 原样合并。
+        for (key, value) in profile.extraEnv {
+            if !value.isEmpty {
+                env[key] = value
+            } else {
+                env.removeValue(forKey: key)
+            }
+        }
+        // 旧版小模型键已由 Haiku 映射取代，一律移除。
+        env.removeValue(forKey: "ANTHROPIC_SMALL_FAST_MODEL")
 
         root["env"] = env
         try writeRoot(root)

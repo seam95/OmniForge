@@ -103,7 +103,8 @@ final class ProviderProfileStore: ProviderProfileStoring {
                         baseURL: "",
                         token: "",
                         modelOverride: nil,
-                        smallFastModelOverride: nil,
+                        modelMapping: nil,
+                        extraEnv: [:],
                         managedBy: nil
                     )
                 }
@@ -118,7 +119,8 @@ final class ProviderProfileStore: ProviderProfileStoring {
                     baseURL: "",
                     token: "",
                     modelOverride: nil,
-                    smallFastModelOverride: nil,
+                    modelMapping: nil,
+                    extraEnv: [:],
                     managedBy: nil
                 )
             }
@@ -176,7 +178,8 @@ final class ProviderProfileStore: ProviderProfileStoring {
             baseURL: baseURL,
             token: token,
             modelOverride: modelOverride,
-            smallFastModelOverride: nil,
+            modelMapping: nil,
+            extraEnv: [:],
             managedBy: ProviderProfile.managedByMarker
         )
         try upsert(profile)
@@ -194,13 +197,26 @@ enum ProviderProfileFileCodec {
     static func encode(_ profile: ProviderProfile) -> Data? {
         switch profile.tool {
         case .claudeCode:
+            // 新格式（对齐 ccswitch）：`{ "name": ..., "env": { ... }, "_managedBy": "omniforge" }`，
+            // 模型映射只写非空字段。`name` 为展示名（ccswitch 等外部读取方忽略未知键）。
+            var env: [String: String] = [
+                "ANTHROPIC_AUTH_TOKEN": profile.token,
+                "ANTHROPIC_BASE_URL": profile.baseURL,
+            ]
+            if let model = profile.modelOverride, !model.isEmpty {
+                env["ANTHROPIC_MODEL"] = model
+            }
+            if let mapping = profile.modelMapping {
+                for (key, value) in mapping.nonEmptyEntries {
+                    env[key] = value
+                }
+            }
+            for (key, value) in profile.extraEnv where !value.isEmpty {
+                env[key] = value
+            }
             let root: [String: Any] = [
                 "name": profile.name,
-                "tool": profile.tool.rawValue,
-                "baseURL": profile.baseURL,
-                "token": profile.token,
-                "modelOverride": profile.modelOverride as Any,
-                "smallFastModelOverride": profile.smallFastModelOverride as Any,
+                "env": env,
                 managedByKey: ProviderProfile.managedByMarker,
             ]
             return try? JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
@@ -233,9 +249,36 @@ enum ProviderProfileFileCodec {
         guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             return nil
         }
-        // 本 App 格式：baseURL + token。
+        // 新格式（对齐 ccswitch）：`{ "env": { ... }, "_managedBy": "omniforge" }` —
+        // 从 env 读取 token、base URL、默认模型、角色映射与额外 env。
+        if let envDict = root["env"] as? [String: Any] {
+            let env = envDict.compactMapValues { $0 as? String }
+            let baseURL = env["ANTHROPIC_BASE_URL"] ?? ""
+            let token = env["ANTHROPIC_AUTH_TOKEN"] ?? ""
+            let mapping = ProviderModelMapping.fromEnv(env)
+            // 额外 env：拥有键之外的非空键（含 preset 的 CLAUDE_CODE_* 扩展）。
+            let owned = ProviderTool.claudeOwnedEnvKeys
+            let extraEnv = env.filter { !owned.contains($0.key) && !$0.value.isEmpty }
+            return ProviderProfile(
+                id: fallbackID,
+                name: root["name"] as? String ?? fallbackID,
+                tool: .claudeCode,
+                baseURL: baseURL,
+                token: token,
+                modelOverride: env["ANTHROPIC_MODEL"],
+                modelMapping: mapping.isEmpty ? nil : mapping,
+                extraEnv: extraEnv,
+                managedBy: root[managedByKey] as? String
+            )
+        }
+        // 旧格式：baseURL + token + modelOverride + smallFastModelOverride（后者映射到 Haiku）。
         if let baseURL = root["baseURL"] as? String, !baseURL.isEmpty,
            let token = root["token"] as? String {
+            let small = root["smallFastModelOverride"] as? String
+            var mapping = ProviderModelMapping.fromEnv([:])
+            if let small, !small.isEmpty {
+                mapping.haiku = small
+            }
             return ProviderProfile(
                 id: fallbackID,
                 name: root["name"] as? String ?? fallbackID,
@@ -243,7 +286,8 @@ enum ProviderProfileFileCodec {
                 baseURL: baseURL,
                 token: token,
                 modelOverride: root["modelOverride"] as? String,
-                smallFastModelOverride: root["smallFastModelOverride"] as? String,
+                modelMapping: mapping.isEmpty ? nil : mapping,
+                extraEnv: [:],
                 managedBy: root[managedByKey] as? String
             )
         }
@@ -262,7 +306,8 @@ enum ProviderProfileFileCodec {
             baseURL: baseURL,
             token: token,
             modelOverride: model,
-            smallFastModelOverride: nil,
+            modelMapping: nil,
+            extraEnv: [:],
             managedBy: root[managedByKey] as? String
         )
     }
@@ -284,7 +329,8 @@ enum ProviderProfileFileCodec {
             baseURL: baseURL,
             token: token,
             modelOverride: document.stringValue(key: "model_override", table: nil),
-            smallFastModelOverride: nil,
+            modelMapping: nil,
+            extraEnv: [:],
             managedBy: document.stringValue(key: managedByKey, table: nil)
         )
     }

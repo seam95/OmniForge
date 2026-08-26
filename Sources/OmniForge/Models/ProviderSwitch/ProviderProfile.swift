@@ -9,8 +9,12 @@ struct ProviderProfile: Identifiable, Codable, Equatable {
     var tool: ProviderTool
     var baseURL: String
     var token: String
+    /// 默认兜底模型（`ANTHROPIC_MODEL`）；Codex 侧即单模型覆盖。
     var modelOverride: String?
-    var smallFastModelOverride: String?
+    /// Claude Code 角色模型映射（对齐 ccswitch）；Codex 为 nil。
+    var modelMapping: ProviderModelMapping?
+    /// 额外 env（如 `CLAUDE_CODE_EFFORT_LEVEL=max`），随 profile 原样写入。
+    var extraEnv: [String: String]
     /// 来源标记：本 App 写入为 "omniforge"；CCQ 等外部文件为 nil（只读展示，可收编/编辑）。
     var managedBy: String?
 

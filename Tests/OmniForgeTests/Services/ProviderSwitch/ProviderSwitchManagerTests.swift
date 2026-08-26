@@ -117,7 +117,8 @@ final class ProviderSwitchManagerTests: XCTestCase {
                 baseURL: baseURL,
                 token: token,
                 modelOverride: modelOverride,
-                smallFastModelOverride: nil,
+                modelMapping: nil,
+                extraEnv: [:],
                 managedBy: "omniforge"
             )
             stored.append(profile)
@@ -179,7 +180,8 @@ final class ProviderSwitchManagerTests: XCTestCase {
             baseURL: baseURL,
             token: "sk-x",
             modelOverride: nil,
-            smallFastModelOverride: nil,
+            modelMapping: nil,
+            extraEnv: [:],
             managedBy: "omniforge"
         )
         profileStore.stored.append(profile)

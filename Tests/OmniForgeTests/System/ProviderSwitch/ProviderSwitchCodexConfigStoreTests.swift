@@ -35,7 +35,8 @@ final class ProviderSwitchCodexConfigStoreTests: XCTestCase {
             baseURL: baseURL,
             token: token,
             modelOverride: model,
-            smallFastModelOverride: nil,
+            modelMapping: nil,
+            extraEnv: [:],
             managedBy: ProviderProfile.managedByMarker
         )
     }

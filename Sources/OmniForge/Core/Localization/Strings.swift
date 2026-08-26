@@ -1285,7 +1285,17 @@ struct Strings: Equatable {
     /// 模型覆盖（可选）。
     let providerModelLabel: String
     let providerModelHint: String
-    let providerSmallFastModelLabel: String
+    /// 角色模型映射分组标题（Claude Code）。
+    let providerModelMappingLabel: String
+    let providerSonnetModelLabel: String
+    let providerSonnetNameLabel: String
+    let providerOpusModelLabel: String
+    let providerOpusNameLabel: String
+    let providerFableModelLabel: String
+    let providerFableNameLabel: String
+    let providerHaikuModelLabel: String
+    let providerHaikuNameLabel: String
+    let providerSubagentModelLabel: String
     let providerPresetLabel: String
     /// 预设下拉「自定义」项。
     let providerPresetNone: String

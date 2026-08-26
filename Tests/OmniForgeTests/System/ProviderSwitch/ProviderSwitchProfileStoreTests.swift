@@ -29,7 +29,7 @@ final class ProviderSwitchProfileStoreTests: XCTestCase {
         tool: ProviderTool = .claudeCode,
         baseURL: String = "https://open.bigmodel.cn/api/anthropic",
         token: String = "sk-glm",
-        model: String? = "glm-4-7"
+        model: String? = "glm-5.3"
     ) -> ProviderProfile {
         ProviderProfile(
             id: id,
@@ -38,7 +38,8 @@ final class ProviderSwitchProfileStoreTests: XCTestCase {
             baseURL: baseURL,
             token: token,
             modelOverride: model,
-            smallFastModelOverride: nil,
+            modelMapping: nil,
+            extraEnv: [:],
             managedBy: ProviderProfile.managedByMarker
         )
     }
@@ -53,8 +54,11 @@ final class ProviderSwitchProfileStoreTests: XCTestCase {
             JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
         )
         XCTAssertEqual(root["_managedBy"] as? String, "omniforge")
-        XCTAssertEqual(root["name"] as? String, "GLM")
-        XCTAssertEqual(root["token"] as? String, "sk-glm")
+        XCTAssertNil(root["token"], "新格式凭证写在 env 内，不在根")
+        let env = try XCTUnwrap(root["env"] as? [String: Any])
+        XCTAssertEqual(env["ANTHROPIC_AUTH_TOKEN"] as? String, "sk-glm")
+        XCTAssertEqual(env["ANTHROPIC_BASE_URL"] as? String, "https://open.bigmodel.cn/api/anthropic")
+        XCTAssertEqual(env["ANTHROPIC_MODEL"] as? String, "glm-5.3")
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
         XCTAssertEqual(attributes[.posixPermissions] as? NSNumber, NSNumber(value: 0o600))
     }
@@ -128,16 +132,88 @@ final class ProviderSwitchProfileStoreTests: XCTestCase {
 
     func test_list_roundTripsManagedProfile() throws {
         let store = makeStore()
-        try store.upsert(makeProfile(id: "", name: "GLM", model: "glm-4-7"))
+        try store.upsert(makeProfile(id: "", name: "GLM", model: "glm-5.3"))
         let listed = store.list(for: .claudeCode)
         XCTAssertEqual(listed.count, 1)
         XCTAssertEqual(listed[0].name, "GLM")
         XCTAssertEqual(listed[0].tool, .claudeCode)
         XCTAssertEqual(listed[0].baseURL, "https://open.bigmodel.cn/api/anthropic")
         XCTAssertEqual(listed[0].token, "sk-glm")
-        XCTAssertEqual(listed[0].modelOverride, "glm-4-7")
+        XCTAssertEqual(listed[0].modelOverride, "glm-5.3")
         XCTAssertEqual(listed[0].managedBy, "omniforge")
         XCTAssertTrue(listed[0].isManagedByOmniForge)
+    }
+
+    func test_list_roundTripsModelMappingAndExtraEnv() throws {
+        let store = makeStore()
+        try store.upsert(ProviderProfile(
+            id: "",
+            name: "DeepSeek",
+            tool: .claudeCode,
+            baseURL: "https://api.deepseek.com/anthropic",
+            token: "sk-ds",
+            modelOverride: "deepseek-v4-pro",
+            modelMapping: ProviderModelMapping(
+                sonnet: nil, sonnetName: nil, opus: nil, opusName: nil,
+                fable: nil, fableName: nil, haiku: "deepseek-v4-flash", haikuName: nil, subagent: nil
+            ),
+            extraEnv: ["CLAUDE_CODE_EFFORT_LEVEL": "max", "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "786432"],
+            managedBy: "omniforge"
+        ))
+        let listed = store.list(for: .claudeCode)
+        XCTAssertEqual(listed.count, 1)
+        XCTAssertEqual(listed[0].modelOverride, "deepseek-v4-pro")
+        XCTAssertEqual(listed[0].modelMapping?.haiku, "deepseek-v4-flash")
+        XCTAssertEqual(
+            listed[0].extraEnv,
+            ["CLAUDE_CODE_EFFORT_LEVEL": "max", "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "786432"]
+        )
+    }
+
+    func test_decode_oldFormatMapsSmallFastModelToHaiku() throws {
+        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+        let old = claudeDir.appendingPathComponent("glm.json")
+        try JSONSerialization.data(withJSONObject: [
+            "name": "GLM",
+            "tool": "claudeCode",
+            "baseURL": "https://open.bigmodel.cn/api/anthropic",
+            "token": "sk-glm",
+            "modelOverride": "glm-4-7",
+            "smallFastModelOverride": "glm-4-flash",
+            "_managedBy": "omniforge",
+        ]).write(to: old)
+
+        let listed = makeStore().list(for: .claudeCode)
+        XCTAssertEqual(listed.count, 1)
+        XCTAssertEqual(listed[0].modelOverride, "glm-4-7")
+        XCTAssertEqual(listed[0].modelMapping?.haiku, "glm-4-flash", "旧小模型映射到 Haiku")
+        XCTAssertEqual(listed[0].modelMapping?.sonnet, nil)
+        XCTAssertEqual(listed[0].managedBy, "omniforge")
+    }
+
+    func test_decode_envStyleExternalProfileReadsModelsAndExtraEnv() throws {
+        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+        let external = claudeDir.appendingPathComponent("ccq-deepseek.json")
+        try JSONSerialization.data(withJSONObject: [
+            "env": [
+                "ANTHROPIC_AUTH_TOKEN": "sk-ccq",
+                "ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic",
+                "ANTHROPIC_MODEL": "deepseek-v4-pro",
+                "ANTHROPIC_DEFAULT_HAIKU_MODEL": "deepseek-v4-flash",
+                "CLAUDE_CODE_EFFORT_LEVEL": "max",
+            ],
+        ]).write(to: external)
+
+        let listed = makeStore().list(for: .claudeCode)
+        XCTAssertEqual(listed.count, 1)
+        XCTAssertEqual(listed[0].id, "ccq-deepseek")
+        XCTAssertEqual(listed[0].baseURL, "https://api.deepseek.com/anthropic")
+        XCTAssertEqual(listed[0].token, "sk-ccq")
+        XCTAssertEqual(listed[0].modelOverride, "deepseek-v4-pro")
+        XCTAssertEqual(listed[0].modelMapping?.haiku, "deepseek-v4-flash")
+        XCTAssertEqual(listed[0].extraEnv, ["CLAUDE_CODE_EFFORT_LEVEL": "max"])
+        XCTAssertNil(listed[0].managedBy, "外部 env 风格文件无 _managedBy 标记")
+        XCTAssertTrue(listed[0].hasCompleteConnection)
     }
 
     // MARK: - Codex TOML 档案

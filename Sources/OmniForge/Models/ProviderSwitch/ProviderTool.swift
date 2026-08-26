@@ -26,11 +26,22 @@ enum ProviderTool: String, Codable, CaseIterable, Identifiable {
 
 extension ProviderTool {
     /// Claude Code 拥有的 env 键 — 切 Official 时全部删除；写 profile 时只合并这些键。
+    /// 含旧版 `ANTHROPIC_SMALL_FAST_MODEL`（已由 Haiku 映射取代，仍一并清理）与
+    /// ccswitch 风格的角色映射键（`ANTHROPIC_DEFAULT_*`、`CLAUDE_CODE_SUBAGENT_MODEL`）。
     static let claudeOwnedEnvKeys: Set<String> = [
         "ANTHROPIC_AUTH_TOKEN",
         "ANTHROPIC_BASE_URL",
         "ANTHROPIC_MODEL",
         "ANTHROPIC_SMALL_FAST_MODEL",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL_NAME",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL_NAME",
+        "ANTHROPIC_DEFAULT_FABLE_MODEL",
+        "ANTHROPIC_DEFAULT_FABLE_MODEL_NAME",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME",
+        "CLAUDE_CODE_SUBAGENT_MODEL",
     ]
 
     /// Codex 顶层拥有的键（model_provider 指向激活的 provider 表）。
