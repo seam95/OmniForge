@@ -1242,6 +1242,8 @@ struct Strings: Equatable {
     let providerActiveMark: String
     let providerEdit: String
     let providerDelete: String
+    /// 顶部新增供应商按钮。
+    let providerAddProvider: String
     /// 新增按钮（%@ = 工具名）。
     let providerAddProfileFormat: String
     /// 无 profile 时的引导文案。

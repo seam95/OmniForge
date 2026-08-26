@@ -30,7 +30,7 @@ enum ProviderPresetCatalog {
     /// GLM（智谱）— Anthropic 兼容端点 open.bigmodel.cn/api/anthropic；OpenAI 兼容 paas/v4。
     static let glm = ProviderPreset(
         id: "glm",
-        displayName: "GLM",
+        displayName: "GLM 智谱",
         claudeCode: PresetConnection(
             baseURL: "https://open.bigmodel.cn/api/anthropic",
             defaultModel: "glm-4-7",
@@ -46,7 +46,7 @@ enum ProviderPresetCatalog {
     /// Kimi（月之暗面）— Anthropic 兼容端点 api.moonshot.cn/anthropic；OpenAI 兼容 /v1。
     static let kimi = ProviderPreset(
         id: "kimi",
-        displayName: "Kimi",
+        displayName: "Kimi 月之暗面",
         claudeCode: PresetConnection(
             baseURL: "https://api.moonshot.cn/anthropic",
             defaultModel: "kimi-k2-thinking-turbo",

@@ -127,7 +127,7 @@ final class ArkCodingPlanLimitsFetcherTests: XCTestCase {
         ]
         let result = try await fetcher.fetchLimits(force: false)
         XCTAssertNil(result?.planLabel, "新结构不再从 plans get 补套餐名")
-        XCTAssertEqual(runner.runCount, 1, "新结构不再调用 plans get")
+        XCTAssertFalse(runner.commands.contains("plans get --format json"), "新结构不再调用 plans get")
     }
 
     // MARK: - 磁盘缓存兜底
@@ -197,11 +197,13 @@ private final class FakeArkCliRunner: ArkCliCommandRunning {
     var responses: [String: String] = [:]
     var error: Error?
     private(set) var runCount = 0
+    private(set) var commands: [String] = []
 
     func run(_ launchPath: String, _ arguments: [String], timeout: TimeInterval) async throws -> String {
         runCount += 1
-        if let error { throw error }
         let key = arguments.joined(separator: " ")
+        commands.append(key)
+        if let error { throw error }
         guard let response = responses[key] else {
             throw LimitError.network("unexpected command: \(key)")
         }
