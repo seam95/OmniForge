@@ -46,4 +46,8 @@ extension ProviderTool {
         "wire_api",
         "experimental_bearer_token",
     ]
+
+    /// Codex 自带的内置 provider 键（`codex login` 默认配置）— 指向它们视为 Official，
+    /// 切 Official 时不得删除对应表（那是 CLI 自身的登录配置）。
+    static let codexBuiltInProviderKeys: Set<String> = ["openai", "codex"]
 }
