@@ -12,7 +12,9 @@ import Foundation
 /// ⑦ team/enterprise 时优先团队池。任何变体 → 无窗口（降级不崩）。
 enum CursorUsageSummaryDecoder {
     static func decode(_ object: [String: Any]) -> [LimitWindowKind: UsageWindow] {
-        guard let cycle = billingCycle(from: object) else { return [:] }
+        // 计费周期缺失/不可解析时仍出百分比（reset 与周期秒数置空），只有
+        // 百分比也推不出才丢弃。
+        let cycle = billingCycle(from: object)
         let individual = object["individualUsage"] as? [String: Any]
         let teamUsage = object["teamUsage"] as? [String: Any]
         let plan = individual?["plan"] as? [String: Any] ?? [:]
@@ -60,18 +62,18 @@ enum CursorUsageSummaryDecoder {
 
         return [.monthly: UsageWindow(
             usedPercent: planPercent,
-            resetAt: cycle.end,
+            resetAt: cycle?.end,
             limit: nil,
             used: nil,
             remaining: nil,
             unit: nil,
-            windowSeconds: cycle.seconds
+            windowSeconds: cycle?.seconds
         )]
     }
 
     /// Auto / API 车道窗（对齐 B secondary/tertiary）：与主窗同 reset 与周期秒数。
     static func laneLabeledWindows(_ object: [String: Any]) -> [LabeledUsageWindow]? {
-        guard let cycle = billingCycle(from: object) else { return nil }
+        let cycle = billingCycle(from: object)
         let plan = (object["individualUsage"] as? [String: Any])?["plan"] as? [String: Any] ?? [:]
         let autoPercent = percent(plan["autoPercentUsed"])
         let apiPercent = percent(plan["apiPercentUsed"])
@@ -82,9 +84,9 @@ enum CursorUsageSummaryDecoder {
                     label: name,
                     window: UsageWindow(
                         usedPercent: value,
-                        resetAt: cycle.end,
+                        resetAt: cycle?.end,
                         limit: nil, used: nil, remaining: nil, unit: nil,
-                        windowSeconds: cycle.seconds
+                        windowSeconds: cycle?.seconds
                     )
                 ))
             }

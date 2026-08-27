@@ -84,6 +84,22 @@ final class CursorLimitsFetcherTests: XCTestCase {
         XCTAssertEqual(window.windowSeconds, 31 * 86_400, "计费周期秒数（reset 边界可信）")
     }
 
+    func test_summaryDecoder_missingBillingCycle_stillEmitsPercent() throws {
+        // 上游只删周期字段时不应连百分比一起丢：reset 与周期秒数置空。
+        var body = summaryBody(totalPercent: 45)
+        body.removeValue(forKey: "billingCycleStart")
+        body.removeValue(forKey: "billingCycleEnd")
+        let window = try XCTUnwrap(CursorUsageSummaryDecoder.decode(body)[.monthly])
+        XCTAssertEqual(window.usedPercent, 45)
+        XCTAssertNil(window.resetAt)
+        XCTAssertNil(window.windowSeconds)
+        var laneBody = summaryBody(totalPercent: nil, autoPercent: 30)
+        laneBody.removeValue(forKey: "billingCycleStart")
+        laneBody.removeValue(forKey: "billingCycleEnd")
+        let lanes = try XCTUnwrap(CursorUsageSummaryDecoder.laneLabeledWindows(laneBody))
+        XCTAssertEqual(lanes.first?.window.resetAt, nil, "车道窗同理不依赖周期字段")
+    }
+
     func test_summaryDecoder_fallsBackToAutoApiLanesThenApiThenAuto() throws {
         let avg = CursorUsageSummaryDecoder.decode(summaryBody(totalPercent: nil, autoPercent: 60, apiPercent: 40))
         XCTAssertEqual(avg[.monthly]?.usedPercent, 50, "total 缺失 → Auto/API 车道均值")
