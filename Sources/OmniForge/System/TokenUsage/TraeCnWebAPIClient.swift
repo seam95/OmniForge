@@ -20,16 +20,21 @@ enum TraeCnFetchError: Error {
 
 /// 官方用量 API 客户端：POST `query_user_usage_group_by_session`，`Cloud-IDE-JWT` 头。
 ///
-/// 分页语义：串行翻页直到声明的 total 或空页；
-/// 超过页数上限（容量超限）时按 [start,mid] + [mid+1,end] 递归二分。JWT 只进
+/// 请求参数镜像官方客户端观测值：`usage_type: [7]`（数组）+ 服务端页上限
+/// `page_size ≤ 20`（超限会被拒绝或静默截断导致用量少计）。
+/// 分页语义：串行翻页（页间 300ms 防限流）直到声明的 total 或空页；
+/// 超过页数上限（容量超限）时按 [start,mid] + [mid+1,end] 递归二分。
+/// HTTP 200 后仍校验业务 `code` 与 `total` 形状（fail-closed）。JWT 只进
 /// 请求头，绝不落盘/入日志。
 final class TraeCnWebAPIClient: TraeCnUsageFetching {
     static let endpoint = URL(string: "https://api.trae.cn/trae/api/v1/pay/query_user_usage_group_by_session")!
 
-    var pageSize = 100
-    var maxPages = 20
-    var maxSplitDepth = 3
-    var timeout: TimeInterval = 20
+    var pageSize = 20
+    var maxPages = 100
+    var maxSplitDepth = 8
+    var timeout: TimeInterval = 30
+    /// 继续翻页时的页间延迟（纳秒），防止高频翻页被服务端限流。
+    var pageDelayNanoseconds: UInt64 = 300_000_000
 
     private let session: URLSession
     private let apiCodeKey = "user_usage_group_by_sessions"
@@ -58,7 +63,6 @@ final class TraeCnWebAPIClient: TraeCnUsageFetching {
 
     private func fetchWindow(jwt: String, startMs: Double, endMs: Double) async throws -> [TraeCnSessionRow] {
         var all: [TraeCnSessionRow] = []
-        var total: Int?
         var page = 1
         var pagesFetched = 0
         while true {
@@ -71,8 +75,8 @@ final class TraeCnWebAPIClient: TraeCnUsageFetching {
             all.append(contentsOf: result.rows)
             if result.rows.isEmpty { break }
             if let declared = result.total, all.count >= declared { break }
-            if total == nil { total = result.total }
             page += 1
+            try? await Task.sleep(nanoseconds: pageDelayNanoseconds)
         }
         return all
     }
@@ -84,7 +88,7 @@ final class TraeCnWebAPIClient: TraeCnUsageFetching {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Cloud-IDE-JWT \(jwt.trimmingCharacters(in: .whitespacesAndNewlines))", forHTTPHeaderField: "Authorization")
         let body: [String: Any] = [
-            "usage_type": "token",
+            "usage_type": [7],
             "start_time": Int(startMs / 1000),
             "end_time": Int(endMs / 1000),
             "page_num": page,
@@ -106,6 +110,11 @@ final class TraeCnWebAPIClient: TraeCnUsageFetching {
             throw LimitError.decoding("Trae CN usage API returned a non-JSON response")
         }
         let payload = parsed["data"] as? [String: Any] ?? parsed
+        // 业务 code：HTTP 200 但业务失败（凭证失效/参数错等）时仍带非 0 code。
+        let businessCode = numeric(payload["code"]) ?? numeric(parsed["code"])
+        if let businessCode, businessCode != 0 {
+            throw LimitError.decoding("Trae CN usage API returned business code \(Int(businessCode))")
+        }
         guard let sessionList = payload[apiCodeKey] as? [[String: Any]] else {
             throw LimitError.decoding("Trae CN usage API response is missing the session list")
         }
@@ -113,7 +122,19 @@ final class TraeCnWebAPIClient: TraeCnUsageFetching {
             guard let rowData = try? JSONSerialization.data(withJSONObject: raw) else { return nil }
             return try? JSONDecoder().decode(TraeCnSessionRow.self, from: rowData)
         }
-        let totalValue = (payload["total"] as? NSNumber)?.intValue
+        // total 必须是安全非负整数：畸形值会让翻页提前终止造成用量少计（fail-closed）。
+        var totalValue: Int?
+        if let rawTotal = payload["total"] {
+            guard let number = numeric(rawTotal), number >= 0,
+                  number.truncatingRemainder(dividingBy: 1) == 0 else {
+                throw LimitError.decoding("Trae CN usage API returned an invalid total")
+            }
+            totalValue = Int(number)
+        }
         return (rows, totalValue)
+    }
+
+    private func numeric(_ value: Any?) -> Double? {
+        (value as? NSNumber)?.doubleValue
     }
 }
