@@ -48,7 +48,8 @@ final class ZcodeUsageCollector: OpencodeSchemaCollectorBase {
     }
 
     override func isNativeMessage(_ data: OpencodeMessageData) -> Bool {
-        let provider = (data.providerID ?? data.provider ?? "").lowercased()
+        // 兼容 v2 嵌套 model.providerID（fork 跟进 opencode2 schema 时同源）。
+        let provider = (data.effectiveProviderID ?? "").lowercased()
         guard !provider.isEmpty else { return false }
         return !(provider.contains("anthropic")
             || provider.contains("openai")

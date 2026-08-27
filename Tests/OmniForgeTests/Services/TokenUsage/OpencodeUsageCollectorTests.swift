@@ -105,6 +105,103 @@ final class OpencodeUsageCollectorTests: XCTestCase {
         }
     }
 
+    // MARK: - v2 schema（opencode2 重写存储层）
+
+    /// v2 行：角色在 type 列（data 无 role），模型为嵌套对象 {id, providerID}。
+    private func v2MessageData(
+        modelID: String = "glm-5.3",
+        providerID: String = "zcode",
+        createdMs: Double,
+        completedMs: Double,
+        input: Int,
+        output: Int
+    ) -> String {
+        let dict: [String: Any] = [
+            "model": ["id": modelID, "providerID": providerID],
+            "time": ["created": createdMs, "completed": completedMs],
+            "tokens": ["input": input, "output": output],
+        ]
+        return String(data: try! JSONSerialization.data(withJSONObject: dict), encoding: .utf8)!
+    }
+
+    @discardableResult
+    private func createV2Db(rows: [MessageRow]) throws -> URL {
+        let queue = try DatabaseQueue(path: databaseURL.path)
+        try queue.write { db in
+            try db.execute(sql: """
+                CREATE TABLE session_message (
+                    id TEXT NOT NULL, session_id TEXT NOT NULL, type TEXT,
+                    time_created INTEGER, time_updated INTEGER, data TEXT
+                )
+            """)
+            for row in rows {
+                try db.execute(
+                    sql: "INSERT INTO session_message (id, session_id, type, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)",
+                    arguments: [row.id, row.session, "assistant", 1_784_500_000, 1_784_500_000, row.data]
+                )
+            }
+        }
+        return databaseURL
+    }
+
+    func test_scan_v2Schema_readsSessionMessageTable() throws {
+        try createV2Db(rows: [
+            MessageRow(id: "m1", session: "s1", data: v2MessageData(createdMs: 1_784_502_000_000, completedMs: 1_784_502_000_000, input: 100, output: 20)),
+        ])
+        collector.start()
+        collector.waitForIdle()
+        pumpUntil { self.collector.scanCount == 1 }
+
+        let buckets = store.bucketsByKey.filter { $0.key.provider == .opencode }
+        XCTAssertEqual(buckets.count, 1, "v2 库正常采集，不再静默变空")
+        XCTAssertEqual(buckets.first?.value.usage.totalTokens, 120)
+        XCTAssertEqual(buckets.first?.key.model, "glm-5.3", "模型名取自嵌套 model.id")
+    }
+
+    func test_scan_pureV1_emptySessionMessageTable_stillReadsV1() throws {
+        // session_message 表在纯 v1 库也存在但为空：按行存在性判定，仍走 v1。
+        try createDb(rows: [
+            MessageRow(id: "m1", session: "s1", data: messageData(createdMs: 1_784_502_000_000, completedMs: 1_784_502_000_000, input: 100, output: 20)),
+        ])
+        let queue = try DatabaseQueue(path: databaseURL.path)
+        try queue.write { db in
+            try db.execute(sql: """
+                CREATE TABLE session_message (
+                    id TEXT NOT NULL, session_id TEXT NOT NULL, type TEXT,
+                    time_created INTEGER, time_updated INTEGER, data TEXT
+                )
+            """)
+        }
+        collector.start()
+        collector.waitForIdle()
+        pumpUntil { self.collector.scanCount == 1 }
+        XCTAssertEqual(store.totalTokens(), 120, "空 session_message 不影响 v1 读取")
+    }
+
+    func test_scan_mixedSchema_sameKeyAcrossTables_noDoubleCounting() throws {
+        // 升级期混合库：同 key 消息同时存在于 v1/v2 两表，totals 相同 → 差分 0。
+        let shared = messageData(createdMs: 1_784_502_000_000, completedMs: 1_784_502_000_000, input: 100, output: 20)
+        let v2Shared = v2MessageData(createdMs: 1_784_502_000_000, completedMs: 1_784_502_000_000, input: 100, output: 20)
+        try createDb(rows: [MessageRow(id: "m1", session: "s1", data: shared)])
+        let queue = try DatabaseQueue(path: databaseURL.path)
+        try queue.write { db in
+            try db.execute(sql: """
+                CREATE TABLE session_message (
+                    id TEXT NOT NULL, session_id TEXT NOT NULL, type TEXT,
+                    time_created INTEGER, time_updated INTEGER, data TEXT
+                )
+            """)
+            try db.execute(
+                sql: "INSERT INTO session_message (id, session_id, type, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?)",
+                arguments: ["m1", "s1", "assistant", 1_784_500_000, 1_784_500_000, v2Shared]
+            )
+        }
+        collector.start()
+        collector.waitForIdle()
+        pumpUntil { self.collector.scanCount == 1 }
+        XCTAssertEqual(store.totalTokens(), 120, "同 key 跨表重放不重复计数")
+    }
+
     // MARK: - 基本差分
 
     func test_scan_countsMessages() throws {

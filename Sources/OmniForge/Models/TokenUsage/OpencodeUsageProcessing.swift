@@ -11,12 +11,21 @@ struct OpencodeMessageData: Decodable, Equatable {
     let id: String?
     let sessionID: String?
     let modelID: String?
+    /// v1 字符串形态的 `model` 键；v2（opencode2）把同一键写成对象，由
+    /// `nestedModel` 承载（两者互斥）。
     let model: String?
     let modelId: String?
     let providerID: String?
     let provider: String?
+    let nestedModel: NestedModel?
     let time: Time?
     let tokens: Tokens?
+
+    /// v2 嵌套模型对象：`model:{id,providerID}`。
+    struct NestedModel: Decodable, Equatable {
+        let id: String?
+        let providerID: String?
+    }
 
     struct Time: Decodable, Equatable {
         let created: Double?
@@ -42,6 +51,59 @@ struct OpencodeMessageData: Decodable, Equatable {
     enum CodingKeys: String, CodingKey {
         case id, sessionID = "sessionID", modelID = "modelID", model, modelId, providerID = "providerID"
         case provider, time, tokens
+    }
+
+    init(
+        id: String? = nil,
+        sessionID: String? = nil,
+        modelID: String? = nil,
+        model: String? = nil,
+        modelId: String? = nil,
+        providerID: String? = nil,
+        provider: String? = nil,
+        nestedModel: NestedModel? = nil,
+        time: Time? = nil,
+        tokens: Tokens? = nil
+    ) {
+        self.id = id
+        self.sessionID = sessionID
+        self.modelID = modelID
+        self.model = model
+        self.modelId = modelId
+        self.providerID = providerID
+        self.provider = provider
+        self.nestedModel = nestedModel
+        self.time = time
+        self.tokens = tokens
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(String.self, forKey: .id)
+        sessionID = try c.decodeIfPresent(String.self, forKey: .sessionID)
+        modelID = try c.decodeIfPresent(String.self, forKey: .modelID)
+        modelId = try c.decodeIfPresent(String.self, forKey: .modelId)
+        providerID = try c.decodeIfPresent(String.self, forKey: .providerID)
+        provider = try c.decodeIfPresent(String.self, forKey: .provider)
+        time = try c.decodeIfPresent(Time.self, forKey: .time)
+        tokens = try c.decodeIfPresent(Tokens.self, forKey: .tokens)
+        if let object = try? c.decodeIfPresent(NestedModel.self, forKey: .model) {
+            nestedModel = object
+            model = nil
+        } else {
+            nestedModel = nil
+            model = try c.decodeIfPresent(String.self, forKey: .model)
+        }
+    }
+
+    /// 归一化模型 id：v1 扁平字段优先，v2 嵌套 `model.id` 兜底。
+    var effectiveModelID: String? {
+        modelID ?? model ?? modelId ?? nestedModel?.id
+    }
+
+    /// 归一化 provider：v1 顶层 `providerID`，v2 嵌套 `model.providerID`。
+    var effectiveProviderID: String? {
+        providerID ?? nestedModel?.providerID ?? provider
     }
 }
 
@@ -77,12 +139,11 @@ enum OpencodeUsageProcessing {
         return "\(sessionID)|\(id)"
     }
 
-    /// 模型链：`modelID` → `model` → `modelId` → unknown。
+    /// 模型链：`modelID` → `model` → `modelId` → v2 嵌套 `model.id` → unknown。
     static func modelName(_ data: OpencodeMessageData) -> String {
-        for candidate in [data.modelID, data.model, data.modelId] {
-            if let candidate, !candidate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return candidate
-            }
+        if let candidate = data.effectiveModelID,
+           !candidate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return candidate
         }
         return defaultModel
     }
@@ -107,7 +168,7 @@ enum OpencodeUsageProcessing {
         let completed = epochMilliseconds(data.time?.completed) ?? 0
         if created == 0 && completed == 0 { return nil }
         let model = modelName(data)
-        let provider = data.providerID ?? data.provider ?? ""
+        let provider = data.effectiveProviderID ?? ""
         let raw = [
             source,
             String(created),

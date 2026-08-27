@@ -2,7 +2,14 @@ import Combine
 import Foundation
 import GRDB
 
-/// opencode-fork 的 `message` 表采集器骨架（opencode / zcode 共用）。
+/// opencode-fork 的消息表采集器骨架（opencode / zcode 共用）。
+///
+/// 两代 schema 共用同一数据文件：v1 读 `message` 表（角色在 `data` JSON 的
+/// `$.role`、模型为扁平 `modelID/providerID`）；v2（opencode2 重写存储层）读
+/// `session_message` 表（角色在 `type` 列、模型嵌套 `$.model.{id,providerID}`）。
+/// 代际按**行存在性**判定——`session_message` 表在纯 v1 库也存在但为空，按表
+/// 存在性会把纯 v1 库判成 v2；混合库两表都读，同 key 消息由差分状态机天然
+/// 去重（重放 totals 相同 → 增量为 0）。
 ///
 /// SQL：全量读 assistant 消息（`data` JSON 列），`data.tokens` 为消息级累积值 →
 /// 每消息「上次 totals 差分」求增量（PLAN §3.2）；`sessionID|messageID` 为消息 key；
@@ -16,7 +23,7 @@ class OpencodeSchemaCollectorBase: SQLiteUsageCollectorBase {
 
     override var databaseURL: URL? { schemaDatabaseURL }
 
-    /// 原生消息过滤（zcode 按 providerID 黑名单剔除子代理）。
+    /// 原生消息过滤（zcode 按 provider 黑名单剔除子代理）。
     func isNativeMessage(_ data: OpencodeMessageData) -> Bool { true }
 
     override func readMessages() -> [SQLiteMessageRecord]? {
@@ -26,14 +33,33 @@ class OpencodeSchemaCollectorBase: SQLiteUsageCollectorBase {
         }
         do {
             return try queue.read { db in
-                let rows = try Row.fetchAll(
+                // 代际探测：session_message 有行 → v2（表存在但为空不算）。
+                let hasV2Rows = (try? Bool.fetchOne(
+                    db,
+                    sql: "SELECT EXISTS (SELECT 1 FROM session_message)"
+                )) ?? nil
+                var rows: [Row] = []
+                if hasV2Rows == true {
+                    rows += try Row.fetchAll(
+                        db,
+                        sql: """
+                        SELECT id, session_id, data FROM session_message
+                        WHERE type = 'assistant'
+                        ORDER BY time_created ASC
+                        """
+                    )
+                }
+                // 纯 v2 库的 message 表已不存在 → 该查询抛错即跳过 v1 段。
+                if let v1Rows = try? Row.fetchAll(
                     db,
                     sql: """
                     SELECT id, session_id, data FROM message
                     WHERE json_extract(data, '$.role') = 'assistant'
                     ORDER BY time_created ASC
                     """
-                )
+                ) {
+                    rows += v1Rows
+                }
                 var records: [SQLiteMessageRecord] = []
                 for row in rows {
                     guard let dataString = row["data"] as String?,
