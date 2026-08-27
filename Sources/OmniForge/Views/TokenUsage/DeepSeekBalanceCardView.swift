@@ -133,7 +133,7 @@ enum DeepSeekBalanceCardState: Equatable {
             switch issue {
             case .reauthRequired: return .reauth
             case .rateLimited: return .rateLimited
-            case .network, .decoding:
+            case .network, .decoding, .notRunning:
                 // 显示 last-good 快照 + 行内错误提示 → 徽章强调数据可能过期
                 return snapshot.stale && !snapshot.infos.isEmpty ? .stale : .transient
             }

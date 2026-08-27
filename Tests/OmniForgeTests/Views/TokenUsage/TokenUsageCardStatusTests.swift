@@ -84,4 +84,23 @@ final class TokenUsageCardStatusTests: XCTestCase {
         ))
         XCTAssertEqual(status, .reauth)
     }
+
+    func test_derive_notRunningWithStaleLastGood_isStale() {
+        let status = TokenUsageCardStatus.derive(from: snapshot(
+            issue: .notRunning,
+            stale: true,
+            windows: sessionWindow()
+        ))
+        XCTAssertEqual(status, .stale, "显示 last-good 快照 + 未运行 → 标数据可能过期")
+    }
+
+    func test_derive_notRunningWithoutLastGood_isTransient() {
+        let status = TokenUsageCardStatus.derive(from: snapshot(issue: .notRunning, stale: true))
+        XCTAssertEqual(status, .transient)
+    }
+
+    func test_errorCaption_notRunning_usesDedicatedCopy() {
+        let caption = TokenUsageFormat.errorCaption(for: .notRunning, now: Date(), strings: Strings.zhHans)
+        XCTAssertEqual(caption, "应用未运行 · 启动应用后自动恢复")
+    }
 }

@@ -1090,8 +1090,10 @@ struct Strings: Equatable {
     let tokenStatusStale: String
     let tokenErrorNetwork: String
     let tokenErrorTransient: String
+    let tokenErrorNotRunning: String
     let tokenRateLimitedCaptionFormat: String
     let tokenErrorRetryableHint: String
+    let tokenErrorNotRunningHint: String
     let tokenBackfilling: String
     let tokenCreditsRemainingFormat: String
     let tokenResetInApproxFormat: String
@@ -1099,6 +1101,7 @@ struct Strings: Equatable {
     let tokenPaceProjectedFormat: String
     let tokenCreditCaption: String
     let tokenResetBankTitle: String
+    let tokenResetBankEntryTitleFormat: String
     let tokenResetBankEntryFormat: String
     let tokenResetBankCountOnlyFormat: String
     let tokenUpdatedJustNow: String

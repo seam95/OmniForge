@@ -349,7 +349,7 @@ enum AntigravityProcessProbe {
 
 /// Antigravity 限额取数器：ps 找进程 → lsof 找端口 → 本地 Connect-RPC 三级降级（参考 08/fetchAntigravityLimits）。
 ///
-/// 状态归一：进程不在 → 靠缓存层磁盘 last-good 兜底后报「未运行」错误态；
+/// 状态归一：进程不在/无监听端口 → `.notRunning` 错误态（缓存层磁盘 last-good 先行兜底，UI 显示「未运行」）；
 /// 无安装证据（~/.gemini/{antigravity,antigravity-ide,antigravity-cli} 均缺）→ 未配置（nil）。
 final class AntigravityLimitsFetcher: LimitsFetching {
     let provider: TokenUsageProvider = .antigravity
@@ -488,7 +488,7 @@ final class AntigravityLimitsFetcher: LimitsFetching {
             confidence: .official,
             capturedAt: Date(),
             stale: false,
-            issue: .network("not running")
+            issue: .notRunning
         )
     }
 

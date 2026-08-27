@@ -84,6 +84,8 @@ enum LimitError: Error, Equatable, Codable {
     case rateLimited(retryAt: Date)
     case network(String)
     case decoding(String)
+    /// 本地进程型 provider 的应用未运行/服务未就绪（如 Antigravity），与真网络故障区分文案。
+    case notRunning
 }
 
 /// 带标签的附加窗口 — provider 特有的细分窗口，不占用语义槽位

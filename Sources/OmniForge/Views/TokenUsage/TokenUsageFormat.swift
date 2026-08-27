@@ -207,6 +207,8 @@ enum TokenUsageFormat {
             return strings.tokenErrorNetwork + " · " + strings.tokenErrorRetryableHint
         case .decoding:
             return strings.tokenErrorTransient + " · " + strings.tokenErrorRetryableHint
+        case .notRunning:
+            return strings.tokenErrorNotRunning + " · " + strings.tokenErrorNotRunningHint
         }
     }
 
@@ -243,6 +245,35 @@ enum TokenUsageFormat {
 
     static func differentDayTime(_ date: Date) -> String {
         differentDayTimeFormatter.string(from: date)
+    }
+
+    // MARK: - 重置权益行
+
+    /// 单条重置权益的剩余寿命比例（0...1，1 为刚获得）；grantedAt 缺失时视为满寿命。
+    static func resetLifetimeRemainingFraction(grantedAt: Date?, expiresAt: Date, now: Date) -> Double {
+        guard let grantedAt else { return 1 }
+        let total = expiresAt.timeIntervalSince(grantedAt)
+        guard total > 0 else { return 1 }
+        let remaining = expiresAt.timeIntervalSince(now)
+        return min(1, max(0, remaining / total))
+    }
+
+    /// 组装重置权益行视图数据：标签「重置 N」、过期时间、悬停详情与剩余寿命比例。
+    static func resetBankRowSpecs(resetBank: UsageResetBank, now: Date, strings: Strings) -> [ResetBankRowSpec] {
+        resetBank.credits.enumerated().map { index, credit in
+            let label = String(format: strings.tokenResetBankEntryTitleFormat, index + 1)
+            let expiry = differentDayTime(credit.expiresAt)
+            return ResetBankRowSpec(
+                label: label,
+                expiryText: expiry,
+                helpText: String(format: strings.tokenResetBankEntryFormat, index + 1, expiry),
+                lifetimeRemaining: resetLifetimeRemainingFraction(
+                    grantedAt: credit.grantedAt,
+                    expiresAt: credit.expiresAt,
+                    now: now
+                )
+            )
+        }
     }
 
     /// 标签窗口本地化短标签（如 Cursor Auto -> 自动）。
@@ -282,6 +313,15 @@ enum TokenUsageFormat {
             return limitBarNormalGreen
         }
     }
+}
+
+/// 单条重置权益行的视图数据（由 TokenUsageFormat.resetBankRowSpecs 组装）。
+struct ResetBankRowSpec: Equatable {
+    let label: String
+    let expiryText: String
+    let helpText: String
+    /// 剩余寿命比例（0...1，满条为刚获得）。
+    let lifetimeRemaining: Double
 }
 
 /// Provider 视觉风格 — 模块色 + 状态色。
@@ -354,7 +394,7 @@ enum TokenUsageCardStatus {
             switch issue {
             case .reauthRequired: return .reauth
             case .rateLimited: return .rateLimited
-            case .network, .decoding:
+            case .network, .decoding, .notRunning:
                 // 显示 last-good 快照 + 行内错误提示 → 徽章强调数据可能过期
                 return limits.stale && !limits.windows.isEmpty ? .stale : .transient
             }

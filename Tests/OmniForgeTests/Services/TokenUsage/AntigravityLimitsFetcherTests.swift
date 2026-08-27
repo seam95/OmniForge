@@ -276,7 +276,7 @@ final class AntigravityLimitsFetcherTests: XCTestCase {
         let fetcher = makeFetcher(shell: shell, client: FakeLocalClient(), hasInstall: true)
         do {
             let result = try await fetcher.fetchLimits(force: false)
-            XCTAssertEqual(result?.issue?.isNetworkLike ?? false, true, "有安装证据但进程不在 → 错误态（last-good 已先行兜底）")
+            XCTAssertEqual(result?.issue, .notRunning, "有安装证据但进程不在 → 未运行错误态（last-good 已先行兜底）")
             XCTAssertEqual(result?.configured, true)
         } catch {
             XCTFail("unexpected \(error)")
@@ -363,16 +363,9 @@ final class AntigravityLimitsFetcherTests: XCTestCase {
         let fetcher = makeFetcher(shell: shell, client: FakeLocalClient())
         do {
             let result = try await fetcher.fetchLimits(force: false)
-            XCTAssertEqual(result?.issue?.isNetworkLike ?? false, true, "进程在但无监听端口 → 错误态不崩")
+            XCTAssertEqual(result?.issue, .notRunning, "进程在但无监听端口 → 未运行错误态不崩")
         } catch {
             XCTFail("unexpected \(error)")
         }
-    }
-}
-
-private extension LimitError {
-    var isNetworkLike: Bool {
-        if case .network = self { return true }
-        return false
     }
 }

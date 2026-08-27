@@ -55,7 +55,7 @@ final class LimitsCachingFetcher: LimitsFetching {
             case .rateLimited(let retryAt):
                 cache.storeRateLimit(for: provider, retryAt: retryAt)
                 return fallback(issue: .rateLimited(retryAt: retryAt), now: now())
-            case .network, .decoding:
+            case .network, .decoding, .notRunning:
                 return fallback(issue: error, now: now())
             }
         } catch {
