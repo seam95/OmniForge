@@ -25,18 +25,50 @@ final class ProfileEditorViewTests: XCTestCase {
     func test_brandVisual_knownBrands() {
         let glm = ProviderBrandVisual.visual(name: "GLM 智谱", baseURL: "https://open.bigmodel.cn/api/anthropic")
         XCTAssertEqual(glm.letter, "G")
+        XCTAssertEqual(glm.logo, ProviderLogoAssets.glm)
 
         let kimi = ProviderBrandVisual.visual(name: "Kimi 月之暗面", baseURL: "https://api.kimi.com/coding")
         XCTAssertEqual(kimi.letter, "K")
+        XCTAssertEqual(kimi.logo, ProviderLogoAssets.kimi)
 
         let deepseek = ProviderBrandVisual.visual(name: "DeepSeek", baseURL: "https://api.deepseek.com/anthropic")
         XCTAssertEqual(deepseek.letter, "D")
+        XCTAssertEqual(deepseek.logo, ProviderLogoAssets.deepseek)
 
         let minimax = ProviderBrandVisual.visual(name: "MiniMax", baseURL: "https://api.minimaxi.com/anthropic")
         XCTAssertEqual(minimax.letter, "M")
+        XCTAssertEqual(minimax.logo, ProviderLogoAssets.miniMax)
+
+        let anthropic = ProviderBrandVisual.visual(name: "My Relay", baseURL: "https://example.com/anthropic")
+        XCTAssertEqual(anthropic.logo, ProviderLogoAssets.claude)
 
         let custom = ProviderBrandVisual.visual(name: "MyCustomProvider", baseURL: "https://example.com")
         XCTAssertEqual(custom.letter, "M")
+        XCTAssertNil(custom.logo)
+    }
+
+    /// 新入库的 GLM / MiniMax logo path 含相对弧线命令，必须能被 SVGPathParser 完整解析；
+    /// 并断言全部锚点落在 viewBox 0 0 24 24 附近（flag 解析错误会导致弧线终点大幅漂移出界）。
+    func test_brandVisual_newLogoPathsParseIntoCommands() {
+        let assets: [[ProviderLogoLayer]] = [ProviderLogoAssets.glm, ProviderLogoAssets.miniMax]
+        for layers in assets {
+            for layer in layers {
+                var parser = SVGPathParser(data: layer.pathData)
+                let commands = parser.parse()
+                XCTAssertFalse(commands.isEmpty, "logo path 必须解析出至少一条命令")
+
+                var points: [CGPoint] = []
+                for case let SVGPathCommand.cubicTo(c1, c2, end) in commands {
+                    points.append(contentsOf: [c1, c2, end])
+                }
+                for case let SVGPathCommand.lineTo(p) in commands { points.append(p) }
+                for case let SVGPathCommand.moveTo(p) in commands { points.append(p) }
+                for p in points {
+                    XCTAssertTrue(p.x >= -2 && p.x <= 26 && p.y >= -2 && p.y <= 26,
+                                  "logo 锚点 (\(p.x), \(p.y)) 超出 viewBox 附近范围，弧线解析可能出错")
+                }
+            }
+        }
     }
 
     func test_localizationStrings() {

@@ -176,9 +176,13 @@ struct ProfileEditorView: View {
                         RoundedRectangle(cornerRadius: 3.5, style: .continuous)
                             .fill(visual.color)
                             .frame(width: 18, height: 18)
-                        Text(visual.letter)
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(.white)
+                        if let logo = visual.logo {
+                            ProviderLogoGlyphView(layers: logo)
+                        } else {
+                            Text(visual.letter)
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(.white)
+                        }
                     }
 
                     Text(currentPresetDisplayName)

@@ -265,9 +265,13 @@ struct ProviderSwitchSettingsView: View {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .fill(visual.color)
                             .frame(width: 36, height: 36)
-                        Text(visual.letter)
-                            .font(.system(size: 17, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
+                        if let logo = visual.logo {
+                            ProviderLogoGlyphView(layers: logo)
+                        } else {
+                            Text(visual.letter)
+                                .font(.system(size: 17, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
+                        }
                     }
 
                     VStack(alignment: .leading, spacing: 3) {
@@ -646,6 +650,14 @@ enum ProviderBrandVisual {
     struct Visual {
         let letter: String
         let color: Color
+        /// 品牌矢量 logo（复用 Token 用量页 `ProviderLogoAssets`）；未匹配品牌时为 nil，回退字母占位。
+        let logo: [ProviderLogoLayer]?
+
+        init(letter: String, color: Color, logo: [ProviderLogoLayer]? = nil) {
+            self.letter = letter
+            self.color = color
+            self.logo = logo
+        }
     }
 
     static func resolve(for profile: ProviderProfile) -> Visual {
@@ -657,22 +669,22 @@ enum ProviderBrandVisual {
         let urlLower = baseURL.lowercased()
 
         if nameLower.contains("glm") || nameLower.contains("智谱") || urlLower.contains("bigmodel") {
-            return Visual(letter: "G", color: Color(red: 0x3B / 255.0, green: 0x82 / 255.0, blue: 0xF6 / 255.0))
+            return Visual(letter: "G", color: Color(red: 0x3B / 255.0, green: 0x82 / 255.0, blue: 0xF6 / 255.0), logo: ProviderLogoAssets.glm)
         }
         if nameLower.contains("kimi") || nameLower.contains("月之暗面") || urlLower.contains("moonshot") {
-            return Visual(letter: "K", color: Color(red: 0x18 / 255.0, green: 0x18 / 255.0, blue: 0x1B / 255.0))
+            return Visual(letter: "K", color: Color(red: 0x18 / 255.0, green: 0x18 / 255.0, blue: 0x1B / 255.0), logo: ProviderLogoAssets.kimi)
         }
         if nameLower.contains("deepseek") || nameLower.contains("深度求索") || urlLower.contains("deepseek") {
-            return Visual(letter: "D", color: Color(red: 0x3B / 255.0, green: 0x82 / 255.0, blue: 0xF6 / 255.0))
+            return Visual(letter: "D", color: Color(red: 0x3B / 255.0, green: 0x82 / 255.0, blue: 0xF6 / 255.0), logo: ProviderLogoAssets.deepseek)
         }
         if nameLower.contains("minimax") || urlLower.contains("minimax") {
-            return Visual(letter: "M", color: Color(red: 0xEA / 255.0, green: 0x58 / 255.0, blue: 0x0C / 255.0))
+            return Visual(letter: "M", color: Color(red: 0xEA / 255.0, green: 0x58 / 255.0, blue: 0x0C / 255.0), logo: ProviderLogoAssets.miniMax)
         }
         if nameLower.contains("openai") || nameLower.contains("chatgpt") || urlLower.contains("openai") {
-            return Visual(letter: "O", color: Color(red: 0x10 / 255.0, green: 0xA3 / 255.0, blue: 0x7F / 255.0))
+            return Visual(letter: "O", color: Color(red: 0x10 / 255.0, green: 0xA3 / 255.0, blue: 0x7F / 255.0), logo: ProviderLogoAssets.openai)
         }
         if nameLower.contains("anthropic") || nameLower.contains("claude") || urlLower.contains("anthropic") {
-            return Visual(letter: "A", color: Color(red: 0xD9 / 255.0, green: 0x77 / 255.0, blue: 0x57 / 255.0))
+            return Visual(letter: "A", color: Color(red: 0xD9 / 255.0, green: 0x77 / 255.0, blue: 0x57 / 255.0), logo: ProviderLogoAssets.claude)
         }
         if nameLower.contains("qwen") || nameLower.contains("通义千问") || urlLower.contains("dashscope") || urlLower.contains("aliyun") {
             return Visual(letter: "Q", color: Color(red: 0x61 / 255.0, green: 0x5C / 255.0, blue: 0xED / 255.0))
