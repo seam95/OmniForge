@@ -47,6 +47,33 @@ final class ClaudeKeychainCredentialReader: ClaudeCredentialReading {
     }
 
     func readAccessToken() throws -> String? {
+        guard let oauth = try readOAuthPayload() else { return nil }
+        guard let accessToken = oauth["accessToken"] as? String, !accessToken.isEmpty else {
+            // 条目在但 token 空：Claude Code 登录过期时会原地清空 token。
+            throw CredentialReadError.invalidPayload
+        }
+        return accessToken
+    }
+
+    func planLabel() -> String? {
+        guard let oauth = try? readOAuthPayload() else { return nil }
+        let token = (try? readAccessToken()) ?? nil
+        return Self.planLabel(oauthPayload: oauth, accessToken: token)
+    }
+
+    /// 套餐来源：存储原文 `claudeAiOauth.subscriptionType` 优先（登录过期
+    /// token 被清空时 JWT 解不出，存储原文仍在）；缺失回落 JWT claim。
+    static func planLabel(oauthPayload: [String: Any]?, accessToken: String?) -> String? {
+        if let stored = oauthPayload?["subscriptionType"] as? String, !stored.isEmpty {
+            return PlanLabelNormalizer.normalize(stored)
+        }
+        guard let accessToken,
+              let payload = JWTPayloadDecoder.decodePayload(accessToken) else { return nil }
+        return PlanLabelNormalizer.normalize(payload["subscriptionType"] as? String)
+    }
+
+    /// 解析条目 JSON 的 `claudeAiOauth` 对象；条目不存在 → nil；JSON 损坏 → 抛错。
+    private func readOAuthPayload() throws -> [String: Any]? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -60,23 +87,10 @@ final class ClaudeKeychainCredentialReader: ClaudeCredentialReading {
             throw CredentialReadError.keychainUnavailable(status)
         }
         guard let data = item as? Data,
-              let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let oauth = root["claudeAiOauth"] as? [String: Any],
-              let accessToken = oauth["accessToken"] as? String,
-              !accessToken.isEmpty else {
+              let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             throw CredentialReadError.invalidPayload
         }
-        return accessToken
-    }
-
-    func planLabel() -> String? {
-        do {
-            guard let token = try readAccessToken() else { return nil }
-            guard let payload = JWTPayloadDecoder.decodePayload(token) else { return nil }
-            return PlanLabelNormalizer.normalize(payload["subscriptionType"] as? String)
-        } catch {
-            return nil
-        }
+        return root["claudeAiOauth"] as? [String: Any]
     }
 }
 

@@ -12,7 +12,7 @@ final class ClaudeLimitsFetcherTests: XCTestCase {
     }
 
     override func tearDown() {
-        URLProtocolStub.stub = nil
+        URLProtocolStub.reset()
         super.tearDown()
     }
 
@@ -30,6 +30,56 @@ final class ClaudeLimitsFetcherTests: XCTestCase {
         credentials.tokenResult = .failure(CredentialReadError.keychainUnavailable(-1))
         let result = try await makeFetcher(credentials: credentials).fetchLimits()
         XCTAssertNil(result)
+    }
+
+    func test_fetchLimits_invalidPayloadWithEntryPresent_throwsReauth() async throws {
+        // Claude Code 登录过期会原地清空 token 而不删条目：reader 对空 token
+        // 抛 invalidPayload → 需要重新登录，不是未配置。
+        let credentials = FakeClaudeCredentials()
+        credentials.tokenResult = .failure(CredentialReadError.invalidPayload)
+        do {
+            _ = try await makeFetcher(credentials: credentials).fetchLimits()
+            XCTFail("expected reauthRequired")
+        } catch let error as LimitError {
+            XCTAssertEqual(error, .reauthRequired, "条目在但 token 坏/空 → 重新登录")
+        } catch {
+            XCTFail("unexpected \(error)")
+        }
+        XCTAssertTrue(URLProtocolStub.recordedRequests.isEmpty, "不触网")
+    }
+
+    func test_planLabel_storedSubscriptionTypeWinsOverJWT() {
+        // 存储原文优先：登录过期 token 被清空时 JWT 解不出，存储原文仍在。
+        let stored = ClaudeKeychainCredentialReader.planLabel(
+            oauthPayload: ["subscriptionType": "max", "accessToken": ""],
+            accessToken: nil
+        )
+        XCTAssertEqual(stored, "Max")
+        // 存储缺失 → JWT claim 兜底。
+        let jwtLike = ClaudeKeychainCredentialReader.planLabel(
+            oauthPayload: ["accessToken": "jwt"],
+            accessToken: Self.jwtWithSubscriptionType("pro")
+        )
+        XCTAssertEqual(jwtLike, "Pro")
+        // 两者皆缺 → nil。
+        XCTAssertNil(ClaudeKeychainCredentialReader.planLabel(
+            oauthPayload: ["accessToken": "opaque"],
+            accessToken: "opaque"
+        ))
+    }
+
+    /// 构造带 subscriptionType claim 的最小 JWT（header.payload 无签名校验）。
+    private static func jwtWithSubscriptionType(_ value: String) -> String {
+        func b64(_ json: [String: Any]) -> String {
+            try! JSONSerialization.data(withJSONObject: json)
+                .base64EncodedString()
+                .replacingOccurrences(of: "+", with: "-")
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "=", with: "")
+        }
+        return b64(["alg": "none"])
+            + "." + b64(["subscriptionType": value])
+            + ".sig"
     }
 
     // MARK: - 成功路径

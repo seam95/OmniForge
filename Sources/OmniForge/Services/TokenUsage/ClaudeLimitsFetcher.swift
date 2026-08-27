@@ -149,13 +149,22 @@ final class ClaudeLimitsFetcher: LimitsFetching {
     }
 
     func fetchLimits(force: Bool) async throws -> ProviderUsageLimits? {
-        // 探测存在性（不触碰秘密）；未登录 → 未配置（nil，由管理器归一化为 notConfigured）。
+        // 探测存在性（不触碰秘密）；从未登录 → 未配置（nil，由管理器归一化为 notConfigured）。
         guard credentials.probe() else {
             return nil
         }
-        // 读取失败（服务名变更 / 权限弹窗被拒）→ 降级未配置，不阻塞。
-        guard let accessToken = try? credentials.readAccessToken(), accessToken != nil else {
-            return nil
+        let accessToken: String
+        do {
+            guard let token = try credentials.readAccessToken() else {
+                return nil // 探测后条目被移除（用户登出）的竞态
+            }
+            accessToken = token
+        } catch CredentialReadError.invalidPayload {
+            // 条目在但 token 空/坏：Claude Code 登录过期时会原地清空 token 而
+            // 不删条目——这是「需要重新登录」而非「未配置」。
+            throw LimitError.reauthRequired
+        } catch CredentialReadError.keychainUnavailable {
+            return nil // 读取被拒（授权弹窗未通过）→ 降级未配置
         }
 
         let headers = [
