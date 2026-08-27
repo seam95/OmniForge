@@ -33,17 +33,17 @@ enum AppFeature: String, CaseIterable {
     ]
 }
 
-/// 特性分组，用于 Settings UI 展示
+/// 特性分组，用于 Settings UI 展示；case 顺序即侧栏与功能目录的分组展示顺序。
 enum FeatureGroup: String, CaseIterable {
     case input        // 输入法相关
     case clipboard    // 剪贴板与快捷短语
     case monitor      // 系统监控
+    case ai           // AI CLI 供应商切换
     case productivity // 生产力工具
     case system       // 系统集成
     case mouse        // 鼠标与触控板
     case energy       // 电源与唤醒
     case capture      // 截图与捕获
-    case ai           // AI CLI 供应商切换
 }
 
 /// 权限用途：区分“可能使用 / 已配置 / 可选 / 当前未使用”

@@ -20,11 +20,11 @@ final class SettingsToolbarTabTests: XCTestCase {
                 SettingsSidebarSection(group: .input, tabs: [.inputMethod]),
                 SettingsSidebarSection(group: .clipboard, tabs: [.clipboard]),
                 SettingsSidebarSection(group: .monitor, tabs: [.performance, .tokenUsage]),
+                SettingsSidebarSection(group: .ai, tabs: [.providerSwitch]),
                 SettingsSidebarSection(group: .productivity, tabs: [.shelf, .cleaner, .uninstaller]),
                 SettingsSidebarSection(group: .mouse, tabs: [.mouse]),
                 SettingsSidebarSection(group: .energy, tabs: [.keepAwake]),
                 SettingsSidebarSection(group: .capture, tabs: [.screenshot]),
-                SettingsSidebarSection(group: .ai, tabs: [.providerSwitch]),
             ]
         )
     }
