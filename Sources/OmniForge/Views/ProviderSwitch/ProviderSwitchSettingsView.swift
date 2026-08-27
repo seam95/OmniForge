@@ -266,7 +266,10 @@ struct ProviderSwitchSettingsView: View {
                             .fill(visual.color)
                             .frame(width: 36, height: 36)
                         if let logo = visual.logo {
+                            // 显式约束尺寸：GlyphView 内部 GeometryReader 是贪婪布局，
+                            // 不约束时会撑满卡片剩余宽度，把色板和文字挤向中间。
                             ProviderLogoGlyphView(layers: logo)
+                                .frame(width: 36, height: 36)
                         } else {
                             Text(visual.letter)
                                 .font(.system(size: 17, weight: .bold, design: .rounded))

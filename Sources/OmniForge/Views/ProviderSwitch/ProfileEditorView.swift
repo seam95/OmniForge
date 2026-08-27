@@ -177,7 +177,9 @@ struct ProfileEditorView: View {
                             .fill(visual.color)
                             .frame(width: 18, height: 18)
                         if let logo = visual.logo {
+                            // 同卡片：贪婪 GeometryReader 必须显式约束到色板尺寸。
                             ProviderLogoGlyphView(layers: logo)
+                                .frame(width: 18, height: 18)
                         } else {
                             Text(visual.letter)
                                 .font(.system(size: 11, weight: .bold))
