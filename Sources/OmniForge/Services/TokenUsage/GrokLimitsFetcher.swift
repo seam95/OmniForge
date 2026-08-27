@@ -8,7 +8,8 @@ protocol GrokNetworkServicing: AnyObject {
     func getJSON(url: URL, bearer: String) async throws -> [String: Any]
 }
 
-/// URLSession 实现。
+/// URLSession 实现。状态码口径：token 端点 400/401 → reauth；billing
+/// 401/403 → reauth，400 → 普通失败（交给 legacy 端点兜底）。
 final class GrokURLSessionClient: GrokNetworkServicing {
     private let session: URLSession
     private let timeout: TimeInterval
@@ -27,7 +28,7 @@ final class GrokURLSessionClient: GrokNetworkServicing {
         let form = body.map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "")" }
             .joined(separator: "&")
         request.httpBody = Data(form.utf8)
-        return try await perform(request)
+        return try await perform(request, authStatuses: [400, 401])
     }
 
     func getJSON(url: URL, bearer: String) async throws -> [String: Any] {
@@ -35,15 +36,15 @@ final class GrokURLSessionClient: GrokNetworkServicing {
         request.timeoutInterval = timeout
         request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        return try await perform(request)
+        return try await perform(request, authStatuses: [401, 403])
     }
 
-    private func perform(_ request: URLRequest) async throws -> [String: Any] {
+    private func perform(_ request: URLRequest, authStatuses: Set<Int>) async throws -> [String: Any] {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw LimitError.network("Grok request failed")
         }
-        if http.statusCode == 401 || http.statusCode == 400 {
+        if authStatuses.contains(http.statusCode) {
             throw LimitError.reauthRequired
         }
         guard http.statusCode == 200 else {
@@ -58,22 +59,22 @@ final class GrokURLSessionClient: GrokNetworkServicing {
 
 // MARK: - 解析纯函数
 
-/// grok billing 归一化 — 纯函数（参考 normalizeGrokBillingResponse）。
+/// grok billing 归一化 — 纯函数。
 enum GrokLimitsParsing {
     /// billing 响应 → 限额窗口；缺 config → nil（未配置）。
+    /// 数值字段兼容 `{"val": 123}` 包装形态（unified billing 的响应形状）。
     static func windows(from body: [String: Any]?) -> (primary: UsageWindow?, secondary: UsageWindow?) {
         guard let config = body?["config"] as? [String: Any] else { return (nil, nil) }
         let currentPeriod = config["currentPeriod"] as? [String: Any]
         let resetAt = resetDate(currentPeriod?["end"] as? String)
             ?? resetDate(config["billingPeriodEnd"] as? String)
-        let periodType = (currentPeriod?["type"] as? String)?.lowercased()
 
-        var usedPercent = clamp(config["creditUsagePercent"] as? Double)
+        var usedPercent = number(config["creditUsagePercent"])
         if usedPercent == nil {
             usedPercent = sumProductUsage(config["productUsage"] as? [[String: Any]])
         }
-        let monthlyLimit = (config["monthlyLimit"] as? NSNumber)?.doubleValue
-        let used = (config["used"] as? NSNumber)?.doubleValue
+        let monthlyLimit = number(config["monthlyLimit"])
+        let used = number(config["used"])
         if usedPercent == nil, let monthlyLimit, monthlyLimit > 0, let used {
             usedPercent = used / monthlyLimit * 100
         }
@@ -96,8 +97,8 @@ enum GrokLimitsParsing {
             )
         }
         var secondary: UsageWindow?
-        let onDemandCap = (config["onDemandCap"] as? NSNumber)?.doubleValue
-        let onDemandUsed = (config["onDemandUsed"] as? NSNumber)?.doubleValue
+        let onDemandCap = number(config["onDemandCap"])
+        let onDemandUsed = number(config["onDemandUsed"])
         if let onDemandCap, onDemandCap > 0, let onDemandUsed {
             secondary = UsageWindow(
                 usedPercent: clamp(onDemandUsed / onDemandCap * 100) ?? 0,
@@ -109,19 +110,31 @@ enum GrokLimitsParsing {
                 windowSeconds: nil
             )
         }
-        _ = periodType
         return (primary, secondary)
     }
 
-    /// 周期类型 → 窗口 kind（primary 窗）。
+    /// 周期类型 → 主窗 kind。类型可能是小写字符串（"monthly"/"weekly"）或
+    /// `USAGE_PERIOD_TYPE_*` 枚举（子串匹配）；识别不了时按周期时长推断
+    /// （1.5–8 天 → 周，25–35 天 → 月，其余短周期归会话）；最终兜底会话。
     static func primaryWindowKind(from body: [String: Any]?) -> LimitWindowKind {
         let config = body?["config"] as? [String: Any]
-        let type = (config?["currentPeriod"] as? [String: Any])?["type"] as? String
-        switch type?.lowercased() {
-        case "monthly": return .monthly
-        case "weekly": return .weekly
-        default: return .session
+        let currentPeriod = config?["currentPeriod"] as? [String: Any]
+        let type = (currentPeriod?["type"] as? String)?.lowercased()
+        if let type {
+            if type.contains("week") { return .weekly }
+            if type.contains("month") { return .monthly }
+            if type.contains("daily") || type.contains("day") { return .session }
         }
+        if let start = resetDate(currentPeriod?["start"] as? String),
+           let end = resetDate(currentPeriod?["end"] as? String) {
+            let days = end.timeIntervalSince(start) / 86_400
+            switch days {
+            case 1.5..<8: return .weekly
+            case 25..<35: return .monthly
+            default: return .session
+            }
+        }
+        return .session
     }
 
     private static func sumProductUsage(_ productUsage: [[String: Any]]?) -> Double? {
@@ -131,6 +144,14 @@ enum GrokLimitsParsing {
                 ?? ((item["usage_percent"] as? NSNumber)?.doubleValue) ?? 0)
         }
         return sum
+    }
+
+    /// 数值或 `{"val": <number>}` 包装 → Double。
+    private static func number(_ value: Any?) -> Double? {
+        if let wrapped = value as? [String: Any], let val = wrapped["val"] as? NSNumber {
+            return val.doubleValue
+        }
+        return (value as? NSNumber)?.doubleValue
     }
 
     private static func resetDate(_ value: String?) -> Date? {
@@ -155,9 +176,11 @@ enum GrokLimitsParsing {
 // MARK: - Fetcher
 
 /// grok 限额（会话/周/月池 + 按需额）：
-/// `~/.grok/auth.json`（`GROK_HOME` 覆盖）取 refresh_token + oidc_client_id →
-/// `auth.x.ai/oauth2/token` 刷新 access token → `cli-chat-proxy.grok.com/v1/billing`
-/// （`?format=credits` 优先，legacy 兜底）。
+/// `~/.grok/auth.json`（`GROK_HOME` 覆盖）取 refresh_token + client id（条目
+/// `oidc_client_id` 字段或 scope 键 `"<random>::<client-id>"` 后缀）→
+/// `auth.x.ai/oauth2/token` 刷新 access token（成功后原子回写 auth.json）→
+/// `cli-chat-proxy.grok.com/v1/billing`（`?format=credits` 优先，legacy 兜底；
+/// 401 时强制刷新重试一次）。
 final class GrokLimitsFetcher: LimitsFetching {
     let provider: TokenUsageProvider = .grok
 
@@ -187,28 +210,34 @@ final class GrokLimitsFetcher: LimitsFetching {
             return nil
         }
 
-        // 2. access token：未过期直接用；过期/缺失 → OAuth 刷新。
-        let accessToken: String
+        // 2. access key：未过期（缺失视为未过期）直接用；过期且有 refresh 能力 →
+        //    刷新并回写；过期但无 refresh 能力 → 沿用旧 key 由 billing 端裁决。
+        var refreshedThisRun = false
+        var accessKey: String
         if let key = auth.key, !key.isEmpty, !isExpired(auth.expiresAt) {
-            accessToken = key
+            accessKey = key
+        } else if auth.hasRefreshCapability {
+            accessKey = try await refreshAndPersist(entry: auth, at: authURL)
+            refreshedThisRun = true
+        } else if let key = auth.key, !key.isEmpty {
+            accessKey = key
         } else {
-            guard let refreshToken = auth.refreshToken, !refreshToken.isEmpty,
-                  let clientID = auth.clientID, !clientID.isEmpty else {
-                return nil
-            }
-            let tokens = try await network.postForm(url: Self.tokenEndpoint, body: [
-                "grant_type": "refresh_token",
-                "refresh_token": refreshToken,
-                "client_id": clientID,
-            ])
-            guard let refreshed = tokens["access_token"] as? String, !refreshed.isEmpty else {
-                return nil
-            }
-            accessToken = refreshed
+            return nil
         }
 
-        // 3. billing（credits 格式优先，legacy 兜底）。
-        let body = try await billingBody(accessToken: accessToken)
+        // 3. billing；401 且有 refresh 能力且本轮未刷新 → 强制刷新重试一次。
+        do {
+            let body = try await billingBody(accessToken: accessKey)
+            return limits(from: body)
+        } catch LimitError.reauthRequired {
+            guard !refreshedThisRun, auth.hasRefreshCapability else { throw LimitError.reauthRequired }
+            accessKey = try await refreshAndPersist(entry: auth, at: authURL)
+            let body = try await billingBody(accessToken: accessKey)
+            return limits(from: body)
+        }
+    }
+
+    private func limits(from body: [String: Any]) -> ProviderUsageLimits? {
         let (primary, secondary) = GrokLimitsParsing.windows(from: body)
         guard primary != nil || secondary != nil else {
             return nil
@@ -249,27 +278,97 @@ final class GrokLimitsFetcher: LimitsFetching {
         )
     }
 
+    // MARK: - 刷新与回写
+
+    /// OAuth 刷新 → 新 access key；成功后把新 key / 轮换出的 refresh token /
+    /// 过期时间原子回写 auth.json（一次性轮换场景下不回写会让下次刷新失败）。
+    private func refreshAndPersist(entry: AuthEntry, at authURL: URL) async throws -> String {
+        guard let refreshToken = entry.refreshToken, let clientID = entry.clientID else {
+            throw LimitError.reauthRequired
+        }
+        let tokens = try await network.postForm(url: Self.tokenEndpoint, body: [
+            "grant_type": "refresh_token",
+            "refresh_token": refreshToken,
+            "client_id": clientID,
+        ])
+        guard let access = tokens["access_token"] as? String, !access.isEmpty else {
+            throw LimitError.decoding("Grok token endpoint returned no access_token")
+        }
+        let rotatedRefresh = (tokens["refresh_token"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        let expiresAt = parseExpiry(tokens["expires_at"])
+            ?? (tokens["expires_in"] as? NSNumber).map {
+                Date().addingTimeInterval($0.doubleValue)
+            }
+        persistTokens(entry: entry, access: access, rotatedRefresh: rotatedRefresh, expiresAt: expiresAt, at: authURL)
+        return access
+    }
+
+    /// 回写目标条目：新 key、轮换 refresh token；过期时间未知时**删除**旧值
+    ///（防止每轮都重复刷新烧掉轮换配额）。其他条目与无关字段原样保留。
+    private func persistTokens(entry: AuthEntry, access: String, rotatedRefresh: String?, expiresAt: Date?, at authURL: URL) {
+        guard var parsed = readJSONObject(authURL),
+              var target = parsed[entry.entryKey] as? [String: Any] else { return }
+        target["key"] = access
+        if let rotatedRefresh {
+            target["refresh_token"] = rotatedRefresh
+        }
+        if let expiresAt {
+            target["expires_at"] = Int(expiresAt.timeIntervalSince1970)
+        } else {
+            target.removeValue(forKey: "expires_at")
+        }
+        parsed[entry.entryKey] = target
+        guard let data = try? JSONSerialization.data(withJSONObject: parsed, options: [.prettyPrinted, .sortedKeys]) else {
+            return
+        }
+        let tmpURL = authURL.appendingPathExtension("tmp-\(UUID().uuidString)")
+        do {
+            try data.write(to: tmpURL, options: [.atomic])
+            try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tmpURL.path)
+            _ = try fileManager.replaceItemAt(authURL, withItemAt: tmpURL)
+        } catch {
+            try? fileManager.removeItem(at: tmpURL)
+        }
+    }
+
+    private func readJSONObject(_ url: URL) -> [String: Any]? {
+        guard let data = try? Data(contentsOf: url),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return object
+    }
+
     // MARK: - auth.json 读取
 
     private struct AuthEntry {
+        var entryKey: String
         var key: String?
         var refreshToken: String?
         var clientID: String?
         var expiresAt: Date?
+
+        /// refresh_token + client id 齐备才具备刷新能力。
+        var hasRefreshCapability: Bool {
+            (refreshToken?.isEmpty == false) && (clientID?.isEmpty == false)
+        }
     }
 
     private func readAuthEntry(at url: URL) -> AuthEntry? {
-        guard let data = try? Data(contentsOf: url),
-              let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
-        }
+        guard let parsed = readJSONObject(url) else { return nil }
         var fallback: AuthEntry?
-        for (_, value) in parsed {
+        for (entryKey, value) in parsed {
             guard let entry = value as? [String: Any] else { continue }
             let key = (entry["key"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let refreshToken = (entry["refresh_token"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let clientID = (entry["oidc_client_id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            // client id：条目 oidc_client_id 字段优先；scope 键
+            //（"<random>::<client-id>"）后缀兜底。
+            var clientID = (entry["oidc_client_id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if clientID.isEmpty, entryKey.contains("::") {
+                clientID = entryKey.components(separatedBy: "::").last ?? ""
+            }
             let candidate = AuthEntry(
+                entryKey: entryKey,
                 key: key.isEmpty ? nil : key,
                 refreshToken: refreshToken.isEmpty ? nil : refreshToken,
                 clientID: clientID.isEmpty ? nil : clientID,
@@ -278,7 +377,7 @@ final class GrokLimitsFetcher: LimitsFetching {
             if candidate.key != nil {
                 return candidate // 带 access token 的条目直接胜出
             }
-            if candidate.refreshToken != nil, candidate.clientID != nil, fallback == nil {
+            if candidate.hasRefreshCapability, fallback == nil {
                 fallback = candidate
             }
         }
@@ -296,8 +395,9 @@ final class GrokLimitsFetcher: LimitsFetching {
         return nil
     }
 
+    /// 过期判定：缺失视为未过期（直接用旧 key，由 billing 端 401 裁决）。
     private func isExpired(_ date: Date?) -> Bool {
-        guard let date else { return true }
+        guard let date else { return false }
         return date <= Date().addingTimeInterval(60)
     }
 }
