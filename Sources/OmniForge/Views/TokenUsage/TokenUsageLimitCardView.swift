@@ -14,15 +14,11 @@ struct TokenUsageLimitCardView: View {
         TokenUsageCardStatus.derive(from: limits)
     }
 
+    /// 窗口排列顺序：5h 会话窗在上，7d 周窗在下，其后月窗与额度窗。
+    static let windowKindOrder: [LimitWindowKind] = [.session, .weekly, .monthly, .credits]
+
     private var orderedWindows: [(kind: LimitWindowKind, window: UsageWindow)] {
-        let preferredOrder: [LimitWindowKind]
-        switch limits.provider {
-        case .codex:
-            preferredOrder = [.weekly, .session, .monthly, .credits]
-        default:
-            preferredOrder = [.weekly, .session, .monthly, .credits]
-        }
-        return preferredOrder.compactMap { kind in
+        Self.windowKindOrder.compactMap { kind in
             limits.windows[kind].map { (kind, $0) }
         }
     }
@@ -43,7 +39,7 @@ struct TokenUsageLimitCardView: View {
                     if !labeledWindows.isEmpty {
                         labeledWindowsBody
                     }
-                    resetBankRow
+                    resetBankSection
                     errorRow(issue)
                 } else {
                     errorRow(issue)
@@ -55,7 +51,7 @@ struct TokenUsageLimitCardView: View {
                 if !labeledWindows.isEmpty {
                     labeledWindowsBody
                 }
-                resetBankRow
+                resetBankSection
             }
         }
     }
@@ -199,25 +195,60 @@ struct TokenUsageLimitCardView: View {
         .frame(height: 16)
     }
 
-    // MARK: - 重置权益独立行
+    // MARK: - 重置权益区块
 
+    /// 重置权益区块：小标题 + 每条权益一行（标签 / 剩余寿命条 / 过期时间），
+    /// 列宽与窗口行对齐（标签 40pt，过期时间占满百分比+重置时间两列的 72pt）。
     @ViewBuilder
-    private var resetBankRow: some View {
-        if limits.provider == .codex,
-           let resetBank = limits.resetBank,
-           let earliest = resetBank.credits.first?.expiresAt {
-            HStack(spacing: 8) {
-                Text(strings.tokenResetBankTitle)
-                    .font(Theme.Stats.font11Regular)
-                    .foregroundColor(Theme.Stats.text2)
-                    .frame(width: 60, alignment: .leading)
-                Spacer()
-                Text(TokenUsageFormat.differentDayTime(earliest))
-                    .font(.system(size: 10, weight: .regular, design: .monospaced))
-                    .foregroundColor(Theme.Stats.text3)
+    private var resetBankSection: some View {
+        if limits.provider == .codex, let resetBank = limits.resetBank {
+            let rows = TokenUsageFormat.resetBankRowSpecs(resetBank: resetBank, now: now, strings: strings)
+            if !rows.isEmpty || resetBank.displayCount != nil {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(strings.tokenResetBankTitle)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(Theme.Stats.text3)
+
+                    if rows.isEmpty, let count = resetBank.displayCount {
+                        // 官方只给了数量没有明细时的退化展示
+                        Text(String(format: strings.tokenResetBankCountOnlyFormat, count))
+                            .font(Theme.Stats.font10Regular)
+                            .foregroundColor(Theme.Stats.text3)
+                    } else {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(rows.indices, id: \.self) { index in
+                                resetBankRow(rows[index])
+                            }
+                        }
+                    }
+                }
+                .padding(.top, 1)
             }
-            .frame(height: 16)
         }
+    }
+
+    /// 单条重置权益行：寿命条固定绿色（表达剩余寿命而非消耗进度）。
+    private func resetBankRow(_ row: ResetBankRowSpec) -> some View {
+        HStack(spacing: 8) {
+            Text(row.label)
+                .font(Theme.Stats.font11Regular)
+                .foregroundColor(Theme.Stats.text2)
+                .lineLimit(1)
+                .frame(width: 40, alignment: .leading)
+
+            LimitBar(
+                value: row.lifetimeRemaining,
+                barColor: Theme.Stats.statusNormal
+            )
+
+            Text(row.expiryText)
+                .font(.system(size: 10, weight: .regular, design: .monospaced))
+                .foregroundColor(Theme.Stats.text3)
+                .lineLimit(1)
+                .frame(width: 72, alignment: .trailing)
+        }
+        .frame(height: 16)
+        .help(row.helpText)
     }
 
     // MARK: - 错误态

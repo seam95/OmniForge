@@ -234,4 +234,90 @@ final class TokenUsageLimitRowTests: XCTestCase {
         XCTAssertEqual(TokenUsageFormat.limitBarStatusColor(percent: 75, displayMode: .used), TokenUsageFormat.limitBarWarningOrange)
         XCTAssertEqual(TokenUsageFormat.limitBarStatusColor(percent: 10, displayMode: .used), TokenUsageFormat.limitBarNormalGreen)
     }
+
+    // MARK: - 窗口排列顺序
+
+    func test_windowKindOrder_sessionBeforeWeekly() {
+        let order = TokenUsageLimitCardView.windowKindOrder
+        XCTAssertEqual(order, [.session, .weekly, .monthly, .credits], "5h 会话窗应排在 7d 周窗之前")
+    }
+
+    // MARK: - 重置权益行
+
+    func test_resetLifetimeRemainingFraction() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+
+        // grantedAt 缺失 -> 满寿命
+        XCTAssertEqual(
+            TokenUsageFormat.resetLifetimeRemainingFraction(
+                grantedAt: nil,
+                expiresAt: now.addingTimeInterval(3600),
+                now: now
+            ),
+            1.0,
+            accuracy: 0.0001
+        )
+
+        // 寿命过半 -> 0.5
+        XCTAssertEqual(
+            TokenUsageFormat.resetLifetimeRemainingFraction(
+                grantedAt: now.addingTimeInterval(-3600),
+                expiresAt: now.addingTimeInterval(3600),
+                now: now
+            ),
+            0.5,
+            accuracy: 0.0001
+        )
+
+        // 已过期 -> 0
+        XCTAssertEqual(
+            TokenUsageFormat.resetLifetimeRemainingFraction(
+                grantedAt: now.addingTimeInterval(-7200),
+                expiresAt: now.addingTimeInterval(-3600),
+                now: now
+            ),
+            0.0,
+            accuracy: 0.0001
+        )
+
+        // grantedAt 晚于 expiresAt（异常数据） -> 兜底满寿命
+        XCTAssertEqual(
+            TokenUsageFormat.resetLifetimeRemainingFraction(
+                grantedAt: now.addingTimeInterval(3600),
+                expiresAt: now,
+                now: now
+            ),
+            1.0,
+            accuracy: 0.0001
+        )
+    }
+
+    func test_resetBankRowSpecs_labelsAndExpiry() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 8 * 3600)!
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 25, hour: 10, minute: 0, second: 0))!
+        let grantedAt = calendar.date(from: DateComponents(year: 2026, month: 8, day: 24, hour: 7, minute: 12, second: 0))!
+        let expiresAt = calendar.date(from: DateComponents(year: 2026, month: 9, day: 21, hour: 7, minute: 12, second: 0))!
+
+        let bank = UsageResetBank(
+            availableCount: 2,
+            totalEarnedCount: 2,
+            credits: [
+                UsageResetCreditEntry(grantedAt: grantedAt, expiresAt: expiresAt),
+                UsageResetCreditEntry(grantedAt: nil, expiresAt: expiresAt.addingTimeInterval(86400)),
+            ]
+        )
+
+        let specs = TokenUsageFormat.resetBankRowSpecs(resetBank: bank, now: now, strings: strings)
+        XCTAssertEqual(specs.count, 2)
+        XCTAssertEqual(specs[0].label, "重置 1")
+        XCTAssertEqual(specs[1].label, "重置 2")
+        XCTAssertEqual(specs[0].expiryText, "9/21 07:12")
+        XCTAssertEqual(specs[0].helpText, "重置 1 · 9/21 07:12 过期")
+        XCTAssertGreaterThan(specs[0].lifetimeRemaining, 0.9)
+        XCTAssertEqual(specs[1].lifetimeRemaining, 1.0, accuracy: 0.0001, "grantedAt 缺失的权益按满寿命展示")
+
+        let enSpecs = TokenUsageFormat.resetBankRowSpecs(resetBank: bank, now: now, strings: Strings.en)
+        XCTAssertEqual(enSpecs[0].label, "Reset 1")
+    }
 }
