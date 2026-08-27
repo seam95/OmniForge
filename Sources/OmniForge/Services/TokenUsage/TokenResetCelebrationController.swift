@@ -1,8 +1,9 @@
 import AppKit
 import SwiftUI
+import Vortex
 
-/// 全屏重置庆祝：额度窗口 rollover 后播撒花（原生 CAEmitterLayer，不引入粒子库）+ 可选 toast 横幅。
-/// 每屏一个 borderless、点击穿透的
+/// 全屏重置庆祝：额度窗口 rollover 后放烟花（Vortex 两段式：火箭上升 → 死亡时爆裂，
+/// 带 sparkle 尾迹）+ 可选 toast 横幅。每屏一个 borderless、点击穿透的
 /// `NSPanel` 悬浮在 status-bar 层级、跨所有 Space；不抢焦点、不拦截鼠标，用户可继续工作；
 /// 展示数秒后自动拆除，机器睡眠/息屏时立即结束。
 @MainActor
@@ -25,7 +26,7 @@ final class TokenResetCelebrationController {
     }
 
     /// 展示庆祝的任一部分：`message` 存在且 `showsToast` 时显示顶部 toast；
-    /// `showsConfetti` 时全屏撒花。两者均关（或已在庆祝中）时直接忽略。
+    /// `showsConfetti` 时全屏烟花。两者均关（或已在庆祝中）时直接忽略。
     func play(
         message: String?,
         provider: TokenUsageProvider?,
@@ -92,7 +93,9 @@ final class TokenResetCelebrationController {
     }
 
     /// 庆祝是 ~9 秒的瞬时效果，睡眠/息屏时没人看它 — 立即结束。
-    /// 同时避免 CAEmitterLayer 在唤醒后按整个睡眠时长推进粒子模拟。
+    /// 同时保证粒子模拟有界：睡眠期间 `TimelineView` 停止走帧，而 Vortex 的每帧
+    /// delta 取自墙钟，唤醒后第一帧会把整个睡眠时长灌进模拟，代价见
+    /// `makeFireworksSystem()` 中对大 delta 的说明。
     private func registerSleepTeardownObservers() {
         let notificationCenter = NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification] {
@@ -115,7 +118,7 @@ private final class ClickThroughPanel: NSPanel {
     override var acceptsFirstResponder: Bool { false }
 }
 
-/// 撒花（CAEmitterLayer）+ 可选顶部 toast 横幅。
+/// 烟花（Vortex）+ 可选顶部 toast 横幅。
 private struct TokenResetCelebrationOverlayView: View {
     let message: String?
     let provider: TokenUsageProvider?
@@ -123,21 +126,23 @@ private struct TokenResetCelebrationOverlayView: View {
     let showsConfetti: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var toastShown = false
-    @State private var confettiShown = true
-    private let confettiDuration: TimeInterval = 4.5
+    @State private var fireworksShown = true
+    /// 由本视图私有持有，绝不共享：见 `makeFireworksSystem()`。
+    @State private var fireworks: VortexSystem = makeFireworksSystem()
+    private let fireworksDuration: TimeInterval = 5.0
     private let toastFadeDelay: TimeInterval = 7.5
 
     var body: some View {
         ZStack(alignment: .top) {
             Color.clear
 
-            if showsConfetti && confettiShown {
-                ConfettiEmitterView()
+            if showsConfetti && fireworksShown {
+                VortexView(fireworks)
                     .transition(.opacity)
                     .allowsHitTesting(false)
                     .onAppear {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + confettiDuration) {
-                            withAnimation(.easeOut(duration: 0.5)) { confettiShown = false }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + fireworksDuration) {
+                            withAnimation(.easeOut(duration: 0.5)) { fireworksShown = false }
                         }
                     }
             }
@@ -185,83 +190,77 @@ private struct TokenResetCelebrationOverlayView: View {
     }
 }
 
-// MARK: - CAEmitterLayer 撒花
+// MARK: - Vortex 烟花
 
-/// 顶部一条发射线持续撒多彩纸屑：重力下落 + 旋转 + 横向飘散，数秒后由宿主视图淡出。
-private struct ConfettiEmitterView: NSViewRepresentable {
-    func makeNSView(context: Context) -> ConfettiEmitterNSView {
-        ConfettiEmitterNSView()
-    }
+/// 为单个覆盖层视图构建**全新、私有**的烟花系统。
+///
+/// Vortex 自带的 `VortexSystem.fireworks` 是 class 上的 `static let`，即全进程共享的
+/// 可变模拟对象。把它直接交给 `VortexView` 会复现 TokenTracker 的 issue #432：
+///
+/// * 庆祝结束时视图被移除，但单例仍保留 `particles`、活跃的
+///   `activeSecondarySystems` 和 `lastUpdate` 时间戳。
+/// * 下次庆祝重新挂载同一对象，首次 `update()` 会让残留子系统以两次庆祝
+///   之间的**完整间隔**作为 `delta` 续跑。
+/// * `createParticles()` 会循环 `birthRate * delta` 次 — 发射上限只在循环体内
+///   检查，并不约束循环次数。泄露的爆炸系统按 100_000 粒子/秒、几小时的间隔，
+///   就是 `Canvas` 内主线程数十亿次迭代，对应报告的数秒级卡死。
+/// * 额外问题：共享 `emissionCount` 从不重置，累计发射满 1000 发火箭后烟花
+///   彻底不再渲染，直到重启应用。
+///
+/// 每视图私有系统让每次庆祝互相独立，也避免多屏场景（每屏一个 `VortexView`）
+/// 在同一帧内驱动同一模拟对象多次。
+func makeFireworksSystem() -> VortexSystem {
+    let sparkles = VortexSystem(
+        tags: ["circle"],
+        spawnOccasion: .onUpdate,
+        emissionLimit: 1,
+        lifespan: 0.5,
+        speed: 0.05,
+        angleRange: .degrees(90),
+        size: 0.05
+    )
 
-    func updateNSView(_ nsView: ConfettiEmitterNSView, context: Context) {}
+    let explosion = VortexSystem(
+        tags: ["circle"],
+        spawnOccasion: .onDeath,
+        position: [0.5, 1],
+        // Vortex 预设在这里用 100_000 仅为表达「瞬间」。由于 `createParticles()`
+        // 不论 `emissionLimit` 如何都会迭代 `birthRate * delta` 次，该数值同时是
+        // 任何长帧 delta 的乘数。每帧（`VortexView` 以 60fps 渲染）发射一个上限
+        // 的量同样瞬间，且把最坏情况约束低约三个数量级。
+        birthRate: Double(fireworksExplosionEmissionLimit * 60),
+        emissionLimit: fireworksExplosionEmissionLimit,
+        speed: 0.5,
+        speedVariation: 1,
+        angleRange: .degrees(360),
+        acceleration: [0, 1.5],
+        dampingFactor: 4,
+        colors: .randomRamp(
+            [.white, .pink, .pink],
+            [.white, .blue, .blue],
+            [.white, .green, .green],
+            [.white, .orange, .orange],
+            [.white, .cyan, .cyan]
+        ),
+        size: 0.15,
+        sizeVariation: 0.1,
+        sizeMultiplierAtDeath: 0
+    )
+
+    return VortexSystem(
+        tags: ["circle"],
+        secondarySystems: [sparkles, explosion],
+        position: [0.5, 1],
+        birthRate: 2,
+        emissionLimit: 1000,
+        speed: 1.5,
+        speedVariation: 0.75,
+        angleRange: .degrees(60),
+        dampingFactor: 2,
+        size: 0.15,
+        stretchFactor: 4
+    )
 }
 
-final class ConfettiEmitterNSView: NSView {
-    let emitter = CAEmitterLayer()
-    private static let shapeContents: [CGImage?] = [
-        makeShapeImage(size: NSSize(width: 8, height: 12), cornerRadius: 1),
-        makeShapeImage(size: NSSize(width: 10, height: 10), cornerRadius: 5),
-        makeShapeImage(size: NSSize(width: 6, height: 14), cornerRadius: 1),
-    ]
-
-    override var isFlipped: Bool { true }
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.addSublayer(emitter)
-
-        let palette: [NSColor] = [
-            .systemPink, .systemBlue, .systemGreen, .systemOrange,
-            .systemPurple, .systemTeal, .systemRed, .systemYellow,
-        ]
-        let cells: [CAEmitterCell] = palette.enumerated().map { index, color in
-            let cell = CAEmitterCell()
-            cell.birthRate = 6
-            cell.lifetime = 7.0
-            cell.lifetimeRange = 2.0
-            cell.velocity = 180
-            cell.velocityRange = 80
-            cell.yAcceleration = 120                  // 重力下落加速度
-            cell.emissionLongitude = .pi / 2          // 向下发射
-            cell.emissionRange = .pi / 4
-            cell.spin = .pi
-            cell.spinRange = 2 * .pi
-            cell.scale = 0.6
-            cell.scaleRange = 0.3
-            cell.contents = Self.shapeContents[index % Self.shapeContents.count]
-            cell.color = color.cgColor
-            return cell
-        }
-        emitter.emitterCells = cells
-        emitter.emitterShape = .line
-        emitter.emitterPosition = CGPoint(x: 0, y: -20)
-        emitter.emitterSize = CGSize(width: 1, height: 0)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func layout() {
-        super.layout()
-        let width = bounds.width
-        emitter.emitterPosition = CGPoint(x: width / 2, y: -20)
-        emitter.emitterSize = CGSize(width: max(width, 1), height: 0)
-    }
-
-    /// 纯白形状图（圆角矩形/圆形/长条），由 cell.color 染色。
-    private static func makeShapeImage(size: NSSize, cornerRadius: CGFloat) -> CGImage? {
-        let image = NSImage(size: size)
-        image.lockFocus()
-        NSColor.white.setFill()
-        NSBezierPath(
-            roundedRect: NSRect(origin: .zero, size: size),
-            xRadius: cornerRadius,
-            yRadius: cornerRadius
-        ).fill()
-        image.unlockFocus()
-        return image.cgImage(forProposedRect: nil, context: nil, hints: nil)
-    }
-}
+/// 单发火箭爆裂出的粒子数上限。
+let fireworksExplosionEmissionLimit = 500

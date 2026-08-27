@@ -1060,7 +1060,7 @@ extension Strings {
         tokenSettingsLimitsUsed: "Used",
         tokenSettingsLimitsRemaining: "Remaining",
         tokenResetToastLabel: "Toast on limit reset",
-        tokenResetConfettiLabel: "Confetti on limit reset",
+        tokenResetConfettiLabel: "Fireworks on limit reset",
         tokenResetCelebrationFormat: "%@ limit reset 🎉",
         tokenSettingsDefaultPeriod: "Default usage period",
         tokenSettingsProviderStatusFormat: "%@ · %@",

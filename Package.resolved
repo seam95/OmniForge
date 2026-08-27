@@ -1,5 +1,5 @@
 {
-  "originHash" : "985bde65abd1fe36ec7d0f5116fa5cf81243a83fc5bf0c88e429e5cf1662b307",
+  "originHash" : "268165ecafea83450c62b4b04da55368f01d96f7d3a20de170730ff205303330",
   "pins" : [
     {
       "identity" : "grdb.swift",
@@ -17,6 +17,14 @@
       "state" : {
         "revision" : "ac12762853126cf2e7ad63a6a58e1c9f58c6a0ee",
         "version" : "1.17.0"
+      }
+    },
+    {
+      "identity" : "vortex",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/zats/Vortex",
+      "state" : {
+        "revision" : "ef5392088d4aeb255c4eee83157dbdafcd31bf07"
       }
     }
   ],

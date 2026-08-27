@@ -1,41 +1,44 @@
 import XCTest
 import AppKit
+import Vortex
 @testable import OmniForge
 
 @MainActor
 final class TokenResetCelebrationControllerTests: XCTestCase {
 
-    func test_confettiEmitter_isFlipped_isTrue() {
-        let view = ConfettiEmitterNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
-        XCTAssertTrue(view.isFlipped, "必须为翻转坐标系，确保原点在左上角且 Y 轴正方向向下")
+    func test_fireworksSystem_createsIndependentInstancePerCall() {
+        // 每次庆祝必须持有私有系统：共享实例会让残留粒子按两次庆祝的完整间隔续跑，
+        // 进而触发主线程海量迭代（见 makeFireworksSystem 注释）。
+        let first = makeFireworksSystem()
+        let second = makeFireworksSystem()
+
+        XCTAssertFalse(first === second, "两次调用必须返回不同实例")
+        XCTAssertNotEqual(first.id, second.id)
     }
 
-    func test_confettiEmitter_cells_configuredWithGravityAndDownwardEmission() {
-        let view = ConfettiEmitterNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
-        guard let cells = view.emitter.emitterCells, !cells.isEmpty else {
-            XCTFail("emitterCells 不能为空")
+    func test_fireworksSystem_containsSparkleAndExplosionSubsystems() {
+        let system = makeFireworksSystem()
+
+        let occasions = Set(system.secondarySystems.map(\.spawnOccasion))
+        XCTAssertTrue(occasions.contains(.onUpdate), "缺少 sparkle 尾迹子系统（onUpdate）")
+        XCTAssertTrue(occasions.contains(.onDeath), "缺少爆炸子系统（onDeath）")
+    }
+
+    func test_fireworksSystem_explosionEmissionBoundedForLongFrameDelta() {
+        let system = makeFireworksSystem()
+
+        guard let explosion = system.secondarySystems.first(where: { $0.spawnOccasion == .onDeath }) else {
+            XCTFail("缺少爆炸子系统")
             return
         }
 
-        XCTAssertEqual(cells.count, 8, "包含 8 种调色板颜色")
-        for cell in cells {
-            XCTAssertEqual(cell.emissionLongitude, .pi / 2, accuracy: 0.001, "发射角度应为向下（+pi/2）")
-            XCTAssertGreaterThanOrEqual(cell.yAcceleration, 100, "应配置重力下落加速度")
-            XCTAssertGreaterThanOrEqual(cell.velocity, 150, "应配置充足的初速度")
-            XCTAssertGreaterThanOrEqual(cell.lifetime, 6.0, "粒子寿命需支持穿透全屏")
-            XCTAssertGreaterThan(cell.birthRate, 0, "粒子产生速率需大于 0")
-        }
-    }
-
-    func test_confettiEmitter_layout_positionsAtTopAndFullWidth() {
-        let width: CGFloat = 1440
-        let height: CGFloat = 900
-        let view = ConfettiEmitterNSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
-        view.layout()
-
-        XCTAssertEqual(view.emitter.emitterPosition.x, width / 2, accuracy: 0.1)
-        XCTAssertEqual(view.emitter.emitterPosition.y, -20, accuracy: 0.1, "发射线位于屏幕顶部上方 20pt")
-        XCTAssertEqual(view.emitter.emitterSize.width, width, accuracy: 0.1, "发射宽度覆盖全屏")
+        XCTAssertEqual(explosion.emissionLimit, fireworksExplosionEmissionLimit, "爆炸发射上限应受常量约束")
+        XCTAssertEqual(
+            explosion.birthRate,
+            Double(fireworksExplosionEmissionLimit * 60),
+            accuracy: 0.001,
+            "birthRate 必须等于 emissionLimit × 60，把长帧 delta 的迭代次数约束在每帧一个上限内"
+        )
     }
 
     func test_celebrationController_lifecycle() {
