@@ -85,9 +85,23 @@ final class QoderLimitsFetcherTests: XCTestCase {
         XCTAssertEqual(result?.stale, true)
     }
 
+    func test_rpcUnparsableResponse_fallsBackToCache() async throws {
+        // 服务在跑但响应形状漂移（无 userQuota）→ 仍走 last-good 缓存，不静默未配置。
+        try writeInfo(#"{"ipcServerPath":"/tmp/qoder.sock"}"#)
+        try writeCachePayload(cachedAt: Date().timeIntervalSince1970, usedPercent: 45)
+        rpcResults["credit/usage"] = .success(["unrelated": "shape"])
+        let result = try await fetcher.fetchLimits(force: false)
+        XCTAssertEqual(result?.windows[.credits]?.usedPercent, 45)
+        XCTAssertEqual(result?.stale, true)
+    }
+
     func test_cacheExpired_throws() async throws {
         try writeInfo(#"{"ipcServerPath":"/tmp/qoder.sock"}"#)
-        try writeCachePayload(cachedAt: Date().addingTimeInterval(-8 * 86_400).timeIntervalSince1970, usedPercent: 50)
+        try writeCachePayload(
+            cachedAt: Date().addingTimeInterval(-8 * 86_400).timeIntervalSince1970,
+            usedPercent: 50,
+            resetAt: Date().addingTimeInterval(-86_400).timeIntervalSince1970 // 已重置
+        )
         rpcResults["credit/usage"] = .failure(LimitError.network("rpc down"))
         do {
             _ = try await fetcher.fetchLimits(force: false)
@@ -97,6 +111,47 @@ final class QoderLimitsFetcherTests: XCTestCase {
         } catch {
             XCTFail("unexpected error: \(error)")
         }
+    }
+
+    func test_cacheOlderThanTTL_resetInFuture_retained() async throws {
+        // 超过 7 天但重置时间仍在未来 → 保留（服务长期不在线仍能显示本周期额度）。
+        try writeCachePayload(
+            cachedAt: Date().addingTimeInterval(-8 * 86_400).timeIntervalSince1970,
+            usedPercent: 55,
+            resetAt: Date().addingTimeInterval(86_400).timeIntervalSince1970
+        )
+        let result = try await fetcher.fetchLimits(force: false)
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.stale, true)
+        XCTAssertEqual(result?.windows[.credits]?.usedPercent, 55)
+    }
+
+    func test_defaultInfoPath_resolvesSharedCacheRoot() async throws {
+        // 默认安装布局：<QODER_HOME>/SharedClientCache/{.info.json, cache/db/local.db}；
+        // .info.json 在 SharedClientCache 根部，不可再拼一层目录。
+        let home = infoURL.deletingLastPathComponent()
+            .appendingPathComponent("QoderDefaultHome_\(UUID().uuidString)", isDirectory: true)
+        let shared = home.appendingPathComponent("SharedClientCache", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: shared.appendingPathComponent("cache/db", isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        try Data(#"{"ipcServerPath":"/tmp/qoder-default.sock"}"#.utf8)
+            .write(to: shared.appendingPathComponent(".info.json"))
+        setenv("QODER_HOME", home.path, 1)
+        defer { unsetenv("QODER_HOME") }
+
+        let defaultFetcher = QoderLimitsFetcher()
+        defaultFetcher.cacheFileURLOverride = cacheURL
+        var receivedSocket: String?
+        defaultFetcher.rpcRequest = { method, socketPath, _ in
+            receivedSocket = socketPath
+            return ["userQuota": ["used": 1, "total": 10, "remaining": 9]]
+        }
+        let result = try await defaultFetcher.fetchLimits(force: false)
+        XCTAssertEqual(receivedSocket, "/tmp/qoder-default.sock", "默认路径应命中 SharedClientCache/.info.json")
+        XCTAssertEqual(result?.configured, true)
+        XCTAssertEqual(result?.windows[.credits]?.usedPercent, 10)
     }
 
     // MARK: - 解析纯函数
@@ -116,16 +171,23 @@ final class QoderLimitsFetcherTests: XCTestCase {
         XCTAssertNil(window.resetAt, "Free 无过期哨兵 → 不显示重置时间")
     }
 
+    func test_creditWindow_epochSecondsExpiryParses() {
+        var response = creditUsage()
+        response["expiresAt"] = Date().addingTimeInterval(3_600).timeIntervalSince1970
+        let (window, _) = QoderLimitsParsing.creditWindow(from: response)!
+        XCTAssertNotNil(window.resetAt, "epoch 秒数字过期时间可解析")
+    }
+
     // MARK: - 工具
 
-    private func writeCachePayload(cachedAt: Double, usedPercent: Double) throws {
+    private func writeCachePayload(cachedAt: Double, usedPercent: Double, resetAt: Double? = nil) throws {
         let payload: [String: Any] = [
             "planLabel": "pro",
             "cachedAt": cachedAt,
             "window": [
                 "usedPercent": usedPercent,
                 "limit": 100, "used": 40, "remaining": 60,
-                "resetAt": Date().addingTimeInterval(86_400).timeIntervalSince1970,
+                "resetAt": resetAt ?? Date().addingTimeInterval(86_400).timeIntervalSince1970,
                 "unit": "credits",
             ],
         ]

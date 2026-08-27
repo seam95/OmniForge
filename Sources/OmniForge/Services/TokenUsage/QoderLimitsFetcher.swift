@@ -27,11 +27,9 @@ enum QoderLimitsParsing {
         }
         // Qoder 用 9999-12-31 作 Free 账户无过期哨兵 → 不显示重置时间。
         var resetAt: Date?
-        if let expiryRaw = response["expiresAt"] as? String {
-            let date = isoFractional.date(from: expiryRaw) ?? isoPlain.date(from: expiryRaw)
-            if let date, date < Date(timeIntervalSince1970: 4_102_444_800) { // < 2100
-                resetAt = date
-            }
+        if let expiry = UsageWindowParsing.parseResetDate(response["expiresAt"]),
+            expiry < Date(timeIntervalSince1970: 4_102_444_800) { // < 2100
+            resetAt = expiry
         }
         let window = UsageWindow(
             usedPercent: min(max(usedPercent, 0), 100),
@@ -49,14 +47,6 @@ enum QoderLimitsParsing {
     private static func number(_ value: Any?) -> Double? {
         (value as? NSNumber)?.doubleValue
     }
-
-    private static let isoFractional: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
-    private static let isoPlain = ISO8601DateFormatter()
 }
 
 // MARK: - IPC 客户端（JSON-RPC over unix socket）
@@ -159,15 +149,15 @@ enum QoderRPCClient {
 // MARK: - Fetcher
 
 /// qoder 限额：本地 IPC（`SharedClientCache/.info.json` 的 `ipcServerPath`）JSON-RPC
-/// `credit/usage` → credits 窗口；`auth/status` 补套餐名。失败 → 7 天磁盘缓存
-/// （`~/.omniforge/qoder-limits-cache.json`）。
+/// `credit/usage` → credits 窗口；`auth/status` 补套餐名。失败 → 磁盘缓存
+/// （`~/.omniforge/qoder-limits-cache.json`）：重置时间已过的窗口丢弃，无重置
+/// 时间的限 12h，重置时间仍在未来则持续可用（标 stale）。
 ///
 /// 说明（范围收敛）：activity 端点（big_model_credits 次要窗口）本期不接（R5：
 /// 私有协议漂移风险）；RPC 主路径 + 缓存兜底已覆盖「今日/周/月」限额卡。
 final class QoderLimitsFetcher: LimitsFetching {
     let provider: TokenUsageProvider = .qoder
 
-    static let cacheTTL: TimeInterval = 7 * 24 * 3600
     static let unknownResetTTL: TimeInterval = 12 * 3600
     static let cacheFileURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".omniforge/qoder-limits-cache.json")
@@ -195,7 +185,8 @@ final class QoderLimitsFetcher: LimitsFetching {
         do {
             let usage = try await rpcRequest("credit/usage", socketPath, rpcTimeout)
             guard let (window, rpcPlanLabel) = QoderLimitsParsing.creditWindow(from: usage) else {
-                return nil
+                // 响应形状漂移（无 userQuota）→ last-good 缓存兜底，无缓存才视为未配置。
+                return cachedLimits()
             }
             var planLabel = rpcPlanLabel
             // 3. auth/status 补套餐名（失败不影响主窗口）。
@@ -219,11 +210,13 @@ final class QoderLimitsFetcher: LimitsFetching {
     // MARK: - IPC 端点
 
     private func ipcSocketPath() -> String? {
-        let root = QoderUsageCollector.defaultDatabaseURL()
+        // defaultDatabaseURL = <dataRoot>/SharedClientCache/cache/db/local.db，
+        // 删三层回到 SharedClientCache；`.info.json` 位于该目录根部（不可再拼一层）。
+        let sharedCache = QoderUsageCollector.defaultDatabaseURL()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let infoURL = infoJSONURLOverride ?? root.appendingPathComponent("SharedClientCache/.info.json")
+        let infoURL = infoJSONURLOverride ?? sharedCache.appendingPathComponent(".info.json")
         guard let data = try? Data(contentsOf: infoURL),
               let info = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
@@ -294,10 +287,12 @@ final class QoderLimitsFetcher: LimitsFetching {
         }
         let now = Date()
         let age = now.timeIntervalSince1970 - payload.cachedAt
-        guard age >= 0, age < Self.cacheTTL else { return nil }
+        guard age >= 0 else { return nil }
         let resetAt = payload.window.resetAt.map { Date(timeIntervalSince1970: $0) }
+        // 已重置的窗口丢弃；无重置时间的窗口限 12h；重置时间仍在未来时不因
+        // 整体年龄丢弃（Qoder 卡在服务长期不在线时仍能显示本周期额度）。
         if let resetAt, resetAt <= now { return nil }
-        if payload.window.resetAt == nil, age > Self.unknownResetTTL { return nil }
+        if resetAt == nil, age > Self.unknownResetTTL { return nil }
         let window = UsageWindow(
             usedPercent: payload.window.usedPercent,
             resetAt: resetAt,
