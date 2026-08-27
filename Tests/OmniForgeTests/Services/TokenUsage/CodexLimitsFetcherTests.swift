@@ -84,11 +84,13 @@ final class CodexLimitsFetcherTests: XCTestCase {
         XCTAssertEqual(persistenceCalls.last?.tokens.accessToken, "refreshed-token")
     }
 
-    func test_fetchLimits_refreshRejectedMapsToReauthRequired_andSkipsWham() async {
+    func test_fetchLimits_refreshRejected_whamAlso401_throwsReauth() async {
+        // 刷新被拒不短路：先用旧 token 打 wham；live 也 401 才报需要重新登录。
         let staleToken = staleAccessToken()
         let bundle = makeBundle(accessToken: staleToken, refreshToken: "r-1", now: fixedNow)
         let refresher = FakeCodexTokenRefresher()
         refresher.results = [.failure(CodexTokenRefreshError.refreshTokenExpired)]
+        URLProtocolStub.stub = .init(statusCode: 401)
         let fetcher = makeFetcher(
             credentials: FakeCodexCredentials(bundle: bundle),
             refresher: refresher
@@ -101,7 +103,28 @@ final class CodexLimitsFetcherTests: XCTestCase {
         } catch {
             XCTFail("unexpected \(error)")
         }
-        XCTAssertEqual(URLProtocolStub.recordedRequests.count, 0, "刷新失败短路：不再打 wham")
+        XCTAssertEqual(URLProtocolStub.recordedRequests.count, 1, "刷新被拒仍先打一次 wham")
+        XCTAssertEqual(
+            URLProtocolStub.recordedRequests.first?.value(forHTTPHeaderField: "Authorization"),
+            "Bearer \(staleToken)"
+        )
+    }
+
+    func test_fetchLimits_refreshRejected_liveSucceeds_masksReauth() async throws {
+        // 旧 access token 仍在有效期内：刷新被拒但 live 成功 → 正常快照，不误报重登。
+        let staleToken = staleAccessToken()
+        let bundle = makeBundle(accessToken: staleToken, refreshToken: "r-1", now: fixedNow)
+        let refresher = FakeCodexTokenRefresher()
+        refresher.results = [.failure(CodexTokenRefreshError.refreshTokenExpired)]
+        let fetcher = makeFetcher(
+            credentials: FakeCodexCredentials(bundle: bundle),
+            refresher: refresher
+        )
+        stubWhamResponses()
+        let limits = try await fetcher.fetchLimits()
+        XCTAssertEqual(limits?.configured, true)
+        XCTAssertNil(limits?.issue)
+        XCTAssertEqual(limits?.windows[.session]?.usedPercent ?? -1, 82, accuracy: 0.1)
     }
 
     func test_fetchLimits_refreshNetworkFailure_fallsThroughToExistingToken() async throws {
@@ -129,17 +152,22 @@ final class CodexLimitsFetcherTests: XCTestCase {
         XCTAssertEqual(request.value(forHTTPHeaderField: "ChatGPT-Account-Id"), "acct-77", "免费/多账号需显式 account id（对齐 CodexBar）")
     }
 
-    func test_fetchLimits_401ShortCircuitsToReauth() async {
+    func test_fetchLimits_wham401_neutralEmptyState() async throws {
+        // wham 401 = 该鉴权状态下无 usage 数据（如套餐不含权益），配置态空窗口。
         let bundle = makeBundle(accessToken: "fresh-token", refreshToken: nil, now: fixedNow)
         URLProtocolStub.stub = .init(statusCode: 401)
-        do {
-            _ = try await makeFetcher(credentials: FakeCodexCredentials(bundle: bundle)).fetchLimits()
-            XCTFail("expected reauthRequired")
-        } catch let error as LimitError {
-            XCTAssertEqual(error, .reauthRequired)
-        } catch {
-            XCTFail("unexpected \(error)")
-        }
+        let limits = try await makeFetcher(credentials: FakeCodexCredentials(bundle: bundle)).fetchLimits()
+        XCTAssertEqual(limits?.configured, true, "401 是中性空态，不是登录失效")
+        XCTAssertTrue(limits?.windows.isEmpty ?? false)
+        XCTAssertNil(limits?.issue)
+    }
+
+    func test_fetchLimits_wham404_neutralEmptyState() async throws {
+        let bundle = makeBundle(accessToken: "fresh-token", refreshToken: nil, now: fixedNow)
+        URLProtocolStub.stub = .init(statusCode: 404)
+        let limits = try await makeFetcher(credentials: FakeCodexCredentials(bundle: bundle)).fetchLimits()
+        XCTAssertEqual(limits?.configured, true, "404 同样视为无数据")
+        XCTAssertTrue(limits?.windows.isEmpty ?? false)
     }
 
     func test_fetchLimits_429CarriesRetryAt() async {
@@ -240,6 +268,17 @@ final class CodexLimitsFetcherTests: XCTestCase {
         ]
         let credits = CodexWhamResponseDecoder.decode(object)[.credits]
         XCTAssertEqual(credits?.usedPercent, 75, "limit/used 反推百分比")
+    }
+
+    func test_whamDecoder_creditsWindow_zeroPercentWithUsage_correctedByRatio() {
+        // 上游会报假 0%（used_percent=0 但 used>0）→ 用比值修正。
+        let object: [String: Any] = [
+            "spend_control": ["individual_limit": [
+                "limit": 500, "used": 125, "used_percent": 0,
+            ]],
+        ]
+        let credits = CodexWhamResponseDecoder.decode(object)[.credits]
+        XCTAssertEqual(credits?.usedPercent ?? -1, 25, accuracy: 0.1)
     }
 
     func test_whamDecoder_resetBank_parsesCountsAndSortedEntries() throws {

@@ -168,11 +168,18 @@ enum CodexWhamResponseDecoder {
     }
 
     /// 额度型窗口：limit/used/remaining/used_percent/reset_at → UsageWindow（unit 固定 credits）。
+    /// `used_percent` 报 0 但有实际用量时用 used/limit 比值修正（上游会报假 0%）。
     private static func creditWindow(_ raw: [String: Any]) -> UsageWindow? {
         let hasFields = ["limit", "used", "remaining", "used_percent", "reset_at"]
             .contains { numeric(raw[$0]) != nil }
         guard hasFields else { return nil }
-        let window = UsageWindowParsing.makeWindow(from: raw)
+        var mapped = raw
+        if let reported = numeric(raw["used_percent"]), reported == 0,
+           let used = numeric(raw["used"]), used > 0,
+           let limit = numeric(raw["limit"]), limit > 0 {
+            mapped["used_percent"] = used / limit * 100
+        }
+        let window = UsageWindowParsing.makeWindow(from: mapped)
         return UsageWindow(
             usedPercent: window.usedPercent,
             resetAt: window.resetAt,
@@ -215,12 +222,13 @@ enum CodexWhamResponseDecoder {
 
 // MARK: - 取数器
 
-/// Codex 限额取数器：`auth.json` → 临期自刷新 → `wham/usage` + 兄弟端点（参考 08）。
+/// Codex 限额取数器：`auth.json` → 临期自刷新 → `wham/usage` + 兄弟端点。
 ///
 /// 请求序：① wham/usage（主计数）→ ② wham/rate-limit-reset-credits（补 reset，
-/// 短超时 + 失败降级）；401/403/429 语义与 Claude 一致（复用 ProviderAPIClient）。
-/// 刷新失败细分：401 类（expired/reused/invalidated）→ `reauthRequired`（prompt codex login），
-/// 网络类失败回退旧 token 继续（best-effort）。
+/// 短超时 + 失败降级）。wham 401/403/404 视为「该鉴权状态下无 usage 数据」的
+/// 中性空态（配置态空窗口），不是登录失效；刷新 401 类失败不短路——回退旧
+/// token 继续，live usage 成功可掩盖，仅当 live 也拿不到数据时才报
+/// `reauthRequired`（prompt codex login）。429 语义与 Claude 一致。
 final class CodexLimitsFetcher: LimitsFetching {
     let provider: TokenUsageProvider = .codex
 
@@ -257,10 +265,48 @@ final class CodexLimitsFetcher: LimitsFetching {
         guard let bundle = try? credentials.readBundle() else {
             return nil
         }
-        let current = try await ensureFresh(bundle)
+        // 刷新失败不短路：401 类失败回退旧 token（live 成功可掩盖），仅记录待报。
+        let (current, refreshRejected) = try await ensureFresh(bundle)
         let headers = authHeaders(for: current)
 
-        let object = try await client.getJSON(url: Self.usageEndpoint, headers: headers)
+        let planLabel = CodexPlanExtractor.displayablePlan(
+            accessToken: current.accessToken,
+            idToken: current.idToken
+        )
+
+        // wham 401/403/404 = 该鉴权状态下无 usage 数据（如套餐不含 usage 权益）
+        // → 中性空态（配置态空窗口），不是登录失效。
+        let object: [String: Any]?
+        do {
+            object = try await client.getJSON(url: Self.usageEndpoint, headers: headers)
+        } catch let error as LimitError {
+            switch error {
+            case .reauthRequired:
+                object = nil
+            case .network(let message) where message == "HTTP 404":
+                object = nil
+            default:
+                throw error
+            }
+        }
+        guard let object else {
+            // live 也拿不到数据且刷新曾被拒 → 才报需要重新登录。
+            if refreshRejected { throw LimitError.reauthRequired }
+            return ProviderUsageLimits(
+                provider: .codex,
+                configured: true,
+                subscriptionStatus: planLabel != nil ? .active : .unknown,
+                planLabel: planLabel,
+                windows: [:],
+                labeledWindows: nil,
+                resetBank: nil,
+                confidence: .official,
+                capturedAt: now(),
+                stale: false,
+                issue: nil
+            )
+        }
+
         var windows = CodexWhamResponseDecoder.decode(object)
         let sparkLabeled = CodexWhamResponseDecoder.decodeSparkLabeledWindows(object)
 
@@ -289,10 +335,6 @@ final class CodexLimitsFetcher: LimitsFetching {
             windows[.credits] = enriched
         }
 
-        let planLabel = CodexPlanExtractor.displayablePlan(
-            accessToken: current.accessToken,
-            idToken: current.idToken
-        )
         return ProviderUsageLimits(
             provider: .codex,
             configured: true,
@@ -310,30 +352,31 @@ final class CodexLimitsFetcher: LimitsFetching {
 
     // MARK: 内部
 
-    /// 「临期才刷」：refresh token 缺失或非 401 刷新失败 → 继续用现有 token（best-effort）；
-    /// 401 类刷新失败 → `reauthRequired` 短路（提示 codex login）。
-    private func ensureFresh(_ bundle: CodexAuthBundle) async throws -> CodexAuthBundle {
+    /// 「临期才刷」：刷新失败一律回退旧 token 继续（best-effort）；401 类失败
+    /// （expired/reused/invalidated/rejected）额外标记待报——仅当 live usage 也
+    /// 拿不到数据时才升级为 `reauthRequired`（prompt codex login）。
+    private func ensureFresh(_ bundle: CodexAuthBundle) async throws -> (CodexAuthBundle, Bool) {
         guard CodexTokenFreshness.isStale(
             accessToken: bundle.accessToken,
             lastRefresh: bundle.lastRefresh,
             now: now()
         ) else {
-            return bundle
+            return (bundle, false)
         }
         let refreshToken = bundle.refreshToken ?? ""
-        guard !refreshToken.isEmpty else { return bundle }
+        guard !refreshToken.isEmpty else { return (bundle, false) }
         do {
             let tokens = try await refresher.refresh(refreshToken: refreshToken)
-            return try persistence(bundle, tokens, now())
+            return (try persistence(bundle, tokens, now()), false)
         } catch let error as CodexTokenRefreshError {
             switch error {
             case .refreshTokenExpired, .refreshTokenReused, .refreshTokenInvalidated, .refreshRejected:
-                throw LimitError.reauthRequired
+                return (bundle, true)
             case .noRefreshToken, .httpError, .invalidResponse, .network:
-                return bundle // 网络/副作用失败：回退旧 token 继续
+                return (bundle, false)
             }
         } catch {
-            return bundle
+            return (bundle, false)
         }
     }
 
