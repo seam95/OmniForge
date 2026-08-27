@@ -147,14 +147,58 @@ final class KimiLimitsFetcherTests: XCTestCase {
         XCTAssertEqual(URLProtocolStub.recordedRequests[0].value(forHTTPHeaderField: "Authorization"), "Bearer stale")
     }
 
-    func test_fetchLimits_401ShortCircuitsToReauth() async {
-        let bundle = makeBundle(accessToken: "fresh", expiresAt: fixedNow.addingTimeInterval(3600))
+    func test_fetchLimits_401WithoutRefreshToken_throwsReauth() async {
+        let bundle = makeBundle(accessToken: "fresh", expiresAt: fixedNow.addingTimeInterval(3600), refreshToken: nil)
         URLProtocolStub.stub = .init(statusCode: 401)
         do {
             _ = try await makeFetcher(credentials: FakeKimiCredentials(bundle: bundle)).fetchLimits()
             XCTFail("expected reauthRequired")
         } catch let error as LimitError {
             XCTAssertEqual(error, .reauthRequired)
+        } catch {
+            XCTFail("unexpected \(error)")
+        }
+    }
+
+    func test_fetchLimits_401RefreshesAndRetriesOnce() async throws {
+        // expires_at 未到但 token 被服务端提前吊销：401 → 强制刷新 → 重试成功。
+        let bundle = makeBundle(accessToken: "fresh", expiresAt: fixedNow.addingTimeInterval(3600))
+        let refresher = FakeKimiTokenRefresher()
+        URLProtocolStub.handler = { request in
+            let auth = request.value(forHTTPHeaderField: "Authorization") ?? ""
+            if auth == "Bearer fresh" {
+                return .init(statusCode: 401, data: Data())
+            }
+            return .init(statusCode: 200, data: try! JSONSerialization.data(withJSONObject: [
+                "usage": ["limit": 4_000_000, "used": 1_000_000, "resetTime": "2026-08-22T10:00:00Z"],
+            ]))
+        }
+        let limits = try await makeFetcher(
+            credentials: FakeKimiCredentials(bundle: bundle),
+            refresher: refresher
+        ).fetchLimits()
+
+        XCTAssertEqual(refresher.callCount, 1, "401 触发一次强制刷新")
+        XCTAssertEqual(persistenceCalls.count, 1, "刷新结果写回")
+        XCTAssertEqual(URLProtocolStub.recordedRequests.count, 2, "usages 请求恰好两次")
+        XCTAssertEqual(
+            URLProtocolStub.recordedRequests[1].value(forHTTPHeaderField: "Authorization"),
+            "Bearer refreshed-token",
+            "重试使用刷新后的 token"
+        )
+        XCTAssertEqual(limits?.windows[.weekly]?.usedPercent, 25, "重试成功产出窗口")
+    }
+
+    func test_fetchLimits_401RefreshFails_throwsReauth() async {
+        let bundle = makeBundle(accessToken: "fresh", expiresAt: fixedNow.addingTimeInterval(3600))
+        let refresher = FakeKimiTokenRefresher()
+        refresher.results = [.failure(KimiTokenRefreshError.refreshRejected)]
+        URLProtocolStub.stub = .init(statusCode: 401)
+        do {
+            _ = try await makeFetcher(credentials: FakeKimiCredentials(bundle: bundle), refresher: refresher).fetchLimits()
+            XCTFail("expected reauthRequired")
+        } catch let error as LimitError {
+            XCTAssertEqual(error, .reauthRequired, "401 + 刷新被拒 → 需重新登录")
         } catch {
             XCTFail("unexpected \(error)")
         }
@@ -206,11 +250,11 @@ final class KimiLimitsFetcherTests: XCTestCase {
         )
     }
 
-    private func makeBundle(accessToken: String, expiresAt: Date) -> KimiAuthBundle {
+    private func makeBundle(accessToken: String, expiresAt: Date, refreshToken: String? = "r-1") -> KimiAuthBundle {
         KimiAuthBundle(
             credsURL: URL(fileURLWithPath: "/tmp/fake/credentials/kimi-code.json"),
             accessToken: accessToken,
-            refreshToken: "r-1",
+            refreshToken: refreshToken,
             expiresAt: expiresAt,
             scope: "kimi-code",
             tokenType: "Bearer",

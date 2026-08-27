@@ -65,10 +65,11 @@ enum KimiUsageResponseDecoder {
 
 // MARK: - 取数器
 
-/// Kimi 限额取数器：kimi-code.json → 临期自刷新 → `GET coding/v1/usages`（参考 08/fetchKimiLimits）。
+/// Kimi 限额取数器：kimi-code.json → 临期自刷新 → `GET coding/v1/usages`。
 ///
 /// 刷新语义：`expires_at` 30 秒容差；401/403 → `reauthRequired`；
-/// 网络/HTTP 类刷新失败回退旧 token 继续（best-effort）。
+/// 网络/HTTP 类刷新失败回退旧 token 继续（best-effort）。usages 请求 401 时
+/// 强制刷新一次并重试（服务端提前吊销的误报防线），仍失败才短路 reauth。
 final class KimiLimitsFetcher: LimitsFetching {
     let provider: TokenUsageProvider = .kimi
 
@@ -101,13 +102,32 @@ final class KimiLimitsFetcher: LimitsFetching {
             return nil
         }
         let current = try await ensureFresh(bundle)
+        do {
+            return try await fetchUsage(with: current)
+        } catch LimitError.reauthRequired {
+            // 服务端提前吊销（时钟偏差/吊销单发 token）：有 refresh 能力时强制
+            // 刷新一次并重试；仍失败才短路 reauth（防误报「需重新登录」）。
+            guard let refreshToken = current.refreshToken, !refreshToken.isEmpty else {
+                throw LimitError.reauthRequired
+            }
+            let tokens: KimiRefreshedTokens
+            do {
+                tokens = try await refresher.refresh(refreshToken: refreshToken)
+            } catch {
+                throw LimitError.reauthRequired
+            }
+            let renewed = try persistence(current, tokens, now())
+            return try await fetchUsage(with: renewed)
+        }
+    }
 
+    private func fetchUsage(with bundle: KimiAuthBundle) async throws -> ProviderUsageLimits {
         let object: [String: Any]
         do {
             object = try await client.getJSON(
                 url: Self.usageEndpoint,
                 headers: [
-                    "Authorization": "Bearer \(current.accessToken)",
+                    "Authorization": "Bearer \(bundle.accessToken)",
                     "Accept": "application/json",
                 ]
             )
