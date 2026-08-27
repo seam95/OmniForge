@@ -1,7 +1,6 @@
 import AppKit
 import Foundation
 import os.log
-import Vision
 
 /// Captures successive frames of a screen region and stitches them into a
 /// long screenshot using Vision translational registration.
@@ -25,6 +24,8 @@ final class ScrollCapturer {
     enum FrameOutcome: Equatable {
         /// A new frame with fresh content was stitched in.
         case appended
+        /// Reverse scrolling trimmed rows off the stitched image.
+        case trimmed
         /// The frame was a duplicate, too similar, or failed — no progress.
         case noNewContent
         /// The frame budget is exhausted; capturing should stop.
@@ -33,6 +34,7 @@ final class ScrollCapturer {
         var diagnosticName: String {
             switch self {
             case .appended: return "appended"
+            case .trimmed: return "trimmed"
             case .noNewContent: return "no-new-content"
             case .atFrameLimit: return "at-frame-limit"
             }
@@ -59,9 +61,17 @@ final class ScrollCapturer {
     private let maxFrames: Int
     private let diagnosticID: String
     private let settledCaptureTimeout: TimeInterval = 1.5
+    private let offsetEstimator: ScrollOffsetEstimating
 
     private var frames: [CapturedFrame] = []
-    private var overlaps: [Int] = []
+    /// Stitch history shared by the live preview and the final stitch replay:
+    /// appended frames (with overlap) plus reverse-scroll bottom trims.
+    private var steps: [ScrollStitchMath.StitchStep] = []
+    /// Registration baseline. Updated on append and on executed reverse trims;
+    /// the first reverse signal keeps the old baseline so the next reverse
+    /// frame reports the cumulative scroll-back.
+    private var referenceFrame: CapturedFrame?
+    private var hasPendingReverseOffset = false
     private var captureAttemptCount = 0
     private var consecutiveNoNewContentCount = 0
 
@@ -86,6 +96,7 @@ final class ScrollCapturer {
     ///   - maxFrames: hard frame budget (default 100).
     ///   - captureClient: used when `capture` is not injected.
     ///   - capture: injectable sync capture bridge for tests / custom paths.
+    ///   - offsetEstimator: frame-to-frame registration (band consensus by default).
     init(
         rect: CGRect,
         displayID: CGDirectDisplayID,
@@ -94,6 +105,7 @@ final class ScrollCapturer {
         maxFrames: Int = ScrollStitchMath.defaultMaxFrames,
         captureClient: ScreenCaptureClient? = nil,
         capture: RegionCapture? = nil,
+        offsetEstimator: ScrollOffsetEstimating? = nil,
         diagnosticID: String? = nil
     ) {
         self.captureRect = rect
@@ -102,6 +114,7 @@ final class ScrollCapturer {
         self.excludedWindowIDs = excludingWindowIDs
         self.maxFrames = max(1, maxFrames)
         self.diagnosticID = diagnosticID ?? String(UUID().uuidString.prefix(8))
+        self.offsetEstimator = offsetEstimator ?? VisionBandOffsetEstimator()
 
         if let capture {
             self.capture = capture
@@ -147,6 +160,7 @@ final class ScrollCapturer {
         {
             let firstFrame = CapturedFrame(image: image, bitmap: bitmap)
             frames.append(firstFrame)
+            referenceFrame = firstFrame
             log(
                 "init-first-frame",
                 metadata: [
@@ -168,6 +182,7 @@ final class ScrollCapturer {
         maxFrames: Int = ScrollStitchMath.defaultMaxFrames,
         captureClient: ScreenCaptureClient? = nil,
         capture: RegionCapture? = nil,
+        offsetEstimator: ScrollOffsetEstimating? = nil,
         diagnosticID: String? = nil
     ) {
         let displayID = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) ?? CGMainDisplayID()
@@ -179,6 +194,7 @@ final class ScrollCapturer {
             maxFrames: maxFrames,
             captureClient: captureClient,
             capture: capture,
+            offsetEstimator: offsetEstimator,
             diagnosticID: diagnosticID
         )
     }
@@ -387,8 +403,10 @@ final class ScrollCapturer {
 
         let candidateFrame = CapturedFrame(image: image, bitmap: bitmap)
 
-        if let previousFrame = frames.last,
-           imagesAreNearlyIdentical(previousFrame.bitmap, candidateFrame.bitmap) {
+        // Nearly-identical check runs against the registration baseline: a
+        // settled page keeps producing frames that match the last reference.
+        if let baseline = referenceFrame ?? frames.last,
+           imagesAreNearlyIdentical(baseline.bitmap, candidateFrame.bitmap) {
             logNoNewContent(
                 reason: "nearly-identical",
                 attempt: attempt,
@@ -397,8 +415,9 @@ final class ScrollCapturer {
             return .noNewContent
         }
 
-        guard let previousFrame = frames.last else {
+        guard let reference = referenceFrame ?? frames.last else {
             frames.append(candidateFrame)
+            referenceFrame = candidateFrame
             initPreview(from: candidateFrame)
             consecutiveNoNewContentCount = 0
             log(
@@ -420,42 +439,127 @@ final class ScrollCapturer {
             expectedShiftPixels = nil
         }
 
-        let overlap = findOverlap(
-            previous: previousFrame.bitmap,
+        let frameHeight = candidateFrame.bitmap.height
+        let minimumNewRows = ScrollStitchMath.minimumNewRows(height: frameHeight)
+
+        switch estimateShift(
+            previous: reference.bitmap,
             current: candidateFrame.bitmap,
             expectedNewContentPixels: expectedShiftPixels
-        )
+        ) {
+        case let .forward(newContentPx):
+            let overlap = ScrollStitchMath.clampOverlap(
+                frameHeight - newContentPx,
+                height: frameHeight
+            )
+            let newRows = ScrollStitchMath.newRows(height: frameHeight, overlap: overlap)
+            guard newRows >= minimumNewRows else {
+                logNoNewContent(
+                    reason: "new-rows-below-threshold",
+                    attempt: attempt,
+                    metadata: [
+                        "overlap": overlap,
+                        "newRows": newRows,
+                        "minimumNewRows": minimumNewRows,
+                    ]
+                )
+                return .noNewContent
+            }
 
-        let minimumNewRows = ScrollStitchMath.minimumNewRows(height: candidateFrame.bitmap.height)
-        let newRows = ScrollStitchMath.newRows(height: candidateFrame.bitmap.height, overlap: overlap)
-        guard newRows >= minimumNewRows else {
-            logNoNewContent(
-                reason: "new-rows-below-threshold",
-                attempt: attempt,
+            hasPendingReverseOffset = false
+            frames.append(candidateFrame)
+            steps.append(.append(overlap: overlap))
+            appendToPreview(candidateFrame.bitmap, overlapPixels: overlap)
+            referenceFrame = candidateFrame
+            consecutiveNoNewContentCount = 0
+            log(
+                "capture-frame-appended",
                 metadata: [
+                    "attempt": attempt,
                     "overlap": overlap,
                     "newRows": newRows,
-                    "minimumNewRows": minimumNewRows,
+                    "bitmap": Self.diagnosticBitmap(bitmap),
+                    "previewHeightPixels": previewHeightPixels,
                 ]
+            )
+            return .appended
+
+        case .none:
+            hasPendingReverseOffset = false
+            logNoNewContent(
+                reason: "no-measurable-shift",
+                attempt: attempt
+            )
+            return .noNewContent
+
+        case let .reverse(rows):
+            return handleReverseShift(
+                candidateFrame,
+                rows: rows,
+                minimumRows: minimumNewRows,
+                attempt: attempt
+            )
+        }
+    }
+
+    /// Reverse-scroll handling. The first reverse signal only arms the pending
+    /// flag (keeping the old baseline so the next reverse frame reports the
+    /// cumulative scroll-back); the second executes the trim.
+    private func handleReverseShift(
+        _ candidateFrame: CapturedFrame,
+        rows: Int,
+        minimumRows: Int,
+        attempt: Int
+    ) -> FrameOutcome {
+        guard rows >= minimumRows else {
+            hasPendingReverseOffset = false
+            logNoNewContent(
+                reason: "reverse-below-threshold",
+                attempt: attempt,
+                metadata: ["rows": rows, "minimumRows": minimumRows]
             )
             return .noNewContent
         }
 
-        frames.append(candidateFrame)
-        overlaps.append(overlap)
-        appendToPreview(candidateFrame.bitmap, overlapPixels: overlap)
+        guard hasPendingReverseOffset else {
+            hasPendingReverseOffset = true
+            logNoNewContent(
+                reason: "reverse-pending",
+                attempt: attempt,
+                metadata: ["rows": rows]
+            )
+            return .noNewContent
+        }
+
+        hasPendingReverseOffset = false
+        let trimRows = ScrollStitchMath.clampedTrimRows(
+            rows,
+            currentHeightPixels: previewHeightPixels,
+            frameHeight: candidateFrame.bitmap.height
+        )
+        referenceFrame = candidateFrame
+        guard trimRows > 0 else {
+            logNoNewContent(
+                reason: "reverse-trim-clamped-to-zero",
+                attempt: attempt,
+                metadata: ["rows": rows]
+            )
+            return .noNewContent
+        }
+
+        steps.append(.trimBottom(rows: trimRows))
+        trimPreviewBottom(trimRows)
         consecutiveNoNewContentCount = 0
         log(
-            "capture-frame-appended",
+            "capture-frame-trimmed",
             metadata: [
                 "attempt": attempt,
-                "overlap": overlap,
-                "newRows": newRows,
-                "bitmap": Self.diagnosticBitmap(bitmap),
+                "requestedRows": rows,
+                "trimRows": trimRows,
                 "previewHeightPixels": previewHeightPixels,
             ]
         )
-        return .appended
+        return .trimmed
     }
 
     // MARK: - Incremental Preview
@@ -557,6 +661,18 @@ final class ScrollCapturer {
         emitPreviewImage()
     }
 
+    /// Reverse-scroll trim on the live preview. Rows are laid out top-down and
+    /// only the used height shrinks — no pixel copying is needed.
+    private func trimPreviewBottom(_ rows: Int) {
+        guard previewBitmap != nil, rows > 0 else { return }
+        previewHeightPixels -= rows
+        log(
+            "preview-trim",
+            metadata: ["rows": rows, "previewHeightPixels": previewHeightPixels]
+        )
+        emitPreviewImage()
+    }
+
     private func emitPreviewImage() {
         guard let previewBitmap, previewHeightPixels > 0 else {
             log("preview-emit-skipped")
@@ -601,7 +717,7 @@ final class ScrollCapturer {
 
         let totalHeightPixels = ScrollStitchMath.totalHeightPixels(
             frameHeight: bitmapHeight,
-            overlaps: overlaps
+            steps: steps
         )
         let totalHeightPoints = CGFloat(totalHeightPixels) / scale
 
@@ -621,21 +737,32 @@ final class ScrollCapturer {
             ]
         )
 
+        // Replay the step history: appends copy their non-overlapping rows
+        // forward, trims rewind the destination so later appends overwrite
+        // the tail the user scrolled back past.
         var destinationRow = 0
+        var appendIndex = 0
 
-        for index in frames.indices {
-            let sourceStartRow = index == 0 ? 0 : overlaps[index - 1]
-            let rowsToCopy = bitmapHeight - sourceStartRow
+        for step in steps {
+            switch step {
+            case let .append(overlap):
+                let sourceStartRow = appendIndex == 0 ? 0 : overlap
+                let rowsToCopy = bitmapHeight - sourceStartRow
 
-            copyRows(
-                from: frames[index].bitmap,
-                sourceStartRow: sourceStartRow,
-                rowCount: rowsToCopy,
-                to: stitchedBitmap,
-                destinationStartRow: destinationRow
-            )
+                copyRows(
+                    from: frames[appendIndex].bitmap,
+                    sourceStartRow: sourceStartRow,
+                    rowCount: rowsToCopy,
+                    to: stitchedBitmap,
+                    destinationStartRow: destinationRow
+                )
 
-            destinationRow += rowsToCopy
+                destinationRow += rowsToCopy
+                appendIndex += 1
+
+            case let .trimBottom(rows):
+                destinationRow -= rows
+            }
         }
 
         let image = stitchedBitmap.makeImage(
@@ -652,17 +779,29 @@ final class ScrollCapturer {
         return image
     }
 
-    // MARK: - Overlap Detection
+    // MARK: - Shift Estimation
 
-    private func findOverlap(
+    /// Frame-to-frame shift classification consumed by the capture loop.
+    private enum FrameShift {
+        /// Fresh content revealed at the bottom; `newContentPx` > 0.
+        case forward(newContentPx: Int)
+        /// Registration failed or produced no measurable offset.
+        case none
+        /// Content scrolled back up; `rows` > 0 rows should be trimmed.
+        case reverse(rows: Int)
+    }
+
+    /// Registers the candidate frame against the reference frame after
+    /// cropping scrollbar / sticky-header regions, classifying the shift.
+    private func estimateShift(
         previous: BitmapData,
         current: BitmapData,
         expectedNewContentPixels: Int?
-    ) -> Int {
+    ) -> FrameShift {
         let height = min(previous.height, current.height)
         guard height > 0 else {
             log("overlap-empty")
-            return 0
+            return .none
         }
 
         if !scrollbarDetected {
@@ -672,7 +811,7 @@ final class ScrollCapturer {
         guard let previousCG = previous.makeCGImage(pixelHeight: previous.height),
               let currentCG = current.makeCGImage(pixelHeight: current.height) else {
             log("overlap-cgimage-failed")
-            return height
+            return .none
         }
 
         let commonWidth = min(currentCG.width, previousCG.width)
@@ -694,9 +833,6 @@ final class ScrollCapturer {
             visionCurrent = currentCG
         }
 
-        let request = VNTranslationalImageRegistrationRequest(targetedCGImage: visionPrevious)
-        let handler = VNImageRequestHandler(cgImage: visionCurrent, options: [:])
-
         var visionMetadata: [String: Any] = [
             "commonWidth": commonWidth,
             "commonHeight": commonHeight,
@@ -712,39 +848,36 @@ final class ScrollCapturer {
         }
         log("vision-registration-begin", metadata: visionMetadata)
 
-        do {
-            try handler.perform([request])
-        } catch {
-            var metadata = visionMetadata
-            metadata["error"] = error.localizedDescription
-            log("vision-registration-error", metadata: metadata)
-            return height
-        }
-
-        guard let observation = request.results?.first as? VNImageTranslationAlignmentObservation else {
+        guard let estimate = offsetEstimator.estimate(current: visionCurrent, previous: visionPrevious) else {
             log("vision-registration-no-result", metadata: visionMetadata)
-            return height
+            return .none
         }
 
-        let newContentPx = Int(observation.alignmentTransform.ty.rounded())
-        visionMetadata["newContentPx"] = newContentPx
+        let translationY = estimate.translationY
+        visionMetadata["newContentPx"] = translationY
+        visionMetadata["source"] = estimate.source.diagnosticName
 
-        if newContentPx > 5 && !stickyHeaderDetectionDone {
+        if translationY > 5 && !stickyHeaderDetectionDone {
             detectStickyHeader(current: current, previous: previous)
             visionMetadata["stickyHeaderAfterDetection"] = stickyHeaderPx
             visionMetadata["stickyHeaderDetectionDone"] = stickyHeaderDetectionDone
         }
 
-        guard newContentPx > 0 else {
-            log("vision-registration-no-positive-shift", metadata: visionMetadata)
-            return height
+        if translationY > 0 {
+            visionMetadata["overlap"] = ScrollStitchMath.clampOverlap(
+                height - translationY,
+                height: height
+            )
         }
-
-        let overlap = height - newContentPx
-        let clamped = ScrollStitchMath.clampOverlap(overlap, height: height)
-        visionMetadata["overlap"] = clamped
         log("vision-registration-end", metadata: visionMetadata)
-        return clamped
+
+        if translationY > 0 {
+            return .forward(newContentPx: translationY)
+        }
+        if translationY < 0 {
+            return .reverse(rows: -translationY)
+        }
+        return .none
     }
 
     // MARK: - Sticky element detection
@@ -936,7 +1069,7 @@ final class ScrollCapturer {
         var fields = metadata
         fields["session"] = diagnosticID
         fields["frames"] = frames.count
-        fields["overlaps"] = overlaps.count
+        fields["steps"] = steps.count
         fields["attempts"] = captureAttemptCount
         fields["previewHeightPixels"] = previewHeightPixels
         let summary = fields

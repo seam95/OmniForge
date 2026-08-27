@@ -23,10 +23,40 @@ final class ScrollCaptureCoreTests: XCTestCase {
         XCTAssertFalse(ScrollStitchMath.hasEnoughNewContent(height: 200, overlap: 195))
     }
 
-    func test_totalHeightPixels_accumulatesNonOverlappingRows() {
+    func test_totalHeightPixels_replaysAppendSteps() {
         // 3 frames of 100px with overlaps [80, 70] → 100 + 20 + 30 = 150
-        let total = ScrollStitchMath.totalHeightPixels(frameHeight: 100, overlaps: [80, 70])
-        XCTAssertEqual(total, 150)
+        let steps: [ScrollStitchMath.StitchStep] = [
+            .append(overlap: 80),
+            .append(overlap: 70),
+        ]
+        XCTAssertEqual(ScrollStitchMath.totalHeightPixels(frameHeight: 100, steps: steps), 150)
+    }
+
+    func test_totalHeightPixels_trimBacktracksButFloorsAtFrameHeight() {
+        // 100 + 20 + 30 = 150, trim 40 → 110
+        let steps: [ScrollStitchMath.StitchStep] = [
+            .append(overlap: 80),
+            .append(overlap: 70),
+            .trimBottom(rows: 40),
+        ]
+        XCTAssertEqual(ScrollStitchMath.totalHeightPixels(frameHeight: 100, steps: steps), 110)
+
+        // Over-trim never shrinks below a single frame height.
+        let overTrim: [ScrollStitchMath.StitchStep] = [
+            .append(overlap: 80),
+            .trimBottom(rows: 500),
+        ]
+        XCTAssertEqual(ScrollStitchMath.totalHeightPixels(frameHeight: 100, steps: overTrim), 100)
+    }
+
+    func test_clampedTrimRows_limitsToKeepOneFrameHeight() {
+        // Stitched 70px of 40px frames → only 30px removable.
+        XCTAssertEqual(ScrollStitchMath.clampedTrimRows(60, currentHeightPixels: 70, frameHeight: 40), 30)
+        // Nothing beyond a single frame height may be removed.
+        XCTAssertEqual(ScrollStitchMath.clampedTrimRows(10, currentHeightPixels: 40, frameHeight: 40), 0)
+        // Non-positive inputs never trim.
+        XCTAssertEqual(ScrollStitchMath.clampedTrimRows(0, currentHeightPixels: 100, frameHeight: 40), 0)
+        XCTAssertEqual(ScrollStitchMath.clampedTrimRows(-5, currentHeightPixels: 100, frameHeight: 40), 0)
     }
 
     func test_isAtFrameLimit() {
@@ -84,6 +114,64 @@ final class ScrollCaptureCoreTests: XCTestCase {
 
         let outcome = capturer.captureSynchronously(expectedShiftPoints: 10)
         XCTAssertEqual(outcome, .noNewContent)
+    }
+
+    func test_scrollCapturer_reverseScrollTrimsStitchedResult() {
+        // Frame plan: A(red) base → B(blue) +30 → C(green) -30 arms pending →
+        // D(yellow) -60 cumulative trims. 40px frames, minimum rows 8.
+        final class MockOffsetEstimator: ScrollOffsetEstimating {
+            let translations = [30, -30, -60]
+            private var call = 0
+            func estimate(current: CGImage, previous: CGImage) -> ScrollOffsetEstimate? {
+                let index = min(call, translations.count - 1)
+                defer { call += 1 }
+                return ScrollOffsetEstimate(translationY: translations[index], source: .bandConsensus)
+            }
+        }
+
+        let red = Self.makeSolidImage(width: 40, height: 40, color: .red)
+        let blue = Self.makeSolidImage(width: 40, height: 40, color: .blue)
+        let green = Self.makeSolidImage(width: 40, height: 40, color: .green)
+        let yellow = Self.makeSolidImage(width: 40, height: 40, color: .yellow)
+
+        var call = 0
+        let capture: ScrollCapturer.RegionCapture = { _, _, _, _, _ in
+            call += 1
+            switch call {
+            case 1: return red
+            case 2, 3: return blue
+            case 4, 5: return green
+            default: return yellow
+            }
+        }
+
+        let capturer = ScrollCapturer(
+            rect: CGRect(x: 0, y: 0, width: 40, height: 40),
+            displayID: 0,
+            scaleFactor: 1,
+            maxFrames: 10,
+            capture: capture,
+            offsetEstimator: MockOffsetEstimator()
+        )
+
+        // B: forward append → preview grows 40 + 30 = 70.
+        XCTAssertEqual(capturer.captureSynchronously(expectedShiftPoints: 0), .appended)
+        // C: first reverse signal only arms the pending flag.
+        XCTAssertEqual(capturer.captureSynchronously(expectedShiftPoints: 0), .noNewContent)
+        // D: cumulative -60 trim clamped to removable 30 → stays at one frame height.
+        XCTAssertEqual(capturer.captureSynchronously(expectedShiftPoints: 0), .trimmed)
+
+        let expectation = expectation(description: "stitch-completion")
+        var stitched: NSImage?
+        capturer.stopAndStitch { image in
+            stitched = image
+            expectation.fulfill()
+        }
+        wait(for: [expectation], timeout: 5)
+
+        // 40 + 30 (append) - 30 (trim) = 40px tall at scale 1.
+        XCTAssertNotNil(stitched)
+        XCTAssertEqual(stitched?.size.height ?? 0, 40, accuracy: 1.0)
     }
 
     func test_fakeScreenCaptureClient_forwardsExcludingWindowIDs() async throws {

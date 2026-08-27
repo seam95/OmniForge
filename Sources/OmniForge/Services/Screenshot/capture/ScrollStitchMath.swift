@@ -4,6 +4,14 @@ import Foundation
 enum ScrollStitchMath {
     static let defaultMaxFrames = 100
 
+    /// One stitch operation in the capture history. Frames are appended with a
+    /// known overlap against the reference frame; reverse scrolling trims rows
+    /// off the bottom of the already-stitched image.
+    enum StitchStep: Equatable {
+        case append(overlap: Int)
+        case trimBottom(rows: Int)
+    }
+
     /// Clamp Vision-derived overlap into a valid row count for a frame of `height`.
     static func clampOverlap(_ overlap: Int, height: Int) -> Int {
         guard height > 0 else { return 0 }
@@ -25,11 +33,32 @@ enum ScrollStitchMath {
         newRows(height: height, overlap: overlap) >= minimumNewRows(height: height)
     }
 
-    /// Total stitched pixel height given uniform frame heights and per-append overlaps.
-    static func totalHeightPixels(frameHeight: Int, overlaps: [Int]) -> Int {
-        overlaps.reduce(frameHeight) { partial, overlap in
-            partial + newRows(height: frameHeight, overlap: overlap)
+    /// Replays the step sequence to get the total stitched pixel height.
+    /// Trim steps never shrink the result below a single frame height.
+    static func totalHeightPixels(frameHeight: Int, steps: [StitchStep]) -> Int {
+        guard frameHeight > 0 else { return 0 }
+        let floorHeight = frameHeight
+        return steps.reduce(frameHeight) { partial, step in
+            switch step {
+            case let .append(overlap):
+                return partial + newRows(height: frameHeight, overlap: overlap)
+            case let .trimBottom(rows):
+                return max(floorHeight, partial - max(0, rows))
+            }
         }
+    }
+
+    /// Clamps a reverse-scroll trim so at least one frame height remains.
+    /// Returns 0 when the trim would leave nothing meaningful to remove.
+    static func clampedTrimRows(
+        _ rows: Int,
+        currentHeightPixels: Int,
+        frameHeight: Int
+    ) -> Int {
+        guard rows > 0, frameHeight > 0 else { return 0 }
+        let removable = currentHeightPixels - frameHeight
+        guard removable > 0 else { return 0 }
+        return min(rows, removable)
     }
 
     /// Frame budget gate used by capture loops.
