@@ -333,7 +333,26 @@ struct ProfileEditorView: View {
                     .foregroundStyle(Color(red: 0x8E / 255.0, green: 0x8E / 255.0, blue: 0x93 / 255.0))
                     .padding(.top, 2)
 
-                DisclosureGroup(isExpanded: $showDisplayNames) {
+                // macOS 上 DisclosureGroup 的自定义文本 label 不响应点击（仅左侧箭头可点），
+                // 因此自绘折叠行并显式接管点击，保证整行可切换
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        showDisplayNames.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: showDisplayNames ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text(strings.providerModelCustomDisplayNames)
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .foregroundStyle(Color.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if showDisplayNames {
                     VStack(spacing: 8) {
                         mappingRow(label: strings.providerSonnetNameLabel, text: $sonnetName, placeholder: "", labelWidth: 92)
                         mappingRow(label: strings.providerOpusNameLabel, text: $opusName, placeholder: "", labelWidth: 92)
@@ -341,10 +360,6 @@ struct ProfileEditorView: View {
                         mappingRow(label: strings.providerHaikuNameLabel, text: $haikuName, placeholder: "", labelWidth: 92)
                     }
                     .padding(.top, 6)
-                } label: {
-                    Text(strings.providerModelCustomDisplayNames)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.secondary)
                 }
             } else {
                 // Codex
