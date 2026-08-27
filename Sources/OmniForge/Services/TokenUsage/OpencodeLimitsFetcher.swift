@@ -3,16 +3,68 @@ import Foundation
 // MARK: - 解析纯函数
 
 /// opencode Go usage API 归一化 — 纯函数。
+///
+/// 端点存在两代响应形状：现行 `{usage:{rolling:{percent,resetsAt}}}`（绝对
+/// 时间）与早期规范 `顶层 rollingUsage:{usagePercent,resetInSec}`（相对秒）。
+/// 解析时现行形状优先，解析不出回落早期形状；部分 payload 用 0–1 小数比例
+/// 表示百分比，统一换算。
 enum OpencodeGoParsing {
-    /// `percent`（0–100）+ `resetsAt` → UsageWindow；缺值 → nil。
+    /// 现行形状单窗（`usage.rolling` 等）：percent + resetsAt（也兼容
+    /// usagePercent/usage_percent 与 resetInSec 相对秒）。
     static func window(_ usage: [String: Any]?) -> UsageWindow? {
-        guard let usage,
-              let rawPercent = UsageWindowParsing.numeric(usage["percent"]) else {
-            return nil
+        guard let usage else { return nil }
+        let percent = UsageWindowParsing.numeric(usage["percent"])
+            ?? UsageWindowParsing.numeric(usage["usagePercent"])
+            ?? UsageWindowParsing.numeric(usage["usage_percent"])
+        var resetAt: Date?
+        if let resetInSec = UsageWindowParsing.numeric(usage["resetInSec"])
+            ?? UsageWindowParsing.numeric(usage["reset_in_sec"]) {
+            resetAt = Date().addingTimeInterval(resetInSec)
+        } else {
+            resetAt = UsageWindowParsing.parseResetDate(
+                usage["resetsAt"] ?? usage["resets_at"] ?? usage["resetAt"] ?? usage["reset_at"]
+            )
         }
+        return window(percent: percent, resetAt: resetAt)
+    }
+
+    /// 早期形状单窗（顶层 `rollingUsage` 等）：usagePercent + resetInSec。
+    static func legacyWindow(_ legacy: [String: Any]?) -> UsageWindow? {
+        guard let legacy else { return nil }
+        let percent = UsageWindowParsing.numeric(legacy["usagePercent"])
+            ?? UsageWindowParsing.numeric(legacy["percent"])
+        let resetInSec = UsageWindowParsing.numeric(legacy["resetInSec"])
+            ?? UsageWindowParsing.numeric(legacy["reset_in_sec"])
+        return window(
+            percent: percent,
+            resetAt: resetInSec.map { Date().addingTimeInterval($0) }
+        )
+    }
+
+    /// 现行形状优先、解析不出（含字段不完整）回落早期形状。
+    static func resolveWindow(modern: Any?, legacy: [String: Any]?) -> UsageWindow? {
+        if let modernObject = modern as? [String: Any] {
+            let hasSignal = UsageWindowParsing.numeric(modernObject["percent"]) != nil
+                || UsageWindowParsing.numeric(modernObject["usagePercent"]) != nil
+                || UsageWindowParsing.numeric(modernObject["usage_percent"]) != nil
+                || UsageWindowParsing.numeric(modernObject["resetInSec"]) != nil
+                || UsageWindowParsing.numeric(modernObject["reset_in_sec"]) != nil
+                || modernObject["resetsAt"] != nil
+                || modernObject["resets_at"] != nil
+            if hasSignal, let window = window(modernObject) {
+                return window
+            }
+        }
+        return legacyWindow(legacy)
+    }
+
+    private static func window(percent: Double?, resetAt: Date?) -> UsageWindow? {
+        guard var raw = percent else { return nil }
+        // 0–1 小数比例 → 换算为百分比（部分 payload 的表示法）。
+        if raw > 0, raw < 1 { raw *= 100 }
         return UsageWindow(
-            usedPercent: UsageWindowParsing.clampPercent(rawPercent) ?? 0,
-            resetAt: UsageWindowParsing.parseResetDate(usage["resetsAt"]),
+            usedPercent: min(max(raw, 0), 100),
+            resetAt: resetAt,
             limit: nil,
             used: nil,
             remaining: nil,
@@ -81,14 +133,18 @@ final class OpencodeLimitsFetcher: LimitsFetching {
 
         var windows: [LimitWindowKind: UsageWindow] = [:]
         let usage = payload["usage"] as? [String: Any]
-        if let rolling = OpencodeGoParsing.window(usage?["rolling"] as? [String: Any]) {
-            windows[.session] = rolling
-        }
-        if let weekly = OpencodeGoParsing.window(usage?["weekly"] as? [String: Any]) {
-            windows[.weekly] = weekly
-        }
-        if let monthly = OpencodeGoParsing.window(usage?["monthly"] as? [String: Any]) {
-            windows[.monthly] = monthly
+        let slots: [(kind: LimitWindowKind, modern: Any?, legacyKey: String)] = [
+            (.session, usage?["rolling"] ?? payload["rolling"], "rollingUsage"),
+            (.weekly, usage?["weekly"] ?? payload["weekly"], "weeklyUsage"),
+            (.monthly, usage?["monthly"] ?? payload["monthly"], "monthlyUsage"),
+        ]
+        for slot in slots {
+            if let window = OpencodeGoParsing.resolveWindow(
+                modern: slot.modern,
+                legacy: payload[slot.legacyKey] as? [String: Any]
+            ) {
+                windows[slot.kind] = window
+            }
         }
         guard !windows.isEmpty else {
             return nil

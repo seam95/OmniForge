@@ -87,4 +87,35 @@ final class OpencodeLimitsFetcherTests: XCTestCase {
         let result = try await makeFetcher(keychainKey: "test-key").fetchLimits(force: false)
         XCTAssertNil(result, "无窗口 → 不显示限额卡")
     }
+
+    func test_legacyShape_rollingUsageFallback() async throws {
+        // 早期规范形状（顶层 rollingUsage + usagePercent/resetInSec 相对秒）。
+        URLProtocolStub.stub = .init(statusCode: 200, data: Data("""
+        {"rollingUsage":{"usagePercent":35,"resetInSec":7200},\
+        "monthlyUsage":{"usagePercent":70,"resetInSec":864000}}
+        """.utf8))
+        let result = try await makeFetcher(keychainKey: "test-key").fetchLimits(force: false)
+        XCTAssertEqual(result?.windows[.session]?.usedPercent, 35)
+        XCTAssertEqual(result?.windows[.monthly]?.usedPercent, 70)
+        XCTAssertNotNil(result?.windows[.session]?.resetAt, "resetInSec 相对秒换算 reset")
+    }
+
+    func test_incompleteModernWindow_fallsThroughToLegacy() async throws {
+        // modern 对象存在但只有 reset 无百分比 → 回落可用的 legacy 窗口。
+        URLProtocolStub.stub = .init(statusCode: 200, data: Data("""
+        {"usage":{"rolling":{"resetsAt":"2026-08-26T06:56:50.539Z"}},\
+        "rollingUsage":{"usagePercent":42,"resetInSec":600}}
+        """.utf8))
+        let result = try await makeFetcher(keychainKey: "test-key").fetchLimits(force: false)
+        XCTAssertEqual(result?.windows[.session]?.usedPercent, 42, "不完整 modern 不吞 legacy")
+    }
+
+    func test_fractionPercent_convertedToHundredScale() async throws {
+        // 0–1 小数比例 → 换算为百分比。
+        URLProtocolStub.stub = .init(statusCode: 200, data: Data("""
+        {"usage":{"rolling":{"percent":0.25,"resetsAt":"2026-08-26T06:56:50.539Z"}}}
+        """.utf8))
+        let result = try await makeFetcher(keychainKey: "test-key").fetchLimits(force: false)
+        XCTAssertEqual(result?.windows[.session]?.usedPercent ?? -1, 25, accuracy: 0.1)
+    }
 }
