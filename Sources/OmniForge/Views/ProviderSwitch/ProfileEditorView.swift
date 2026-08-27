@@ -202,6 +202,8 @@ struct ProfileEditorView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            // 系统会把初始键盘焦点交给表单首个可聚焦控件（本下拉），禁用其蓝色焦点环
+            .focusEffectDisabled(true)
 
             Text(strings.providerPresetHint)
                 .font(.system(size: 12))
