@@ -3,7 +3,7 @@ import SwiftUI
 
 /// 控制中心内容区高度策略：所有页按内容自适应收缩并设滚动上限。
 enum ControlCenterContentMetrics {
-    static let panelWidth: CGFloat = 420
+    static let panelWidth: CGFloat = 380
     /// 各页滚动上限。
     static let maxContentHeight: CGFloat = 580
     /// 空状态 / 不可用页的最小内容高度，避免 popover 过扁。
@@ -422,14 +422,20 @@ private struct ControlCenterNavButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 4) {
-                Image(systemName: panel.symbolName)
-                    .font(.system(size: 11.5, weight: .semibold))
+            // ViewThatFits 降级：等分单元放不下"图标+文字"时隐藏图标仅留文字，
+            // 叠加 minimumScaleFactor 兜底，保证窄面板下标题永不折行、尽量不缩放。
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 4) {
+                    Image(systemName: panel.symbolName)
+                        .font(.system(size: 11.5, weight: .semibold))
+                    Text(title)
+                        .font(Theme.Stats.font12Medium)
+                }
                 Text(title)
                     .font(Theme.Stats.font12Medium)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
             }
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 6)
             .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous))
