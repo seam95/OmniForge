@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// 四色便签语义色板（SPEC D12：色值取本应用设计系统，不抄参考应用）。
-/// 亮色为便签纸暖色，暗色为低饱和深色变体；accent 用于色点与选中高亮环。
+/// 四色便签语义色板（燕麦黄/灰绿/石灰蓝/陶粉低饱和纸质色系）。
+/// 亮色为设计稿给定 hex；暗色为同色相低明度纸背 + 底色压暗文字；
+/// accent 用于色点与选中高亮环（陶粉 accent 为按其余三色明度规律推得的补值）。
 struct StickyNotePalette {
     let backgroundLight: Color
     let backgroundDark: Color
@@ -20,36 +21,40 @@ struct StickyNotePalette {
     static func palette(for color: StickyNoteColor) -> StickyNotePalette {
         switch color {
         case .yellow:
+            // 燕麦黄：底 #F0E7D2 / 正文 #6B5B38 / accent #AE9159
             return StickyNotePalette(
-                backgroundLight: Color(red: 0.984, green: 0.914, blue: 0.663),
-                backgroundDark: Color(red: 0.29, green: 0.25, blue: 0.12),
-                accent: Color(red: 0.85, green: 0.62, blue: 0.05),
-                textLight: Color(red: 0.26, green: 0.22, blue: 0.12),
-                textDark: Color(red: 0.93, green: 0.89, blue: 0.76)
+                backgroundLight: Color(red: 0.941, green: 0.906, blue: 0.824),
+                backgroundDark: Color(red: 0.29, green: 0.25, blue: 0.15),
+                accent: Color(red: 0.682, green: 0.569, blue: 0.349),
+                textLight: Color(red: 0.420, green: 0.357, blue: 0.220),
+                textDark: Color(red: 0.89, green: 0.86, blue: 0.79)
             )
         case .mint:
+            // 灰绿：底 #DCE5D5 / 正文 #4A5F43 / accent #7A9A70
             return StickyNotePalette(
-                backgroundLight: Color(red: 0.843, green: 0.949, blue: 0.890),
-                backgroundDark: Color(red: 0.13, green: 0.26, blue: 0.20),
-                accent: Color(red: 0.16, green: 0.60, blue: 0.34),
-                textLight: Color(red: 0.12, green: 0.28, blue: 0.19),
-                textDark: Color(red: 0.85, green: 0.93, blue: 0.88)
+                backgroundLight: Color(red: 0.863, green: 0.898, blue: 0.835),
+                backgroundDark: Color(red: 0.14, green: 0.24, blue: 0.18),
+                accent: Color(red: 0.478, green: 0.604, blue: 0.439),
+                textLight: Color(red: 0.290, green: 0.373, blue: 0.263),
+                textDark: Color(red: 0.83, green: 0.87, blue: 0.80)
             )
         case .blue:
+            // 石灰蓝：底 #D9DFE6 / 正文 #42536B / accent #7285A0
             return StickyNotePalette(
-                backgroundLight: Color(red: 0.851, green: 0.914, blue: 0.980),
-                backgroundDark: Color(red: 0.14, green: 0.22, blue: 0.33),
-                accent: Color(red: 0.25, green: 0.52, blue: 0.82),
-                textLight: Color(red: 0.14, green: 0.23, blue: 0.36),
-                textDark: Color(red: 0.86, green: 0.91, blue: 0.96)
+                backgroundLight: Color(red: 0.851, green: 0.875, blue: 0.902),
+                backgroundDark: Color(red: 0.15, green: 0.21, blue: 0.31),
+                accent: Color(red: 0.447, green: 0.522, blue: 0.627),
+                textLight: Color(red: 0.259, green: 0.325, blue: 0.420),
+                textDark: Color(red: 0.83, green: 0.86, blue: 0.89)
             )
         case .pink:
+            // 陶粉：底 #EBDDD8 / 正文 #7A4E44 / accent #A87467（推定值）
             return StickyNotePalette(
-                backgroundLight: Color(red: 0.980, green: 0.863, blue: 0.906),
-                backgroundDark: Color(red: 0.31, green: 0.18, blue: 0.24),
-                accent: Color(red: 0.85, green: 0.36, blue: 0.58),
-                textLight: Color(red: 0.36, green: 0.16, blue: 0.24),
-                textDark: Color(red: 0.95, green: 0.87, blue: 0.90)
+                backgroundLight: Color(red: 0.922, green: 0.867, blue: 0.847),
+                backgroundDark: Color(red: 0.29, green: 0.18, blue: 0.16),
+                accent: Color(red: 0.659, green: 0.455, blue: 0.404),
+                textLight: Color(red: 0.478, green: 0.306, blue: 0.267),
+                textDark: Color(red: 0.88, green: 0.84, blue: 0.83)
             )
         }
     }
