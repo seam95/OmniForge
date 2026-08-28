@@ -211,6 +211,8 @@ struct UtilityToolsView: View {
             NetworkDiagnosticsView(strings: strings)
         case .dshWeb:
             DSHWebView(strings: strings)
+        case .stickyNotes:
+            StickyNotesView(strings: strings)
         }
     }
 

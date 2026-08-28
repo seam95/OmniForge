@@ -1333,4 +1333,63 @@ struct Strings: Equatable {
     let providerBackupRestoreConfirmMessageFormat: String
     let providerBackupRestore: String
     let providerBackupRestoreFailed: String
+
+    // MARK: - Sticky Notes（桌面便签）
+    /// 实用工具列表行副标题。
+    let utilityStickyNotesSubtitle: String
+    let featureHubNameStickyNotes: String
+    let featureHubDescStickyNotes: String
+    // 便签窗口
+    let stickyNotePlaceholder: String
+    let stickyNoteSaved: String
+    let stickyNoteSaving: String
+    let stickyNoteDragHandle: String
+    let stickyNoteNewNote: String
+    let stickyNoteColorYellow: String
+    let stickyNoteColorMint: String
+    let stickyNoteColorBlue: String
+    let stickyNoteColorPink: String
+    let stickyNotePin: String
+    let stickyNoteUnpin: String
+    let stickyNoteSetReminder: String
+    let stickyNoteEditReminder: String
+    let stickyNoteCollapse: String
+    let stickyNoteComplete: String
+    // 提醒面板
+    let stickyNoteReminderQuick15: String
+    let stickyNoteReminderQuick1h: String
+    let stickyNoteReminderQuickTomorrow: String
+    let stickyNoteReminderSet: String
+    let stickyNoteReminderClear: String
+    let stickyNoteReminderClose: String
+    let stickyNoteReminderPast: String
+    /// 提醒时刻（%@ = 本地格式化时间）。
+    let stickyNoteReminderAtFormat: String
+    /// 提醒时刻同日展示（%@ = HH:mm）。
+    let stickyNoteReminderTodayFormat: String
+    let stickyNoteReminderFired: String
+    // 通知
+    let stickyNoteNotificationTitle: String
+    // 托盘菜单
+    let stickyNoteMenuNew: String
+    let stickyNoteMenuShowAll: String
+    let stickyNoteMenuHideAll: String
+    // 管理页
+    let stickyNoteSectionActive: String
+    let stickyNoteSectionCompleted: String
+    let stickyNoteEmptyContent: String
+    let stickyNoteBadgeHidden: String
+    let stickyNoteCreateButton: String
+    let stickyNoteLocate: String
+    let stickyNoteRestore: String
+    let stickyNoteUncomplete: String
+    let stickyNoteDelete: String
+    let stickyNoteDeleteCancel: String
+    let stickyNoteDeleteConfirmTitle: String
+    let stickyNoteDeleteConfirmMessage: String
+    let stickyNoteNoNotes: String
+    let stickyNoteHotkeyTitle: String
+    let stickyNoteNotificationPermission: String
+    let stickyNoteNotificationGranted: String
+    let stickyNoteNotificationDenied: String
 }

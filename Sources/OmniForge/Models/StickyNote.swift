@@ -1,0 +1,84 @@
+import Foundation
+
+/// 桌面便签颜色语义；rawValue 为持久化稳定标识，只能新增不能重命名。
+enum StickyNoteColor: String, Codable, CaseIterable {
+    case yellow
+    case mint
+    case blue
+    case pink
+}
+
+/// 桌面便签值类型。`hidden` 与 `completed` 独立（对齐参考应用数据语义）：
+/// 「显示所有便签」等恢复规则只看 `completed`。
+struct StickyNote: Identifiable, Codable, Equatable {
+    let id: UUID
+    var content: String
+    var color: StickyNoteColor
+    var x: Double
+    var y: Double
+    var width: Double
+    var height: Double
+    var pinned: Bool
+    var hidden: Bool
+    var completed: Bool
+    /// 提醒时刻；nil = 未设置。
+    var reminderAt: Date?
+    /// 提醒已触发时刻（防重）；nil = 未触发。
+    var reminderFiredAt: Date?
+    var createdAt: Date
+    var updatedAt: Date
+
+    init(
+        id: UUID = UUID(),
+        content: String = "",
+        color: StickyNoteColor = .yellow,
+        x: Double = 0,
+        y: Double = 0,
+        width: Double = 0,
+        height: Double = 0,
+        pinned: Bool = false,
+        hidden: Bool = false,
+        completed: Bool = false,
+        reminderAt: Date? = nil,
+        reminderFiredAt: Date? = nil,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.content = content
+        self.color = color
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.pinned = pinned
+        self.hidden = hidden
+        self.completed = completed
+        self.reminderAt = reminderAt
+        self.reminderFiredAt = reminderFiredAt
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    /// 提醒已到：设置过提醒且已触发。
+    var isReminderFired: Bool {
+        reminderAt != nil && reminderFiredAt != nil
+    }
+
+    /// 窗口 frame（AppKit 全局坐标）；DB 四列的便捷视图。
+    var frame: CGRect {
+        get { CGRect(x: x, y: y, width: width, height: height) }
+        set {
+            x = newValue.minX
+            y = newValue.minY
+            width = newValue.width
+            height = newValue.height
+        }
+    }
+
+    /// 管理页摘要：首行去空白；空内容返回空串（占位由展示层处理）。
+    var summary: String {
+        let first = content.split(separator: "\n", omittingEmptySubsequences: false).first.map(String.init) ?? ""
+        return first.trimmingCharacters(in: .whitespaces).isEmpty ? "" : first
+    }
+}

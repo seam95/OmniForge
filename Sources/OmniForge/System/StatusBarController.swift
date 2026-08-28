@@ -420,7 +420,8 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             .manager(for: .screenshot, as: ScreenshotFeatureManager.self)?
             .pinnedScreenshotRegistry
         let hasPinsMenu = pinRegistry != nil
-        guard hasKeepAwake || hasPinsMenu || render.includeQuit else {
+        let hasStickyNotes = FeatureRuntime.shared.isAvailable(.stickyNotes)
+        guard hasKeepAwake || hasPinsMenu || hasStickyNotes || render.includeQuit else {
             return nil
         }
 
@@ -444,6 +445,19 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             let pinsRoot = NSMenuItem(title: s.pinnedMenuTitle, action: nil, keyEquivalent: "")
             pinsRoot.submenu = pinsMenu
             menu.addItem(pinsRoot)
+            if hasKeepAwake || hasStickyNotes {
+                menu.addItem(.separator())
+            }
+        }
+
+        // 桌面便签托盘区（SPEC 4.8：仅功能可用时显示，结构对齐防休眠区）。
+        if hasStickyNotes {
+            menu.addItem(withTitle: s.stickyNoteMenuNew, action: #selector(stickyNoteNew), keyEquivalent: "")
+            menu.addItem(withTitle: s.stickyNoteMenuShowAll, action: #selector(stickyNoteShowAll), keyEquivalent: "")
+            menu.addItem(withTitle: s.stickyNoteMenuHideAll, action: #selector(stickyNoteHideAll), keyEquivalent: "")
+            for item in menu.items where item.action != nil {
+                item.target = self
+            }
             if hasKeepAwake {
                 menu.addItem(.separator())
             }
@@ -576,6 +590,24 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
     @objc private func pinnedCloseAll() {
         pinnedRegistry()?.closeAll()
+    }
+
+    // MARK: - 桌面便签托盘动作
+
+    private func stickyNoteManager() -> StickyNoteManager? {
+        FeatureRuntime.shared.manager(for: .stickyNotes, as: StickyNoteManager.self)
+    }
+
+    @objc private func stickyNoteNew() {
+        stickyNoteManager()?.create()
+    }
+
+    @objc private func stickyNoteShowAll() {
+        stickyNoteManager()?.showAll()
+    }
+
+    @objc private func stickyNoteHideAll() {
+        stickyNoteManager()?.hideAll()
     }
 
     @objc private func keepAwakeStartDefault() {

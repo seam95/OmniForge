@@ -78,6 +78,11 @@ struct HotkeyDefinition: Equatable, Codable {
         keyCode: Int(kVK_ANSI_K),
         modifiers: [.control, .option, .command]
     )
+    /// 桌面便签「新建便签」默认快捷键：⌘⇧N
+    static let defaultStickyNoteNewNote = HotkeyDefinition(
+        keyCode: Int(kVK_ANSI_N),
+        modifiers: [.command, .shift]
+    )
 
     // 截图默认快捷键：统一 ⌃⌥⌘ + 数字，避开 clipboard(⌘⇧V) / shelf(⌃⌥⌘D) / keepAwake(⌃⌥⌘K)
     // 顺序：全能1 / 复制2 / 贴图3 / 全屏4 / 录屏5（仅影响未自定义用户的注册默认）

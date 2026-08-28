@@ -279,6 +279,31 @@ struct FeatureFactory {
             if runtime.manager(for: .providerSwitch, as: ProviderSwitchManager.self) == nil {
                 runtime.register(.providerSwitch, manager: ProviderSwitchManager.production())
             }
+        case .stickyNotes:
+            // 重接线 feature（对齐截图模式）：install 时恢复便签窗口与提醒调度。
+            if runtime.manager(for: .stickyNotes, as: StickyNoteManager.self) == nil {
+                let appSupport = FileManager.default.urls(
+                    for: .applicationSupportDirectory,
+                    in: .userDomainMask
+                ).first!
+                let databaseURL = appSupport
+                    .appendingPathComponent("OmniForge/StickyNotes/notes.sqlite")
+                let scheduler = SystemStickyNoteReminderScheduler()
+                let presenter = StickyNoteWindowRegistry(stringsProvider: {
+                    L10n(userDefaults: userDefaults).s
+                })
+                let manager = StickyNoteManager(
+                    store: GRDBStickyNoteStore(databaseURL: databaseURL),
+                    reminderScheduler: scheduler,
+                    windowPresenter: presenter,
+                    userDefaults: userDefaults,
+                    stringsProvider: { L10n(userDefaults: userDefaults).s }
+                )
+                // 窗口动作回绑 Manager（presenter 弱持有，避免循环）
+                presenter.manager = manager
+                runtime.register(.stickyNotes, manager: manager)
+                manager.restoreOnInstall()
+            }
         }
     }
 
@@ -359,6 +384,8 @@ struct FeatureFactory {
         case .providerSwitch:
             // 无后台工作；视图持有引用，卸注册即释放
             break
+        case .stickyNotes:
+            runtime.manager(for: .stickyNotes, as: StickyNoteManager.self)?.teardown()
         }
         runtime.unregisterAll(for: feature)
     }

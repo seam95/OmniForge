@@ -6,6 +6,7 @@ enum UtilityTool: String, CaseIterable, Identifiable {
     case colorPicker
     case networkDiagnostics
     case dshWeb
+    case stickyNotes
 
     var id: String { rawValue }
 
@@ -22,6 +23,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
                 return isAvailable(.networkDiagnostics)
             case .dshWeb:
                 return isAvailable(.dshWeb)
+            case .stickyNotes:
+                return isAvailable(.stickyNotes)
             }
         }
     }
@@ -47,6 +50,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
             return strings.featureHubNameNetworkDiagnostics
         case .dshWeb:
             return strings.featureHubNameDSHWeb
+        case .stickyNotes:
+            return strings.featureHubNameStickyNotes
         }
     }
 
@@ -63,6 +68,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
             return .networkDiagnostics
         case .dshWeb:
             return .dshWeb
+        case .stickyNotes:
+            return .stickyNotes
         }
     }
 
@@ -79,6 +86,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
             return "globe"
         case .dshWeb:
             return "server.rack"
+        case .stickyNotes:
+            return "note.text"
         }
     }
 
@@ -95,6 +104,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
             return .green
         case .dshWeb:
             return .purple
+        case .stickyNotes:
+            return .yellow
         }
     }
 
@@ -114,6 +125,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
             return strings.utilityNetworkDiagnosticsSubtitle
         case .dshWeb:
             return strings.utilityDSHWebSubtitle
+        case .stickyNotes:
+            return strings.utilityStickyNotesSubtitle
         }
     }
 }

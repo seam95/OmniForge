@@ -23,6 +23,7 @@ enum AppFeature: String, CaseIterable {
     case keepAwake
     case screenshot
     case providerSwitch
+    case stickyNotes
 
     /// 设置「鼠标」分区与相关入口共用的功能集合。
     static let mouseFeatures: [AppFeature] = [
@@ -77,6 +78,7 @@ extension AppFeature {
         case .keepAwake: return .energy
         case .screenshot: return .capture
         case .providerSwitch: return .ai
+        case .stickyNotes: return .productivity
         }
     }
 
@@ -104,6 +106,7 @@ extension AppFeature {
         case .keepAwake: return []
         case .screenshot: return [UserDefaultsKeys.screenshotEnabled]
         case .providerSwitch: return []
+        case .stickyNotes: return []
         }
     }
 
@@ -124,6 +127,7 @@ extension AppFeature {
         case .keepAwake: return [.accessibility, .notifications]
         case .screenshot: return [.screenRecording]
         case .providerSwitch: return []
+        case .stickyNotes: return [.notifications]
         }
     }
 
@@ -157,6 +161,9 @@ extension AppFeature {
             return nil
         case .screenshot:
             return permission == .screenRecording ? .required : nil
+        case .stickyNotes:
+            // 提醒走系统通知；未授权时提醒仍可设置（仅无横幅），故为可选。
+            return permission == .notifications ? .optional : nil
         case .providerSwitch:
             return nil
         case .clipboardHistory, .quickPhrase, .shelf, .launchAtLogin:
@@ -202,6 +209,7 @@ extension AppFeature {
         case .keepAwake: return "moon.zzz.fill"
         case .screenshot: return "camera.viewfinder"
         case .providerSwitch: return "arrow.triangle.swap"
+        case .stickyNotes: return "note.text"
         }
     }
 
@@ -227,6 +235,7 @@ extension AppFeature {
         case .keepAwake: return strings.featureHubNameKeepAwake
         case .screenshot: return strings.featureHubNameScreenshot
         case .providerSwitch: return strings.featureHubNameProviderSwitch
+        case .stickyNotes: return strings.featureHubNameStickyNotes
         }
     }
 
@@ -252,6 +261,7 @@ extension AppFeature {
         case .keepAwake: return strings.featureHubDescKeepAwake
         case .screenshot: return strings.featureHubDescScreenshot
         case .providerSwitch: return strings.featureHubDescProviderSwitch
+        case .stickyNotes: return strings.featureHubDescStickyNotes
         }
     }
 

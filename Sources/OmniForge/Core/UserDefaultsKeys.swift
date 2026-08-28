@@ -81,4 +81,7 @@ enum UserDefaultsKeys {
     static let networkDiagnosticsSegment = "networkDiagnostics.segment"
     // DSH Web — 持久化字符串必须稳定，不得重命名
     static let dshWebPort = "dshWeb.port"
+    // Sticky Notes — 持久化字符串必须稳定，不得重命名
+    static let stickyNoteHotkeyKeyCode = "stickyNote.hotkey.keyCode"
+    static let stickyNoteHotkeyModifiers = "stickyNote.hotkey.modifiers"
 }

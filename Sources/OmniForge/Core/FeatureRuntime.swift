@@ -393,6 +393,11 @@ final class FeatureRuntime: ObservableObject {
         .screenshot: {
             shared.manager(for: .screenshot, as: ScreenshotFeatureManager.self)?.syncWithPreferences()
         },
+        .stickyNotes: {
+            // 快捷键跟随可用性注册 / 注销；窗口与提醒随 install / teardown 走。
+            shared.manager(for: .stickyNotes, as: StickyNoteManager.self)?
+                .syncHotkeyWithAvailability()
+        },
     ]
 
     // MARK: - 测试支持

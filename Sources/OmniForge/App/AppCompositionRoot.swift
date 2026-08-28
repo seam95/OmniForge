@@ -86,6 +86,8 @@ final class AppCompositionRoot {
     /// 无 Manager 时走 Coordinator 恢复。
     func prepareForApplicationTermination() async -> Bool {
         DSHWebManager.shared.shutdown()
+        // 便签：失效全部唤起定时器并撤销通知请求（窗口随 teardown 关闭）。
+        FeatureRuntime.shared.manager(for: .stickyNotes, as: StickyNoteManager.self)?.teardown()
         if let manager = FeatureRuntime.shared.manager(for: .keepAwake, as: KeepAwakeManager.self) {
             await manager.shutdown(reason: .applicationTermination)
             if case .cleanupRequired = manager.state {
@@ -204,6 +206,7 @@ final class AppCompositionRoot {
         // autoStart 只在首次接线触发，不进入 revision 重绑，避免权限变化时重复启动。
         wireKeepAwakeAutoStart()
         wireScreenshotHotkeys()
+        wireStickyNotesHotkey()
         observeRuntimeRevision()
     }
 
@@ -216,6 +219,7 @@ final class AppCompositionRoot {
                 self?.wireClipboardHotkey()
                 self?.wireKeepAwakeHotkey()
                 self?.wireScreenshotHotkeys()
+                self?.wireStickyNotesHotkey()
             }
             .store(in: &sinks)
     }
@@ -281,5 +285,14 @@ final class AppCompositionRoot {
             as: ScreenshotFeatureManager.self
         ) else { return }
         manager.syncWithPreferences()
+    }
+
+    /// 便签「新建」快捷键：feature 不可用时注销，避免残留全局快捷键。
+    private func wireStickyNotesHotkey() {
+        guard let manager = FeatureRuntime.shared.manager(
+            for: .stickyNotes,
+            as: StickyNoteManager.self
+        ) else { return }
+        manager.syncHotkeyWithAvailability()
     }
 }
