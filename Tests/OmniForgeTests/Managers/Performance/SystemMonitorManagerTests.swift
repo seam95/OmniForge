@@ -426,6 +426,68 @@ final class SystemMonitorManagerTests: XCTestCase {
         XCTAssertEqual(samplers.peripheralBattery.callCount, 0)
         XCTAssertEqual(manager.activeMenuBarMetrics, [.cpu])
     }
+
+    // MARK: - 面板打开立即采样（修复：菜单栏常驻采样时打开面板不再等下一个 tick）
+
+    func test_openingPanelWhileMenuBarSamplingSamplesImmediately() async throws {
+        // 用户开启菜单栏指标时采样器早已运行，setPanelDemand 走不到 startSampling
+        // 的即时采样——必须在面板打开边沿补采，否则 GPU 等面板指标要等下一个 tick
+        let scheduler = FakeRepeatingScheduler()
+        let samplers = FakeSamplerSet()
+        let manager = makeManager(scheduler: scheduler, samplers: samplers)
+
+        manager.setMenuBarMetrics([.cpu])
+        try await waitForSnapshot(manager) { _ in samplers.cpu.callCount >= 1 }
+        XCTAssertEqual(samplers.gpu.callCount, 0, "菜单栏仅 CPU，GPU 不应被采样")
+
+        // 打开面板：不推进任何定时 tick，GPU 应被立即补采
+        manager.setPanelDemand(.init(gpu: true))
+        try await waitForSnapshot(manager) { $0.gpuUsage != nil }
+        XCTAssertGreaterThanOrEqual(samplers.gpu.callCount, 1)
+    }
+
+    func test_openingPanelFromColdDoesNotDoubleSample() async throws {
+        // 无菜单栏需求时打开面板走 startSampling 即时采样；补采分支不得再触发一轮
+        let samplers = FakeSamplerSet()
+        let manager = makeManager(samplers: samplers)
+
+        manager.setPanelDemand(.init(cpu: true))
+        try await waitForSnapshot(manager) { _ in samplers.cpu.callCount >= 1 }
+        // 0.25s 内只允许即时一轮（0.5s 的 follow-up 尚未到期）
+        try await Task.sleep(nanoseconds: 250_000_000)
+        XCTAssertEqual(samplers.cpu.callCount, 1)
+    }
+
+    func test_panelOpenSamplesDoNotAppendHistory() async throws {
+        // 补采与 follow-up 均为非定时点，不得追加 history（破坏折线等距 x 轴）
+        let samplers = FakeSamplerSet()
+        let manager = makeManager(samplers: samplers)
+
+        manager.setMenuBarMetrics([.cpu])
+        try await waitForSnapshot(manager) { $0.cpuUsage != nil }
+        XCTAssertTrue(manager.history.cpu.isEmpty)
+
+        manager.setPanelDemand(.init(cpu: true))
+        try await waitForSnapshot(manager) { _ in samplers.cpu.callCount >= 2 }
+        // 越过 0.5s follow-up
+        try await Task.sleep(nanoseconds: 800_000_000)
+        XCTAssertTrue(manager.history.cpu.isEmpty, "补采与 follow-up 不应追加趋势历史")
+    }
+
+    func test_closingPanelCancelsRapidFollowUp() async throws {
+        // 面板打开后立即关闭：0.5s follow-up 必须被守卫拦下（关闭零开销设计）
+        let samplers = FakeSamplerSet()
+        let manager = makeManager(samplers: samplers)
+
+        manager.setMenuBarMetrics([.cpu])
+        try await waitForSnapshot(manager) { _ in samplers.cpu.callCount >= 1 }
+        let gpuBefore = samplers.gpu.callCount
+
+        manager.setPanelDemand(.init(gpu: true))
+        manager.setPanelDemand(.none)
+        try await Task.sleep(nanoseconds: 800_000_000)
+        XCTAssertLessThanOrEqual(samplers.gpu.callCount, gpuBefore + 1, "follow-up 不应在面板关闭后触发")
+    }
 }
 
 // MARK: - Test Helpers

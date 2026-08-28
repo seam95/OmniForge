@@ -72,6 +72,22 @@ final class DiskSamplerTests: XCTestCase {
         XCTAssertNil(result.rates.write)
     }
 
+    func test_accumulateShortIntervalKeepsSessionAndNilRates() {
+        // 补采与定时 tick 背靠背时 elapsed 过短：速率作废（防尖刺），
+        // 但会话累计不得清零（样本仍在有效窗口内，只是间隔太短）
+        let result = DiskSampler.accumulate(
+            previous: .init(read: 100, written: 50),
+            current: .init(read: 300, written: 150),
+            session: .init(read: 1000, written: 500),
+            elapsed: 0.1,
+            maxGap: 15
+        )
+        XCTAssertNil(result.rates.read)
+        XCTAssertNil(result.rates.write)
+        XCTAssertEqual(result.session.read, 1000)
+        XCTAssertEqual(result.session.written, 500)
+    }
+
     func test_accumulateResetsSessionWhenPreviousMissing() {
         let result = DiskSampler.accumulate(
             previous: nil,

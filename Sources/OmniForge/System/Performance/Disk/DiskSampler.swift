@@ -6,6 +6,8 @@ final class DiskSampler: DiskSampling {
     private var sessionTotals: [String: DiskIOCounters] = [:]
     /// mountPath → diskutil 元数据缓存；isFull 表示已成功跑过完整 diskutil
     private var metadataCache: [String: (metadata: DiskSupport.DiskutilMetadata, updatedAt: TimeInterval, isFull: Bool)] = [:]
+    /// diskID → 上次有效速率：短间隔样本作废时沿用，避免面板速率闪空
+    private var lastRates: [String: (read: Double?, write: Double?)] = [:]
     private static let maxGap: TimeInterval = 15
     private static let metadataRefreshInterval: TimeInterval = 30
     /// 后台可复用 full 缓存上限（对齐 vorssaint / SPEC）
@@ -14,17 +16,23 @@ final class DiskSampler: DiskSampling {
     init() {}
 
     /// Pure helper: compute rates and updated session totals for one disk.
-    /// - Returns rates as nil when previous is missing, elapsed is invalid, or gap exceeds maxGap.
+    /// - Returns rates as nil when previous is missing, elapsed is invalid, gap exceeds maxGap,
+    ///   or elapsed is shorter than the min delta interval (spike guard; session is kept as-is then).
     /// - Session totals accumulate deltas only when the sample is within maxGap; otherwise reset to zero.
     static func accumulate(
         previous: DiskIOCounters?,
         current: DiskIOCounters,
         session: DiskIOCounters,
         elapsed: TimeInterval?,
-        maxGap: TimeInterval
+        maxGap: TimeInterval,
+        minDeltaInterval: TimeInterval = 0.3
     ) -> (rates: (read: Double?, write: Double?), session: DiskIOCounters) {
         guard let previous, let elapsed, elapsed > 0, elapsed <= maxGap else {
             return (rates: (nil, nil), session: DiskIOCounters())
+        }
+        // 背靠背采样的间隔过短：速率作废防尖刺，会话累计原样保留（仍在有效窗口内）
+        if elapsed < minDeltaInterval {
+            return (rates: (nil, nil), session: session)
         }
 
         var nextSession = session
@@ -66,7 +74,11 @@ final class DiskSampler: DiskSampling {
                 maxGap: Self.maxGap
             )
             sessionTotals[diskID] = result.session
-            uniqueRates[diskID] = result.rates
+            if result.rates.read != nil || result.rates.write != nil {
+                lastRates[diskID] = result.rates
+            }
+            // 速率作废（如补采与 tick 背靠背）时沿用上次有效速率
+            uniqueRates[diskID] = lastRates[diskID] ?? result.rates
             uniqueSessions[diskID] = result.session
             previous[diskID] = (current, now)
         }

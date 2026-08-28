@@ -33,6 +33,9 @@ final class SystemMonitorManager: ObservableObject {
     private var lastProcessSampleAt: Date?
     /// 仅用于成功 GPU 读数的平滑基线；失败不沿用旧值
     private var lastGPUUsage: Double?
+    /// 面板打开后的短间隔追加采样（可取消）；关闭面板即作废
+    private var rapidFollowUp: DispatchWorkItem?
+    private static let rapidFollowUpDelay: TimeInterval = 0.5
     private static let processRefreshInterval: TimeInterval = 4.0
     private static let processDisplayLimit = ProcessRankingDisplay.limit
 
@@ -84,8 +87,16 @@ final class SystemMonitorManager: ObservableObject {
     }
 
     func setPanelDemand(_ demand: MonitorDemand) {
+        let wasPanelOpen = self.demand != .none
         self.demand = demand
-        updateSampling()
+        let samplingStarted = updateSampling()
+        // 采样器可能因菜单栏/告警需求早已运行，此时 startSampling 的即时采样不会触发，
+        // 面板新需求的指标（GPU/磁盘/网络等）要干等下一个 refreshInterval tick——
+        // 在面板打开边沿补一轮立即采样，让面板打开即出数。
+        if !wasPanelOpen, demand != .none, !samplingStarted {
+            sampleAll(appendsHistory: false)
+            scheduleRapidFollowUp()
+        }
     }
 
     func setMenuBarMetrics(_ metrics: Set<MenuBarMetric>) {
@@ -144,15 +155,19 @@ final class SystemMonitorManager: ObservableObject {
 
     // MARK: - 内部采样
 
-    private func updateSampling() {
+    /// 返回值：本次调用是否执行了 startSampling（供补采分支避免双重立即采样）
+    @discardableResult
+    private func updateSampling() -> Bool {
         let shouldBeActive = demand != .none
             || !menuBarMetrics.isEmpty
             || !alertRequirements.isEmpty
         if shouldBeActive && !isSampling {
             startSampling()
+            return true
         } else if !shouldBeActive && isSampling {
             stopSampling()
         }
+        return false
     }
 
     private func startSampling() {
@@ -162,8 +177,21 @@ final class SystemMonitorManager: ObservableObject {
         sampleAll()
         // 异步预热 GPU/网络 delta 基线，使首次展开排行直接出数据而非先返回空。
         primeProcessBaselines()
+        scheduleRapidFollowUp()
         scheduler.schedule(every: refreshInterval, { [weak self] in self?.sampleAll() })
             .store(in: &cancellables)
+    }
+
+    /// 面板打开后 ~0.5s 的追加采样：delta 类指标（网速/磁盘速率）首轮只建基线，
+    /// 短间隔补一轮即可出速率，无需等完整 refreshInterval；关闭面板即作废。
+    private func scheduleRapidFollowUp() {
+        rapidFollowUp?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.isSampling, self.demand != .none else { return }
+            self.sampleAll(appendsHistory: false)
+        }
+        rapidFollowUp = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.rapidFollowUpDelay, execute: work)
     }
 
     /// 后台预热 delta 类指标基线（GPU/网络）。仅建基线，不触发 UI 状态变更。
@@ -175,6 +203,8 @@ final class SystemMonitorManager: ObservableObject {
 
     private func stopSampling() {
         isSampling = false
+        rapidFollowUp?.cancel()
+        rapidFollowUp = nil
         cancellables.removeAll()
         stopActiveProcessSamplerIfNeeded()
         processState = .collapsed
@@ -222,7 +252,9 @@ final class SystemMonitorManager: ObservableObject {
         return metrics
     }
 
-    private func sampleAll() {
+    /// - Parameter appendsHistory: 是否追加趋势历史。定时 tick 与 startSampling 即时轮追加；
+    ///   面板打开的补采轮与 rapidFollowUp 属非定时点，追加会破坏折线等距 x 轴，传 false。
+    private func sampleAll(appendsHistory: Bool = true) {
         tickCount += 1
         let needed = neededMetrics()
         let isForeground = demand != .none
@@ -345,8 +377,9 @@ final class SystemMonitorManager: ObservableObject {
 
             DispatchQueue.main.async {
                 self.snapshot = newSnapshot
-                // 仅前台（面板可见）追加历史，保证等距 x 轴；后台降频采样不追加。
-                if isForeground {
+                // 仅前台（面板可见）追加历史，保证等距 x 轴；后台降频采样与
+                // 面板打开补采（非定时点）不追加。
+                if isForeground && appendsHistory {
                     self.history.append(newSnapshot)
                 }
                 // 展开态下随 sampleAll 刷新进程列表（4s 节流，仅前台面板）
