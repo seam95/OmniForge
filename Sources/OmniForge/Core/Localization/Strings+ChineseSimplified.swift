@@ -1022,7 +1022,6 @@ extension Strings {
         tokenPaceOver: "按当前步速将提前用尽",
         tokenPaceProjectedFormat: "重置时预计用量 %d%%",
         tokenCreditCaption: "随订阅周期自动补充 · 官方数据",
-        tokenResetBankTitle: "重置权益",
         tokenResetBankEntryTitleFormat: "重置 %d",
         tokenResetBankEntryFormat: "重置 %d · %@ 过期",
         tokenResetBankCountOnlyFormat: "重置权益：%d 次 · 过期时间不可用",

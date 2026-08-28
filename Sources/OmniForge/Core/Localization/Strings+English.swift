@@ -1022,7 +1022,6 @@ extension Strings {
         tokenPaceOver: "Will run out at current pace",
         tokenPaceProjectedFormat: "Projected %d%% at reset",
         tokenCreditCaption: "Auto-refills with billing cycle · Official data",
-        tokenResetBankTitle: "Resets",
         tokenResetBankEntryTitleFormat: "Reset %d",
         tokenResetBankEntryFormat: "Reset %d · expires %@",
         tokenResetBankCountOnlyFormat: "Reset bank: %d · expiry unavailable",

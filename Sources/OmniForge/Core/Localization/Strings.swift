@@ -1100,7 +1100,6 @@ struct Strings: Equatable {
     let tokenPaceOver: String
     let tokenPaceProjectedFormat: String
     let tokenCreditCaption: String
-    let tokenResetBankTitle: String
     let tokenResetBankEntryTitleFormat: String
     let tokenResetBankEntryFormat: String
     let tokenResetBankCountOnlyFormat: String

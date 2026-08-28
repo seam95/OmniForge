@@ -197,7 +197,7 @@ struct TokenUsageLimitCardView: View {
 
     // MARK: - 重置权益区块
 
-    /// 重置权益区块：小标题 + 每条权益一行（标签 / 剩余寿命条 / 过期时间），
+    /// 重置权益区块：每条权益一行（标签 / 剩余寿命条 / 过期时间），
     /// 列宽与窗口行对齐（标签 40pt，过期时间占满百分比+重置时间两列的 72pt）。
     @ViewBuilder
     private var resetBankSection: some View {
@@ -205,10 +205,6 @@ struct TokenUsageLimitCardView: View {
             let rows = TokenUsageFormat.resetBankRowSpecs(resetBank: resetBank, now: now, strings: strings)
             if !rows.isEmpty || resetBank.displayCount != nil {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(strings.tokenResetBankTitle)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(Theme.Stats.text3)
-
                     if rows.isEmpty, let count = resetBank.displayCount {
                         // 官方只给了数量没有明细时的退化展示
                         Text(String(format: strings.tokenResetBankCountOnlyFormat, count))
