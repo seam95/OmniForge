@@ -147,10 +147,15 @@ if (( DMG )); then
     DMG_PATH="build/stage/$DMG_NAME"
     echo "▸ Creating $DMG_NAME …"
     rm -f "$DMG_PATH"
-    # 无多余文件、UDZO 压缩、保留权限；app 已签名，不再改其内容
+    # 组装卷内容：app + Applications 符号链接（拖拽安装入口）
+    DMG_ROOT="$STAGE_PARENT/dmg"
+    mkdir -p "$DMG_ROOT"
+    ditto --noextattr --noqtn "build/stage/$APP_NAME.app" "$DMG_ROOT/$APP_NAME.app"
+    ln -s /Applications "$DMG_ROOT/Applications"
+    # UDZO 压缩、保留权限与符号链接；app 已签名，ditto 复制不改其内容
     hdiutil create -volname "$APP_NAME" \
         -fs HFS+ \
-        -srcfolder "build/stage/$APP_NAME.app" \
+        -srcfolder "$DMG_ROOT" \
         -ov -format UDZO \
         "$DMG_PATH" >/dev/null
     echo "✓ DMG ready: $DMG_PATH"
