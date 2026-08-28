@@ -140,24 +140,88 @@ if (( INSTALL )); then
     echo "✓ Installed: /Applications/$APP_NAME.app"
 fi
 
-# Step 9: 打包 .dmg（用于分发；ad-hoc 签名，用户首次打开需 xattr -dr）
+# Step 9: 打包 .dmg（用于分发；含拖拽安装布局；包未公证，用户首次打开需 xattr -dr）
 if (( DMG )); then
     VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
     DMG_NAME="$APP_NAME-$VERSION-macOS.dmg"
     DMG_PATH="build/stage/$DMG_NAME"
     echo "▸ Creating $DMG_NAME …"
     rm -f "$DMG_PATH"
-    # 组装卷内容：app + Applications 符号链接（拖拽安装入口）
+
+    # 组装卷内容：app + Applications 符号链接（拖拽安装入口）+ 背景图 + 卷图标
     DMG_ROOT="$STAGE_PARENT/dmg"
-    mkdir -p "$DMG_ROOT"
+    mkdir -p "$DMG_ROOT/.background"
     ditto --noextattr --noqtn "build/stage/$APP_NAME.app" "$DMG_ROOT/$APP_NAME.app"
     ln -s /Applications "$DMG_ROOT/Applications"
-    # UDZO 压缩、保留权限与符号链接；app 已签名，ditto 复制不改其内容
+    cp Resources/dmg/background.png "$DMG_ROOT/.background/background.png"
+    cp Resources/dmg/background@2x.png "$DMG_ROOT/.background/background@2x.png"
+    if [[ -f "$DMG_ROOT/$APP_NAME.app/Contents/Resources/AppIcon.icns" ]]; then
+        cp "$DMG_ROOT/$APP_NAME.app/Contents/Resources/AppIcon.icns" "$DMG_ROOT/.VolumeIcon.icns"
+    fi
+
+    # 先产出可读写镜像，写入 Finder 视图（背景/图标布局）后再压缩为 UDZO；app 已签名，ditto 复制不改其内容
+    UDRW_PATH="$STAGE_PARENT/dmg-udrw.dmg"
     hdiutil create -volname "$APP_NAME" \
         -fs HFS+ \
         -srcfolder "$DMG_ROOT" \
-        -ov -format UDZO \
-        "$DMG_PATH" >/dev/null
+        -ov -format UDRW \
+        "$UDRW_PATH" >/dev/null
+
+    # Finder 仅对默认挂载点（/Volumes/<卷名>）写入 .DS_Store，自定义 -mountpoint 会丢布局
+    MOUNT_DIR="/Volumes/$APP_NAME"
+    # 残留同名卷会抢占默认挂载点（新卷会挂成「名字 1」导致路径错位），先强制弹出
+    if [[ -d "$MOUNT_DIR" ]]; then
+        hdiutil detach "$MOUNT_DIR" -force >/dev/null 2>&1 || true
+    fi
+    if hdiutil attach -readwrite -noverify -noautoopen "$UDRW_PATH" >/dev/null 2>&1; then
+        sleep 2
+        # 写入图标视图：600×400 无栏窗口、128pt 图标、背景图、app 与 Applications 对齐箭头两端。
+        # 首次运行会请求一次「控制 Finder」授权；失败不阻塞出包，仅回退默认外观。
+        if ! osascript <<AS 2>/dev/null
+tell application "Finder"
+    tell disk "$APP_NAME"
+        open
+        set current view of container window to icon view
+        set toolbar visible of container window to false
+        set statusbar visible of container window to false
+        set pathbar visible of container window to false
+        set the bounds of container window to {180, 120, 780, 520}
+        set viewOptions to the icon view options of container window
+        set arrangement of viewOptions to not arranged
+        set icon size of viewOptions to 128
+        set background picture of viewOptions to (POSIX file "$MOUNT_DIR/.background/background.png")
+        set position of item "$APP_NAME.app" of container window to {86, 126}
+        set position of item "Applications" of container window to {386, 126}
+        close
+        open
+        update without registering applications
+        delay 2
+        close
+    end tell
+end tell
+AS
+        then
+            echo "⚠ Finder 布局写入失败（可能未授权「控制 Finder」），dmg 将使用默认外观" >&2
+        fi
+        # 卷图标生效需要 custom-icon 标记；SetFile 随 CLT 提供，缺失则跳过
+        if command -v SetFile >/dev/null 2>&1 && [[ -f "$MOUNT_DIR/.VolumeIcon.icns" ]]; then
+            SetFile -a C "$MOUNT_DIR" 2>/dev/null || true
+            SetFile -c icnC "$MOUNT_DIR/.VolumeIcon.icns" 2>/dev/null || true
+        fi
+        # 等待 .DS_Store 落盘；Finder 短暂占用卷时延迟重试，最后才强制卸载
+        sync
+        if ! hdiutil detach "$MOUNT_DIR" >/dev/null 2>&1; then
+            sleep 2
+            if ! hdiutil detach "$MOUNT_DIR" >/dev/null 2>&1; then
+                hdiutil detach "$MOUNT_DIR" -force >/dev/null 2>&1 \
+                    || echo "⚠ 卸载 $MOUNT_DIR 失败，卷可能残留，请手动弹出后再打包" >&2
+            fi
+        fi
+    else
+        echo "⚠ 无法挂载可读写镜像，跳过 Finder 布局" >&2
+    fi
+
+    hdiutil convert "$UDRW_PATH" -format UDZO -imagekey zlib-level=9 -o "$DMG_PATH" >/dev/null
     echo "✓ DMG ready: $DMG_PATH"
 fi
 
