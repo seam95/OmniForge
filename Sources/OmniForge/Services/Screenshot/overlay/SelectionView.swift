@@ -303,44 +303,44 @@ class SelectionView: NSView {
     }
 
     /// 按 handle 与当前点计算新选区（最小边 minSize）。
+    /// 拖动手柄只移动其所在边，对面边固定不动；拖动越过对面边时贴固定边
+    /// 内侧压缩到 minSize，不翻转。AppKit 非 flipped 坐标（y 向上）。
     static func resizedRect(
         from original: NSRect,
         handle: HandlePosition,
         to point: NSPoint,
         minSize: CGFloat = 5
     ) -> NSRect {
-        var r = original
+        var minX = original.minX, maxX = original.maxX
+        var minY = original.minY, maxY = original.maxY
         switch handle {
         case .topLeft:
-            r.origin.x = min(point.x, original.maxX)
-            r.origin.y = min(point.y, original.maxY)
-            r.size.width = max(original.maxX - r.origin.x, minSize)
-            r.size.height = max(original.maxY - r.origin.y, minSize)
+            minX = point.x
+            maxY = point.y
         case .topRight:
-            r.origin.y = min(point.y, original.maxY)
-            r.size.width = max(point.x - original.minX, minSize)
-            r.size.height = max(original.maxY - r.origin.y, minSize)
+            maxX = point.x
+            maxY = point.y
         case .bottomLeft:
-            r.origin.x = min(point.x, original.maxX)
-            r.size.width = max(original.maxX - r.origin.x, minSize)
-            r.size.height = max(point.y - original.minY, minSize)
+            minX = point.x
+            minY = point.y
         case .bottomRight:
-            r.size.width = max(point.x - original.minX, minSize)
-            r.size.height = max(point.y - original.minY, minSize)
+            maxX = point.x
+            minY = point.y
         case .topCenter:
-            let dy = original.maxY - point.y
-            r.origin.y = original.minY + (original.height - max(dy, minSize))
-            r.size.height = max(dy, minSize)
+            maxY = point.y
         case .bottomCenter:
-            r.size.height = max(point.y - original.minY, minSize)
+            minY = point.y
         case .leftCenter:
-            let dx = original.maxX - point.x
-            r.origin.x = original.minX + (original.width - max(dx, minSize))
-            r.size.width = max(dx, minSize)
+            minX = point.x
         case .rightCenter:
-            r.size.width = max(point.x - original.minX, minSize)
+            maxX = point.x
         }
-        return r
+        // 越过对面边时贴固定边内侧夹取，保证固定边坐标不变
+        minX = min(minX, original.maxX - minSize)
+        maxX = max(maxX, original.minX + minSize)
+        minY = min(minY, original.maxY - minSize)
+        maxY = max(maxY, original.minY + minSize)
+        return NSRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 
     // MARK: - 鼠标事件

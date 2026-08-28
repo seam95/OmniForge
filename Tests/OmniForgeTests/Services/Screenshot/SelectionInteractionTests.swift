@@ -20,12 +20,15 @@ final class SelectionInteractionTests: XCTestCase {
         let view = SelectionView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
         let original = NSRect(x: 50, y: 50, width: 80, height: 60)
         view.updateSelectionRect(original)
-        // AppKit 非 flipped：bottomRight 锚在 (maxX, minY)，向下/右拖增大（y 更小为向下）。
-        // 向右上拖到 (200, 150) 使宽高同时增大（高度 = 150 - 50）。
-        view.resizeByExternalDrag(handle: .bottomRight, originalRect: original, currentPoint: NSPoint(x: 200, y: 150))
+        // AppKit 非 flipped：bottomRight 手柄在 (maxX, minY)，向右下拖增大（y 更小为向下）。
+        // 拖到 (200, 20)：右边/底边跟随，左边/顶边固定，宽高同时增大。
+        view.resizeByExternalDrag(handle: .bottomRight, originalRect: original, currentPoint: NSPoint(x: 200, y: 20))
         let rect = view.currentSelectionRect!
         XCTAssertGreaterThan(rect.width, 80)
         XCTAssertGreaterThan(rect.height, 60)
+        // 对面边固定：左边与顶边不得移动
+        XCTAssertEqual(rect.minX, original.minX, accuracy: 0.5)
+        XCTAssertEqual(rect.maxY, original.maxY, accuracy: 0.5)
     }
 
     func test_selectionLocked_outsideClickDoesNotResetSelection() {
