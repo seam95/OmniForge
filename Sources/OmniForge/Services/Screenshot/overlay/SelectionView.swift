@@ -62,6 +62,9 @@ class SelectionView: NSView {
     var visibleFrameProvider: (() -> NSRect?)?
     /// 主屏高度来源（CG 全局 Y 翻转基准）。生产用 `NSScreen.screens.first?.frame.maxY`。
     var primaryDisplayHeightProvider: (() -> CGFloat?)?
+    /// 视图 backingScale 来源；生产用 `window?.backingScaleFactor`，测试可注入。
+    /// 拖动中的选区按它吸附物理像素网格。
+    var backingScaleProvider: (() -> CGFloat?)?
     /// 当前悬停高亮矩形（视图坐标，仅 idle 态有效）。
     private var hoverRect: NSRect?
     /// 当前悬停查询任务（取消前一个未完成的查询，避免并发竞态）。
@@ -521,7 +524,7 @@ class SelectionView: NSView {
             NSCursor.closedHand.set()
             let delta = CGPoint(x: point.x - dragStart.x, y: point.y - dragStart.y)
             let movedRect = dragOriginalRect.offsetBy(dx: delta.x, dy: delta.y)
-            selectionRect = clampMove(rect: movedRect)
+            selectionRect = pixelAlignedSelection(clampMove(rect: movedRect))
             if let rect = selectionRect {
                 delegate?.selectionDidChange(rect: rect)
             }
@@ -534,7 +537,7 @@ class SelectionView: NSView {
                 to: point,
                 minSize: minSelectionSize
             )
-            selectionRect = constrainToBounds(newRect)
+            selectionRect = pixelAlignedSelection(constrainToBounds(newRect))
             if let rect = selectionRect {
                 delegate?.selectionDidChange(rect: rect)
             }
@@ -594,6 +597,16 @@ class SelectionView: NSView {
     }
 
     // MARK: - 几何计算
+
+    /// 拖动中的选区吸附物理像素网格：编辑器底图每帧按 captureRect 从快照现裁
+    /// （`CGImage.cropping(to:)` 会把浮点 rect 积分化），若选区保持浮点，
+    /// 裁剪源整数步进与绘制目标浮点连续之间的相位差会让挖洞内内容
+    /// 在 ±1 物理像素内锯齿往返（移动选区时画面轻微抖动）。
+    /// 每帧对齐后绿框/挖洞/canvas frame/captureRect 落在同一网格，内容严格锚定屏幕。
+    private func pixelAlignedSelection(_ rect: NSRect) -> NSRect {
+        let scale = backingScaleProvider?() ?? window?.backingScaleFactor ?? 1
+        return DisplayCoordinate.pixelAlignedRect(rect, pointPixelScale: scale)
+    }
 
     /// 从起始点到当前点计算选区。
     private func dragRect(from start: NSPoint, to end: NSPoint) -> NSRect {
@@ -700,7 +713,7 @@ class SelectionView: NSView {
     /// 工具栏手柄等外部拖动：相对 originalRect 平移并夹取 bounds（保持尺寸）。
     func moveByExternalDrag(deltaFromOriginal: CGSize, originalRect: NSRect) {
         let moved = originalRect.offsetBy(dx: deltaFromOriginal.width, dy: deltaFromOriginal.height)
-        selectionRect = clampMove(rect: moved)
+        selectionRect = pixelAlignedSelection(clampMove(rect: moved))
         state = .selected
         if let rect = selectionRect {
             delegate?.selectionDidChange(rect: rect)
@@ -725,7 +738,7 @@ class SelectionView: NSView {
             to: currentPoint,
             minSize: minSelectionSize
         )
-        selectionRect = constrainToBounds(newRect)
+        selectionRect = pixelAlignedSelection(constrainToBounds(newRect))
         state = .selected
         if let rect = selectionRect {
             delegate?.selectionDidChange(rect: rect)

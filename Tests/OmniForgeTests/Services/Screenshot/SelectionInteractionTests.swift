@@ -16,6 +16,77 @@ final class SelectionInteractionTests: XCTestCase {
         XCTAssertEqual(rect.height, 80, accuracy: 0.5)
     }
 
+    /// 拖动中的选区必须吸附物理像素网格（@2x = 0.5pt 网格）：编辑器底图每帧按
+    /// captureRect 从快照现裁（`CGImage.cropping(to:)` 对浮点 rect 积分化），
+    /// 浮点选区会让裁剪源整数步进与浮点绘制目标产生相位锯齿——挖洞内内容
+    /// 在 ±1 物理像素内往返（回归：移动选区时画面轻微抖动）。
+    private func assertPixelAligned(_ rect: NSRect, scale: CGFloat, _ label: String) {
+        XCTAssertEqual(rect.minX * scale, (rect.minX * scale).rounded(), accuracy: 0.001, "\(label) minX")
+        XCTAssertEqual(rect.minY * scale, (rect.minY * scale).rounded(), accuracy: 0.001, "\(label) minY")
+        XCTAssertEqual(rect.width * scale, (rect.width * scale).rounded(), accuracy: 0.001, "\(label) width")
+        XCTAssertEqual(rect.height * scale, (rect.height * scale).rounded(), accuracy: 0.001, "\(label) height")
+    }
+
+    func test_moveDrag_pixelAlignsSelectionToBackingGrid() {
+        let view = SelectionView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+        view.backingScaleProvider = { 2 }
+        let original = NSRect(x: 40, y: 40, width: 100, height: 80)
+        view.updateSelectionRect(original)
+        view.selectionLocked = true
+        view.annotationToolActive = false
+
+        let down = NSEvent.mouseEvent(
+            with: .leftMouseDown, location: NSPoint(x: 80, y: 80),
+            modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            eventNumber: 1, clickCount: 1, pressure: 1
+        )!
+        view.mouseDown(with: down)
+        let drag = NSEvent.mouseEvent(
+            with: .leftMouseDragged, location: NSPoint(x: 110.37, y: 110.62),
+            modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            eventNumber: 2, clickCount: 1, pressure: 1
+        )!
+        view.mouseDragged(with: drag)
+
+        let rect = view.currentSelectionRect!
+        assertPixelAligned(rect, scale: 2, "move drag")
+        XCTAssertEqual(rect.minX, 70.5, accuracy: 0.001)
+        XCTAssertEqual(rect.minY, 70.5, accuracy: 0.001)
+        XCTAssertEqual(rect.size, original.size)
+    }
+
+    func test_resizeByExternalDrag_pixelAlignsSelectionToBackingGrid() {
+        let view = SelectionView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+        view.backingScaleProvider = { 2 }
+        let original = NSRect(x: 40, y: 40, width: 100, height: 80)
+        view.updateSelectionRect(original)
+
+        // topRight：右边跟随 170.3 → 宽 130.3；顶边跟随 100.7 → 高 60.7；均对齐到 0.5
+        view.resizeByExternalDrag(
+            handle: .topRight, originalRect: original, currentPoint: NSPoint(x: 170.3, y: 100.7)
+        )
+        let rect = view.currentSelectionRect!
+        assertPixelAligned(rect, scale: 2, "external resize")
+        XCTAssertEqual(rect.minX, 40, accuracy: 0.001)
+        XCTAssertEqual(rect.minY, 40, accuracy: 0.001)
+        XCTAssertEqual(rect.width, 130.5, accuracy: 0.001)
+        XCTAssertEqual(rect.height, 60.5, accuracy: 0.001)
+    }
+
+    func test_moveByExternalDrag_pixelAlignsSelectionToBackingGrid() {
+        let view = SelectionView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+        view.backingScaleProvider = { 2 }
+        let original = NSRect(x: 40, y: 40, width: 100, height: 80)
+        view.updateSelectionRect(original)
+
+        view.moveByExternalDrag(deltaFromOriginal: CGSize(width: 10.33, height: 10.67), originalRect: original)
+        let rect = view.currentSelectionRect!
+        assertPixelAligned(rect, scale: 2, "external move")
+        XCTAssertEqual(rect.minX, 50.5, accuracy: 0.001)
+        XCTAssertEqual(rect.minY, 50.5, accuracy: 0.001)
+        XCTAssertEqual(rect.size, original.size)
+    }
+
     func test_resizeByExternalDrag_bottomRight_grows() {
         let view = SelectionView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
         let original = NSRect(x: 50, y: 50, width: 80, height: 60)
