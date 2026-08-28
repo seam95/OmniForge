@@ -1,30 +1,31 @@
 import SwiftUI
 
 enum UtilityTool: String, CaseIterable, Identifiable {
-    case cleaner
-    case uninstaller
-    case colorPicker
-    case networkDiagnostics
-    case dshWeb
+    // case 声明顺序即实用工具列表的展示顺序。
     case stickyNotes
+    case dshWeb
+    case networkDiagnostics
+    case colorPicker
+    case uninstaller
+    case cleaner
 
     var id: String { rawValue }
 
     static func visibleCases(isAvailable: (AppFeature) -> Bool) -> [UtilityTool] {
         allCases.filter { tool in
             switch tool {
-            case .cleaner:
-                return isAvailable(.cleaner)
-            case .uninstaller:
-                return isAvailable(.uninstaller)
-            case .colorPicker:
-                return isAvailable(.colorPicker)
-            case .networkDiagnostics:
-                return isAvailable(.networkDiagnostics)
-            case .dshWeb:
-                return isAvailable(.dshWeb)
             case .stickyNotes:
                 return isAvailable(.stickyNotes)
+            case .dshWeb:
+                return isAvailable(.dshWeb)
+            case .networkDiagnostics:
+                return isAvailable(.networkDiagnostics)
+            case .colorPicker:
+                return isAvailable(.colorPicker)
+            case .uninstaller:
+                return isAvailable(.uninstaller)
+            case .cleaner:
+                return isAvailable(.cleaner)
             }
         }
     }
@@ -40,72 +41,72 @@ enum UtilityTool: String, CaseIterable, Identifiable {
 
     func title(in strings: Strings) -> String {
         switch self {
-        case .cleaner:
-            return strings.utilityCleaner
-        case .uninstaller:
-            return strings.utilityUninstaller
-        case .colorPicker:
-            return strings.colorPickerName
-        case .networkDiagnostics:
-            return strings.featureHubNameNetworkDiagnostics
-        case .dshWeb:
-            return strings.featureHubNameDSHWeb
         case .stickyNotes:
             return strings.featureHubNameStickyNotes
+        case .dshWeb:
+            return strings.featureHubNameDSHWeb
+        case .networkDiagnostics:
+            return strings.featureHubNameNetworkDiagnostics
+        case .colorPicker:
+            return strings.colorPickerName
+        case .uninstaller:
+            return strings.utilityUninstaller
+        case .cleaner:
+            return strings.utilityCleaner
         }
     }
 
     /// 对应的功能目录项，用于复用图标 / 名称 / 描述，避免重复定义展示元数据。
     var feature: AppFeature {
         switch self {
-        case .cleaner:
-            return .cleaner
-        case .uninstaller:
-            return .uninstaller
-        case .colorPicker:
-            return .colorPicker
-        case .networkDiagnostics:
-            return .networkDiagnostics
-        case .dshWeb:
-            return .dshWeb
         case .stickyNotes:
             return .stickyNotes
+        case .dshWeb:
+            return .dshWeb
+        case .networkDiagnostics:
+            return .networkDiagnostics
+        case .colorPicker:
+            return .colorPicker
+        case .uninstaller:
+            return .uninstaller
+        case .cleaner:
+            return .cleaner
         }
     }
 
     /// 列表行展示的 SF Symbol。
     func symbolName() -> String {
         switch self {
-        case .cleaner:
-            return "trash"
-        case .uninstaller:
-            return "trash"
-        case .colorPicker:
-            return "eyedropper"
-        case .networkDiagnostics:
-            return "globe"
-        case .dshWeb:
-            return "server.rack"
         case .stickyNotes:
             return "note.text"
+        case .dshWeb:
+            return "server.rack"
+        case .networkDiagnostics:
+            return "globe"
+        case .colorPicker:
+            return "eyedropper"
+        case .uninstaller:
+            return "trash"
+        case .cleaner:
+            return "trash"
         }
     }
 
     /// 列表行图标徽章的主题高亮色。
     var tintColor: Color {
         switch self {
-        case .cleaner:
-            return .blue
-        case .uninstaller:
-            return Color(red: 0.95, green: 0.35, blue: 0.32)
-        case .colorPicker:
-            return .orange
-        case .networkDiagnostics:
-            return .green
-        case .dshWeb:
-            return .purple
         case .stickyNotes:
             return .yellow
+        case .dshWeb:
+            return .purple
+        case .networkDiagnostics:
+            return .green
+        case .colorPicker:
+            return .orange
+        case .uninstaller:
+            return Color(red: 0.95, green: 0.35, blue: 0.32)
+        case .cleaner:
+            return .blue
         }
     }
 
@@ -115,18 +116,18 @@ enum UtilityTool: String, CaseIterable, Identifiable {
     /// 列表行展示的本地化描述。
     func hubDescription(in strings: Strings) -> String {
         switch self {
-        case .cleaner:
-            return strings.utilityCleanerSubtitle
-        case .uninstaller:
-            return strings.utilityUninstallerSubtitle
-        case .colorPicker:
-            return strings.utilityColorPickerSubtitle
-        case .networkDiagnostics:
-            return strings.utilityNetworkDiagnosticsSubtitle
-        case .dshWeb:
-            return strings.utilityDSHWebSubtitle
         case .stickyNotes:
             return strings.utilityStickyNotesSubtitle
+        case .dshWeb:
+            return strings.utilityDSHWebSubtitle
+        case .networkDiagnostics:
+            return strings.utilityNetworkDiagnosticsSubtitle
+        case .colorPicker:
+            return strings.utilityColorPickerSubtitle
+        case .uninstaller:
+            return strings.utilityUninstallerSubtitle
+        case .cleaner:
+            return strings.utilityCleanerSubtitle
         }
     }
 }
