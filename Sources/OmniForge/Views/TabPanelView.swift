@@ -16,6 +16,7 @@ struct TabPanelView: View {
         .background(background)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .frame(minWidth: 720, minHeight: 460)
+        .omniNoFocusRing()
     }
 
     private var tabHeader: some View {

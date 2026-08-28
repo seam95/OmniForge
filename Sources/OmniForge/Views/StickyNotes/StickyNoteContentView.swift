@@ -39,6 +39,7 @@ struct StickyNoteContentView: View {
             .strokeBorder(Color.black.opacity(colorScheme == .dark ? 0.35 : 0.12), lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: StickyNoteChrome.cornerRadius, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: StickyNoteChrome.cornerRadius, style: .continuous))
+        .omniNoFocusRing()
     }
 
     // MARK: - 工具栏

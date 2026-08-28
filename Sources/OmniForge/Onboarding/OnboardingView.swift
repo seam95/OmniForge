@@ -27,6 +27,7 @@ struct OnboardingView: View {
         }
         .frame(width: 640, height: 480)
         .background(Color(nsColor: .windowBackgroundColor))
+        .omniNoFocusRing()
     }
 
     private var navigationBar: some View {

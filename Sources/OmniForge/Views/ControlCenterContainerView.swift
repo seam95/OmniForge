@@ -109,6 +109,7 @@ struct ControlCenterContainerView: View {
         .onChange(of: runtime.revision) { _, _ in
             resolveSelection(in: MenuPanel.visibleCases(isAvailable: runtime.isAvailable))
         }
+        .omniNoFocusRing()
     }
 
     /// AppState 尚未注入 coordinator 时的安全默认。
@@ -441,7 +442,6 @@ private struct ControlCenterNavButton: View {
             .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous))
         }
         .buttonStyle(.plain)
-        .focusEffectDisabled()
         .foregroundStyle(isActive ? (colorScheme == .light ? Theme.Stats.text1 : Color.white) : (isHovered ? (colorScheme == .light ? Theme.Stats.text1 : Color.primary) : (colorScheme == .light ? Theme.Stats.text2 : Color.secondary)))
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous)

@@ -95,6 +95,7 @@ struct WhatsNewView: View {
         }
         .frame(width: 520, height: 420)
         .background(Color(nsColor: .windowBackgroundColor))
+        .omniNoFocusRing()
     }
 }
 

@@ -55,6 +55,7 @@ struct SettingsView: View {
         .onChange(of: runtime.revision) { _, _ in
             navigation.select(navigation.selectedTab, isAvailable: runtime.isAvailable)
         }
+        .omniNoFocusRing()
     }
 
     @ViewBuilder

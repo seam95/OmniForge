@@ -21,6 +21,7 @@ struct DockedShelfView: View {
                 ShelfPill()
             }
         }
+        .omniNoFocusRing()
     }
 }
 

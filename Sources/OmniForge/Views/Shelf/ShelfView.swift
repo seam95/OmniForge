@@ -68,6 +68,7 @@ struct ShelfView: View {
             }
             return accepted
         }
+        .omniNoFocusRing()
     }
 
     private var isDropTargeted: Bool {

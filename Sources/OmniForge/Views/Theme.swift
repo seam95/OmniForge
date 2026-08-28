@@ -134,6 +134,12 @@ extension View {
     ) -> some View {
         self.modifier(OmniCardModifier(isSelected: isSelected, cornerRadius: cornerRadius, isInteractive: isInteractive))
     }
+
+    /// 禁用键盘焦点时的系统蓝色焦点环（Tab 遍历/初始焦点均不显示）；
+    /// 不影响焦点移动与文本输入光标。各窗口根视图统一应用。
+    public func omniNoFocusRing() -> some View {
+        focusEffectDisabled()
+    }
 }
 
 public struct FooterButton: View {
