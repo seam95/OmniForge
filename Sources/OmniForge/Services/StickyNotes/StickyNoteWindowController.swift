@@ -65,7 +65,9 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
     /// 窗口 frame 变化（拖动 / 缩放松手）→ Manager 持久化。
     var onFrameChanged: ((UUID, NSRect) -> Void)?
     private var dragStartOrigin: CGPoint?
+    private var dragStartScreenLocation: NSPoint?
     private var resizeStartFrame: CGRect?
+    private var resizeStartScreenLocation: NSPoint?
 
     init(
         note: StickyNote,
@@ -96,17 +98,11 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
             onActivateForTyping: { [weak self] in
                 self?.activateForTyping()
             },
-            onWindowDragChanged: { [weak self] translation in
-                self?.handleDragChanged(translation)
+            onToolbarDragEvent: { [weak self] event in
+                self?.handleToolbarDrag(event)
             },
-            onWindowDragEnded: { [weak self] translation in
-                self?.handleDragEnded(translation)
-            },
-            onResizeChanged: { [weak self] translation in
-                self?.handleResizeChanged(translation)
-            },
-            onResizeEnded: { [weak self] translation in
-                self?.handleResizeEnded(translation)
+            onResizeEvent: { [weak self] event in
+                self?.handleResize(event)
             }
         )
         let host = NSHostingController(rootView: AnyView(view))
@@ -191,41 +187,71 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
 
     // MARK: - 拖动 / 缩放
 
-    private func handleDragChanged(_ translation: CGSize) {
-        if dragStartOrigin == nil {
+    /// 工具栏拖动：以事件屏幕坐标增量移动窗口（对齐贴图窗口先例）。
+    /// 不用 SwiftUI DragGesture——窗口一旦移动，其视图坐标系随之重映射，
+    /// translation 会跳变并形成反馈抖动；AppKit 事件的屏幕坐标不受窗口移动影响。
+    private func handleToolbarDrag(_ event: NSEvent) {
+        switch event.type {
+        case .leftMouseDown:
             dragStartOrigin = panel.frame.origin
+            dragStartScreenLocation = panel.convertPoint(toScreen: event.locationInWindow)
+        case .leftMouseDragged:
+            guard let startOrigin = dragStartOrigin,
+                  let startLocation = dragStartScreenLocation else { return }
+            let current = panel.convertPoint(toScreen: event.locationInWindow)
+            panel.setFrameOrigin(
+                NSPoint(
+                    x: startOrigin.x + (current.x - startLocation.x),
+                    y: startOrigin.y + (current.y - startLocation.y)
+                )
+            )
+        case .leftMouseUp:
+            if dragStartOrigin != nil {
+                dragStartOrigin = nil
+                dragStartScreenLocation = nil
+                onFrameChanged?(noteID, panel.frame)
+            }
+        default:
+            break
         }
-        guard let start = dragStartOrigin else { return }
-        panel.setFrameOrigin(NSPoint(x: start.x + translation.width, y: start.y - translation.height))
     }
 
-    private func handleDragEnded(_ translation: CGSize) {
-        defer { dragStartOrigin = nil }
-        guard let start = dragStartOrigin else { return }
-        let origin = NSPoint(x: start.x + translation.width, y: start.y - translation.height)
-        panel.setFrameOrigin(origin)
-        onFrameChanged?(noteID, panel.frame)
-    }
-
-    private func handleResizeChanged(_ translation: CGSize) {
-        let start = resizeStartFrame ?? panel.frame
-        if resizeStartFrame == nil {
+    /// 右下角缩放：锚定窗口左上角，光标位移换算尺寸（同样走事件屏幕坐标）。
+    private func handleResize(_ event: NSEvent) {
+        switch event.type {
+        case .leftMouseDown:
             resizeStartFrame = panel.frame
+            resizeStartScreenLocation = panel.convertPoint(toScreen: event.locationInWindow)
+        case .leftMouseDragged:
+            applyResize(from: event)
+        case .leftMouseUp:
+            if resizeStartFrame != nil {
+                applyResize(from: event)
+                resizeStartFrame = nil
+                resizeStartScreenLocation = nil
+                onFrameChanged?(noteID, panel.frame)
+            }
+        default:
+            break
         }
-        let size = StickyNoteGeometry.clampedSize(
-            CGSize(width: start.width + translation.width, height: start.height - translation.height)
+    }
+
+    private func applyResize(from event: NSEvent) {
+        guard let startFrame = resizeStartFrame,
+              let startLocation = resizeStartScreenLocation else { return }
+        let current = panel.convertPoint(toScreen: event.locationInWindow)
+        // 屏幕坐标 y 向上为正：向右下拖 = dx 正、dy 负
+        let delta = CGSize(
+            width: current.x - startLocation.x,
+            height: startLocation.y - current.y
         )
-        // 右下角热区：锚定左上角，向右下扩展
+        let size = StickyNoteGeometry.clampedSize(
+            CGSize(width: startFrame.width + delta.width, height: startFrame.height + delta.height)
+        )
         panel.setFrame(
-            CGRect(x: start.minX, y: start.maxY - size.height, width: size.width, height: size.height),
+            CGRect(x: startFrame.minX, y: startFrame.maxY - size.height, width: size.width, height: size.height),
             display: true
         )
-    }
-
-    private func handleResizeEnded(_ translation: CGSize) {
-        handleResizeChanged(translation)
-        resizeStartFrame = nil
-        onFrameChanged?(noteID, panel.frame)
     }
 
     private func applyWindowLevel(pinned: Bool) {

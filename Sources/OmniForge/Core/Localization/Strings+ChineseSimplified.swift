@@ -1216,7 +1216,6 @@ extension Strings {
         stickyNotePlaceholder: "写下就好…",
         stickyNoteSaved: "已保存",
         stickyNoteSaving: "保存中…",
-        stickyNoteDragHandle: "移动便签",
         stickyNoteNewNote: "新建便签",
         stickyNoteColorYellow: "设为黄色便签",
         stickyNoteColorMint: "设为薄荷绿便签",

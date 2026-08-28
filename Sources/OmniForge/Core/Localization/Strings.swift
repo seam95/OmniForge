@@ -1343,7 +1343,6 @@ struct Strings: Equatable {
     let stickyNotePlaceholder: String
     let stickyNoteSaved: String
     let stickyNoteSaving: String
-    let stickyNoteDragHandle: String
     let stickyNoteNewNote: String
     let stickyNoteColorYellow: String
     let stickyNoteColorMint: String

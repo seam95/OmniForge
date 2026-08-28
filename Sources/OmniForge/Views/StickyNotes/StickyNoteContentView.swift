@@ -9,10 +9,8 @@ struct StickyNoteContentView: View {
     let stringsProvider: () -> Strings
 
     let onActivateForTyping: () -> Void
-    let onWindowDragChanged: (CGSize) -> Void
-    let onWindowDragEnded: (CGSize) -> Void
-    let onResizeChanged: (CGSize) -> Void
-    let onResizeEnded: (CGSize) -> Void
+    let onToolbarDragEvent: (NSEvent) -> Void
+    let onResizeEvent: (NSEvent) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var toolbarWidth: CGFloat = 0
@@ -45,33 +43,43 @@ struct StickyNoteContentView: View {
 
     // MARK: - 工具栏
 
+    /// 工具栏整条为拖动区（交互区铺底、控件叠上层），与常见窗口标题栏行为一致；
+    /// 按住按钮以外的任意空白处即可拖动整窗。
     private var toolbar: some View {
-        HStack(spacing: 6) {
-            dragHandle
-            if toolbarWidth >= StickyNoteChrome.colorDotsCollapseWidth {
-                colorDots
-            }
-            Spacer(minLength: 4)
-            toolbarButton(symbol: "plus", label: strings.stickyNoteNewNote) {
-                actions().onCreateNew()
-            }
-            toolbarButton(
-                symbol: note.pinned ? "pin.fill" : "pin",
-                label: note.pinned ? strings.stickyNoteUnpin : strings.stickyNotePin
-            ) {
-                actions().onTogglePin(note.id)
-            }
-            toolbarButton(
-                symbol: note.reminderAt != nil ? "bell.fill" : "bell",
-                label: note.reminderAt != nil ? strings.stickyNoteEditReminder : strings.stickyNoteSetReminder
-            ) {
-                showsReminderPanel.toggle()
-            }
-            toolbarButton(symbol: "eye", label: strings.stickyNoteCollapse) {
-                actions().onCollapse(note.id)
-            }
-            toolbarButton(symbol: "checkmark.circle", label: strings.stickyNoteComplete) {
-                actions().onComplete(note.id)
+        ZStack {
+            StickyNoteInteractionRegion(onEvent: onToolbarDragEvent)
+            HStack(spacing: 6) {
+                // 纯装饰握把：暗示工具栏可拖，不拦截事件
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(palette.text(colorScheme: colorScheme).opacity(0.4))
+                    .frame(width: 30, height: 22)
+                    .allowsHitTesting(false)
+                if toolbarWidth >= StickyNoteChrome.colorDotsCollapseWidth {
+                    colorDots
+                }
+                Spacer(minLength: 4)
+                toolbarButton(symbol: "plus", label: strings.stickyNoteNewNote) {
+                    actions().onCreateNew()
+                }
+                toolbarButton(
+                    symbol: note.pinned ? "pin.fill" : "pin",
+                    label: note.pinned ? strings.stickyNoteUnpin : strings.stickyNotePin
+                ) {
+                    actions().onTogglePin(note.id)
+                }
+                toolbarButton(
+                    symbol: note.reminderAt != nil ? "bell.fill" : "bell",
+                    label: note.reminderAt != nil ? strings.stickyNoteEditReminder : strings.stickyNoteSetReminder
+                ) {
+                    showsReminderPanel.toggle()
+                }
+                toolbarButton(symbol: "eye", label: strings.stickyNoteCollapse) {
+                    actions().onCollapse(note.id)
+                }
+                toolbarButton(symbol: "checkmark.circle", label: strings.stickyNoteComplete) {
+                    actions().onComplete(note.id)
+                }
             }
         }
         .frame(height: 26)
@@ -82,21 +90,6 @@ struct StickyNoteContentView: View {
                     .onChange(of: geo.size.width) { _, newValue in toolbarWidth = newValue }
             }
         )
-    }
-
-    /// 移动握把：按住拖动整窗（工具栏其余按钮不受影响）。
-    private var dragHandle: some View {
-        Image(systemName: "line.3.horizontal")
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(palette.text(colorScheme: colorScheme).opacity(0.55))
-            .frame(width: 30, height: 22)
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 3)
-                    .onChanged { value in onWindowDragChanged(value.translation) }
-                    .onEnded { value in onWindowDragEnded(value.translation) }
-            )
-            .help(strings.stickyNoteDragHandle)
     }
 
     private var colorDots: some View {
@@ -230,15 +223,13 @@ struct StickyNoteContentView: View {
     // MARK: - 缩放热区
 
     private var resizeHandle: some View {
-        Image(systemName: "arrow.down.right")
-            .font(.system(size: 9, weight: .semibold))
-            .foregroundStyle(palette.text(colorScheme: colorScheme).opacity(0.5))
+        StickyNoteInteractionRegion(onEvent: onResizeEvent)
             .frame(width: StickyNoteChrome.resizeHandleLength, height: StickyNoteChrome.resizeHandleLength)
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 2)
-                    .onChanged { value in onResizeChanged(value.translation) }
-                    .onEnded { value in onResizeEnded(value.translation) }
+            .overlay(
+                Image(systemName: "arrow.down.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(palette.text(colorScheme: colorScheme).opacity(0.5))
+                    .allowsHitTesting(false)
             )
             .padding(3)
     }
@@ -268,6 +259,42 @@ enum StickyNoteReminderText {
         components.hour = 9
         components.minute = 0
         return Calendar.current.date(from: components) ?? now.addingTimeInterval(24 * 3600)
+    }
+}
+
+// MARK: - 拖动 / 缩放交互区（AppKit 事件路径）
+
+/// 透传鼠标事件的透明交互区：controller 依事件类型处理按下 / 拖动 / 松手。
+/// 拖动必须走 AppKit 屏幕坐标而非 SwiftUI DragGesture（后者随窗口移动重映射，
+/// 会产生反馈抖动）。
+@MainActor
+final class StickyNoteInteractionRegionView: NSView {
+    var onEvent: ((NSEvent) -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        onEvent?(event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        onEvent?(event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        onEvent?(event)
+    }
+}
+
+struct StickyNoteInteractionRegion: NSViewRepresentable {
+    let onEvent: (NSEvent) -> Void
+
+    func makeNSView(context: Context) -> StickyNoteInteractionRegionView {
+        let view = StickyNoteInteractionRegionView()
+        view.onEvent = onEvent
+        return view
+    }
+
+    func updateNSView(_ view: StickyNoteInteractionRegionView, context: Context) {
+        view.onEvent = onEvent
     }
 }
 

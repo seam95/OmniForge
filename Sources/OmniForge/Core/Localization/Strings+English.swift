@@ -1216,7 +1216,6 @@ extension Strings {
         stickyNotePlaceholder: "Write it down…",
         stickyNoteSaved: "Saved",
         stickyNoteSaving: "Saving…",
-        stickyNoteDragHandle: "Move note",
         stickyNoteNewNote: "New note",
         stickyNoteColorYellow: "Set yellow note",
         stickyNoteColorMint: "Set mint note",
