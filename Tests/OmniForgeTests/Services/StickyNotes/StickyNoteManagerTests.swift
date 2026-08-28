@@ -188,6 +188,23 @@ final class StickyNoteManagerTests: XCTestCase {
         XCTAssertEqual(manager.notes.first(where: { $0.id == active.id })?.hidden, false)
         XCTAssertEqual(manager.notes.first(where: { $0.content == "已完成且隐藏" })?.hidden, true)
         XCTAssertEqual(presenter.shownNotes.map(\.id), [active.id])
+        // 已完成便签既不显示也不前置
+        let completedID = manager.notes.first(where: { $0.content == "已完成且隐藏" })!.id
+        XCTAssertFalse(presenter.frontedIDs.contains(completedID))
+        XCTAssertFalse(presenter.shownNotes.contains { $0.id == completedID })
+    }
+
+    func test_showAll_bringToFrontVisibleNotes() {
+        let manager = makeManager()
+        let first = manager.create()!
+        let second = manager.create()!
+        presenter.resetRecording()
+
+        manager.showAll()
+
+        // 可见但被其他窗口盖住的便签：不重走 show，直接前置
+        XCTAssertTrue(presenter.shownNotes.isEmpty)
+        XCTAssertEqual(presenter.frontedIDs, [first.id, second.id])
     }
 
     func test_uncomplete_clearsHiddenAndShows() {

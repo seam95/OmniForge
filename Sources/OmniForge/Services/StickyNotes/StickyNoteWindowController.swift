@@ -133,8 +133,10 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
             || abs(a.width - b.width) > 0.5 || abs(a.height - b.height) > 0.5
     }
 
+    /// 显示窗口：用 orderFrontRegardless——app 未激活时（如在最大化前台 app 中
+    /// 触发新建/恢复显示）也要压到前台 app 窗口之上；不激活 app、不抢焦点。
     func show() {
-        panel.orderFront(nil)
+        panel.orderFrontRegardless()
     }
 
     func hide() {

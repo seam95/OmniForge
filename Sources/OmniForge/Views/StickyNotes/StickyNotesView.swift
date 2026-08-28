@@ -152,46 +152,56 @@ private struct StickyNotesContent: View {
         }
     }
 
+    /// 进行中行：整行可点选 = 定位显示（恢复显示并前置，可压过最大化前台 app）；
+    /// 右侧操作按钮为嵌套按钮，各自拦截点击。
     private func activeRow(note: StickyNote) -> some View {
-        HStack(spacing: 8) {
-            colorBar(for: note.color, faded: false)
+        Button {
+            manager.restoreVisible(id: note.id)
+        } label: {
+            HStack(spacing: 8) {
+                colorBar(for: note.color, faded: false)
 
-            Text(note.summary.isEmpty ? strings.stickyNoteEmptyContent : note.summary)
-                .font(Theme.Stats.font11Regular)
-                .foregroundStyle(
-                    note.summary.isEmpty ? Color.secondary
-                        : (colorScheme == .light ? Theme.Stats.text1 : Color.primary)
-                )
-                .lineLimit(1)
-                .truncationMode(.tail)
+                Text(note.summary.isEmpty ? strings.stickyNoteEmptyContent : note.summary)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(
+                        note.summary.isEmpty ? Color.secondary
+                            : (colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                    )
+                    .lineLimit(1)
+                    .truncationMode(.tail)
 
-            if note.hidden {
-                statusBadge(strings.stickyNoteBadgeHidden)
-            }
-            if note.isReminderFired {
-                Image(systemName: "bell.badge.fill")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Theme.Stats.ram)
-            } else if note.reminderAt != nil {
-                Image(systemName: "bell.fill")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Theme.Stats.ram)
-            }
+                if note.hidden {
+                    statusBadge(strings.stickyNoteBadgeHidden)
+                }
+                if note.isReminderFired {
+                    Image(systemName: "bell.badge.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.Stats.ram)
+                } else if note.reminderAt != nil {
+                    Image(systemName: "bell.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.Stats.ram)
+                }
 
-            Spacer(minLength: 4)
+                Spacer(minLength: 4)
 
-            rowButton(icon: "rectangle.and.arrow.up.2", label: strings.stickyNoteLocate) {
-                manager.restoreVisible(id: note.id)
+                rowButton(icon: "rectangle.and.arrow.up.2", label: strings.stickyNoteLocate) {
+                    manager.restoreVisible(id: note.id)
+                }
+                rowButton(icon: "checkmark.circle", label: strings.stickyNoteComplete) {
+                    manager.complete(id: note.id)
+                }
+                rowButton(icon: "trash", label: strings.stickyNoteDelete, isDestructive: true) {
+                    notePendingDeletion = note
+                }
             }
-            rowButton(icon: "checkmark.circle", label: strings.stickyNoteComplete) {
-                manager.complete(id: note.id)
-            }
-            rowButton(icon: "trash", label: strings.stickyNoteDelete, isDestructive: true) {
-                notePendingDeletion = note
-            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .buttonStyle(.plain)
+        .help(strings.stickyNoteLocate)
     }
 
     private func completedRow(note: StickyNote) -> some View {

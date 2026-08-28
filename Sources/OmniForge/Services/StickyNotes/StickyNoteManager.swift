@@ -197,12 +197,18 @@ final class StickyNoteManager: ObservableObject {
         updateSavingIndicator()
     }
 
-    /// 托盘「显示所有便签」：仅恢复未完成便签（已完成只能经管理页处理）。
+    /// 托盘「显示所有便签」：未完成便签全部恢复显示并前置——
+    /// 收起的重新显示；可见但被其他窗口盖住的（如最大化前台 app）强制前置。
+    /// 已完成便签只能经管理页处理。
     func showAll() {
-        for note in notes where !note.completed && note.hidden {
-            mutate(note.id) { $0.hidden = false }
-            if let updated = notes.first(where: { $0.id == note.id }) {
-                windowPresenter.show(note: updated)
+        for note in notes where !note.completed {
+            if note.hidden {
+                mutate(note.id) { $0.hidden = false }
+                if let updated = notes.first(where: { $0.id == note.id }) {
+                    windowPresenter.show(note: updated)
+                }
+            } else {
+                windowPresenter.bringToFront(id: note.id)
             }
         }
     }
