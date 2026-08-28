@@ -1244,6 +1244,8 @@ extension Strings {
         stickyNoteMenuHideAll: "Hide All Notes",
         stickyNoteSectionActive: "Active",
         stickyNoteSectionCompleted: "Completed",
+        stickyNoteSectionSettings: "Settings",
+        stickyNoteCountsFormat: "%1$d active · %2$d completed",
         stickyNoteEmptyContent: "(Empty)",
         stickyNoteBadgeHidden: "Collapsed",
         stickyNoteCreateButton: "New Note",

@@ -68,19 +68,31 @@ final class HotkeyRecorderState: ObservableObject {
     }
 }
 
+/// 快捷键 recorder 的展示样式。
+enum HotkeyRecorderStyle {
+    /// 默认：系统 bordered 圆角按钮。
+    case bordered
+    /// 键帽样式：逐字符渲染 ⌘ ⇧ N 小键帽（便签管理页设计稿）。
+    case keycaps
+}
+
 struct HotkeyRecorderView: View {
     let displayText: String
     let onShortcutChanged: (KeyboardShortcuts.Shortcut?) -> Void
+    let style: HotkeyRecorderStyle
     @ObservedObject var l10n: L10n
     @StateObject private var state: HotkeyRecorderState
+    @Environment(\.colorScheme) private var colorScheme
 
     init(
         displayText: String,
         onShortcutChanged: @escaping (KeyboardShortcuts.Shortcut?) -> Void,
-        l10n: L10n
+        l10n: L10n,
+        style: HotkeyRecorderStyle = .bordered
     ) {
         self.displayText = displayText
         self.onShortcutChanged = onShortcutChanged
+        self.style = style
         self._l10n = ObservedObject(wrappedValue: l10n)
         self._state = StateObject(
             wrappedValue: HotkeyRecorderState(
@@ -91,20 +103,21 @@ struct HotkeyRecorderView: View {
     }
 
     var body: some View {
-        Button {
-            if state.phase == .recording {
-                state.cancel()
+        Group {
+            if style == .keycaps {
+                Button(action: toggleRecording) { keycapLabel }
+                    .buttonStyle(.plain)
             } else {
-                state.beginRecording()
+                Button(action: toggleRecording) {
+                    Text(buttonTitle)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .frame(minWidth: 130)
+                }
+                .buttonStyle(.bordered)
             }
-        } label: {
-            Text(buttonTitle)
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .frame(minWidth: 130)
         }
-        .buttonStyle(.bordered)
         .accessibilityLabel(l10n.s.settingsClipboardHotkeyRecording)
         .background(HotkeyLocalKeyMonitor(isActive: state.phase == .recording) { event in
             _ = state.consume(event)
@@ -116,6 +129,56 @@ struct HotkeyRecorderView: View {
 
     private var buttonTitle: String {
         state.phase == .recording ? l10n.s.settingsClipboardHotkeyRecording : state.displayText
+    }
+
+    private func toggleRecording() {
+        if state.phase == .recording {
+            state.cancel()
+        } else {
+            state.beginRecording()
+        }
+    }
+
+    /// 键帽标签：录制中显示提示文案，否则逐字符渲染键帽。
+    @ViewBuilder
+    private var keycapLabel: some View {
+        if state.phase == .recording {
+            Text(l10n.s.settingsClipboardHotkeyRecording)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(Color.primary.opacity(0.06))
+                )
+        } else {
+            HStack(spacing: 3) {
+                let characters = Array(state.displayText)
+                if characters.isEmpty {
+                    keycap("–")
+                } else {
+                    ForEach(characters.indices, id: \.self) { index in
+                        keycap(String(characters[index]))
+                    }
+                }
+            }
+        }
+    }
+
+    private func keycap(_ label: String) -> some View {
+        Text(label)
+            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .foregroundStyle(.primary)
+            .frame(minWidth: 20, minHeight: 20)
+            .background(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(colorScheme == .dark ? Color.white.opacity(0.12) : Color.white)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.18), lineWidth: 1)
+            )
     }
 }
 

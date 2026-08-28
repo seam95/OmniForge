@@ -1244,6 +1244,8 @@ extension Strings {
         stickyNoteMenuHideAll: "隐藏所有便签",
         stickyNoteSectionActive: "进行中",
         stickyNoteSectionCompleted: "已完成",
+        stickyNoteSectionSettings: "设置",
+        stickyNoteCountsFormat: "%1$d 张进行中 · %2$d 张已完成",
         stickyNoteEmptyContent: "(空)",
         stickyNoteBadgeHidden: "已收起",
         stickyNoteCreateButton: "新建便签",
@@ -1256,7 +1258,7 @@ extension Strings {
         stickyNoteDeleteConfirmMessage: "此便签将被永久删除，且无法恢复。",
         stickyNoteNoNotes: "暂无便签",
         stickyNoteHotkeyTitle: "新建便签快捷键",
-        stickyNoteNotificationPermission: "通知授权",
+        stickyNoteNotificationPermission: "系统通知权限",
         stickyNoteNotificationGranted: "已授权",
         stickyNoteNotificationDenied: "未授权"
     )

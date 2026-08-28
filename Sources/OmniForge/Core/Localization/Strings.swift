@@ -1378,6 +1378,10 @@ struct Strings: Equatable {
     // 管理页
     let stickyNoteSectionActive: String
     let stickyNoteSectionCompleted: String
+    /// 设置区分组标题。
+    let stickyNoteSectionSettings: String
+    /// 头部统计（%1$d = 进行中数量，%2$d = 已完成数量）。
+    let stickyNoteCountsFormat: String
     let stickyNoteEmptyContent: String
     let stickyNoteBadgeHidden: String
     let stickyNoteCreateButton: String
