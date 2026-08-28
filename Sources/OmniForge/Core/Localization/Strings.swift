@@ -1358,6 +1358,8 @@ struct Strings: Equatable {
     let stickyNoteReminderQuick15: String
     let stickyNoteReminderQuick1h: String
     let stickyNoteReminderQuickTomorrow: String
+    /// 精确时间分组小标签。
+    let stickyNoteReminderExactTime: String
     let stickyNoteReminderSet: String
     let stickyNoteReminderClear: String
     let stickyNoteReminderClose: String

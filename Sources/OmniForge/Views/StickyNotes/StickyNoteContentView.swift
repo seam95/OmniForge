@@ -418,7 +418,7 @@ struct StickyNoteTextEditor: NSViewRepresentable {
 
 // MARK: - 提醒设置面板
 
-/// 便签内嵌提醒面板：快捷项 + 精确设置 + 清除（SPEC 4.6）。
+/// 便签内嵌提醒面板：标题栏 + 蓝色胶囊快捷项 + 精确时间 + 设置/清除（设计稿 02）。
 struct StickyNoteReminderPanel: View {
     let note: StickyNote
     let strings: Strings
@@ -430,9 +430,15 @@ struct StickyNoteReminderPanel: View {
     @State private var draftDate = Date().addingTimeInterval(15 * 60)
     @State private var showsPastTimeError = false
 
+    /// 清除按钮红色（与管理页删除色一致）。
+    private let destructiveRed = Color(red: 0.95, green: 0.35, blue: 0.32)
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
+            HStack(spacing: 5) {
+                Image(systemName: "bell.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.accentColor)
                 Text(strings.stickyNoteSetReminder)
                     .font(.system(size: 12, weight: .semibold))
                 Spacer()
@@ -440,19 +446,27 @@ struct StickyNoteReminderPanel: View {
                     onClose()
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 18, height: 18)
+                        .background(Circle().fill(Color.primary.opacity(0.07)))
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .help(strings.stickyNoteReminderClose)
             }
 
             HStack(spacing: 6) {
-                quickButton(strings.stickyNoteReminderQuick15) { applyQuick(15 * 60) }
-                quickButton(strings.stickyNoteReminderQuick1h) { applyQuick(3600) }
-                quickButton(strings.stickyNoteReminderQuickTomorrow) {
+                quickCapsule(strings.stickyNoteReminderQuick15) { applyQuick(15 * 60) }
+                quickCapsule(strings.stickyNoteReminderQuick1h) { applyQuick(3600) }
+                quickCapsule(strings.stickyNoteReminderQuickTomorrow) {
                     commit(StickyNoteReminderText.tomorrowMorning(from: Date()))
                 }
             }
+
+            Text(strings.stickyNoteReminderExactTime)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
 
             DatePicker("", selection: $draftDate)
                 .datePickerStyle(.compact)
@@ -466,36 +480,63 @@ struct StickyNoteReminderPanel: View {
             }
 
             HStack(spacing: 8) {
-                Button(strings.stickyNoteReminderSet) {
+                Button {
                     commit(draftDate)
+                } label: {
+                    Text(strings.stickyNoteReminderSet)
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 3)
                 }
                 .buttonStyle(.borderedProminent)
-                .controlSize(.small)
                 if note.reminderAt != nil {
-                    Button(strings.stickyNoteReminderClear, role: .destructive) {
+                    Button {
                         onClearReminder()
                         onClose()
+                    } label: {
+                        Text(strings.stickyNoteReminderClear)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(destructiveRed)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 5)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(destructiveRed.opacity(0.07))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .strokeBorder(destructiveRed.opacity(0.35), lineWidth: 1)
+                            )
                     }
-                    .controlSize(.small)
+                    .buttonStyle(.plain)
                 }
             }
         }
         .padding(12)
-        .frame(width: 236, alignment: .leading)
+        .frame(width: 244, alignment: .leading)
         .background(.background)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
     }
 
-    private func quickButton(_ title: String, action: @escaping () -> Void) -> some View {
+    /// 快捷项胶囊：蓝字 + 浅蓝底 + 细描边。
+    private func quickCapsule(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 11))
-                .padding(.horizontal, 8)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Theme.accentColor)
+                .padding(.horizontal, 9)
                 .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Theme.accentColor.opacity(0.08))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(Theme.accentColor.opacity(0.22), lineWidth: 1)
+                )
         }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
+        .buttonStyle(.plain)
     }
 
     private func applyQuick(_ interval: TimeInterval) {
