@@ -367,12 +367,10 @@ struct StickyNoteTextEditor: NSViewRepresentable {
 
         let scrollView = NSScrollView()
         scrollView.documentView = textView
-        scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = false
         scrollView.borderType = .noBorder
         scrollView.drawsBackground = false
         scrollView.autoresizingMask = [.width, .height]
-        scrollView.verticalScroller?.scrollerStyle = .overlay
+        StickyNoteScroller.install(on: scrollView).knobColor = scrollerKnobColor
         return scrollView
     }
 
@@ -381,6 +379,7 @@ struct StickyNoteTextEditor: NSViewRepresentable {
         textView.onActivate = onActivate
         context.coordinator.onTextChange = onTextChange
         applyStyle(to: textView)
+        (scrollView.verticalScroller as? StickyNoteScroller)?.knobColor = scrollerKnobColor
         // 仅外部状态与当前文本不同才回写，避免打断输入
         if textView.string != text {
             let selectedRanges = textView.selectedRanges
@@ -399,6 +398,11 @@ struct StickyNoteTextEditor: NSViewRepresentable {
     private var textNSColor: NSColor {
         let swiftColor = palette.text(colorScheme: colorScheme)
         return NSColor(swiftColor)
+    }
+
+    /// 滚动条 knob 取便签文字色的低透明度版本，与纸质底色协调。
+    private var scrollerKnobColor: NSColor {
+        textNSColor.withAlphaComponent(0.32)
     }
 
     @MainActor
