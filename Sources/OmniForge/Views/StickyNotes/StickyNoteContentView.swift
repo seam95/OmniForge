@@ -62,12 +62,7 @@ struct StickyNoteContentView: View {
                 toolbarButton(symbol: "plus", label: strings.stickyNoteNewNote) {
                     actions().onCreateNew()
                 }
-                toolbarButton(
-                    symbol: note.pinned ? "pin.fill" : "pin",
-                    label: note.pinned ? strings.stickyNoteUnpin : strings.stickyNotePin
-                ) {
-                    actions().onTogglePin(note.id)
-                }
+                pinButton
                 toolbarButton(
                     symbol: note.reminderAt != nil ? "bell.fill" : "bell",
                     label: note.reminderAt != nil ? strings.stickyNoteEditReminder : strings.stickyNoteSetReminder
@@ -137,6 +132,27 @@ struct StickyNoteContentView: View {
         .help(label)
     }
 
+    /// 置顶按钮：激活态为橙色圆角方块底 + 白色实心图钉（设计稿 01）。
+    private var pinButton: some View {
+        Button {
+            actions().onTogglePin(note.id)
+        } label: {
+            Image(systemName: note.pinned ? "pin.fill" : "pin")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(
+                    note.pinned ? Color.white : palette.text(colorScheme: colorScheme).opacity(0.8)
+                )
+                .frame(width: StickyNoteChrome.toolbarButtonSize, height: StickyNoteChrome.toolbarButtonSize)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(note.pinned ? StickyNoteChrome.pinActiveBackground : Color.clear)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(note.pinned ? strings.stickyNoteUnpin : strings.stickyNotePin)
+    }
+
     // MARK: - 正文
 
     private var editor: some View {
@@ -168,18 +184,31 @@ struct StickyNoteContentView: View {
 
     private var statusBar: some View {
         HStack(spacing: 8) {
-            Text(viewModel.isSaving ? strings.stickyNoteSaving : strings.stickyNoteSaved)
-                .font(.system(size: 10))
-                .foregroundStyle(palette.text(colorScheme: colorScheme).opacity(0.6))
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(viewModel.isSaving ? Color.secondary.opacity(0.5) : StickyNoteChrome.savedDotColor)
+                    .frame(width: 6, height: 6)
+                Text(viewModel.isSaving ? strings.stickyNoteSaving : strings.stickyNoteSaved)
+                    .font(.system(size: 10))
+                    .foregroundStyle(palette.text(colorScheme: colorScheme).opacity(0.6))
+            }
             Spacer(minLength: 8)
             if note.isReminderFired {
-                Text(strings.stickyNoteReminderFired)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(palette.accent)
+                HStack(spacing: 3) {
+                    Image(systemName: "bell.badge.fill")
+                        .font(.system(size: 8))
+                    Text(strings.stickyNoteReminderFired)
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .foregroundStyle(palette.accent)
             } else if let reminderAt = note.reminderAt {
-                Text(reminderStatusText(for: reminderAt))
-                    .font(.system(size: 10))
-                    .foregroundStyle(palette.text(colorScheme: colorScheme).opacity(0.7))
+                HStack(spacing: 3) {
+                    Image(systemName: "bell.fill")
+                        .font(.system(size: 8))
+                    Text(reminderStatusText(for: reminderAt))
+                        .font(.system(size: 10))
+                }
+                .foregroundStyle(palette.accent)
             }
         }
         .overlay(alignment: .top) {

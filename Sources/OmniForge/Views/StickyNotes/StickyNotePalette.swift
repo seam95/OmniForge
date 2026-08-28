@@ -57,12 +57,16 @@ struct StickyNotePalette {
 
 /// 便签窗口的视觉常量。
 enum StickyNoteChrome {
-    /// 窗口圆角半径（与阴影配合形成卡片观感）。
-    static let cornerRadius: CGFloat = 12
+    /// 窗口圆角半径（Big Sur 连续曲线卡片，与系统窗口阴影配合）。
+    static let cornerRadius: CGFloat = 14
     /// 右下角缩放热区边长。
     static let resizeHandleLength: CGFloat = 16
     /// 工具栏按钮通用尺寸。
     static let toolbarButtonSize: CGFloat = 22
     /// 窄窗口时色点组收起的宽度阈值。
     static let colorDotsCollapseWidth: CGFloat = 272
+    /// 置顶激活态按钮的橙色底（白图标压其上）。
+    static let pinActiveBackground = Color(red: 0.96, green: 0.62, blue: 0.04)
+    /// 状态栏「已保存」指示绿点。
+    static let savedDotColor = Color(red: 0.20, green: 0.78, blue: 0.35)
 }
