@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>A modular macOS menu-bar toolkit</strong> for input method lock, clipboard history, screenshots, system monitoring, and everyday utilities.
+  <strong>A modular macOS menu-bar toolkit</strong> for input method lock, clipboard history, screenshots, system monitoring, AI CLI token tracking, and everyday utilities.
 </p>
 
 <p align="center">
@@ -17,13 +17,18 @@
 ## Screenshots
 
 <p align="center">
-  <img src="Resources/Screenshots/screenshot-annotation.png" width="640" alt="Screenshot annotation"><br>
-  <sub>Screenshot capture with annotation tools</sub>
+  <img src="Resources/Screenshots/monitor.png" width="400" alt="System monitor"> &nbsp;&nbsp; <img src="Resources/Screenshots/token-usage.png" width="360" alt="Token usage"><br>
+  <sub>System monitor · AI CLI token usage & quota windows</sub>
 </p>
 
 <p align="center">
-  <img src="Resources/Screenshots/utilities.png" width="320" alt="Utilities"> &nbsp;&nbsp; <img src="Resources/Screenshots/network-diagnostics.png" width="320" alt="Network diagnostics"><br>
-  <sub>Utilities hub · Network diagnostics (listening ports)</sub>
+  <img src="Resources/Screenshots/providers.png" width="340" alt="Provider switch"> &nbsp;&nbsp; <img src="Resources/Screenshots/utilities-tab.png" width="300" alt="Utilities"> &nbsp;&nbsp; <img src="Resources/Screenshots/feature-hub.png" width="300" alt="Feature Hub"><br>
+  <sub>Provider switch for Claude Code / Codex · Utilities hub · Feature Hub</sub>
+</p>
+
+<p align="center">
+  <img src="Resources/Screenshots/screenshot-annotation.png" width="640" alt="Screenshot annotation"><br>
+  <sub>Screenshot capture with annotation tools</sub>
 </p>
 
 ## Features
@@ -49,12 +54,18 @@ OmniForge is built around a **Feature Hub**: install only what you need, grant p
 - **Menu bar metrics** — Choose which metrics stay visible, with layout and alert options.
 - **Alerts** — Threshold notifications for CPU, temperature, memory, disk space, and battery.
 
+### AI tooling
+
+- **Token Usage** — Track token spend and quota windows (5-hour / 7-day resets, subscription balance) across a dozen-plus AI CLIs — Claude Code, Codex, Cursor, Qoder, Trae, Kimi, Grok, OpenCode, Zcode, Antigravity, and more — with usage alerts and reset reminders.
+- **Provider Switch** — One-click switching of API providers / relay profiles for Claude Code and Codex from the menu bar; configs are backed up before every switch and can be restored.
+
 ### Energy
 
 - **Keep Awake** — Prevent sleep for a duration or indefinitely; optional clamshell (lid closed) stay-awake support where the Mac allows it.
 
 ### Productivity
 
+- **Sticky Notes** — Colorful sticky notes pinned to your desktop for quick capture.
 - **Shelf** — Park files, images, links, and text, then drag them into another app later.
 - **Cleaner** — Scan leftovers, caches, logs, and other junk; confirm before cleaning.
 - **Uninstaller** — Find an app and its related support files, then move them to Trash after confirmation.

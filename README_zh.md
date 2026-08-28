@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>模块化的 macOS 菜单栏工具集</strong>：输入法锁定、剪贴板历史、截图标注、系统监控与日常实用工具。
+  <strong>模块化的 macOS 菜单栏工具集</strong>：输入法锁定、剪贴板历史、截图标注、系统监控、AI CLI Token 用量与日常实用工具。
 </p>
 
 <p align="center">
@@ -17,13 +17,18 @@
 ## 截图
 
 <p align="center">
-  <img src="Resources/Screenshots/screenshot-annotation.png" width="640" alt="截图标注"><br>
-  <sub>全能截图与标注工具</sub>
+  <img src="Resources/Screenshots/monitor.png" width="400" alt="系统监控"> &nbsp;&nbsp; <img src="Resources/Screenshots/token-usage.png" width="360" alt="Token 用量"><br>
+  <sub>系统监控面板 · AI CLI Token 用量与额度窗口</sub>
 </p>
 
 <p align="center">
-  <img src="Resources/Screenshots/utilities.png" width="320" alt="实用工具"> &nbsp;&nbsp; <img src="Resources/Screenshots/network-diagnostics.png" width="320" alt="网络诊断"><br>
-  <sub>实用工具中心 · 网络诊断（端口监听）</sub>
+  <img src="Resources/Screenshots/providers.png" width="340" alt="供应商切换"> &nbsp;&nbsp; <img src="Resources/Screenshots/utilities-tab.png" width="300" alt="实用工具"> &nbsp;&nbsp; <img src="Resources/Screenshots/feature-hub.png" width="300" alt="功能中心"><br>
+  <sub>Claude Code / Codex 供应商切换 · 实用工具中心 · 功能中心</sub>
+</p>
+
+<p align="center">
+  <img src="Resources/Screenshots/screenshot-annotation.png" width="640" alt="截图标注"><br>
+  <sub>全能截图与标注工具</sub>
 </p>
 
 ## 功能
@@ -49,12 +54,18 @@ OmniForge 以 **功能中心** 为核心：按需安装功能、按功能授予�
 - **菜单栏指标** — 自选常驻指标与布局，支持阈值告警。
 - **告警** — CPU、温度、内存、磁盘空间、电池等通知提醒。
 
+### AI 工具
+
+- **Token 用量** — 汇总十余款 AI CLI（Claude Code、Codex、Cursor、Qoder、Trae、Kimi、Grok、OpenCode、Zcode、Antigravity 等）的 Token 消耗与额度窗口（5 小时 / 7 天重置、订阅余额），支持用量告警与重置提醒。
+- **供应商切换** — 菜单栏一键切换 Claude Code / Codex 的 API 供应商与中转配置；切换前自动备份，可随时恢复。
+
 ### 电源
 
 - **保持唤醒** — 按时长或无限期阻止休眠；在机型与系统允许时支持合盖保持唤醒。
 
 ### 生产力
 
+- **桌面便签** — 多彩桌面便签，随手记录、随时查看。
 - **暂存架** — 停放文件、图片、链接与文本，稍后再拖入其他应用。
 - **清理** — 扫描残留、缓存、日志等项目，确认后再处理。
 - **卸载器** — 查找应用本体及相关支持文件，确认后移到废纸篓。
