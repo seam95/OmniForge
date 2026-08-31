@@ -97,7 +97,7 @@ enum UtilityTool: String, CaseIterable, Identifiable {
         case .cleaner:
             return "trash"
         case .cleaningMode:
-            return "spraycan"
+            return "bubbles.and.sparkles"
         }
     }
 

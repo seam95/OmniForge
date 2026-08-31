@@ -215,7 +215,7 @@ extension AppFeature {
         case .screenshot: return "camera.viewfinder"
         case .providerSwitch: return "arrow.triangle.swap"
         case .stickyNotes: return "note.text"
-        case .cleaningMode: return "spraycan"
+        case .cleaningMode: return "bubbles.and.sparkles"
         }
     }
 

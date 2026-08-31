@@ -18,7 +18,7 @@ struct CleaningModeView: View {
         if let manager {
             CleaningModeContent(strings: strings, manager: manager)
         } else {
-            ContentUnavailableView(strings.featureHubNameCleaningMode, systemImage: "spraycan")
+            ContentUnavailableView(strings.featureHubNameCleaningMode, systemImage: "bubbles.and.sparkles")
                 .padding(.vertical, 24)
         }
     }
