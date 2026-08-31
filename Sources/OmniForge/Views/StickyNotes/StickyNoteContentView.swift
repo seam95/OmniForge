@@ -26,10 +26,12 @@ struct StickyNoteContentView: View {
                 .padding(.horizontal, 8)
                 .padding(.top, 6)
                 .padding(.bottom, 4)
-            editor
-            statusBar
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
+            if !note.collapsed {
+                editor
+                statusBar
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(palette.background(colorScheme: colorScheme))
@@ -40,6 +42,8 @@ struct StickyNoteContentView: View {
         .clipShape(RoundedRectangle(cornerRadius: StickyNoteChrome.cornerRadius, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: StickyNoteChrome.cornerRadius, style: .continuous))
         .omniNoFocusRing()
+        // 正文显隐与窗口收缩动画（AppKit setFrame animate）时长衔接。
+        .animation(.easeInOut(duration: 0.18), value: note.collapsed)
     }
 
     // MARK: - 工具栏
@@ -70,8 +74,11 @@ struct StickyNoteContentView: View {
                 ) {
                     showsReminderPanel.toggle()
                 }
-                toolbarButton(symbol: "eye", label: strings.stickyNoteCollapse) {
-                    actions().onCollapse(note.id)
+                toolbarButton(
+                    symbol: note.collapsed ? "chevron.down" : "chevron.up",
+                    label: note.collapsed ? strings.stickyNoteExpand : strings.stickyNoteCollapse
+                ) {
+                    actions().onToggleCollapse(note.id)
                 }
                 toolbarButton(symbol: "checkmark.circle", label: strings.stickyNoteComplete) {
                     actions().onComplete(note.id)
@@ -252,16 +259,20 @@ struct StickyNoteContentView: View {
 
     // MARK: - 缩放热区
 
+    /// 折叠条不可缩放：仅展开态显示。
+    @ViewBuilder
     private var resizeHandle: some View {
-        StickyNoteInteractionRegion(onEvent: onResizeEvent)
-            .frame(width: StickyNoteChrome.resizeHandleLength, height: StickyNoteChrome.resizeHandleLength)
-            .overlay(
-                Image(systemName: "arrow.down.right")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(palette.text(colorScheme: colorScheme).opacity(0.5))
-                    .allowsHitTesting(false)
-            )
-            .padding(3)
+        if !note.collapsed {
+            StickyNoteInteractionRegion(onEvent: onResizeEvent)
+                .frame(width: StickyNoteChrome.resizeHandleLength, height: StickyNoteChrome.resizeHandleLength)
+                .overlay(
+                    Image(systemName: "arrow.down.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(palette.text(colorScheme: colorScheme).opacity(0.5))
+                        .allowsHitTesting(false)
+                )
+                .padding(3)
+        }
     }
 }
 

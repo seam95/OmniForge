@@ -1353,6 +1353,7 @@ struct Strings: Equatable {
     let stickyNoteSetReminder: String
     let stickyNoteEditReminder: String
     let stickyNoteCollapse: String
+    let stickyNoteExpand: String
     let stickyNoteComplete: String
     // 提醒面板
     let stickyNoteReminderQuick15: String

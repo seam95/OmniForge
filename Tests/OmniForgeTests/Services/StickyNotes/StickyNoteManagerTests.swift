@@ -180,7 +180,7 @@ final class StickyNoteManagerTests: XCTestCase {
         ]
         let manager = makeManager()
         let active = manager.create()!
-        manager.setCollapse(id: active.id, collapsed: true)
+        manager.hideAll()
         presenter.resetRecording()
 
         manager.showAll()
@@ -219,6 +219,47 @@ final class StickyNoteManagerTests: XCTestCase {
         XCTAssertEqual(manager.notes[0].hidden, false)
         XCTAssertEqual(presenter.shownNotes.map(\.id), [note.id])
         XCTAssertEqual(presenter.frontedIDs, [note.id])
+    }
+
+    func test_setCollapse_keepsWindowVisibleAndPersistsCollapsed() {
+        let manager = makeManager()
+        let note = manager.create()!
+        presenter.resetRecording()
+
+        manager.setCollapse(id: note.id, collapsed: true)
+
+        // 折叠 = 正文收起为工具栏条：窗口仍可见（不隐藏），状态独立于 hidden 落库
+        XCTAssertEqual(manager.notes[0].collapsed, true)
+        XCTAssertEqual(manager.notes[0].hidden, false)
+        XCTAssertTrue(presenter.hiddenIDs.isEmpty)
+        XCTAssertEqual(store.savedNotes.last?.collapsed, true)
+        // 折叠不改尺寸：frame 恒存展开态
+        XCTAssertEqual(manager.notes[0].height, StickyNoteGeometry.defaultSize.height)
+    }
+
+    func test_toggleCollapse_flipsCollapsedState() {
+        let manager = makeManager()
+        let note = manager.create()!
+
+        manager.toggleCollapse(id: note.id)
+        XCTAssertEqual(manager.notes[0].collapsed, true)
+        manager.toggleCollapse(id: note.id)
+        XCTAssertEqual(manager.notes[0].collapsed, false)
+    }
+
+    func test_complete_overridesCollapseAndHidesWindow() {
+        let manager = makeManager()
+        let note = manager.create()!
+        manager.setCollapse(id: note.id, collapsed: true)
+        presenter.resetRecording()
+
+        manager.complete(id: note.id)
+
+        // 完成优先于折叠：隐藏窗口，折叠状态原样保留（下次恢复显示时仍是折叠条）
+        XCTAssertEqual(manager.notes[0].completed, true)
+        XCTAssertEqual(manager.notes[0].hidden, true)
+        XCTAssertEqual(manager.notes[0].collapsed, true)
+        XCTAssertEqual(presenter.hiddenIDs, [note.id])
     }
 
     func test_complete_marksCompletedHiddenClearsReminderAndCancelsChannels() {
@@ -310,7 +351,7 @@ final class StickyNoteManagerTests: XCTestCase {
     func test_handleReminderFired_marksFiredRestoresHiddenNoteAndMovesToTop() {
         let manager = makeManager()
         let note = manager.create()!
-        manager.setCollapse(id: note.id, collapsed: true)
+        manager.hideAll()
         _ = manager.setReminder(id: note.id, date: nowDate.addingTimeInterval(60))
         presenter.resetRecording()
 

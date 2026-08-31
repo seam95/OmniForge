@@ -46,6 +46,12 @@ final class GRDBStickyNoteStore: StickyNoteStore {
                 t.column("updatedAt", .double).notNull()
             }
         }
+        // v2：折叠（正文收起为工具栏条）持久化状态。
+        migrator.registerMigration("addStickyNoteCollapsed") { db in
+            try db.alter(table: "stickyNote") { t in
+                t.add(column: "collapsed", .boolean).notNull().defaults(to: false)
+            }
+        }
         return migrator
     }
 
@@ -104,6 +110,7 @@ private struct StickyNoteDBRecord: Codable, FetchableRecord, PersistableRecord {
     var pinned: Bool
     var hidden: Bool
     var completed: Bool
+    var collapsed: Bool
     var reminderAt: Double?
     var reminderFiredAt: Double?
     var createdAt: Double
@@ -122,6 +129,7 @@ private struct StickyNoteDBRecord: Codable, FetchableRecord, PersistableRecord {
         self.pinned = note.pinned
         self.hidden = note.hidden
         self.completed = note.completed
+        self.collapsed = note.collapsed
         self.reminderAt = note.reminderAt?.timeIntervalSince1970
         self.reminderFiredAt = note.reminderFiredAt?.timeIntervalSince1970
         self.createdAt = note.createdAt.timeIntervalSince1970
@@ -144,6 +152,7 @@ private struct StickyNoteDBRecord: Codable, FetchableRecord, PersistableRecord {
             pinned: pinned,
             hidden: hidden,
             completed: completed,
+            collapsed: collapsed,
             reminderAt: reminderAt.map(Date.init(timeIntervalSince1970:)),
             reminderFiredAt: reminderFiredAt.map(Date.init(timeIntervalSince1970:)),
             createdAt: Date(timeIntervalSince1970: createdAt),

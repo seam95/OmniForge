@@ -59,8 +59,8 @@ final class StickyNoteWindowRegistry: StickyNoteWindowPresenting {
             onTogglePin: { id in
                 manager.togglePin(id: id)
             },
-            onCollapse: { id in
-                manager.setCollapse(id: id, collapsed: true)
+            onToggleCollapse: { id in
+                manager.toggleCollapse(id: id)
             },
             onComplete: { id in
                 manager.complete(id: id)

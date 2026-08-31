@@ -146,15 +146,17 @@ final class StickyNoteManager: ObservableObject {
         syncWindow(id: id)
     }
 
-    /// 收起（隐藏窗口，数据保留）/ 展开。
+    /// 折叠（正文收起为工具栏条，窗口保留可见）/ 展开。
+    /// `frame` 恒存展开态尺寸；折叠条的窗口 frame 由窗口层换算。
     func setCollapse(id: UUID, collapsed: Bool) {
-        mutate(id) { $0.hidden = collapsed }
-        if collapsed {
-            windowPresenter.hide(id: id)
-        } else {
-            syncWindow(id: id)
-            windowPresenter.bringToFront(id: id)
-        }
+        mutate(id) { $0.collapsed = collapsed }
+        syncWindow(id: id)
+    }
+
+    /// 便签窗口「折叠 / 展开」按钮回调（对齐 togglePin 先例）。
+    func toggleCollapse(id: UUID) {
+        guard let note = notes.first(where: { $0.id == id }) else { return }
+        setCollapse(id: id, collapsed: !note.collapsed)
     }
 
     /// 完成便签：标记完成并隐藏；事项已办，提醒一并撤销。

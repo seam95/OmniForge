@@ -10,6 +10,8 @@ enum StickyNoteColor: String, Codable, CaseIterable {
 
 /// 桌面便签值类型。`hidden` 与 `completed` 独立（对齐参考应用数据语义）：
 /// 「显示所有便签」等恢复规则只看 `completed`。
+/// `collapsed` = 正文收起为工具栏条（窗口仍可见可拖），与 `hidden`（整窗隐藏）互不影响；
+/// `frame` 恒为展开态尺寸，折叠条的窗口 frame 由展示层换算、不落库。
 struct StickyNote: Identifiable, Codable, Equatable {
     let id: UUID
     var content: String
@@ -21,6 +23,7 @@ struct StickyNote: Identifiable, Codable, Equatable {
     var pinned: Bool
     var hidden: Bool
     var completed: Bool
+    var collapsed: Bool
     /// 提醒时刻；nil = 未设置。
     var reminderAt: Date?
     /// 提醒已触发时刻（防重）；nil = 未触发。
@@ -39,6 +42,7 @@ struct StickyNote: Identifiable, Codable, Equatable {
         pinned: Bool = false,
         hidden: Bool = false,
         completed: Bool = false,
+        collapsed: Bool = false,
         reminderAt: Date? = nil,
         reminderFiredAt: Date? = nil,
         createdAt: Date = Date(),
@@ -54,6 +58,7 @@ struct StickyNote: Identifiable, Codable, Equatable {
         self.pinned = pinned
         self.hidden = hidden
         self.completed = completed
+        self.collapsed = collapsed
         self.reminderAt = reminderAt
         self.reminderFiredAt = reminderFiredAt
         self.createdAt = createdAt

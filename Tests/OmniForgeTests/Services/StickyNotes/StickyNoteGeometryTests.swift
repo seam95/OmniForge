@@ -73,6 +73,41 @@ final class StickyNoteGeometryTests: XCTestCase {
         XCTAssertEqual(clamped, StickyNoteGeometry.minimumSize)
     }
 
+    func test_collapsedFrame_alignsTopEdgeAndShrinksHeight() {
+        let expanded = CGRect(x: 100, y: 600, width: 320, height: 260)
+
+        let collapsed = StickyNoteGeometry.collapsedFrame(expanded: expanded)
+
+        // 顶边对齐原地收缩：只压高度，视觉位置不动
+        XCTAssertEqual(collapsed.minX, expanded.minX, accuracy: 0.001)
+        XCTAssertEqual(collapsed.maxY, expanded.maxY, accuracy: 0.001)
+        XCTAssertEqual(collapsed.width, expanded.width, accuracy: 0.001)
+        XCTAssertEqual(collapsed.height, StickyNoteGeometry.collapsedHeight, accuracy: 0.001)
+    }
+
+    func test_expandedFrame_restoresSizeFromDraggedCollapsedBar() {
+        // 折叠条被拖到新位置后展开：顶边对齐反推，尺寸取展开态真源
+        let expandedSize = CGSize(width: 320, height: 260)
+        let draggedBar = CGRect(x: 480, y: 200, width: 320, height: StickyNoteGeometry.collapsedHeight)
+
+        let expanded = StickyNoteGeometry.expandedFrame(fromCollapsed: draggedBar, expandedSize: expandedSize)
+
+        XCTAssertEqual(expanded.minX, 480, accuracy: 0.001)
+        XCTAssertEqual(expanded.maxY, draggedBar.maxY, accuracy: 0.001)
+        XCTAssertEqual(expanded.size, expandedSize)
+    }
+
+    func test_collapsedAndExpandedFrames_areMutuallyInverse() {
+        let original = CGRect(x: -50, y: 300, width: 280, height: 400)
+
+        let roundTrip = StickyNoteGeometry.expandedFrame(
+            fromCollapsed: StickyNoteGeometry.collapsedFrame(expanded: original),
+            expandedSize: original.size
+        )
+
+        XCTAssertEqual(roundTrip, original)
+    }
+
     func test_isFullyContained_boundaryEqualsScreen_counts() {
         let frame = mainScreen
         XCTAssertTrue(StickyNoteGeometry.isFullyContained(frame, in: screens))

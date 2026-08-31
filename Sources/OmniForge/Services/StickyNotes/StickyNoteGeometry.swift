@@ -12,6 +12,29 @@ enum StickyNoteGeometry {
     static let cascadeOffset = CGVector(dx: 28, dy: -28)
     /// 唤起 / 默认位置与屏幕边缘的安全边距。
     static let screenEdgeMargin: CGFloat = 16
+    /// 折叠条高度：工具栏 26 + 上下内边距 10。
+    static let collapsedHeight: CGFloat = 36
+
+    /// 展开态 frame → 折叠条 frame：顶边对齐原地收缩（工具栏在顶部，视觉位置不动）。
+    static func collapsedFrame(expanded: CGRect) -> CGRect {
+        CGRect(
+            x: expanded.minX,
+            y: expanded.maxY - collapsedHeight,
+            width: expanded.width,
+            height: collapsedHeight
+        )
+    }
+
+    /// 折叠条 frame → 展开态 frame：顶边对齐反向换算，尺寸取展开态真源
+    /// （折叠条的拖动位移只需落到展开 frame 的 origin 上）。
+    static func expandedFrame(fromCollapsed frame: CGRect, expandedSize: CGSize) -> CGRect {
+        CGRect(
+            x: frame.minX,
+            y: frame.maxY - expandedSize.height,
+            width: expandedSize.width,
+            height: expandedSize.height
+        )
+    }
 
     /// 新便签位置：最近创建便签 frame 级联偏移；无历史或越出屏幕可视区
     /// （候选位置未被任何屏完整包含）时回落主屏默认位置。

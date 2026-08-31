@@ -6,7 +6,7 @@ struct StickyNoteViewActions {
     let onContentChanged: (UUID, String) -> Void
     let onColorSelected: (UUID, StickyNoteColor) -> Void
     let onTogglePin: (UUID) -> Void
-    let onCollapse: (UUID) -> Void
+    let onToggleCollapse: (UUID) -> Void
     let onComplete: (UUID) -> Void
     let onCreateNew: () -> Void
     let onSetReminder: (UUID, Date) -> Result<Void, StickyNoteReminderError>
@@ -16,7 +16,7 @@ struct StickyNoteViewActions {
         onContentChanged: { _, _ in },
         onColorSelected: { _, _ in },
         onTogglePin: { _ in },
-        onCollapse: { _ in },
+        onToggleCollapse: { _ in },
         onComplete: { _ in },
         onCreateNew: {},
         onSetReminder: { _, _ in .failure(.noteNotFound) },
@@ -68,6 +68,10 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
     private var dragStartScreenLocation: NSPoint?
     private var resizeStartFrame: CGRect?
     private var resizeStartScreenLocation: NSPoint?
+    /// 最近一次同步的折叠态；用于识别「折叠 / 展开」切换并走收缩动画。
+    private var lastCollapsed = false
+    /// 折叠切换动画进行中：抑制 windowDidMove / Resize 兜底回写中间态 frame。
+    private var isAnimatingFrame = false
 
     init(
         note: StickyNote,
@@ -85,11 +89,12 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
         let panel = StickyNoteKeyablePanel(contentRect: finalFrame)
         self.panel = panel
         self.viewModel = StickyNoteViewModel(note: note)
+        self.lastCollapsed = note.collapsed
         super.init()
 
         panel.delegate = self
         panel.setContentSize(finalFrame.size)
-        panel.minSize = StickyNoteGeometry.minimumSize
+        panel.minSize = Self.minSize(collapsed: note.collapsed)
 
         let view = StickyNoteContentView(
             viewModel: viewModel,
@@ -115,15 +120,50 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
     /// 全量同步：内容 / 颜色 / 置顶层级 / frame；frame 与窗口一致时不动窗口（幂等）。
     /// 拖动 / 缩放进行中不回写 frame：此时内存坐标尚未经松手回调更新，
     /// 回写会把窗口拽回旧位置（正文防抖落库触发的同步即此场景）。
+    /// 折叠态目标为折叠条（顶边对齐收缩）；折叠 / 展开切换带收缩动画。
     func apply(note: StickyNote) {
         viewModel.apply(note)
         applyWindowLevel(pinned: note.pinned)
         let isInteracting = dragStartOrigin != nil || resizeStartFrame != nil
-        guard !isInteracting, Self.framesDiffer(note.frame, panel.frame) else { return }
+        guard !isInteracting else { return }
+        let collapsedChanged = note.collapsed != lastCollapsed
+        lastCollapsed = note.collapsed
+        let target = targetFrame(for: note)
+        guard Self.framesDiffer(target, panel.frame) else { return }
+        panel.minSize = Self.minSize(collapsed: note.collapsed)
+        if collapsedChanged {
+            // setFrame(animate:) 同步执行动画；期间 windowDidResize 会发通知，
+            // 兜底回写会把中间态高度落库，必须抑制。
+            isAnimatingFrame = true
+            panel.setFrame(target, display: true, animate: true)
+            isAnimatingFrame = false
+        } else {
+            panel.setFrame(target, display: true)
+        }
+    }
+
+    /// 目标窗口 frame：展开态 = note.frame（钳制最小尺寸）；折叠态 = 顶边对齐的折叠条。
+    private func targetFrame(for note: StickyNote) -> CGRect {
         let clamped = StickyNoteGeometry.clampedSize(note.frame.size)
-        panel.setFrame(
-            CGRect(origin: note.frame.origin, size: clamped),
-            display: true
+        let expanded = CGRect(origin: note.frame.origin, size: clamped)
+        guard note.collapsed else { return expanded }
+        return StickyNoteGeometry.collapsedFrame(expanded: expanded)
+    }
+
+    /// 折叠条高度低于常规最小高度，minSize 随折叠态放宽（展开时恢复）。
+    private static func minSize(collapsed: Bool) -> CGSize {
+        collapsed
+            ? CGSize(width: StickyNoteGeometry.minimumSize.width, height: StickyNoteGeometry.collapsedHeight)
+            : StickyNoteGeometry.minimumSize
+    }
+
+    /// 拖动 / 系统路径 frame 变化的回写值：折叠条换算回展开态
+    /// （note.frame 恒存展开尺寸，折叠条位置只贡献 origin）。
+    private func reportableFrame() -> CGRect {
+        guard lastCollapsed else { return panel.frame }
+        return StickyNoteGeometry.expandedFrame(
+            fromCollapsed: panel.frame,
+            expandedSize: viewModel.note.frame.size
         )
     }
 
@@ -211,7 +251,7 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
             if dragStartOrigin != nil {
                 dragStartOrigin = nil
                 dragStartScreenLocation = nil
-                onFrameChanged?(noteID, panel.frame)
+                onFrameChanged?(noteID, reportableFrame())
             }
         default:
             break
@@ -231,7 +271,7 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
                 applyResize(from: event)
                 resizeStartFrame = nil
                 resizeStartScreenLocation = nil
-                onFrameChanged?(noteID, panel.frame)
+                onFrameChanged?(noteID, reportableFrame())
             }
         default:
             break
@@ -270,16 +310,15 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
     // MARK: - NSWindowDelegate
 
     /// 拖动 / 系统路径导致的窗口变化兜底持久化。
+    /// 折叠切换动画期间与折叠态（折叠条不可缩放）不回写。
     func windowDidMove(_ notification: Notification) {
-        if dragStartOrigin == nil {
-            onFrameChanged?(noteID, panel.frame)
-        }
+        guard !isAnimatingFrame, dragStartOrigin == nil else { return }
+        onFrameChanged?(noteID, reportableFrame())
     }
 
     func windowDidResize(_ notification: Notification) {
-        if resizeStartFrame == nil {
-            onFrameChanged?(noteID, panel.frame)
-        }
+        guard !isAnimatingFrame, resizeStartFrame == nil, !lastCollapsed else { return }
+        onFrameChanged?(noteID, reportableFrame())
     }
 }
 

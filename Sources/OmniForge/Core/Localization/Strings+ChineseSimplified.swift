@@ -1226,6 +1226,7 @@ extension Strings {
         stickyNoteSetReminder: "设置提醒",
         stickyNoteEditReminder: "修改提醒",
         stickyNoteCollapse: "收起便签",
+        stickyNoteExpand: "展开便签",
         stickyNoteComplete: "完成便签",
         stickyNoteReminderQuick15: "15 分钟",
         stickyNoteReminderQuick1h: "1 小时",
