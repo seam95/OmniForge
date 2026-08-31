@@ -32,6 +32,8 @@ struct CleaningOverlayView: View {
                     .opacity(isRingVisible ? 1 : 0)
             }
         }
+        // 无纯色底（键盘清洁提示窗）时 ZStack 会收缩到内容大小，需显式撑满面板才能居中。
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.easeInOut(duration: 0.4), value: model.isHintVisible)
         .animation(.linear(duration: 0.06), value: model.holdProgress)
     }
