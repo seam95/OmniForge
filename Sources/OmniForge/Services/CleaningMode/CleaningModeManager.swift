@@ -145,7 +145,7 @@ final class CleaningModeManager: ObservableObject {
 
     private func bindInterceptor() {
         interceptor.onHoldProgress = { [weak self] progress in
-            guard let self, case .active(.screen) = self.state else { return }
+            guard let self, self.state != .idle else { return }
             self.overlayPresenter?.setHoldProgress(progress)
         }
         interceptor.onHoldSatisfied = { [weak self] in

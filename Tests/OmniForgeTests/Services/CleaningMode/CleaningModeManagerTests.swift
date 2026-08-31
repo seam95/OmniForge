@@ -108,13 +108,15 @@ final class CleaningModeManagerTests: XCTestCase {
         XCTAssertFalse(interceptor.isRunning)
     }
 
-    func test_长按进度仅屏幕清洁透传遮罩() {
+    func test_长按进度两种模式均透传() {
         let manager = makeManager()
         XCTAssertTrue(manager.start(.keyboard))
         interceptor.simulateHoldProgress(0.4)
-        XCTAssertNil(overlay.holdProgress)
+        XCTAssertEqual(overlay.holdProgress ?? 0, 0.4, accuracy: 0.001)
 
         manager.stop()
+        XCTAssertNil(overlay.holdProgress)
+
         XCTAssertTrue(manager.start(.screen))
         interceptor.simulateHoldProgress(0.7)
         XCTAssertEqual(overlay.holdProgress ?? 0, 0.7, accuracy: 0.001)
