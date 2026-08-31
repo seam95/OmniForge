@@ -33,7 +33,9 @@ struct StickyNoteContentView: View {
                     .padding(.vertical, 5)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // 顶对齐：折叠后正文移除、VStack 只剩工具栏，默认居中会让按钮
+        // 在窗口收缩动画期间先下沉再回弹；钉顶边与窗口层顶边对齐收缩一致。
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(palette.background(colorScheme: colorScheme))
         .overlay(alignment: .topTrailing) { reminderPanel }
         .overlay(alignment: .bottomTrailing) { resizeHandle }
