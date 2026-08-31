@@ -433,91 +433,102 @@ struct KeepAwakeControlView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // 卡片 1：保持唤醒主开关卡片
-            mainToggleCard
+            // 主卡：开关 + 状态区（时长选择 / 倒计时 / 无限期 / 重试清理）
+            mainCard
 
-            // 卡片 2：唤醒时长选择卡片
-            durationSelectorCard
-
-            // 卡片 3：合盖时保持唤醒卡片
+            // 合盖时保持唤醒卡片
             clamshellCard
 
-            // 底部说明文案
-            Text(strings.keepAwakeClamshellFootnote)
-                .font(Theme.Stats.font11Regular)
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
-                .padding(.horizontal, 4)
-
-            // 残留状态重试清理按钮（若需要）
-            if presentation.showsRetryCleanupButton {
-                Button(presentation.retryCleanupLabel) { onRetryCleanup() }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .padding(.horizontal, 4)
-            }
-
-            // 错误信息（若存在）
-            if let error = config.configError {
-                Text(error)
-                    .font(Theme.Stats.font11Regular)
-                    .foregroundStyle(Theme.Stats.up)
-                    .padding(.horizontal, 4)
-            } else if let secondary = presentation.secondaryStatusLine {
-                Text(secondary)
-                    .font(Theme.Stats.font11Regular)
-                    .foregroundStyle(Theme.Stats.up)
-                    .padding(.horizontal, 4)
+            // 错误横幅（配置写入失败或运行期错误摘要）
+            if let errorText = config.configError ?? presentation.secondaryStatusLine {
+                errorBanner(errorText)
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
-    // MARK: - 卡片 1：保持唤醒
-    private var mainToggleCard: some View {
-        HStack(alignment: .center, spacing: 12) {
-            // 月亮图标圆角底块
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.08))
-                Image(systemName: "moon")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+    // MARK: - 主卡
+    private var mainCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // 头部：图标 + 标题/状态 + 开关
+            HStack(alignment: .center, spacing: 12) {
+                statusIconBlock
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(presentation.title)
+                        .font(Theme.Stats.font13SemiBold)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                        .lineLimit(1)
+                    Text(presentation.statusLine)
+                        .font(Theme.Stats.font11Regular)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                Toggle("", isOn: toggleBinding)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .tint(Theme.Stats.down)
+                    .disabled(!presentation.isSessionToggleEnabled)
+                    .accessibilityLabel(presentation.title)
             }
-            .frame(width: 38, height: 38)
+            .padding(12)
 
-            // 标题与状态副文案
-            VStack(alignment: .leading, spacing: 2) {
-                Text(presentation.title)
-                    .font(Theme.Stats.font13SemiBold)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
-                    .lineLimit(1)
-                Text(presentation.statusSubtitle)
-                    .font(Theme.Stats.font11Regular)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
-                    .lineLimit(1)
+            // 状态区
+            if presentation.showsDurationPicker {
+                cardDivider
+                durationPickerSection
+            } else if presentation.countdownEndDate != nil {
+                cardDivider
+                activeTimedSection
+            } else if presentation.showsRetryCleanupButton {
+                cardDivider
+                retryCleanupSection
             }
-
-            Spacer(minLength: 8)
-
-            // 绿色 Switch 开关
-            Toggle("", isOn: toggleBinding)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .tint(Theme.Stats.down)
-                .disabled(!presentation.isSessionToggleEnabled)
-                .accessibilityLabel(presentation.title)
         }
-        .padding(12)
         .background(cardBackground)
     }
 
-    // MARK: - 卡片 2：唤醒时长
-    private var durationSelectorCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+    /// 唤醒中视觉态：开关拨向开（含开启中）即点亮图标。
+    private var isAwakeVisual: Bool {
+        presentation.isSessionToggleOn
+    }
+
+    private var statusIconBlock: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(iconBackground)
+            Image(systemName: isAwakeVisual ? "moon.zzz.fill" : "moon")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(isAwakeVisual ? Theme.Stats.down : (colorScheme == .light ? Theme.Stats.text1 : Color.primary))
+        }
+        .frame(width: 38, height: 38)
+        .animation(Theme.Animation.hover, value: isAwakeVisual)
+    }
+
+    private var iconBackground: Color {
+        if isAwakeVisual {
+            return Theme.Stats.down.opacity(colorScheme == .light ? 0.12 : 0.22)
+        }
+        return colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.08)
+    }
+
+    private var cardDivider: some View {
+        Rectangle()
+            .fill(colorScheme == .light ? Theme.Stats.separator : Color.white.opacity(0.08))
+            .frame(height: 1)
+            .padding(.horizontal, 12)
+    }
+
+    // MARK: - 状态区：时长选择（未开启）
+    private var durationPickerSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
             Text(strings.keepAwakeDurationLabel)
-                .font(Theme.Stats.font12Medium)
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
+                .font(Theme.Stats.font11Regular)
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
 
             HStack(spacing: 8) {
                 ForEach(presets) { preset in
@@ -532,22 +543,117 @@ struct KeepAwakeControlView: View {
                             .frame(maxWidth: .infinity)
                             .frame(height: 30)
                             .background(
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous)
                                     .fill(isSelected ? Color.accentColor : (colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.08)))
                             )
                     }
                     .buttonStyle(.plain)
-                    .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous))
                 }
             }
         }
         .padding(12)
-        .background(cardBackground)
     }
 
-    // MARK: - 卡片 3：合盖时保持唤醒
+    // MARK: - 状态区：定时会话倒计时
+    private var activeTimedSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(strings.keepAwakeRemainingLabel)
+                        .font(Theme.Stats.font10Regular)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                    if let endDate = presentation.countdownEndDate {
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            Text(KeepAwakeControlCountdownFormatter.text(endDate: endDate, now: context.date, strings: strings))
+                                .font(Theme.Stats.font24Bold.monospacedDigit())
+                                .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                                .contentTransition(.numericText())
+                        }
+                    }
+                }
+
+                Spacer(minLength: 8)
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(strings.keepAwakeEndsAtLabel)
+                        .font(Theme.Stats.font10Regular)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                    if let endDate = presentation.countdownEndDate {
+                        Text(KeepAwakeControlCountdownFormatter.endTimeText(endDate: endDate))
+                            .font(Theme.Stats.font13SemiBold)
+                            .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.primary)
+                    }
+                }
+            }
+
+            if presentation.showsExtendButtons {
+                HStack(spacing: 8) {
+                    extendChip(minutes: 15, label: strings.keepAwakeDuration15m)
+                    extendChip(minutes: 60, label: strings.keepAwakeDuration1h)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        .padding(12)
+    }
+
+    private func extendChip(minutes: Int, label: String) -> some View {
+        Button {
+            onExtend(minutes)
+        } label: {
+            Text("+ \(label)")
+                .font(Theme.Stats.font11Regular)
+                .foregroundStyle(Theme.accentColor)
+                .padding(.horizontal, 10)
+                .frame(height: 24)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Theme.accentColor.opacity(colorScheme == .light ? 0.10 : 0.18))
+                )
+        }
+        .buttonStyle(.plain)
+        .contentShape(Capsule(style: .continuous))
+        .accessibilityLabel(label)
+    }
+
+    // MARK: - 状态区：重试清理
+    private var retryCleanupSection: some View {
+        Button {
+            onRetryCleanup()
+        } label: {
+            Text(presentation.retryCleanupLabel)
+                .font(Theme.Stats.font12Medium)
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 30)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous)
+                        .fill(Theme.Stats.up)
+                )
+        }
+        .buttonStyle(.plain)
+        .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous))
+        .padding(12)
+    }
+
+    // MARK: - 合盖时保持唤醒卡片
     private var clamshellCard: some View {
         HStack(alignment: .center, spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(config.clamshellPreferred.wrappedValue
+                        ? Theme.Stats.down.opacity(colorScheme == .light ? 0.12 : 0.22)
+                        : (colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.08)))
+                Image(systemName: "laptopcomputer")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(config.clamshellPreferred.wrappedValue
+                        ? Theme.Stats.down
+                        : (colorScheme == .light ? Theme.Stats.text1 : Color.primary))
+            }
+            .frame(width: 38, height: 38)
+            .animation(Theme.Animation.hover, value: config.clamshellPreferred.wrappedValue)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(strings.keepAwakeClamshellTitle)
                     .font(Theme.Stats.font13SemiBold)
@@ -555,8 +661,8 @@ struct KeepAwakeControlView: View {
                 Text(strings.keepAwakeClamshellSubtitle)
                     .font(Theme.Stats.font11Regular)
                     .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
-                if let line = presentation.clamshellStatusLine {
-                    Text(line)
+                if config.clamshellPreferred.wrappedValue {
+                    Text(presentation.clamshellStatusLine ?? strings.keepAwakeClamshellFootnote)
                         .font(Theme.Stats.font10Regular)
                         .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                 }
@@ -573,6 +679,26 @@ struct KeepAwakeControlView: View {
         }
         .padding(12)
         .background(cardBackground)
+    }
+
+    // MARK: - 错误横幅
+    private func errorBanner(_ text: String) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.Stats.up)
+            Text(text)
+                .font(Theme.Stats.font11Regular)
+                .foregroundStyle(Theme.Stats.up)
+                .lineLimit(2)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                .fill(Theme.Stats.up.opacity(colorScheme == .light ? 0.08 : 0.16))
+        )
     }
 
     // MARK: - 卡片背景样式
