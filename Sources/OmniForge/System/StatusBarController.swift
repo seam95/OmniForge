@@ -206,6 +206,14 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             setupBlueDot(in: button)
         }
 
+        // 清洁模式启动即收起控制中心面板：面板浮在遮罩上碍事（SPEC D14）。
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleCleaningModeDidStart),
+            name: CleaningModeManager.didStartNotification,
+            object: nil
+        )
+
         rebindFeatureObservers()
         FeatureRuntime.shared.$revision
             .receive(on: DispatchQueue.main)
@@ -213,6 +221,12 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
                 self?.rebindFeatureObservers()
             }
             .store(in: &featureCancellables)
+    }
+
+    @objc private func handleCleaningModeDidStart() {
+        if popover.isShown {
+            popover.performClose(nil)
+        }
     }
 
     private func rebindFeatureObservers() {

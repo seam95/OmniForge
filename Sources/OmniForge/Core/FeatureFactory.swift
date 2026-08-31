@@ -304,6 +304,19 @@ struct FeatureFactory {
                 runtime.register(.stickyNotes, manager: manager)
                 manager.restoreOnInstall()
             }
+        case .cleaningMode:
+            // 轻量接线：会话态不持久化，重启回落 idle，无需恢复工作。
+            if runtime.manager(for: .cleaningMode, as: CleaningModeManager.self) == nil {
+                let manager = CleaningModeManager(
+                    interceptor: CGCleaningInputInterceptor(),
+                    overlayPresenter: CleaningOverlayWindowController(stringsProvider: {
+                        L10n(userDefaults: userDefaults).s
+                    }),
+                    timeoutScheduler: DispatchCleaningTimeoutScheduler(),
+                    defaults: userDefaults
+                )
+                runtime.register(.cleaningMode, manager: manager)
+            }
         }
     }
 
@@ -386,6 +399,9 @@ struct FeatureFactory {
             break
         case .stickyNotes:
             runtime.manager(for: .stickyNotes, as: StickyNoteManager.self)?.teardown()
+        case .cleaningMode:
+            // 卸载时若清洁进行中，先撤遮罩、恢复输入，再卸注册。
+            runtime.manager(for: .cleaningMode, as: CleaningModeManager.self)?.stop()
         }
         runtime.unregisterAll(for: feature)
     }

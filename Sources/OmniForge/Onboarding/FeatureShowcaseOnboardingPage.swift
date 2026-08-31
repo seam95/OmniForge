@@ -103,7 +103,7 @@ extension AppFeature {
         // 鼠标与触控板特性复用 Hub 图标
         case .scrollInverter, .smoothScroll, .mouseNavigation, .dockClick:
             return symbolName
-        case .keepAwake, .screenshot, .tokenUsage, .providerSwitch, .stickyNotes:
+        case .keepAwake, .screenshot, .tokenUsage, .providerSwitch, .stickyNotes, .cleaningMode:
             return symbolName
         }
     }
@@ -120,7 +120,7 @@ extension AppFeature {
         // 鼠标与触控板特性复用 Hub 名称
         case .scrollInverter, .smoothScroll, .mouseNavigation, .dockClick:
             return hubName(in: strings)
-        case .keepAwake, .screenshot, .tokenUsage, .providerSwitch, .stickyNotes:
+        case .keepAwake, .screenshot, .tokenUsage, .providerSwitch, .stickyNotes, .cleaningMode:
             return hubName(in: strings)
         }
     }
@@ -137,7 +137,7 @@ extension AppFeature {
         // 鼠标与触控板特性复用 Hub 描述
         case .scrollInverter, .smoothScroll, .mouseNavigation, .dockClick:
             return hubDescription(in: strings)
-        case .keepAwake, .screenshot, .tokenUsage, .providerSwitch, .stickyNotes:
+        case .keepAwake, .screenshot, .tokenUsage, .providerSwitch, .stickyNotes, .cleaningMode:
             return hubDescription(in: strings)
         }
     }

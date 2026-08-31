@@ -222,7 +222,11 @@ final class NavigationRoutesTests: XCTestCase {
     func test_utilityTools_followFeatureAvailabilityAndStableOrder() {
         XCTAssertEqual(
             UtilityTool.visibleCases(isAvailable: { _ in true }),
-            [.stickyNotes, .dshWeb, .networkDiagnostics, .colorPicker, .uninstaller, .cleaner]
+            [.stickyNotes, .dshWeb, .networkDiagnostics, .colorPicker, .uninstaller, .cleaner, .cleaningMode]
+        )
+        XCTAssertEqual(
+            UtilityTool.visibleCases(isAvailable: { $0 == .cleaningMode }),
+            [.cleaningMode]
         )
         XCTAssertEqual(
             UtilityTool.visibleCases(isAvailable: { $0 == .cleaner }),

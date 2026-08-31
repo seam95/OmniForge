@@ -1398,4 +1398,25 @@ struct Strings: Equatable {
     let stickyNoteNotificationPermission: String
     let stickyNoteNotificationGranted: String
     let stickyNoteNotificationDenied: String
+
+    // MARK: - Cleaning Mode（清洁模式）
+    let utilityCleaningModeSubtitle: String
+    let featureHubNameCleaningMode: String
+    let featureHubDescCleaningMode: String
+    let cleaningModeActionKeyboard: String
+    let cleaningModeActionScreen: String
+    let cleaningModeActionKeyboardHint: String
+    let cleaningModeActionScreenHint: String
+    let cleaningModeExit: String
+    let cleaningModeActiveKeyboard: String
+    let cleaningModeActiveScreen: String
+    let cleaningModeLockedHint: String
+    let cleaningModeOverlayStyle: String
+    let cleaningModeOverlayBlack: String
+    let cleaningModeOverlayWhite: String
+    let cleaningModeTimeout: String
+    let cleaningModeTimeoutOff: String
+    let cleaningModeTimeoutMinutesFormat: String
+    let cleaningModePermissionTitle: String
+    let cleaningModePermissionAction: String
 }

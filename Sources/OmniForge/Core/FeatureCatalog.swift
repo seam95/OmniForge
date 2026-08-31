@@ -24,6 +24,7 @@ enum AppFeature: String, CaseIterable {
     case screenshot
     case providerSwitch
     case stickyNotes
+    case cleaningMode
 
     /// 设置「鼠标」分区与相关入口共用的功能集合。
     static let mouseFeatures: [AppFeature] = [
@@ -78,7 +79,7 @@ extension AppFeature {
         case .keepAwake: return .energy
         case .screenshot: return .capture
         case .providerSwitch: return .ai
-        case .stickyNotes: return .productivity
+        case .stickyNotes, .cleaningMode: return .productivity
         }
     }
 
@@ -107,6 +108,7 @@ extension AppFeature {
         case .screenshot: return [UserDefaultsKeys.screenshotEnabled]
         case .providerSwitch: return []
         case .stickyNotes: return []
+        case .cleaningMode: return []
         }
     }
 
@@ -128,6 +130,7 @@ extension AppFeature {
         case .screenshot: return [.screenRecording]
         case .providerSwitch: return []
         case .stickyNotes: return [.notifications]
+        case .cleaningMode: return [.accessibility]
         }
     }
 
@@ -164,6 +167,8 @@ extension AppFeature {
         case .stickyNotes:
             // 提醒走系统通知；未授权时提醒仍可设置（仅无横幅），故为可选。
             return permission == .notifications ? .optional : nil
+        case .cleaningMode:
+            return permission == .accessibility ? .required : nil
         case .providerSwitch:
             return nil
         case .clipboardHistory, .quickPhrase, .shelf, .launchAtLogin:
@@ -210,6 +215,7 @@ extension AppFeature {
         case .screenshot: return "camera.viewfinder"
         case .providerSwitch: return "arrow.triangle.swap"
         case .stickyNotes: return "note.text"
+        case .cleaningMode: return "spraycan"
         }
     }
 
@@ -236,6 +242,7 @@ extension AppFeature {
         case .screenshot: return strings.featureHubNameScreenshot
         case .providerSwitch: return strings.featureHubNameProviderSwitch
         case .stickyNotes: return strings.featureHubNameStickyNotes
+        case .cleaningMode: return strings.featureHubNameCleaningMode
         }
     }
 
@@ -262,6 +269,7 @@ extension AppFeature {
         case .screenshot: return strings.featureHubDescScreenshot
         case .providerSwitch: return strings.featureHubDescProviderSwitch
         case .stickyNotes: return strings.featureHubDescStickyNotes
+        case .cleaningMode: return strings.featureHubDescCleaningMode
         }
     }
 

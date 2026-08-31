@@ -8,6 +8,7 @@ enum UtilityTool: String, CaseIterable, Identifiable {
     case colorPicker
     case uninstaller
     case cleaner
+    case cleaningMode
 
     var id: String { rawValue }
 
@@ -26,6 +27,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
                 return isAvailable(.uninstaller)
             case .cleaner:
                 return isAvailable(.cleaner)
+            case .cleaningMode:
+                return isAvailable(.cleaningMode)
             }
         }
     }
@@ -53,6 +56,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
             return strings.utilityUninstaller
         case .cleaner:
             return strings.utilityCleaner
+        case .cleaningMode:
+            return strings.featureHubNameCleaningMode
         }
     }
 
@@ -71,6 +76,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
             return .uninstaller
         case .cleaner:
             return .cleaner
+        case .cleaningMode:
+            return .cleaningMode
         }
     }
 
@@ -89,6 +96,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
             return "trash"
         case .cleaner:
             return "trash"
+        case .cleaningMode:
+            return "spraycan"
         }
     }
 
@@ -107,6 +116,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
             return Color(red: 0.95, green: 0.35, blue: 0.32)
         case .cleaner:
             return .blue
+        case .cleaningMode:
+            return .mint
         }
     }
 
@@ -128,6 +139,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
             return strings.utilityUninstallerSubtitle
         case .cleaner:
             return strings.utilityCleanerSubtitle
+        case .cleaningMode:
+            return strings.utilityCleaningModeSubtitle
         }
     }
 }

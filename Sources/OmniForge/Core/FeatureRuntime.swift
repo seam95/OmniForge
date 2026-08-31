@@ -398,6 +398,12 @@ final class FeatureRuntime: ObservableObject {
             shared.manager(for: .stickyNotes, as: StickyNoteManager.self)?
                 .syncHotkeyWithAvailability()
         },
+        .cleaningMode: {
+            // availability 关闭时强制退出清洁（teardown 之外的独立保险）。
+            if !shared.isAvailable(.cleaningMode) {
+                shared.manager(for: .cleaningMode, as: CleaningModeManager.self)?.stop()
+            }
+        },
     ]
 
     // MARK: - 测试支持

@@ -45,6 +45,9 @@ enum UserDefaultsKeys {
     static let cleanerScheduleNotify = "cleanerScheduleNotify"
     static let cleanerLastAutoRun = "cleanerLastAutoRun"                // Double, epoch seconds
     static let cleanerLastAutoFreed = "cleanerLastAutoFreed"            // Int bytes
+    // Cleaning Mode — 清洁模式
+    static let cleaningModeOverlayStyle = "cleaningModeOverlayStyle"    // black | white，默认 black
+    static let cleaningModeTimeoutMinutes = "cleaningModeTimeoutMinutes" // 0 = off；档位 5/10/15/30，默认 10
     // Keep Awake — 持久化字符串必须稳定，不得重命名
     static let keepAwakeDefaultDurationMinutes = "keepAwake.defaultDurationMinutes"
     static let keepAwakeBatteryLimitPercent = "keepAwake.batteryLimitPercent"

@@ -1261,6 +1261,27 @@ extension Strings {
         stickyNoteHotkeyTitle: "新建便签快捷键",
         stickyNoteNotificationPermission: "系统通知权限",
         stickyNoteNotificationGranted: "已授权",
-        stickyNoteNotificationDenied: "未授权"
+        stickyNoteNotificationDenied: "未授权",
+
+        // MARK: - Cleaning Mode（清洁模式）
+        utilityCleaningModeSubtitle: "擦拭键盘和屏幕时锁定全部输入",
+        featureHubNameCleaningMode: "清洁模式",
+        featureHubDescCleaningMode: "擦拭键盘和屏幕时锁定全部输入，防止误触",
+        cleaningModeActionKeyboard: "键盘清洁",
+        cleaningModeActionScreen: "屏幕清洁",
+        cleaningModeActionKeyboardHint: "锁定键盘、触控板与鼠标，屏幕保持可见",
+        cleaningModeActionScreenHint: "锁定输入并以纯色遮罩覆盖所有屏幕，便于看清灰尘",
+        cleaningModeExit: "退出清洁模式",
+        cleaningModeActiveKeyboard: "键盘清洁进行中",
+        cleaningModeActiveScreen: "屏幕清洁进行中",
+        cleaningModeLockedHint: "键盘已锁定 · 长按鼠标或触控板 3 秒退出",
+        cleaningModeOverlayStyle: "遮罩颜色",
+        cleaningModeOverlayBlack: "纯黑",
+        cleaningModeOverlayWhite: "纯白",
+        cleaningModeTimeout: "超时自动退出",
+        cleaningModeTimeoutOff: "关闭",
+        cleaningModeTimeoutMinutesFormat: "%d 分钟",
+        cleaningModePermissionTitle: "清洁模式需要辅助功能权限才能锁定输入。请在系统设置中授权后返回启动。",
+        cleaningModePermissionAction: "打开系统设置"
     )
 }

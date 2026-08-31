@@ -213,6 +213,8 @@ struct UtilityToolsView: View {
             DSHWebView(strings: strings)
         case .stickyNotes:
             StickyNotesView(strings: strings)
+        case .cleaningMode:
+            CleaningModeView(strings: strings)
         }
     }
 

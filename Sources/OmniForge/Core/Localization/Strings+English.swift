@@ -1261,6 +1261,27 @@ extension Strings {
         stickyNoteHotkeyTitle: "New Note Shortcut",
         stickyNoteNotificationPermission: "Notification Permission",
         stickyNoteNotificationGranted: "Granted",
-        stickyNoteNotificationDenied: "Not Granted"
+        stickyNoteNotificationDenied: "Not Granted",
+
+        // MARK: - Cleaning Mode（清洁模式）
+        utilityCleaningModeSubtitle: "Lock all input while wiping your keyboard & screen",
+        featureHubNameCleaningMode: "Cleaning Mode",
+        featureHubDescCleaningMode: "Lock all input while cleaning your keyboard and screen",
+        cleaningModeActionKeyboard: "Keyboard Cleaning",
+        cleaningModeActionScreen: "Screen Cleaning",
+        cleaningModeActionKeyboardHint: "Lock keyboard, trackpad and mouse; screen stays visible",
+        cleaningModeActionScreenHint: "Lock input and cover every screen with a solid overlay to spot dust",
+        cleaningModeExit: "Exit Cleaning Mode",
+        cleaningModeActiveKeyboard: "Keyboard cleaning in progress",
+        cleaningModeActiveScreen: "Screen cleaning in progress",
+        cleaningModeLockedHint: "Input locked · Hold mouse or trackpad for 3s to exit",
+        cleaningModeOverlayStyle: "Overlay Color",
+        cleaningModeOverlayBlack: "Black",
+        cleaningModeOverlayWhite: "White",
+        cleaningModeTimeout: "Auto-exit Timeout",
+        cleaningModeTimeoutOff: "Off",
+        cleaningModeTimeoutMinutesFormat: "%d min",
+        cleaningModePermissionTitle: "Cleaning Mode needs Accessibility permission to lock input. Grant it in System Settings, then come back to start cleaning.",
+        cleaningModePermissionAction: "Open System Settings"
     )
 }
