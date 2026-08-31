@@ -182,6 +182,18 @@ final class CleaningModeManagerTests: XCTestCase {
         XCTAssertEqual(overlay.presentedStyle, .white)
     }
 
+    /// 设置项为 UserDefaults 背书的计算属性，setter 必须显式发刷新通知，
+    /// 否则详情页选中态不重绘（真机回归：纯黑/纯白切换看似无反应）。
+    func test_设置变更发出刷新通知() {
+        let manager = makeManager()
+        var emissions = 0
+        let cancellable = manager.objectWillChange.sink { emissions += 1 }
+        manager.overlayStyle = .white
+        manager.timeout = .minutes(15)
+        XCTAssertEqual(emissions, 2)
+        withExtendedLifetime(cancellable) {}
+    }
+
     // MARK: - 可用性联动
 
     func test_功能不可用强制退出() {

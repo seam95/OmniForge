@@ -7,6 +7,8 @@ final class CleaningOverlayViewModel: ObservableObject {
     @Published var style: CleaningOverlayStyle = .black
     @Published var holdProgress: Double?
     @Published var isHintVisible = true
+    /// 提示文案按模式注入：屏幕清洁与键盘清洁文案不同。
+    @Published var hintText = ""
     /// false = 键盘清洁提示窗模式：无纯色底，仅中央提示。
     @Published var showsSolidBackground = true
 }
@@ -19,7 +21,7 @@ final class CleaningOverlayWindowController: CleaningOverlayPresenting {
     private var panels: [NSPanel] = []
     private var hintTask: Task<Void, Never>?
 
-    /// 提示文案展示时长（秒），之后淡出保持遮罩纯净（SPEC D8）。
+    /// 屏幕清洁提示文案展示时长（秒），之后淡出保持遮罩纯净（SPEC D8）；键盘清洁提示常驻。
     private let hintDuration: TimeInterval = 5
 
     init(stringsProvider: @escaping () -> Strings) {
@@ -33,6 +35,7 @@ final class CleaningOverlayWindowController: CleaningOverlayPresenting {
             model.style = style
             model.holdProgress = nil
             model.isHintVisible = true
+            model.hintText = stringsProvider().cleaningModeScreenLockedHint
             model.showsSolidBackground = true
             for screen in NSScreen.screens {
                 let panel = makePanel(for: screen, solidBackground: true)
@@ -51,13 +54,14 @@ final class CleaningOverlayWindowController: CleaningOverlayPresenting {
         guard panels.isEmpty else { return }
         model.holdProgress = nil
         model.isHintVisible = true
+        model.hintText = stringsProvider().cleaningModeLockedHint
         model.showsSolidBackground = false
         for screen in NSScreen.screens {
             let panel = makePanel(for: screen, solidBackground: false)
             panels.append(panel)
             panel.orderFrontRegardless()
         }
-        scheduleHintFadeOut()
+        // 键盘清洁提示常驻整个会话：淡出后用户将无从知晓锁定状态与退出方式。
     }
 
     func dismiss() {
@@ -96,7 +100,7 @@ final class CleaningOverlayWindowController: CleaningOverlayPresenting {
         panel.ignoresMouseEvents = !solidBackground
         panel.setFrame(frame, display: false)
         panel.contentView = NSHostingView(
-            rootView: CleaningOverlayView(model: model, strings: stringsProvider())
+            rootView: CleaningOverlayView(model: model)
         )
         return panel
     }

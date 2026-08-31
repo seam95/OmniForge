@@ -1411,6 +1411,7 @@ struct Strings: Equatable {
     let cleaningModeActiveKeyboard: String
     let cleaningModeActiveScreen: String
     let cleaningModeLockedHint: String
+    let cleaningModeScreenLockedHint: String
     let cleaningModeOverlayStyle: String
     let cleaningModeOverlayBlack: String
     let cleaningModeOverlayWhite: String

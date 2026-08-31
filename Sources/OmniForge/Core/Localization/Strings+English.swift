@@ -1275,6 +1275,7 @@ extension Strings {
         cleaningModeActiveKeyboard: "Keyboard cleaning in progress",
         cleaningModeActiveScreen: "Screen cleaning in progress",
         cleaningModeLockedHint: "Input locked · Hold mouse or trackpad for 3s to exit",
+        cleaningModeScreenLockedHint: "Screen cleaning · Hold mouse or trackpad for 3s to exit",
         cleaningModeOverlayStyle: "Overlay Color",
         cleaningModeOverlayBlack: "Black",
         cleaningModeOverlayWhite: "White",

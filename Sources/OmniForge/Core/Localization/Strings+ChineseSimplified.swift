@@ -1275,6 +1275,7 @@ extension Strings {
         cleaningModeActiveKeyboard: "键盘清洁进行中",
         cleaningModeActiveScreen: "屏幕清洁进行中",
         cleaningModeLockedHint: "键盘已锁定 · 长按鼠标或触控板 3 秒退出",
+        cleaningModeScreenLockedHint: "屏幕清洁中 · 长按鼠标或触控板 3 秒退出",
         cleaningModeOverlayStyle: "遮罩颜色",
         cleaningModeOverlayBlack: "纯黑",
         cleaningModeOverlayWhite: "纯白",

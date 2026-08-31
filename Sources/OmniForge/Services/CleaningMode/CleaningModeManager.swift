@@ -78,6 +78,8 @@ final class CleaningModeManager: ObservableObject {
     var overlayStyle: CleaningOverlayStyle {
         get { .fromPersistedValue(defaults.string(forKey: UserDefaultsKeys.cleaningModeOverlayStyle)) }
         set {
+            // UserDefaults 背书的计算属性不会自动触发刷新，需显式通知（否则详情页选中态不重绘）。
+            objectWillChange.send()
             defaults.set(newValue.rawValue, forKey: UserDefaultsKeys.cleaningModeOverlayStyle)
             // 屏幕清洁运行中即时换肤。
             if case .active(.screen) = state {
@@ -94,6 +96,7 @@ final class CleaningModeManager: ObservableObject {
             )
         }
         set {
+            objectWillChange.send()
             defaults.set(newValue.persistedMinutes, forKey: UserDefaultsKeys.cleaningModeTimeoutMinutes)
             rescheduleTimeoutIfNeeded()
         }
