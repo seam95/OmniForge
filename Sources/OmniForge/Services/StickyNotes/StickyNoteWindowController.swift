@@ -72,6 +72,8 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
     private var lastCollapsed = false
     /// 折叠切换动画进行中：抑制 windowDidMove / Resize 兜底回写中间态 frame。
     private var isAnimatingFrame = false
+    /// 折叠切换的逐步 setFrame 定时器。
+    private var frameAnimationTimer: Timer?
 
     init(
         note: StickyNote,
@@ -132,14 +134,53 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
         guard Self.framesDiffer(target, panel.frame) else { return }
         panel.minSize = Self.minSize(collapsed: note.collapsed)
         if collapsedChanged {
-            // setFrame(animate:) 同步执行动画；期间 windowDidResize 会发通知，
-            // 兜底回写会把中间态高度落库，必须抑制。
-            isAnimatingFrame = true
-            panel.setFrame(target, display: true, animate: true)
-            isAnimatingFrame = false
+            animateFrame(to: target)
         } else {
             panel.setFrame(target, display: true)
         }
+    }
+
+    /// 折叠 / 展开的窗口收缩动画：定时器逐步 setFrame 逼近目标。
+    /// 不用 setFrame(animate:)——窗口服务器按「缩放旧位图」插值，不实时重排内容：
+    /// 展开时折叠条内容会被纵向拉伸成拖影、动画结束才跳回真实布局；
+    /// 逐步 setFrame 等价程序化拖拽，SwiftUI 每步实时重排，无位图拉伸。
+    /// 时长与正文显隐动画（0.18s）对齐；期间 windowDidResize / Move 的
+    /// 兜底回写由 isAnimatingFrame 抑制，防止中间态高度落库。
+    private func animateFrame(to target: CGRect) {
+        frameAnimationTimer?.invalidate()
+        isAnimatingFrame = true
+        let start = panel.frame
+        let t0 = Date()
+        let duration: TimeInterval = 0.18
+        let timer = Timer(timeInterval: 1.0 / 120.0, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard let self else {
+                    timer.invalidate()
+                    return
+                }
+                let progress = min(Date().timeIntervalSince(t0) / duration, 1)
+                let eased = Self.easeInOutQuad(progress)
+                let frame = CGRect(
+                    x: start.minX + (target.minX - start.minX) * eased,
+                    y: start.minY + (target.minY - start.minY) * eased,
+                    width: start.width + (target.width - start.width) * eased,
+                    height: start.height + (target.height - start.height) * eased
+                )
+                self.panel.setFrame(frame, display: true)
+                guard progress >= 1 else { return }
+                timer.invalidate()
+                self.frameAnimationTimer = nil
+                self.isAnimatingFrame = false
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        frameAnimationTimer = timer
+    }
+
+    /// 二次缓动，近似 SwiftUI easeInOut 曲线。
+    private static func easeInOutQuad(_ progress: Double) -> CGFloat {
+        let eased = progress < 0.5 ? 2 * progress * progress : 1 - pow(-2 * progress + 2, 2) / 2
+        return CGFloat(eased)
     }
 
     /// 目标窗口 frame：展开态 = note.frame（钳制最小尺寸）；折叠态 = 顶边对齐的折叠条。
@@ -188,6 +229,9 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
     }
 
     func close() {
+        frameAnimationTimer?.invalidate()
+        frameAnimationTimer = nil
+        isAnimatingFrame = false
         panel.delegate = nil
         panel.close()
     }
