@@ -180,6 +180,8 @@ final class StickyNoteManagerTests: XCTestCase {
         ]
         let manager = makeManager()
         let active = manager.create()!
+        // 空白便签会被 hideAll 顺带回收，本用例聚焦隐藏语义，先写入内容。
+        manager.updateContent(id: active.id, content: "进行中")
         manager.hideAll()
         presenter.resetRecording()
 
@@ -210,6 +212,7 @@ final class StickyNoteManagerTests: XCTestCase {
     func test_uncomplete_clearsHiddenAndShows() {
         let manager = makeManager()
         let note = manager.create()!
+        manager.updateContent(id: note.id, content: "待办")
         manager.complete(id: note.id)
         presenter.resetRecording()
 
@@ -250,6 +253,7 @@ final class StickyNoteManagerTests: XCTestCase {
     func test_complete_overridesCollapseAndHidesWindow() {
         let manager = makeManager()
         let note = manager.create()!
+        manager.updateContent(id: note.id, content: "折叠中的待办")
         manager.setCollapse(id: note.id, collapsed: true)
         presenter.resetRecording()
 
@@ -265,6 +269,7 @@ final class StickyNoteManagerTests: XCTestCase {
     func test_complete_marksCompletedHiddenClearsReminderAndCancelsChannels() {
         let manager = makeManager()
         let note = manager.create()!
+        manager.updateContent(id: note.id, content: "有内容的待办")
         manager.setReminder(id: note.id, date: nowDate.addingTimeInterval(3600))
         scheduler.resetRecording()
         scheduler.resetRecording()
@@ -351,6 +356,7 @@ final class StickyNoteManagerTests: XCTestCase {
     func test_handleReminderFired_marksFiredRestoresHiddenNoteAndMovesToTop() {
         let manager = makeManager()
         let note = manager.create()!
+        manager.updateContent(id: note.id, content: "提醒事项")
         manager.hideAll()
         _ = manager.setReminder(id: note.id, date: nowDate.addingTimeInterval(60))
         presenter.resetRecording()
@@ -480,6 +486,100 @@ final class StickyNoteManagerTests: XCTestCase {
             [StickyNoteReminderRequestID.make(for: note.id)]
         )
         XCTAssertEqual(presenter.dismissedIDs, [note.id])
+    }
+
+    // MARK: - 7.1 空白便签回收（误新建治理）
+
+    func test_complete_blankNotePhysicallyDeletesInsteadOfArchiving() {
+        let manager = makeManager()
+        let note = manager.create()!  // 快捷键误新建：内容为空
+
+        manager.complete(id: note.id)
+
+        // 完成退化为物理删除：不进已完成归档，数据与窗口一并移除
+        XCTAssertTrue(manager.notes.isEmpty)
+        XCTAssertEqual(store.deletedIDs, [note.id])
+        XCTAssertEqual(presenter.dismissedIDs, [note.id])
+    }
+
+    func test_complete_whitespaceOnlyNoteAlsoDeletes() {
+        let manager = makeManager()
+        let note = manager.create()!
+        manager.updateContent(id: note.id, content: "  \n\t ")
+
+        manager.complete(id: note.id)
+
+        XCTAssertTrue(manager.notes.isEmpty, "空白字符内容同样视为空白便签")
+        XCTAssertEqual(store.deletedIDs, [note.id])
+    }
+
+    func test_complete_noteWithContentStillArchives() {
+        let manager = makeManager()
+        let note = manager.create()!
+        manager.updateContent(id: note.id, content: "真实待办")
+        presenter.resetRecording()
+
+        manager.complete(id: note.id)
+
+        XCTAssertEqual(manager.notes.count, 1)
+        XCTAssertEqual(manager.notes[0].completed, true)
+        XCTAssertEqual(store.deletedIDs, [])
+        XCTAssertEqual(presenter.hiddenIDs, [note.id])
+    }
+
+    func test_hideAll_recyclesBlankActiveNotesButKeepsContentOnes() {
+        let manager = makeManager()
+        let blank = manager.create()!
+        let content = manager.create()!
+        manager.updateContent(id: content.id, content: "保留我")
+        store.resetRecording()
+
+        manager.hideAll()
+
+        // 空白便签被物理回收；有内容便签仅隐藏
+        XCTAssertEqual(manager.notes.map(\.id), [content.id])
+        XCTAssertEqual(store.deletedIDs, [blank.id])
+        XCTAssertEqual(manager.notes[0].hidden, true)
+        XCTAssertEqual(presenter.dismissedIDs, [blank.id])
+        XCTAssertEqual(presenter.hideAllCount, 1)
+    }
+
+    func test_restoreOnInstall_recyclesBlankNotesAndShowsContentOnes() {
+        store.stubbedNotes = [
+            StickyNote(content: "", hidden: true, createdAt: nowDate.addingTimeInterval(-90), updatedAt: nowDate),
+            StickyNote(content: "  ", createdAt: nowDate.addingTimeInterval(-80), updatedAt: nowDate),
+            StickyNote(content: "可见", createdAt: nowDate.addingTimeInterval(-70), updatedAt: nowDate)
+        ]
+        let manager = makeManager()
+
+        manager.restoreOnInstall()
+
+        // 空白便签（含隐藏残留与纯空白字符）重启即回收，只剩有内容便签
+        XCTAssertEqual(manager.notes.map(\.content), ["可见"])
+        XCTAssertEqual(store.deletedIDs.count, 2)
+        XCTAssertEqual(presenter.shownNotes.map(\.content), ["可见"])
+    }
+
+    // MARK: - 7.2 清空已完成
+
+    func test_deleteCompleted_removesAllCompletedAndKeepsActive() {
+        store.stubbedNotes = [
+            StickyNote(
+                content: "已完成 1", completed: true,
+                createdAt: nowDate.addingTimeInterval(-90), updatedAt: nowDate.addingTimeInterval(-30)
+            ),
+            StickyNote(
+                content: "已完成 2", hidden: true, completed: true,
+                createdAt: nowDate.addingTimeInterval(-80), updatedAt: nowDate.addingTimeInterval(-20)
+            ),
+            StickyNote(content: "进行中", createdAt: nowDate.addingTimeInterval(-70), updatedAt: nowDate)
+        ]
+        let manager = makeManager()
+
+        manager.deleteCompleted()
+
+        XCTAssertEqual(manager.notes.map(\.content), ["进行中"])
+        XCTAssertEqual(Set(store.deletedIDs), Set(store.stubbedNotes.filter(\.completed).map(\.id)))
     }
 
     // MARK: - 8 快捷键

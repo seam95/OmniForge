@@ -70,6 +70,12 @@ struct StickyNote: Identifiable, Codable, Equatable {
         reminderAt != nil && reminderFiredAt != nil
     }
 
+    /// 内容为空白（去除首尾空白后为空）：典型为快捷键误新建、未写过内容的便签，
+    /// 没有归档价值，完成 / 隐藏 / 重启路径直接物理回收。
+    var isBlank: Bool {
+        content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     /// 窗口 frame（AppKit 全局坐标）；DB 四列的便捷视图。
     var frame: CGRect {
         get { CGRect(x: x, y: y, width: width, height: height) }

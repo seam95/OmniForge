@@ -160,7 +160,13 @@ final class StickyNoteManager: ObservableObject {
     }
 
     /// 完成便签：标记完成并隐藏；事项已办，提醒一并撤销。
+    /// 空白便签（误新建、未写内容）没有归档价值：完成动作退化为物理删除，
+    /// 免去「先完成进归档、再去已完成区删一次」的两步操作。
     func complete(id: UUID) {
+        if let note = notes.first(where: { $0.id == id }), note.isBlank {
+            delete(id: id)
+            return
+        }
         clearReminderChannels(id: id)
         mutate(id) { note in
             note.completed = true
@@ -199,6 +205,13 @@ final class StickyNoteManager: ObservableObject {
         updateSavingIndicator()
     }
 
+    /// 管理页已完成区「清空…」：物理删除全部已完成便签（View 层负责确认弹窗）。
+    func deleteCompleted() {
+        for id in notes.filter(\.completed).map(\.id) {
+            delete(id: id)
+        }
+    }
+
     /// 托盘「显示所有便签」：未完成便签全部恢复显示并前置——
     /// 收起的重新显示；可见但被其他窗口盖住的（如最大化前台 app）强制前置。
     /// 已完成便签只能经管理页处理。
@@ -215,8 +228,9 @@ final class StickyNoteManager: ObservableObject {
         }
     }
 
-    /// 状态栏右键「隐藏所有便签」：全部隐藏（含置顶）。
+    /// 状态栏右键「隐藏所有便签」：全部隐藏（含置顶）；空白便签顺带物理回收。
     func hideAll() {
+        recycleBlankNotes()
         for note in notes where !note.completed && !note.hidden {
             mutate(note.id) { $0.hidden = true }
         }
@@ -274,6 +288,8 @@ final class StickyNoteManager: ObservableObject {
     /// 过期未触发的提醒 → 标记已触发并唤起（不补发系统通知，避免开机轰炸）；
     /// 未来提醒 → 重挂定时器 + 重排通知请求。
     func restoreOnInstall() {
+        // 误新建未写内容的空白便签先回收，避免其隐藏残留于数据库与管理页。
+        recycleBlankNotes()
         for note in notes where !note.completed && !note.hidden {
             windowPresenter.show(note: note)
         }
@@ -365,6 +381,13 @@ final class StickyNoteManager: ObservableObject {
     }
 
     // MARK: - private
+
+    /// 物理回收未完成的空白便签（先取 ID 再删，避免遍历中变动 notes）。
+    private func recycleBlankNotes() {
+        for id in notes.filter({ !$0.completed && $0.isBlank }).map(\.id) {
+            delete(id: id)
+        }
+    }
 
     /// 唤起到屏幕上方安全位置并标记已触发；已完成便签只落标记不唤起（4.7）。
     private func fireReminder(id: UUID, at firedAt: Date) {

@@ -1397,6 +1397,11 @@ struct Strings: Equatable {
     let stickyNoteDeleteCancel: String
     let stickyNoteDeleteConfirmTitle: String
     let stickyNoteDeleteConfirmMessage: String
+    /// 已完成区头部「清空」按钮。
+    let stickyNoteClearCompleted: String
+    let stickyNoteClearCompletedConfirmTitle: String
+    /// 清空已完成确认文案（%d = 已完成条数）。
+    let stickyNoteClearCompletedConfirmMessage: String
     let stickyNoteNoNotes: String
     let stickyNoteHotkeyTitle: String
     let stickyNoteNotificationPermission: String

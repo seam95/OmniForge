@@ -30,6 +30,7 @@ private struct StickyNotesContent: View {
     @ObservedObject var manager: StickyNoteManager
     @ObservedObject private var permissions = Permissions.shared
     @State private var notePendingDeletion: StickyNote?
+    @State private var isClearCompletedConfirmationPresented = false
     @Environment(\.colorScheme) private var colorScheme
 
     private var l10n: L10n { L10n(userDefaults: .standard) }
@@ -61,7 +62,7 @@ private struct StickyNotesContent: View {
                         }
                     }
                     if !completedNotes.isEmpty {
-                        section(title: strings.stickyNoteSectionCompleted) {
+                        section(title: strings.stickyNoteSectionCompleted, trailing: { clearCompletedButton }) {
                             ForEach(completedNotes) { note in
                                 completedRow(note: note)
                             }
@@ -89,6 +90,17 @@ private struct StickyNotesContent: View {
             Button(role: .cancel) {} label: { Text(strings.stickyNoteDeleteCancel) }
         } message: {
             Text(strings.stickyNoteDeleteConfirmMessage)
+        }
+        .alert(
+            strings.stickyNoteClearCompletedConfirmTitle,
+            isPresented: $isClearCompletedConfirmationPresented
+        ) {
+            Button(strings.stickyNoteDelete, role: .destructive) {
+                manager.deleteCompleted()
+            }
+            Button(role: .cancel) {} label: { Text(strings.stickyNoteDeleteCancel) }
+        } message: {
+            Text(String(format: strings.stickyNoteClearCompletedConfirmMessage, completedNotes.count))
         }
     }
 
@@ -138,18 +150,45 @@ private struct StickyNotesContent: View {
 
     @ViewBuilder
     private func section(title: String, @ViewBuilder rows: () -> some View) -> some View {
+        section(title: title, trailing: { EmptyView() }, rows: rows)
+    }
+
+    /// 分区标题行；`trailing` 为标题右侧的操作区（如已完成区「清空…」）。
+    private func section(
+        title: String,
+        @ViewBuilder trailing: () -> some View,
+        @ViewBuilder rows: () -> some View
+    ) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(title)
-                .font(Theme.Stats.font12Medium)
-                .foregroundStyle(Color.secondary)
-                .padding(.horizontal, 4)
-                .padding(.bottom, 6)
+            HStack {
+                Text(title)
+                    .font(Theme.Stats.font12Medium)
+                    .foregroundStyle(Color.secondary)
+                    .padding(.horizontal, 4)
+                Spacer()
+                trailing()
+            }
+            .padding(.bottom, 6)
             VStack(spacing: 0) {
                 rows()
             }
             .background(StickyListCardBackground())
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
         }
+    }
+
+    /// 已完成区头部「清空…」：一次确认（含条数）物理删除全部已完成便签。
+    private var clearCompletedButton: some View {
+        Button {
+            isClearCompletedConfirmationPresented = true
+        } label: {
+            Text(strings.stickyNoteClearCompleted)
+                .font(Theme.Stats.font11Regular)
+        }
+        .buttonStyle(.link)
+        .controlSize(.small)
+        .foregroundStyle(Color(red: 0.95, green: 0.35, blue: 0.32))
+        .help(strings.stickyNoteClearCompleted)
     }
 
     /// 进行中行：整行可点选 = 定位显示（恢复显示并前置，可压过最大化前台 app）；
