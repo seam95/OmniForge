@@ -25,14 +25,14 @@ enum ProviderSwitchPresentation: Equatable {
         self == .menuBar
     }
 
-    /// 供应商编辑/删除只在独立设置窗口提供。
+    /// 供应商管理菜单（编辑、复制启动命令、删除）统一在卡片中提供。
     var showsProfileManagementMenu: Bool {
-        self == .settings
+        true
     }
 
-    /// 菜单栏供应商卡片提供 CCQ 风格启动命令复制入口。
+    /// 复制入口已融入卡片更多菜单。
     var showsLaunchCommandCopyButton: Bool {
-        self == .menuBar
+        false
     }
 
     var addProviderRoute: ProviderSwitchAddProviderRoute {
@@ -51,11 +51,11 @@ enum ProviderSwitchAddProviderRoute: Equatable {
     case providerSettings
 }
 
-/// 供应商切换设置页（卡片式 UI 对齐稿子设计）：
+/// 供应商切换设置页（卡片式 UI 对齐最新设计稿）：
 /// - 分段选择器：Claude Code / Codex 全宽胶囊分段切换
-/// - 卡片列表：官方卡片 + Profile 卡片栈，激活项带有系统蓝外边框与「使用中」绿色胶囊微章；设置页显示管理菜单，菜单栏显示复制入口
+/// - 卡片列表：官方卡片 + Profile 卡片栈，激活项带有系统蓝外边框与「使用中」绿色胶囊微章；Profile 卡片右侧均展示 `•••` 更多操作菜单
 /// - 设置窗口：展示全宽「+ 新增供应商」主按钮并打开新增表单
-/// - 菜单栏：将新增操作放入底部链接，并以复制图标提供 CCQ 风格启动命令
+/// - 菜单栏：将新增操作放入底部链接（「编辑配置文件」左侧）并路由到供应商设置页
 /// - 底部辅助：居中展示供应商相关文字链接
 /// - 异常状态：未托管 / 损坏卡片视觉融入卡片体系
 struct ProviderSwitchSettingsView: View {
@@ -200,9 +200,9 @@ struct ProviderSwitchSettingsView: View {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .fill(ProviderBrandVisual.officialColor(for: selectedTool))
                             .frame(width: 36, height: 36)
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(.white)
+                        // 显式约束尺寸：GlyphView 内部 GeometryReader 是贪婪布局，不约束会撑爆卡片。
+                        ProviderLogoGlyphView(layers: ProviderBrandVisual.officialLogo(for: selectedTool))
+                            .frame(width: 36, height: 36)
                     }
 
                     VStack(alignment: .leading, spacing: 3) {
@@ -220,7 +220,6 @@ struct ProviderSwitchSettingsView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(isActive)
 
             if isActive {
                 inUseBadge
@@ -266,8 +265,6 @@ struct ProviderSwitchSettingsView: View {
                             .fill(visual.color)
                             .frame(width: 36, height: 36)
                         if let logo = visual.logo {
-                            // 显式约束尺寸：GlyphView 内部 GeometryReader 是贪婪布局，
-                            // 不约束时会撑满卡片剩余宽度，把色板和文字挤向中间。
                             ProviderLogoGlyphView(layers: logo)
                                 .frame(width: 36, height: 36)
                         } else {
@@ -293,32 +290,32 @@ struct ProviderSwitchSettingsView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(active || !profile.hasCompleteConnection)
+            .disabled(!profile.hasCompleteConnection)
 
-            if presentation.showsLaunchCommandCopyButton {
+            HStack(spacing: 8) {
                 if active {
                     inUseBadge
                 }
-                copyLaunchCommandButton(for: profile)
-            } else if active {
-                inUseBadge
-            } else if presentation.showsProfileManagementMenu {
-                Menu {
-                    Button(strings.providerEdit) { editingProfile = profile }
-                    Button(strings.providerDelete, role: .destructive) {
-                        deletingProfile = profile
-                        deletePromptPresented = true
+
+                if presentation.showsProfileManagementMenu {
+                    Menu {
+                        Button(strings.providerEdit) { editingProfile = profile }
+                        Button(strings.providerCopyLaunchCommand) { copyLaunchCommand(for: profile) }
+                        Button(strings.providerDelete, role: .destructive) {
+                            deletingProfile = profile
+                            deletePromptPresented = true
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Color.secondary.opacity(0.8))
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
                     }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color.secondary.opacity(0.8))
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
             }
         }
         .padding(.horizontal, 14)
@@ -326,22 +323,6 @@ struct ProviderSwitchSettingsView: View {
         .background(cardBackground(isActive: active))
         .overlay(cardBorder(isActive: active))
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-
-    private func copyLaunchCommandButton(for profile: ProviderProfile) -> some View {
-        Button {
-            copyLaunchCommand(for: profile)
-        } label: {
-            Image(systemName: "doc.on.doc")
-                .font(.system(size: 13.5, weight: .medium))
-                .foregroundStyle(Color.secondary.opacity(0.85))
-                .frame(width: 28, height: 28)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(strings.providerCopyLaunchCommand)
-        .accessibilityLabel(strings.providerCopyLaunchCommand)
-        .fixedSize()
     }
 
     private func isActive(_ profile: ProviderProfile) -> Bool {
@@ -357,8 +338,8 @@ struct ProviderSwitchSettingsView: View {
             .padding(.horizontal, 9)
             .padding(.vertical, 4)
             .background(
-                Capsule()
-                    .fill(Color.green.opacity(0.12))
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color(red: 0xDC / 255.0, green: 0xFC / 255.0, blue: 0xE7 / 255.0).opacity(colorScheme == .dark ? 0.25 : 0.85))
             )
     }
 
@@ -379,7 +360,7 @@ struct ProviderSwitchSettingsView: View {
                 isActive
                     ? Color.accentColor
                     : (colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06)),
-                lineWidth: isActive ? 1.6 : 0.8
+                lineWidth: isActive ? 1.5 : 0.8
             )
     }
 
@@ -653,7 +634,6 @@ enum ProviderBrandVisual {
     struct Visual {
         let letter: String
         let color: Color
-        /// 品牌矢量 logo（复用 Token 用量页 `ProviderLogoAssets`）；未匹配品牌时为 nil，回退字母占位。
         let logo: [ProviderLogoLayer]?
 
         init(letter: String, color: Color, logo: [ProviderLogoLayer]? = nil) {
@@ -725,6 +705,14 @@ enum ProviderBrandVisual {
             return Color(red: 0xD9 / 255.0, green: 0x77 / 255.0, blue: 0x57 / 255.0) // 陶土色
         case .codex:
             return Color(red: 0x18 / 255.0, green: 0x18 / 255.0, blue: 0x1B / 255.0) // 曜石黑
+        }
+    }
+
+    /// 官方卡片品牌 logo：Claude Code 用 Claude 花瓣标，Codex 用 OpenAI 结形标。
+    static func officialLogo(for tool: ProviderTool) -> [ProviderLogoLayer] {
+        switch tool {
+        case .claudeCode: return ProviderLogoAssets.claude
+        case .codex: return ProviderLogoAssets.openai
         }
     }
 }
