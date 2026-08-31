@@ -1,6 +1,13 @@
 import AppKit
 import SwiftUI
 
+/// 正文 NSTextView 与占位符共用的内边距：两者必须严格同行同列，
+/// 光标与「写下就好…」错位即因两处内边距各自为政。
+private enum StickyNoteTextInset {
+    static let horizontal: CGFloat = 6
+    static let top: CGFloat = 8
+}
+
 /// 便签窗口内容：工具栏 → 正文编辑区 → 状态栏（SPEC 4.2）。
 /// 正文用 NSTextView（点击激活应用 + 系统标准右键菜单），其余为 SwiftUI。
 struct StickyNoteContentView: View {
@@ -182,8 +189,8 @@ struct StickyNoteContentView: View {
                 Text(strings.stickyNotePlaceholder)
                     .font(.system(size: 13))
                     .foregroundStyle(palette.text(colorScheme: colorScheme).opacity(0.45))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, StickyNoteTextInset.horizontal)
+                    .padding(.top, StickyNoteTextInset.top)
                     .allowsHitTesting(false)
             }
         }
@@ -376,6 +383,13 @@ struct StickyNoteTextEditor: NSViewRepresentable {
         textView.isHorizontallyResizable = false
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        // 显式内边距并去掉默认 5pt 行片段内衬，使文字原点与占位符共用
+        // StickyNoteTextInset（否则光标与占位符上下错一行）
+        textView.textContainerInset = NSSize(
+            width: StickyNoteTextInset.horizontal,
+            height: StickyNoteTextInset.top
+        )
+        textView.textContainer?.lineFragmentPadding = 0
         textView.autoresizingMask = [.width]
         applyStyle(to: textView)
 
