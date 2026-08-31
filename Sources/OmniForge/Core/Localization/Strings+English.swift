@@ -1016,6 +1016,8 @@ extension Strings {
         tokenRateLimitedCaptionFormat: "Rate limited, retry before %@",
         tokenErrorRetryableHint: "retry available",
         tokenErrorNotRunningHint: "launch the app to resume",
+        tokenErrorNotRunningNamedFormat: "%@ not running · relaunch to refresh",
+        tokenErrorNotRunningCachedFormat: "%@ not running · showing cache from %@, relaunch to refresh",
         tokenBackfilling: "Calculating historical usage…",
         tokenCreditsRemainingFormat: "%@ left",
         tokenResetInApproxFormat: "Resets at %@",

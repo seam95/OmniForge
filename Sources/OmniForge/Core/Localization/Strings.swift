@@ -1094,6 +1094,10 @@ struct Strings: Equatable {
     let tokenRateLimitedCaptionFormat: String
     let tokenErrorRetryableHint: String
     let tokenErrorNotRunningHint: String
+    /// 未运行 + 无缓存可显示：点名 provider（如「Antigravity 未运行 · 启动后自动更新」）。
+    let tokenErrorNotRunningNamedFormat: String
+    /// 未运行 + 展示 last-good 缓存：点名 provider 并附缓存采集时间。
+    let tokenErrorNotRunningCachedFormat: String
     let tokenBackfilling: String
     let tokenCreditsRemainingFormat: String
     let tokenResetInApproxFormat: String

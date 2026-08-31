@@ -250,12 +250,29 @@ struct TokenUsageLimitCardView: View {
     // MARK: - 错误态
 
     private func errorRow(_ issue: LimitError) -> some View {
-        errorRow(TokenUsageFormat.errorCaption(for: issue, now: now, strings: strings), tint: status.tint)
+        // stale 快照保留 last-good 的 capturedAt，作为缓存时间写进文案。
+        let cachedAt = limits.stale ? limits.capturedAt : nil
+        let caption = TokenUsageFormat.errorCaption(
+            for: issue,
+            now: now,
+            strings: strings,
+            provider: limits.provider,
+            cachedAt: cachedAt
+        )
+        // 未运行是本地进程型 provider 的常态兜底而非故障，用信息样式而非警告三角。
+        if issue == .notRunning {
+            return errorRow(caption, tint: Theme.Stats.text3, icon: "info.circle")
+        }
+        return errorRow(caption, tint: status.tint)
     }
 
-    private func errorRow(_ caption: String, tint: Color = Theme.Stats.text3) -> some View {
+    private func errorRow(
+        _ caption: String,
+        tint: Color = Theme.Stats.text3,
+        icon: String = "exclamationmark.triangle.fill"
+    ) -> some View {
         HStack(spacing: 5) {
-            Image(systemName: "exclamationmark.triangle.fill")
+            Image(systemName: icon)
                 .font(.system(size: 9))
                 .foregroundColor(tint)
             Text(caption)

@@ -1016,6 +1016,8 @@ extension Strings {
         tokenRateLimitedCaptionFormat: "请求过于频繁，%@ 前可重试",
         tokenErrorRetryableHint: "可重试",
         tokenErrorNotRunningHint: "启动应用后自动恢复",
+        tokenErrorNotRunningNamedFormat: "%@ 未运行 · 启动后自动更新",
+        tokenErrorNotRunningCachedFormat: "%@ 未运行 · 显示为 %@ 缓存，启动后自动更新",
         tokenBackfilling: "正在统计历史用量…",
         tokenCreditsRemainingFormat: "剩 %@",
         tokenResetInApproxFormat: "重置于 %@",

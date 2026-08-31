@@ -101,6 +101,43 @@ final class TokenUsageCardStatusTests: XCTestCase {
 
     func test_errorCaption_notRunning_usesDedicatedCopy() {
         let caption = TokenUsageFormat.errorCaption(for: .notRunning, now: Date(), strings: Strings.zhHans)
-        XCTAssertEqual(caption, "应用未运行 · 启动应用后自动恢复")
+        XCTAssertEqual(caption, "应用未运行 · 启动应用后自动恢复", "无 provider 上下文时回退通用文案")
+    }
+
+    func test_errorCaption_notRunningWithProvider_namesProvider() {
+        let caption = TokenUsageFormat.errorCaption(
+            for: .notRunning,
+            now: Date(),
+            strings: Strings.zhHans,
+            provider: .antigravity
+        )
+        XCTAssertEqual(caption, "Antigravity 未运行 · 启动后自动更新")
+    }
+
+    func test_errorCaption_notRunningWithCachedAt_includesCacheTimestamp() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let cachedAt = calendar.date(from: DateComponents(year: 2026, month: 8, day: 27, hour: 9, minute: 20))!
+        let caption = TokenUsageFormat.errorCaption(
+            for: .notRunning,
+            now: Date(),
+            strings: Strings.zhHans,
+            provider: .antigravity,
+            cachedAt: cachedAt
+        )
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M/d HH:mm"
+        let stamp = formatter.string(from: cachedAt)
+        XCTAssertEqual(caption, "Antigravity 未运行 · 显示为 \(stamp) 缓存，启动后自动更新")
+    }
+
+    func test_errorCaption_notRunningEnglish_namesProvider() {
+        let caption = TokenUsageFormat.errorCaption(
+            for: .notRunning,
+            now: Date(),
+            strings: Strings.en,
+            provider: .antigravity
+        )
+        XCTAssertEqual(caption, "Antigravity not running · relaunch to refresh")
     }
 }

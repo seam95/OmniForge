@@ -196,7 +196,15 @@ enum TokenUsageFormat {
     }
 
     /// 错误条说明文案（卡片体为空时使用）。
-    static func errorCaption(for issue: LimitError, now: Date, strings: Strings) -> String {
+    /// `provider`/`cachedAt` 仅服务于 .notRunning：点名主体并标注缓存采集时间，
+    /// 消解「余量条还在却提示未运行」的矛盾感；缺省回退通用文案。
+    static func errorCaption(
+        for issue: LimitError,
+        now: Date,
+        strings: Strings,
+        provider: TokenUsageProvider? = nil,
+        cachedAt: Date? = nil
+    ) -> String {
         switch issue {
         case .reauthRequired:
             return strings.tokenReauthHint
@@ -208,7 +216,14 @@ enum TokenUsageFormat {
         case .decoding:
             return strings.tokenErrorTransient + " · " + strings.tokenErrorRetryableHint
         case .notRunning:
-            return strings.tokenErrorNotRunning + " · " + strings.tokenErrorNotRunningHint
+            guard let provider else {
+                return strings.tokenErrorNotRunning + " · " + strings.tokenErrorNotRunningHint
+            }
+            if let cachedAt {
+                let stamp = differentDayTimeFormatter.string(from: cachedAt)
+                return String(format: strings.tokenErrorNotRunningCachedFormat, provider.displayName, stamp)
+            }
+            return String(format: strings.tokenErrorNotRunningNamedFormat, provider.displayName)
         }
     }
 
