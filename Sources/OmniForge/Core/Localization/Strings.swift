@@ -108,6 +108,10 @@ struct Strings: Equatable {
     let toolSucceeded: String
     let toolFailed: String
     let toolScanFailure: String
+    let toolShowDetails: String
+    let toolHideDetails: String
+    let toolSucceededSummaryFormat: String  // + succeeded count
+    let toolFreedLabel: String
     // MARK: - Monitor
     let monitorSettingsTitle: String
     let monitorSettingsEnable: String
@@ -465,6 +469,7 @@ struct Strings: Equatable {
     let uninstallerScanning: String
     let uninstallerRemoving: String
     let uninstallerFoundTitle: String
+    let uninstallerFoundItemsFormat: String     // + item count
     let uninstallerSelectedFormat: String   // + selected, total
     let uninstallerRemove: String
     let uninstallerCancel: String
