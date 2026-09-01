@@ -558,11 +558,13 @@ final class AnnotationEditorController {
         switch tool {
         case .pen, .line:
             installColorSizeSubToolbar(sizes: EditorStyleDefaults.standardLineSizes,
+                                       onColor: { [weak self] c in self?.setCurrentDrawingColor(c) },
                                        onSize: { [weak self] size in self?.setCurrentDrawingLineWidth(size) })
         case .arrow:
             installColorSizeSubToolbar(
                 sizes: EditorStyleDefaults.standardLineSizes,
                 arrowStyle: currentArrowStyle,
+                onColor: { [weak self] c in self?.setCurrentDrawingColor(c) },
                 onSize: { [weak self] size in self?.setCurrentDrawingLineWidth(size) },
                 onArrowStyle: { [weak self] style in self?.setArrowStyle(style) }
             )
@@ -571,6 +573,7 @@ final class AnnotationEditorController {
                 sizes: EditorStyleDefaults.standardLineSizes,
                 shapeFillMode: currentShapeFillMode,
                 shapeStrokeStyle: currentShapeStrokeStyle,
+                onColor: { [weak self] c in self?.setCurrentDrawingColor(c) },
                 onSize: { [weak self] size in self?.setCurrentDrawingLineWidth(size) },
                 onShapeFillMode: { [weak self] mode in self?.setShapeFillMode(mode) },
                 onShapeStrokeStyle: { [weak self] style in self?.setShapeStrokeStyle(style) }
