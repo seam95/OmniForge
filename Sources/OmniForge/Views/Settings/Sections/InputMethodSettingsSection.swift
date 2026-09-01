@@ -7,10 +7,12 @@ struct InputMethodSettingsSection: View {
 
     var body: some View {
         Section(state.l10n.s.featureHubNameInputLock) {
-            Toggle(state.l10n.s.actionLock, isOn: Binding(
+            Toggle(isOn: Binding(
                 get: { isEnabled },
                 set: { state.setLocked($0) }
-            ))
+            )) {
+                InfoHintLabel(state.l10n.s.actionLock, hint: state.l10n.s.featureHubDescInputLock)
+            }
             FeatureRunStateRow(
                 state: state.inputMethodRunState,
                 strings: state.l10n.s,

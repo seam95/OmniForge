@@ -12,6 +12,7 @@ extension Strings {
         settingsSystem: "跟随系统",
         settingsLaunchAtLogin: "开机自启",
         settingsHideDockIcon: "隐藏 Dock 图标",
+        settingsHideDockIconHint: "隐藏后应用只保留菜单栏图标。需要再次打开设置时，点击菜单栏图标进入「设置」。",
         settingsAccessibility: "辅助功能权限",
         settingsAccessibilityDescription: "需要此权限来拦截输入法切换快捷键",
         settingsGrantAccess: "授予权限",

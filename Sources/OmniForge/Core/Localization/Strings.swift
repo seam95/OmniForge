@@ -15,6 +15,7 @@ struct Strings: Equatable {
     let settingsSystem: String
     let settingsLaunchAtLogin: String
     let settingsHideDockIcon: String
+    let settingsHideDockIconHint: String
     let settingsAccessibility: String
     let settingsAccessibilityDescription: String
     let settingsGrantAccess: String

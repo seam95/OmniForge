@@ -37,10 +37,12 @@ struct GeneralSettingsView: View {
                         .accessibilityIdentifier(SettingsAccessibilityID.generalLaunchAtLoginError.rawValue)
                 }
 
-                Toggle(state.l10n.s.settingsHideDockIcon, isOn: Binding(
+                Toggle(isOn: Binding(
                     get: { state.hideDockIcon },
                     set: { state.setHideDockIcon($0) }
-                ))
+                )) {
+                    InfoHintLabel(state.l10n.s.settingsHideDockIcon, hint: state.l10n.s.settingsHideDockIconHint)
+                }
                 .accessibilityIdentifier(SettingsAccessibilityID.generalHideDockIcon.rawValue)
             }
         }

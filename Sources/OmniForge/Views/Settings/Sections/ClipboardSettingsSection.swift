@@ -6,18 +6,15 @@ struct ClipboardSettingsSection: View {
 
     var body: some View {
         Section(state.l10n.s.featureHubNameClipboardHistory) {
-            Toggle(state.l10n.s.controlcenterClipboardTitle, isOn: Binding(
+            Toggle(isOn: Binding(
                 get: { state.isClipboardFeatureEnabled },
                 set: { state.setClipboardFeatureEnabled($0) }
-            ))
-            Text(
-                state.isClipboardFeatureEnabled
-                    ? state.l10n.s.controlcenterClipboardEnabled
-                    : state.l10n.s.controlcenterClipboardDisabled
-            )
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.leading, 20)
+            )) {
+                InfoHintLabel(
+                    state.l10n.s.controlcenterClipboardTitle,
+                    hint: state.l10n.s.featureHubDescClipboardHistory
+                )
+            }
         }
 
         if let history = state.clipboardHistory,

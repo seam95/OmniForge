@@ -24,27 +24,25 @@ struct MouseSettingsSection: View {
         Group {
             if runtime.isAvailable(.scrollInverter) {
                 Section(strings.scrollSection) {
-                    Toggle(strings.invertMouseScroll, isOn: $inverterEnabled)
-                        .accessibilityIdentifier(SettingsAccessibilityID.mouseScrollInverterEnabled.rawValue)
-                        .onChange(of: inverterEnabled) { _, _ in inverter.syncWithPreferences() }
-                    Text(strings.invertMouseScrollCaption)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(strings.scrollTrackpadNote)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Toggle(isOn: $inverterEnabled) {
+                        InfoHintLabel(
+                            strings.invertMouseScroll,
+                            hint: strings.invertMouseScrollCaption + "\n" + strings.scrollTrackpadNote
+                        )
+                    }
+                    .accessibilityIdentifier(SettingsAccessibilityID.mouseScrollInverterEnabled.rawValue)
+                    .onChange(of: inverterEnabled) { _, _ in inverter.syncWithPreferences() }
                     FeatureRunStateRow(state: inverter.runState, strings: strings, retry: inverter.retry)
                 }
             }
 
             if runtime.isAvailable(.smoothScroll) {
                 Section(strings.smoothScrollName) {
-                    Toggle(strings.smoothScrollName, isOn: $smoothScrollEnabled)
-                        .accessibilityIdentifier(SettingsAccessibilityID.mouseSmoothScrollEnabled.rawValue)
-                        .onChange(of: smoothScrollEnabled) { _, _ in smoothScroll.syncWithPreferences() }
-                    Text(strings.smoothScrollCaption)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Toggle(isOn: $smoothScrollEnabled) {
+                        InfoHintLabel(strings.smoothScrollName, hint: strings.smoothScrollCaption)
+                    }
+                    .accessibilityIdentifier(SettingsAccessibilityID.mouseSmoothScrollEnabled.rawValue)
+                    .onChange(of: smoothScrollEnabled) { _, _ in smoothScroll.syncWithPreferences() }
                     if smoothScrollEnabled {
                         HStack {
                             Slider(
@@ -67,12 +65,11 @@ struct MouseSettingsSection: View {
 
             if runtime.isAvailable(.mouseNavigation) {
                 Section(strings.mouseNavigationSection) {
-                    Toggle(strings.mouseNavigationEnable, isOn: $mouseNavigationEnabled)
-                        .accessibilityIdentifier(SettingsAccessibilityID.mouseNavigationEnabled.rawValue)
-                        .onChange(of: mouseNavigationEnabled) { _, _ in mouseNavigation.syncWithPreferences() }
-                    Text(strings.mouseNavigationCaption)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Toggle(isOn: $mouseNavigationEnabled) {
+                        InfoHintLabel(strings.mouseNavigationEnable, hint: strings.mouseNavigationCaption)
+                    }
+                    .accessibilityIdentifier(SettingsAccessibilityID.mouseNavigationEnabled.rawValue)
+                    .onChange(of: mouseNavigationEnabled) { _, _ in mouseNavigation.syncWithPreferences() }
                     FeatureRunStateRow(
                         state: mouseNavigation.runState,
                         strings: strings,
@@ -83,18 +80,16 @@ struct MouseSettingsSection: View {
 
             if runtime.isAvailable(.dockClick) {
                 Section(strings.dockClickSection) {
-                    Toggle(strings.dockClickMinimize, isOn: $dockClickMinimize)
-                        .accessibilityIdentifier(SettingsAccessibilityID.mouseDockClickMinimize.rawValue)
-                        .onChange(of: dockClickMinimize) { _, _ in dockClick.syncWithPreferences() }
-                    Text(strings.dockClickMinimizeCaption)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Toggle(strings.dockClickCycleWindows, isOn: $dockClickCycleWindows)
-                        .accessibilityIdentifier(SettingsAccessibilityID.mouseDockClickCycle.rawValue)
-                        .onChange(of: dockClickCycleWindows) { _, _ in dockClick.syncWithPreferences() }
-                    Text(strings.dockClickCycleWindowsCaption)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Toggle(isOn: $dockClickMinimize) {
+                        InfoHintLabel(strings.dockClickMinimize, hint: strings.dockClickMinimizeCaption)
+                    }
+                    .accessibilityIdentifier(SettingsAccessibilityID.mouseDockClickMinimize.rawValue)
+                    .onChange(of: dockClickMinimize) { _, _ in dockClick.syncWithPreferences() }
+                    Toggle(isOn: $dockClickCycleWindows) {
+                        InfoHintLabel(strings.dockClickCycleWindows, hint: strings.dockClickCycleWindowsCaption)
+                    }
+                    .accessibilityIdentifier(SettingsAccessibilityID.mouseDockClickCycle.rawValue)
+                    .onChange(of: dockClickCycleWindows) { _, _ in dockClick.syncWithPreferences() }
                     FeatureRunStateRow(state: dockClick.runState, strings: strings, retry: dockClick.retry)
                 }
             }

@@ -32,13 +32,12 @@ struct ScreenshotSettingsSection: View {
 
     var body: some View {
         Section(strings.featureHubNameScreenshot) {
-            Toggle(strings.screenshotEnable, isOn: $enabled)
-                .onChange(of: enabled) { _, _ in
-                    manager?.syncWithPreferences()
-                }
-            Text(strings.screenshotEnableCaption)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Toggle(isOn: $enabled) {
+                InfoHintLabel(strings.screenshotEnable, hint: strings.screenshotEnableCaption)
+            }
+            .onChange(of: enabled) { _, _ in
+                manager?.syncWithPreferences()
+            }
         }
 
         permissionSection
@@ -61,7 +60,7 @@ struct ScreenshotSettingsSection: View {
     }
 
     private var permissionSection: some View {
-        Section(strings.screenshotPermissionSection) {
+        Section {
             HStack {
                 Text(strings.featureHubPermNameScreenRecording)
                 Spacer()
@@ -72,9 +71,6 @@ struct ScreenshotSettingsSection: View {
                 )
                 .foregroundStyle(permissions.screenRecording ? .green : .orange)
             }
-            Text(strings.screenshotPermissionCaption)
-                .font(.caption)
-                .foregroundStyle(.secondary)
             HStack {
                 Button(strings.screenshotRequestPermission) {
                     _ = Permissions.shared.requestScreenRecordingAccess()
@@ -82,6 +78,11 @@ struct ScreenshotSettingsSection: View {
                 Button(strings.featureHubPermOpenSettings) {
                     Permissions.shared.openScreenRecordingSettings()
                 }
+            }
+        } header: {
+            HStack(spacing: 5) {
+                Text(strings.screenshotPermissionSection)
+                InfoHintButton(text: strings.screenshotPermissionCaption)
             }
         }
     }
@@ -117,7 +118,7 @@ struct ScreenshotSettingsSection: View {
                 }
             }
             // 用 LabeledContent + 无标题 TextField，避免 Form 把 title 再渲染成一行「文件名前缀」。
-            LabeledContent(strings.screenshotFileNamePrefixLabel) {
+            LabeledContent {
                 TextField("", text: $fileNamePrefix)
                     .textFieldStyle(.roundedBorder)
                     .labelsHidden()
@@ -125,10 +126,12 @@ struct ScreenshotSettingsSection: View {
                     .onSubmit {
                         fileNamePrefix = validatedPrefixOnSubmit(fileNamePrefix)
                     }
+            } label: {
+                InfoHintLabel(
+                    strings.screenshotFileNamePrefixLabel,
+                    hint: strings.screenshotFileNamePrefixCaption
+                )
             }
-            Text(strings.screenshotFileNamePrefixCaption)
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 

@@ -9,16 +9,15 @@ struct ShelfSettingsSection: View {
 
     var body: some View {
         Section(state.l10n.s.featureHubNameShelf) {
-            Toggle(state.l10n.s.shelfEnable, isOn: $enabled)
-                .onChange(of: enabled) { _, _ in
-                    shelf?.syncWithPreferences()
-                }
-            Text(state.l10n.s.shelfEnableCaption)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Label(state.l10n.s.shelfNoPermission, systemImage: "checkmark.shield")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Toggle(isOn: $enabled) {
+                InfoHintLabel(
+                    state.l10n.s.shelfEnable,
+                    hint: state.l10n.s.shelfEnableCaption + "\n" + state.l10n.s.shelfNoPermission
+                )
+            }
+            .onChange(of: enabled) { _, _ in
+                shelf?.syncWithPreferences()
+            }
         }
 
         if let shelf {
@@ -58,21 +57,15 @@ private struct ShelfRegisteredSettingsSection: View {
             }
             .disabled(!shortcutEnabled)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Toggle(strings.shelfShakeToggle, isOn: $shake)
-                    .onChange(of: shake) { _, _ in shelf.syncDragMonitor() }
-                Text(strings.shelfShakeCaption)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            Toggle(isOn: $shake) {
+                InfoHintLabel(strings.shelfShakeToggle, hint: strings.shelfShakeCaption)
             }
+            .onChange(of: shake) { _, _ in shelf.syncDragMonitor() }
 
-            VStack(alignment: .leading, spacing: 3) {
-                Toggle(strings.shelfDropZoneToggle, isOn: $dropZone)
-                    .onChange(of: dropZone) { _, _ in shelf.syncDragMonitor() }
-                Text(strings.shelfDropZoneCaption)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            Toggle(isOn: $dropZone) {
+                InfoHintLabel(strings.shelfDropZoneToggle, hint: strings.shelfDropZoneCaption)
             }
+            .onChange(of: dropZone) { _, _ in shelf.syncDragMonitor() }
 
             Button {
                 shelf.summon()
@@ -82,21 +75,15 @@ private struct ShelfRegisteredSettingsSection: View {
         }
 
         Section(strings.shelfBehaviorTitle) {
-            VStack(alignment: .leading, spacing: 3) {
-                Toggle(strings.shelfCloseAfterDrop, isOn: $closeAfterDrop)
-                Text(strings.shelfCloseAfterDropCaption)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            Toggle(isOn: $closeAfterDrop) {
+                InfoHintLabel(strings.shelfCloseAfterDrop, hint: strings.shelfCloseAfterDropCaption)
             }
-            VStack(alignment: .leading, spacing: 3) {
-                Toggle(strings.shelfRemoveAfterDrop, isOn: $removeAfterDrop)
-                Text(strings.shelfRemoveAfterDropCaption)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            Toggle(isOn: $removeAfterDrop) {
+                InfoHintLabel(strings.shelfRemoveAfterDrop, hint: strings.shelfRemoveAfterDropCaption)
             }
         }
 
-        Section(strings.shelfExclusionsTitle) {
+        Section {
             if sortedExclusions.isEmpty {
                 Text(strings.shelfExclusionsEmpty)
                     .font(.callout)
@@ -125,10 +112,11 @@ private struct ShelfRegisteredSettingsSection: View {
             } label: {
                 Label(strings.shelfAddApp, systemImage: "plus")
             }
-
-            Text(strings.shelfExclusionsCaption)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        } header: {
+            HStack(spacing: 5) {
+                Text(strings.shelfExclusionsTitle)
+                InfoHintButton(text: strings.shelfExclusionsCaption)
+            }
         }
         .sheet(isPresented: $showingAppPicker) { appPickerSheet }
     }

@@ -108,6 +108,25 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
         }
     }
 
+    /// 侧栏图标徽章底色（系统设置风格：彩色圆角方块 + 白色符号）。
+    var sidebarTint: Color {
+        switch self {
+        case .general: return .gray
+        case .features: return .purple
+        case .inputMethod: return .blue
+        case .clipboard: return .green
+        case .shelf: return .orange
+        case .cleaner: return .mint
+        case .uninstaller: return .red
+        case .screenshot: return .teal
+        case .mouse: return .indigo
+        case .performance: return .green
+        case .tokenUsage: return .orange
+        case .keepAwake: return .purple
+        case .providerSwitch: return .blue
+        }
+    }
+
     func title(in strings: Strings) -> String {
         switch self {
         case .general: return strings.settingsTabGeneral

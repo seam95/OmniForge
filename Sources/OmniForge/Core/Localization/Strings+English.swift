@@ -12,6 +12,7 @@ extension Strings {
         settingsSystem: "System Default",
         settingsLaunchAtLogin: "Launch at login",
         settingsHideDockIcon: "Hide Dock Icon",
+        settingsHideDockIconHint: "When hidden, the app lives only in the menu bar. To reopen Settings, click the menu bar icon and choose Settings.",
         settingsAccessibility: "Accessibility Permission",
         settingsAccessibilityDescription: "Required to intercept input source switch shortcuts",
         settingsGrantAccess: "Grant Access",

@@ -26,15 +26,13 @@ struct SettingsView: View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             List(selection: $navigation.selectedTab) {
                 ForEach(visibleTabs.filter { $0.sidebarGroup == nil }) { tab in
-                    Label(tab.title(in: state.l10n.s), systemImage: tab.systemImage)
-                        .tag(tab)
+                    sidebarRow(for: tab)
                 }
 
                 ForEach(visibleSections) { section in
                     Section(section.title(in: state.l10n.s)) {
                         ForEach(section.tabs) { tab in
-                            Label(tab.title(in: state.l10n.s), systemImage: tab.systemImage)
-                                .tag(tab)
+                            sidebarRow(for: tab)
                         }
                     }
                 }
@@ -56,6 +54,20 @@ struct SettingsView: View {
             navigation.select(navigation.selectedTab, isAvailable: runtime.isAvailable)
         }
         .omniNoFocusRing()
+    }
+
+    /// 侧栏行：彩色圆角徽章图标 + 标题（系统设置风格，选中态徽章保持彩色可读）。
+    private func sidebarRow(for tab: SettingsToolbarTab) -> some View {
+        Label {
+            Text(tab.title(in: state.l10n.s))
+        } icon: {
+            Image(systemName: tab.systemImage)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.white)
+                .frame(width: 20, height: 20)
+                .background(tab.sidebarTint, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+        }
+        .tag(tab)
     }
 
     @ViewBuilder

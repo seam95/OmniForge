@@ -82,17 +82,16 @@ struct KeepAwakeSettingsView: View {
 
     private var batterySection: some View {
         Section(s.keepAwakeSectionBattery) {
-            Picker(s.keepAwakeBatteryThreshold, selection: batteryBinding) {
+            Picker(selection: batteryBinding) {
                 Text(s.keepAwakeBatteryOff).tag(0)
                 Text(String(format: s.keepAwakeBatteryPercentFormat, 5)).tag(5)
                 Text(String(format: s.keepAwakeBatteryPercentFormat, 10)).tag(10)
                 Text(String(format: s.keepAwakeBatteryPercentFormat, 15)).tag(15)
                 Text(String(format: s.keepAwakeBatteryPercentFormat, 20)).tag(20)
+            } label: {
+                InfoHintLabel(s.keepAwakeBatteryThreshold, hint: s.keepAwakeBatteryCaption)
             }
             .accessibilityIdentifier(SettingsAccessibilityID.keepAwakeBatteryThreshold.rawValue)
-            Text(s.keepAwakeBatteryCaption)
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 
@@ -129,8 +128,10 @@ struct KeepAwakeSettingsView: View {
 
     private var pointerSection: some View {
         Section(s.keepAwakeSectionPointer) {
-            Toggle(s.keepAwakeEnableJiggle, isOn: boolBinding(UserDefaultsKeys.keepAwakeMouseJiggleEnabled, default: false))
-                .accessibilityIdentifier(SettingsAccessibilityID.keepAwakePointerJiggleEnabled.rawValue)
+            Toggle(isOn: boolBinding(UserDefaultsKeys.keepAwakeMouseJiggleEnabled, default: false)) {
+                InfoHintLabel(s.keepAwakeEnableJiggle, hint: s.keepAwakeJiggleCaption)
+            }
+            .accessibilityIdentifier(SettingsAccessibilityID.keepAwakePointerJiggleEnabled.rawValue)
             Picker(s.keepAwakeJiggleInterval, selection: pointerIntervalBinding) {
                 Text(String(format: s.keepAwakeDurationMinutesFormat, 1)).tag(1)
                 Text(String(format: s.keepAwakeDurationMinutesFormat, 2)).tag(2)
@@ -139,9 +140,6 @@ struct KeepAwakeSettingsView: View {
                 Text(String(format: s.keepAwakeDurationMinutesFormat, 15)).tag(15)
             }
             .accessibilityIdentifier(SettingsAccessibilityID.keepAwakePointerJiggleInterval.rawValue)
-            Text(s.keepAwakeJiggleCaption)
-                .font(.caption)
-                .foregroundStyle(.secondary)
             Button(s.keepAwakeRequestAccessibility) {
                 let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
                 _ = AXIsProcessTrustedWithOptions(options)
@@ -151,14 +149,10 @@ struct KeepAwakeSettingsView: View {
 
     private var clamshellSection: some View {
         Section(s.keepAwakeSectionClamshell) {
-            Toggle(
-                s.keepAwakePreferClamshell,
-                isOn: clamshellPreferredBinding
-            )
+            Toggle(isOn: clamshellPreferredBinding) {
+                InfoHintLabel(s.keepAwakePreferClamshell, hint: s.keepAwakeAuthDisclosureBody)
+            }
             .accessibilityIdentifier(SettingsAccessibilityID.keepAwakeClamshellPreferred.rawValue)
-            Text(s.keepAwakeAuthDisclosureBody)
-                .font(.caption)
-                .foregroundStyle(.secondary)
             Text("\(s.keepAwakeCapabilityPrefix)：\(capabilitySummary)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
