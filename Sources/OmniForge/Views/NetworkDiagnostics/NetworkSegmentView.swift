@@ -92,10 +92,15 @@ struct NetworkSegmentView: View {
                     Text(ip ?? unavailable)
                         .font(.system(size: 15, weight: .semibold).monospacedDigit())
                         .foregroundStyle(highlighted ? Theme.Stats.statusNormal : text1)
+                        // 单行 + 高布局优先级：空间紧张时压缩左侧标题，IP 不换行；
+                        // 极端长（IPv6-only）时中间截断兜底。
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                     Text(strings.networkDiagnosticsPublicIPSection)
                         .font(Theme.Stats.font10Regular)
                         .foregroundStyle(text3)
                 }
+                .layoutPriority(1)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
