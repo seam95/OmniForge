@@ -328,7 +328,6 @@ final class AnnotationEditorController {
 
     private func wireToolbar(_ tv: AnnotationToolbarView) {
         tv.onToolSelected = { [weak self] tool in self?.selectTool(tool) }
-        tv.onColorPicker = { [weak self] in self?.runColorPicker() }
         tv.onUndo = { [weak self] in _ = self?.document.undo(); self?.canvasView?.needsDisplay = true }
         tv.onRedo = { [weak self] in _ = self?.document.redo(); self?.canvasView?.needsDisplay = true }
         tv.onSave = { [weak self] in self?.save() }
@@ -778,20 +777,6 @@ final class AnnotationEditorController {
         canvasView?.mutateSelectedAnnotationAtomic { annotation in
             guard let text = annotation as? TextAnnotation else { return annotation }
             return text.withCallout(on)
-        }
-    }
-
-    // MARK: - 取色
-
-    private func runColorPicker() {
-        canvasView?.commitActiveTextEditing()
-        // 系统取色器（吸管）。阶段 5 可替换为更完整的 ColorPickerRunner。
-        let sampler = NSColorSampler()
-        sampler.show { [weak self] color in
-            guard let color else { return }
-            Task { @MainActor [weak self] in
-                self?.setCurrentDrawingColor(color)
-            }
         }
     }
 

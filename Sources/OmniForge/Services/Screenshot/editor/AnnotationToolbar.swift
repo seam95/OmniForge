@@ -46,7 +46,7 @@ enum AnnotationToolbarItem: String, CaseIterable {
     case moveSelection
     case scrollCapture
     case record
-    case colorPicker, undo, redo
+    case undo, redo
     // 布局占位（无按钮）
     case separator
     // 输出动作
@@ -71,7 +71,7 @@ enum AnnotationToolbarItem: String, CaseIterable {
             return .stickyAction
         case .separator:
             return .layoutOnly
-        case .image, .record, .colorPicker, .undo, .redo, .save, .pin, .close, .confirm:
+        case .image, .record, .undo, .redo, .save, .pin, .close, .confirm:
             return .momentary
         }
     }
@@ -114,7 +114,6 @@ enum AnnotationToolbarItem: String, CaseIterable {
         case .moveSelection: return "arrow.up.and.down.and.arrow.left.and.right"
         case .scrollCapture: return "arrow.up.and.down.text.horizontal"
         case .record: return "record.circle"
-        case .colorPicker: return "eyedropper"
         case .undo:       return "arrow.uturn.backward"
         case .redo:       return "arrow.uturn.forward"
         case .separator:  return ""
@@ -126,7 +125,7 @@ enum AnnotationToolbarItem: String, CaseIterable {
     }
 
     /// 悬停提示文案。消费已有的 Strings key（annotationTool*/annotationAction*），
-    /// 缺失的（eraser/magnifier/emoji/image/undo/redo/close/confirm/colorPicker）
+    /// 缺失的（eraser/magnifier/emoji/image/undo/redo/close/confirm）
     /// 用英文字面量兜底——这些仅作 tooltip 展示。
     func tooltip(strings: Strings) -> String {
         let title: String
@@ -147,7 +146,6 @@ enum AnnotationToolbarItem: String, CaseIterable {
         case .moveSelection: title = strings.tipMoveSelection
         case .scrollCapture: title = strings.tipScrollCapture
         case .record: title = strings.tipRecord
-        case .colorPicker: title = "Color Picker"
         case .undo:       title = "Undo"
         case .redo:       title = "Redo"
         case .separator:  return ""
@@ -229,7 +227,7 @@ enum AnnotationToolbarLayout {
     static let primary: [AnnotationToolbarItem] = [
         .rectangle, .ellipse, .line, .arrow, .pen, .marker,
         .mosaic, .eraser, .number, .text, .emoji,
-        .colorPicker, .magnifier, .moveSelection, .scrollCapture, .record, .undo, .redo,
+        .magnifier, .moveSelection, .scrollCapture, .record, .undo, .redo,
         .separator,
         .save, .pin, .close, .confirm,
     ]
@@ -359,7 +357,6 @@ final class AnnotationToolbarView: NSView {
 
     // MARK: 回调（控制器注入）
     var onToolSelected: ((EditTool) -> Void)?
-    var onColorPicker: (() -> Void)?
     var onUndo: (() -> Void)?
     var onRedo: (() -> Void)?
     var onSave: (() -> Void)?
@@ -547,7 +544,6 @@ final class AnnotationToolbarView: NSView {
             break
         case .scrollCapture: onScrollCapture?()
         case .record:      onRecord?()
-        case .colorPicker: onColorPicker?()
         case .undo:        onUndo?()
         case .redo:        onRedo?()
         case .save:        onSave?()
