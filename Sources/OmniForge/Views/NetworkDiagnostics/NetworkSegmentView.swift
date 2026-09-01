@@ -1,6 +1,10 @@
 import SwiftUI
 
-// MARK: - 网络分段：身份卡 + 复制 + 公网 IP 三态
+// MARK: - 网络分段：公网 IP hero + 网卡 / 连接 inset 卡组
+//
+// 仪表盘语言（对齐卸载器 / 清理页）：hero 白卡以公网 IP 为「数字主角」，
+// 主机名与主接口做身份摘要；明细退到次级 inset 卡。
+// 所有值整行点击复制，复制后短暂对勾 / 变绿反馈；刷新收进 hero 右上角。
 
 struct NetworkSegmentView: View {
     @Environment(\.colorScheme) private var colorScheme
@@ -9,132 +13,221 @@ struct NetworkSegmentView: View {
 
     /// 刚复制的行 id，用于短暂对勾反馈。
     @State private var copiedRowID: String?
+    /// 「其他接口」折叠态。
+    @State private var otherInterfacesExpanded = false
 
     private var unavailable: String { strings.networkDiagnosticsValueUnavailable }
+    private var tint: Color { UtilityTool.networkDiagnostics.tintColor }
+
+    private var text1: Color { colorScheme == .light ? Theme.Stats.text1 : Color.primary }
+    private var text2: Color { colorScheme == .light ? Theme.Stats.text2 : Color.secondary }
+    private var text3: Color { colorScheme == .light ? Theme.Stats.text3 : Color.secondary }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            toolbar
-
             if let identity = service.networkIdentity {
-                identityCard(identity)
+                heroCard(identity)
+                interfacesSection(identity)
+                connectionSection(identity)
             } else if service.isRefreshingNetwork {
                 ProgressView()
                     .controlSize(.small)
                     .frame(maxWidth: .infinity, minHeight: 80, alignment: .center)
             } else {
-                Text(strings.networkDiagnosticsNetworkEmpty)
+                emptyState
+            }
+        }
+    }
+
+    // MARK: Hero
+
+    private func heroCard(_ identity: NetworkIdentity) -> some View {
+        HStack(spacing: 12) {
+            UtilityGlyphTile(symbol: "globe", tint: tint, size: 40, symbolSize: 18)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(identity.hostname.isEmpty ? unavailable : identity.hostname)
+                    .font(Theme.Stats.font13SemiBold)
+                    .foregroundStyle(text1)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(primaryInterfaceSummary(identity))
                     .font(Theme.Stats.font11Regular)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 80, alignment: .center)
+                    .foregroundStyle(text3)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
+
+            Spacer(minLength: 8)
+
+            publicIPHeroValue
+            refreshButton
         }
+        .padding(12)
+        .utilityCardBackground()
     }
 
-    // MARK: Toolbar
-
-    private var toolbar: some View {
-        HStack {
-            Spacer(minLength: 0)
+    /// hero 右侧大数字：公网 IPv4 优先，IPv6-only 兜底；点击复制，复制后短暂变绿。
+    @ViewBuilder
+    private var publicIPHeroValue: some View {
+        switch service.publicIPState {
+        case .idle, .loading:
+            VStack(alignment: .trailing, spacing: 2) {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(height: 18)
+                Text(strings.networkDiagnosticsPublicIPSection)
+                    .font(Theme.Stats.font10Regular)
+                    .foregroundStyle(text3)
+            }
+        case let .resolved(ipv4, ipv6):
+            let ip = (ipv4?.isEmpty == false ? ipv4 : nil) ?? (ipv6?.isEmpty == false ? ipv6 : nil)
+            let highlighted = copiedRowID == "hero-public-ip"
             Button {
-                service.refreshNetwork()
+                guard let ip else { return }
+                service.copy(ip)
+                showCopiedFeedback("hero-public-ip")
             } label: {
-                if service.isRefreshingNetwork {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
-                        .frame(width: 24, height: 24)
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(ip ?? unavailable)
+                        .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(highlighted ? Theme.Stats.statusNormal : text1)
+                    Text(strings.networkDiagnosticsPublicIPSection)
+                        .font(Theme.Stats.font10Regular)
+                        .foregroundStyle(text3)
                 }
+                .contentShape(Rectangle())
             }
-            .buttonStyle(.borderless)
-            .help(strings.networkDiagnosticsRefresh)
-            .disabled(service.isRefreshingNetwork)
-            .accessibilityLabel(strings.networkDiagnosticsRefresh)
+            .buttonStyle(.plain)
+            .disabled(ip == nil)
+            .accessibilityLabel("\(strings.networkDiagnosticsPublicIPSection) \(ip ?? unavailable)")
+            .help(ip == nil ? "" : strings.networkDiagnosticsCopy)
         }
     }
 
-    // MARK: Identity card
+    private var refreshButton: some View {
+        Button {
+            service.refreshNetwork()
+        } label: {
+            if service.isRefreshingNetwork {
+                ProgressView()
+                    .controlSize(.small)
+            } else {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(text2)
+                    .frame(width: 24, height: 24)
+            }
+        }
+        .buttonStyle(.borderless)
+        .help(strings.networkDiagnosticsRefresh)
+        .disabled(service.isRefreshingNetwork)
+        .accessibilityLabel(strings.networkDiagnosticsRefresh)
+    }
+
+    /// hero 副标题：默认路由所在接口的「en0 · 192.168.1.5」，无接口信息时退回网关。
+    private func primaryInterfaceSummary(_ identity: NetworkIdentity) -> String {
+        if let primaryName = identity.defaultRoute.interface,
+           let iface = identity.interfaces.first(where: { $0.name == primaryName }) {
+            if let ipv4 = iface.ipv4, !ipv4.isEmpty {
+                return "\(iface.name) · \(ipv4)"
+            }
+            return iface.name
+        }
+        if let first = identity.interfaces.first, let ipv4 = first.ipv4, !ipv4.isEmpty {
+            return "\(first.name) · \(ipv4)"
+        }
+        let route = identity.defaultRoute.copyText
+        return route.isEmpty ? unavailable : route
+    }
+
+    // MARK: 网卡
+
+    /// 只展示握有全局地址的活跃接口；只有 link-local 地址的隧道 / 直连口折叠进「其他」。
+    private func isPrimaryInterface(_ iface: NetworkInterface) -> Bool {
+        if let ipv4 = iface.ipv4, !ipv4.isEmpty, !ipv4.hasPrefix("169.254.") { return true }
+        if let ipv6 = iface.ipv6, !ipv6.isEmpty, !ipv6.lowercased().hasPrefix("fe80") { return true }
+        return false
+    }
 
     @ViewBuilder
-    private func identityCard(_ identity: NetworkIdentity) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            section(title: strings.networkDiagnosticsHostSection) {
-                copyRow(
-                    id: "hostname",
-                    label: strings.networkDiagnosticsHostname,
-                    value: identity.hostname.isEmpty ? unavailable : identity.hostname,
-                    copyText: identity.hostname
-                )
-            }
+    private func interfacesSection(_ identity: NetworkIdentity) -> some View {
+        let active = identity.interfaces.filter { iface in
+            (iface.ipv4?.isEmpty == false) || (iface.ipv6?.isEmpty == false)
+        }
+        let primary = active.filter(isPrimaryInterface)
+        let others = active.filter { !isPrimaryInterface($0) }
 
-            section(title: strings.networkDiagnosticsInterfacesSection) {
-                if identity.interfaces.isEmpty {
-                    Text(unavailable)
-                        .font(Theme.Stats.font11Regular)
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
-                } else {
-                    ForEach(Array(identity.interfaces.enumerated()), id: \.offset) { index, iface in
-                        interfaceBlock(iface, index: index)
+        section(title: strings.networkDiagnosticsInterfacesSection) {
+            if active.isEmpty {
+                Text(unavailable)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(text3)
+            } else {
+                ForEach(primary, id: \.name) { iface in
+                    interfaceCard(iface)
+                }
+
+                if !others.isEmpty {
+                    otherInterfacesDisclosure(others)
+                    if otherInterfacesExpanded {
+                        ForEach(others, id: \.name) { iface in
+                            interfaceCard(iface)
+                        }
                     }
                 }
             }
-
-            section(title: strings.networkDiagnosticsRouteSection) {
-                let route = identity.defaultRoute
-                let routeCopy = route.copyText
-                copyRow(
-                    id: "route",
-                    label: strings.networkDiagnosticsGateway,
-                    value: displayRoute(route),
-                    copyText: routeCopy
-                )
-            }
-
-            section(title: strings.networkDiagnosticsDNSSection) {
-                let dnsText = identity.dnsServers.joined(separator: ", ")
-                copyRow(
-                    id: "dns",
-                    label: strings.networkDiagnosticsDNSServers,
-                    value: dnsText.isEmpty ? unavailable : dnsText,
-                    copyText: dnsText
-                )
-            }
-
-            section(title: strings.networkDiagnosticsPublicIPSection) {
-                publicIPRows
-            }
         }
     }
 
-    @ViewBuilder
-    private func interfaceBlock(_ iface: NetworkInterface, index: Int) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+    /// 「其他 N 个接口」折叠头：只握 link-local 地址的接口默认收起，需要时展开。
+    private func otherInterfacesDisclosure(_ others: [NetworkInterface]) -> some View {
+        Button {
+            withAnimation(Theme.Animation.snappy) { otherInterfacesExpanded.toggle() }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .rotationEffect(.degrees(otherInterfacesExpanded ? 90 : 0))
+                Text(String(format: strings.networkDiagnosticsOtherInterfacesFormat, others.count))
+                    .font(Theme.Stats.font11Regular)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(text2)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .utilityInsetBackground()
+    }
+
+    private func interfaceCard(_ iface: NetworkInterface) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
             Text(iface.name)
-                .font(Theme.Stats.font11Regular)
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
+                .font(Theme.Stats.font12Medium)
+                .foregroundStyle(text1)
+                .padding(.bottom, 2)
 
             if let ipv4 = iface.ipv4, !ipv4.isEmpty {
-                copyRow(
-                    id: "iface-\(index)-v4",
+                valueRow(
+                    id: "iface-\(iface.name)-v4",
                     label: strings.networkDiagnosticsInterfaceIPv4,
                     value: ipv4,
                     copyText: ipv4
                 )
             }
             if let ipv6 = iface.ipv6, !ipv6.isEmpty {
-                copyRow(
-                    id: "iface-\(index)-v6",
+                valueRow(
+                    id: "iface-\(iface.name)-v6",
                     label: strings.networkDiagnosticsInterfaceIPv6,
                     value: ipv6,
                     copyText: ipv6
                 )
             }
             if let mac = iface.mac, !mac.isEmpty {
-                copyRow(
-                    id: "iface-\(index)-mac",
+                valueRow(
+                    id: "iface-\(iface.name)-mac",
                     label: strings.networkDiagnosticsInterfaceMAC,
                     value: mac,
                     copyText: mac
@@ -143,44 +236,77 @@ struct NetworkSegmentView: View {
             if iface.ipv4 == nil && iface.ipv6 == nil && iface.mac == nil {
                 Text(unavailable)
                     .font(Theme.Stats.font11Regular.monospaced())
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                    .foregroundStyle(text3)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .utilityInsetBackground()
     }
 
+    // MARK: 连接（网关 / DNS / 公网 IPv6）
+
     @ViewBuilder
-    private var publicIPRows: some View {
-        switch service.publicIPState {
-        case .idle, .loading:
-            HStack(spacing: 8) {
-                ProgressView()
-                    .controlSize(.small)
-                Text(strings.networkDiagnosticsPublicIPLoading)
-                    .font(Theme.Stats.font11Regular)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
-                Spacer(minLength: 0)
+    private func connectionSection(_ identity: NetworkIdentity) -> some View {
+        section(title: strings.networkDiagnosticsConnectionSection) {
+            VStack(alignment: .leading, spacing: 2) {
+                let route = identity.defaultRoute
+                valueRow(
+                    id: "route",
+                    label: strings.networkDiagnosticsGateway,
+                    value: displayRoute(route),
+                    copyText: route.copyText
+                )
+
+                let dnsText = identity.dnsServers.joined(separator: ", ")
+                valueRow(
+                    id: "dns",
+                    label: strings.networkDiagnosticsDNSServers,
+                    value: dnsText.isEmpty ? unavailable : dnsText,
+                    copyText: dnsText
+                )
+
+                // 公网 IPv4 已是 hero 主角，这里只补 IPv6；查询中显示占位文案。
+                switch service.publicIPState {
+                case .idle, .loading:
+                    valueRow(
+                        id: "public-v6",
+                        label: strings.networkDiagnosticsPublicIPv6,
+                        value: strings.networkDiagnosticsPublicIPLoading,
+                        copyText: ""
+                    )
+                case let .resolved(_, ipv6):
+                    valueRow(
+                        id: "public-v6",
+                        label: strings.networkDiagnosticsPublicIPv6,
+                        value: ipv6 ?? unavailable,
+                        copyText: ipv6 ?? ""
+                    )
+                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .panelRowCard()
-        case let .resolved(ipv4, ipv6):
-            copyRow(
-                id: "public-v4",
-                label: strings.networkDiagnosticsPublicIPv4,
-                value: ipv4 ?? unavailable,
-                copyText: ipv4 ?? ""
-            )
-            copyRow(
-                id: "public-v6",
-                label: strings.networkDiagnosticsPublicIPv6,
-                value: ipv6 ?? unavailable,
-                copyText: ipv6 ?? ""
-            )
+            .utilityInsetBackground()
         }
     }
 
-    // MARK: Rows
+    // MARK: 空态
+
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Text(strings.networkDiagnosticsNetworkEmpty)
+                .font(Theme.Stats.font11Regular)
+                .foregroundStyle(text3)
+            Button(strings.networkDiagnosticsRefresh) {
+                service.refreshNetwork()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .frame(maxWidth: .infinity, minHeight: 80, alignment: .center)
+    }
+
+    // MARK: 通用行 / 分区
 
     private func section<Content: View>(
         title: String,
@@ -189,7 +315,7 @@ struct NetworkSegmentView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(Theme.Stats.font10Regular)
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
+                .foregroundStyle(text2)
                 .textCase(.uppercase)
             VStack(spacing: 6) {
                 content()
@@ -197,8 +323,8 @@ struct NetworkSegmentView: View {
         }
     }
 
-    /// 标签 + 值 + 复制按钮；空 copyText 时禁用复制。
-    private func copyRow(
+    /// inset 卡内的轻量复制行：标签 + 等宽值 + 复制 / 对勾图标；空 copyText 时禁用。
+    private func valueRow(
         id: String,
         label: String,
         value: String,
@@ -211,14 +337,14 @@ struct NetworkSegmentView: View {
             service.copy(copyText)
             showCopiedFeedback(id)
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Text(label)
-                    .font(Theme.Stats.font11Regular)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
+                    .font(Theme.Stats.font10Regular)
+                    .foregroundStyle(text3)
                     .frame(width: 72, alignment: .leading)
                 Text(value)
-                    .font(Theme.Stats.font12Medium.monospaced())
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                    .font(Theme.Stats.font11Regular.monospaced())
+                    .foregroundStyle(text1)
                     .lineLimit(2)
                     .truncationMode(.middle)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -230,20 +356,12 @@ struct NetworkSegmentView: View {
                     } else {
                         Image(systemName: "doc.on.doc")
                             .font(.system(size: 11))
-                            .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                            .foregroundStyle(text3)
                     }
                 }
             }
-            .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .panelRowCard(isInteractive: canCopy)
-            .overlay {
-                if highlighted {
-                    RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-                        .strokeBorder(Theme.Stats.statusNormal.opacity(0.4), lineWidth: 1)
-                }
-            }
+            .padding(.vertical, 3)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(!canCopy)

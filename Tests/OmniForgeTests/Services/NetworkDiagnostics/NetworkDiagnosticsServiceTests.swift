@@ -340,6 +340,55 @@ final class NetworkDiagnosticsServiceTests: XCTestCase {
         XCTAssertEqual(service.filteredPorts.count, 2)
     }
 
+    // MARK: scopedPorts（hero 统计：按 scope 过滤、不受搜索影响）
+
+    func test_scopedPorts_scopeFiltersOnly() async {
+        probe.result = .success([
+            makeEntry(localPort: 3000, state: "LISTEN", pid: 1, command: "node"),
+            makeEntry(localPort: 3001, state: "ESTABLISHED", pid: 2, command: "node"),
+            makeEntry(proto: .udp, localPort: 53, state: nil, pid: 3, command: "mDNSResponder"),
+        ])
+        service.refreshPorts()
+        await waitUntilRefreshSettled(ports: true)
+
+        service.portScope = .listen
+        XCTAssertEqual(service.scopedPorts.map(\.localPort), [3000])
+
+        service.portScope = .all
+        XCTAssertEqual(service.scopedPorts.map(\.localPort), [3000, 3001, 53])
+    }
+
+    func test_scopedPorts_ignoresSearchText() async {
+        probe.result = .success([
+            makeEntry(localPort: 3000, pid: 10, command: "node"),
+            makeEntry(localPort: 8080, pid: 20, command: "java"),
+        ])
+        service.refreshPorts()
+        await waitUntilRefreshSettled(ports: true)
+        service.portScope = .all
+
+        service.searchText = "3000"
+        // 列表只剩 3000，但 hero 统计仍是全量 2 条。
+        XCTAssertEqual(service.filteredPorts.map(\.localPort), [3000])
+        XCTAssertEqual(service.scopedPorts.count, 2)
+    }
+
+    func test_filteredPorts_matchesScopedPortsWhenSearchEmpty() async {
+        probe.result = .success([
+            makeEntry(localPort: 3000, state: "LISTEN", pid: 1, command: "node"),
+            makeEntry(localPort: 3001, state: "ESTABLISHED", pid: 2, command: "node"),
+        ])
+        service.refreshPorts()
+        await waitUntilRefreshSettled(ports: true)
+
+        service.portScope = .listen
+        service.searchText = ""
+        XCTAssertEqual(service.filteredPorts, service.scopedPorts)
+
+        service.searchText = "   "
+        XCTAssertEqual(service.filteredPorts, service.scopedPorts)
+    }
+
     // MARK: terminate / copy
 
     func test_terminate_delegatesToTerminatorWithDisplayName() async {

@@ -112,14 +112,22 @@ final class NetworkDiagnosticsService: ObservableObject {
 
     // MARK: Derived
 
+    /// 仅按 scope 过滤（不含搜索词），供仪表盘 hero 统计与协议构成使用，
+    /// 避免搜索词改变总量数字。
+    var scopedPorts: [PortEntry] {
+        switch portScope {
+        case .listen:
+            return ports.filter { $0.state?.uppercased() == "LISTEN" }
+        case .all:
+            return ports
+        }
+    }
+
     /// 按 scope + searchText 过滤后的端口列表。
     var filteredPorts: [PortEntry] {
-        ports.filter { entry in
-            if portScope == .listen {
-                guard entry.state?.uppercased() == "LISTEN" else { return false }
-            }
-            let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !query.isEmpty else { return true }
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return scopedPorts }
+        return scopedPorts.filter { entry in
             if String(entry.localPort).contains(query) { return true }
             if entry.pid > 0, String(entry.pid).contains(query) { return true }
             let display = processDisplayName(for: entry)

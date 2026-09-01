@@ -1,11 +1,16 @@
 import SwiftUI
 
-// MARK: - 端口分段：工具条 + 提示条 + 列表 + 结束进程确认流
+// MARK: - 端口分段：统计 hero + 提示条 + 工具条 + 列表 + 结束进程确认流
 
 struct PortSegmentView: View {
     @Environment(\.colorScheme) private var colorScheme
     let strings: Strings
     @ObservedObject var service: NetworkDiagnosticsService
+
+    private var tint: Color { UtilityTool.networkDiagnostics.tintColor }
+    private var text1: Color { colorScheme == .light ? Theme.Stats.text1 : Color.primary }
+    private var text2: Color { colorScheme == .light ? Theme.Stats.text2 : Color.secondary }
+    private var text3: Color { colorScheme == .light ? Theme.Stats.text3 : Color.secondary }
 
     @State private var isBannerExpanded = false
     @State private var termConfirmEntry: PortEntry?
@@ -17,12 +22,15 @@ struct PortSegmentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            toolbar
+            if showsHero {
+                heroCard
+            }
 
             if showsPermissionBanner {
                 permissionBanner
             }
 
+            toolbar
             content
         }
         .alert(
@@ -84,6 +92,109 @@ struct PortSegmentView: View {
         .onDisappear {
             postTermTask?.cancel()
             postTermTask = nil
+        }
+    }
+
+    // MARK: Hero
+
+    /// 初次加载中 / 采集失败时不显示 hero，避免展示伪造的 0 统计。
+    private var showsHero: Bool {
+        if service.permissionHint == .loadFailure { return false }
+        return !(service.isRefreshingPorts && service.ports.isEmpty)
+    }
+
+    /// 仪表盘 hero：当前 scope 总数为「数字主角」，协议构成比例条 + 图例做构成说明。
+    /// 统计基于 scopedPorts（不受搜索词影响），与列表过滤结果解耦。
+    private var heroCard: some View {
+        let stats = protoStats(from: service.scopedPorts)
+        let total = stats.reduce(0) { $0 + $1.count }
+        let processCount = Set(service.scopedPorts.map(\.pid).filter { $0 > 0 }).count
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                UtilityGlyphTile(symbol: "network", tint: tint, size: 40, symbolSize: 18)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(scopeLabel)
+                        .font(Theme.Stats.font13SemiBold)
+                        .foregroundStyle(text1)
+                    Text(String(format: strings.networkDiagnosticsProcessCountFormat, processCount))
+                        .font(Theme.Stats.font10Regular)
+                        .foregroundStyle(text3)
+                }
+
+                Spacer(minLength: 8)
+
+                Text("\(total)")
+                    .font(.system(size: 20, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(text1)
+            }
+
+            if !stats.isEmpty {
+                UtilityProportionBar(
+                    segments: stats.map { .init(color: protoTint($0.proto), value: Double($0.count)) },
+                    height: 6
+                )
+                legendRow(stats)
+            }
+        }
+        .padding(12)
+        .utilityCardBackground()
+    }
+
+    private var scopeLabel: String {
+        switch service.portScope {
+        case .listen:
+            return strings.networkDiagnosticsListeningPortsLabel
+        case .all:
+            return strings.networkDiagnosticsAllConnectionsLabel
+        }
+    }
+
+    private struct ProtoStat {
+        let proto: PortEntry.Proto
+        let count: Int
+    }
+
+    /// 按固定顺序（TCP / UDP / TCP6 / UDP6）统计协议构成，只保留有数据的段，图例稳定不跳位。
+    private func protoStats(from entries: [PortEntry]) -> [ProtoStat] {
+        var counts: [PortEntry.Proto: Int] = [:]
+        for entry in entries {
+            counts[entry.proto, default: 0] += 1
+        }
+        let order: [PortEntry.Proto] = [.tcp, .udp, .tcp6, .udp6]
+        return order.compactMap { proto in
+            guard let count = counts[proto], count > 0 else { return nil }
+            return ProtoStat(proto: proto, count: count)
+        }
+    }
+
+    /// 协议配色与卸载器类别条同一家族：Stats 模块色 + teal 补足第四类。
+    private func protoTint(_ proto: PortEntry.Proto) -> Color {
+        switch proto {
+        case .tcp: return Theme.Stats.cpu
+        case .udp: return Theme.Stats.ram
+        case .tcp6: return Theme.Stats.gpu
+        case .udp6: return .teal
+        }
+    }
+
+    private func legendRow(_ stats: [ProtoStat]) -> some View {
+        HStack(spacing: 14) {
+            ForEach(stats, id: \.proto) { stat in
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(protoTint(stat.proto))
+                        .frame(width: 6, height: 6)
+                    Text(stat.proto.displayName)
+                        .font(Theme.Stats.font10Regular)
+                        .foregroundStyle(text2)
+                    Text("\(stat.count)")
+                        .font(Theme.Stats.font10Regular.monospacedDigit())
+                        .foregroundStyle(text3)
+                }
+            }
+            Spacer(minLength: 0)
         }
     }
 

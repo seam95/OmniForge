@@ -560,6 +560,13 @@ struct Strings: Equatable {
     let networkDiagnosticsProtectedProcess: String
     let networkDiagnosticsUnknownProcess: String
 
+    // MARK: 网络诊断仪表盘 hero
+    let networkDiagnosticsListeningPortsLabel: String
+    let networkDiagnosticsAllConnectionsLabel: String
+    let networkDiagnosticsProcessCountFormat: String
+    let networkDiagnosticsConnectionSection: String
+    let networkDiagnosticsOtherInterfacesFormat: String
+
     // MARK: - DSH Web
     let dshWebStart: String
     let dshWebStop: String
