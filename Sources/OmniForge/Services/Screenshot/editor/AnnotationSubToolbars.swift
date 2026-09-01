@@ -145,6 +145,9 @@ final class ColorSizeSubToolbar: NSView {
 
     private var sizeSlider: HUDSlider?
     private var colorButtons: [ColorSwatchView] = []
+    private var arrowButtons: [MiniChoiceButton] = []
+    private var fillButtons: [MiniChoiceButton] = []
+    private var strokeButtons: [MiniChoiceButton] = []
 
     private let sizes: [CGFloat]
     private let sizeMin: CGFloat
@@ -189,7 +192,8 @@ final class ColorSizeSubToolbar: NSView {
             x += separatorGap + 1 + sectionGap + n * controlWidth + max(n - 1, 0) * controlGap
         }
         if showsShapeFill {
-            x += separatorGap + 1 + sectionGap + 54 // segmented 控件估值
+            let n = CGFloat(ShapeFillMode.allCases.count)
+            x += separatorGap + 1 + sectionGap + n * controlWidth + max(n - 1, 0) * controlGap
         }
         if showsShapeStroke {
             let n = CGFloat(ShapeStrokeStyle.allCases.count)
@@ -304,6 +308,7 @@ final class ColorSizeSubToolbar: NSView {
                 let click = NSClickGestureRecognizer(target: self, action: #selector(arrowStyleTapped(_:)))
                 btn.addGestureRecognizer(click)
                 addSubview(btn)
+                arrowButtons.append(btn)
                 x += Self.controlWidth + Self.controlGap
             }
             lastRight = x - Self.controlGap
@@ -327,6 +332,7 @@ final class ColorSizeSubToolbar: NSView {
                 let click = NSClickGestureRecognizer(target: self, action: #selector(shapeFillTapped(_:)))
                 btn.addGestureRecognizer(click)
                 addSubview(btn)
+                fillButtons.append(btn)
                 x += Self.controlWidth + Self.controlGap
             }
             lastRight = x - Self.controlGap
@@ -350,6 +356,7 @@ final class ColorSizeSubToolbar: NSView {
                 let click = NSClickGestureRecognizer(target: self, action: #selector(shapeStrokeTapped(_:)))
                 btn.addGestureRecognizer(click)
                 addSubview(btn)
+                strokeButtons.append(btn)
                 x += Self.controlWidth + Self.controlGap
             }
         }
@@ -404,6 +411,9 @@ final class ColorSizeSubToolbar: NSView {
         guard let btn = gesture.view as? MiniChoiceButton else { return }
         let idx = btn.selectionIndex
         guard idx >= 0, idx < ArrowStyle.allCases.count else { return }
+        for (i, b) in arrowButtons.enumerated() {
+            b.isSelected = (i == idx)
+        }
         onArrowStyleChanged?(ArrowStyle.allCases[idx])
     }
 
@@ -411,6 +421,9 @@ final class ColorSizeSubToolbar: NSView {
         guard let btn = gesture.view as? MiniChoiceButton else { return }
         let idx = btn.selectionIndex
         guard idx >= 0, idx < ShapeFillMode.allCases.count else { return }
+        for (i, b) in fillButtons.enumerated() {
+            b.isSelected = (i == idx)
+        }
         onShapeFillModeChanged?(ShapeFillMode.allCases[idx])
     }
 
@@ -418,6 +431,9 @@ final class ColorSizeSubToolbar: NSView {
         guard let btn = gesture.view as? MiniChoiceButton else { return }
         let idx = btn.selectionIndex
         guard idx >= 0, idx < ShapeStrokeStyle.allCases.count else { return }
+        for (i, b) in strokeButtons.enumerated() {
+            b.isSelected = (i == idx)
+        }
         onShapeStrokeStyleChanged?(ShapeStrokeStyle.allCases[idx])
     }
 
