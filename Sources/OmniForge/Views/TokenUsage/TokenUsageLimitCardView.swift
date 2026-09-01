@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// 单个 provider 的限额区块（去卡片化透明布局，单行四段式窗口行）。
-/// 布局：标题行（16x16 图标 + 名称 + 右侧附加信息）+ 窗口行（标签 40pt / 5pt 进度条 / 百分比 34pt / 重置时间 30pt）。
+/// 布局：标题行（16x16 图标 + 名称 + 右侧附加信息）+ 窗口行（标签 40pt / 5pt 进度条 / 百分比 34pt / 重置时间 36pt）。
 struct TokenUsageLimitCardView: View {
     let limits: ProviderUsageLimits
     let strings: Strings
@@ -16,6 +16,10 @@ struct TokenUsageLimitCardView: View {
 
     /// 窗口排列顺序：5h 会话窗在上，7d 周窗在下，其后月窗与额度窗。
     static let windowKindOrder: [LimitWindowKind] = [.session, .weekly, .monthly, .credits]
+
+    /// 窗口行右侧重置时间列宽：须容纳最宽形态 "HH:mm"（10pt SF Mono 5 字符恰 30pt 压线，
+    /// 留余量防 lineLimit(1) 截断成 "13:…"）。改动列宽或字号须同步回归测试。
+    static let resetTimeColumnWidth: CGFloat = 36
 
     private var orderedWindows: [(kind: LimitWindowKind, window: UsageWindow)] {
         Self.windowKindOrder.compactMap { kind in
@@ -160,7 +164,8 @@ struct TokenUsageLimitCardView: View {
         )
     }
 
-    /// 单行四段式窗口行：[标签 40pt] [进度条 弹性] [已用/剩余% 34pt] [重置时间 30pt]
+    /// 单行四段式窗口行：[标签 40pt] [进度条 弹性] [已用/剩余% 34pt] [重置时间 36pt]
+    /// 重置时间列须容纳最宽形态 "HH:mm"（10pt SF Mono 5 字符 = 30pt 压线，留 6pt 余量防截断）。
     private func limitRow(
         label: String,
         valueText: String,
@@ -190,7 +195,7 @@ struct TokenUsageLimitCardView: View {
                 .font(.system(size: 10, weight: .regular, design: .monospaced))
                 .foregroundColor(Theme.Stats.text3)
                 .lineLimit(1)
-                .frame(width: 30, alignment: .trailing)
+                .frame(width: Self.resetTimeColumnWidth, alignment: .trailing)
         }
         .frame(height: 16)
     }
