@@ -1239,6 +1239,8 @@ extension Strings {
         stickyNoteEditReminder: "Edit reminder",
         stickyNoteCollapse: "Collapse note",
         stickyNoteExpand: "Expand note",
+        stickyNoteIncreaseFontSize: "Increase font size",
+        stickyNoteDecreaseFontSize: "Decrease font size",
         stickyNoteComplete: "Complete note",
         stickyNoteReminderQuick15: "15 Minutes",
         stickyNoteReminderQuick1h: "1 Hour",

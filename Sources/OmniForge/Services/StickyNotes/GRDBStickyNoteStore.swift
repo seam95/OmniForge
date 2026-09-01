@@ -52,6 +52,12 @@ final class GRDBStickyNoteStore: StickyNoteStore {
                 t.add(column: "collapsed", .boolean).notNull().defaults(to: false)
             }
         }
+        // v3：正文字号档位（pt）；旧便签补默认档。
+        migrator.registerMigration("addStickyNoteFontSize") { db in
+            try db.alter(table: "stickyNote") { t in
+                t.add(column: "fontSize", .double).notNull().defaults(to: StickyNote.defaultFontSize)
+            }
+        }
         return migrator
     }
 
@@ -111,6 +117,7 @@ private struct StickyNoteDBRecord: Codable, FetchableRecord, PersistableRecord {
     var hidden: Bool
     var completed: Bool
     var collapsed: Bool
+    var fontSize: Double
     var reminderAt: Double?
     var reminderFiredAt: Double?
     var createdAt: Double
@@ -130,6 +137,7 @@ private struct StickyNoteDBRecord: Codable, FetchableRecord, PersistableRecord {
         self.hidden = note.hidden
         self.completed = note.completed
         self.collapsed = note.collapsed
+        self.fontSize = note.fontSize
         self.reminderAt = note.reminderAt?.timeIntervalSince1970
         self.reminderFiredAt = note.reminderFiredAt?.timeIntervalSince1970
         self.createdAt = note.createdAt.timeIntervalSince1970
@@ -153,6 +161,7 @@ private struct StickyNoteDBRecord: Codable, FetchableRecord, PersistableRecord {
             hidden: hidden,
             completed: completed,
             collapsed: collapsed,
+            fontSize: fontSize,
             reminderAt: reminderAt.map(Date.init(timeIntervalSince1970:)),
             reminderFiredAt: reminderFiredAt.map(Date.init(timeIntervalSince1970:)),
             createdAt: Date(timeIntervalSince1970: createdAt),

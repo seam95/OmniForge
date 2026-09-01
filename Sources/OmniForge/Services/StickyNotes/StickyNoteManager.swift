@@ -159,6 +159,14 @@ final class StickyNoteManager: ObservableObject {
         setCollapse(id: id, collapsed: !note.collapsed)
     }
 
+    /// 正文字号档位步进（状态栏 A-/A+）：已在边界时保持不变、不落库。
+    func adjustFontSize(id: UUID, larger: Bool) {
+        guard let note = notes.first(where: { $0.id == id }),
+              let next = note.nextFontSize(larger: larger) else { return }
+        mutate(id) { $0.fontSize = next }
+        syncWindow(id: id)
+    }
+
     /// 完成便签：标记完成并隐藏；事项已办，提醒一并撤销。
     /// 空白便签（误新建、未写内容）没有归档价值：完成动作退化为物理删除，
     /// 免去「先完成进归档、再去已完成区删一次」的两步操作。

@@ -176,6 +176,7 @@ struct StickyNoteContentView: View {
         ZStack(alignment: .topLeading) {
             StickyNoteTextEditor(
                 text: note.content,
+                fontSize: note.fontSize,
                 palette: palette,
                 colorScheme: colorScheme,
                 onActivate: onActivateForTyping,
@@ -187,7 +188,7 @@ struct StickyNoteContentView: View {
             )
             if note.content.isEmpty {
                 Text(strings.stickyNotePlaceholder)
-                    .font(.system(size: 13))
+                    .font(.system(size: note.fontSize))
                     .foregroundStyle(palette.text(colorScheme: colorScheme).opacity(0.45))
                     .padding(.horizontal, StickyNoteTextInset.horizontal)
                     .padding(.top, StickyNoteTextInset.top)
@@ -227,12 +228,38 @@ struct StickyNoteContentView: View {
                 }
                 .foregroundStyle(palette.accent)
             }
+            fontSizeControls
         }
         .overlay(alignment: .top) {
             Rectangle()
                 .fill(Color.black.opacity(colorScheme == .dark ? 0.25 : 0.08))
                 .frame(height: 0.5)
         }
+    }
+
+    /// 字号档位调节（状态栏最右常驻）：工具栏在最小窗宽下已无余量，
+    /// 正文属性就近放状态栏；到边界后按钮置灰。
+    private var fontSizeControls: some View {
+        HStack(spacing: 2) {
+            fontSizeButton(symbol: "textformat.size.smaller", label: strings.stickyNoteDecreaseFontSize, larger: false)
+            fontSizeButton(symbol: "textformat.size.larger", label: strings.stickyNoteIncreaseFontSize, larger: true)
+        }
+    }
+
+    private func fontSizeButton(symbol: String, label: String, larger: Bool) -> some View {
+        let isAtBound = note.nextFontSize(larger: larger) == nil
+        return Button {
+            actions().onAdjustFontSize(note.id, larger)
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(palette.text(colorScheme: colorScheme).opacity(isAtBound ? 0.25 : 0.6))
+                .frame(width: 20, height: 18)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isAtBound)
+        .help(label)
     }
 
     private func reminderStatusText(for date: Date) -> String {
@@ -363,6 +390,7 @@ final class StickyNoteActivatableTextView: NSTextView {
 
 struct StickyNoteTextEditor: NSViewRepresentable {
     let text: String
+    let fontSize: CGFloat
     let palette: StickyNotePalette
     let colorScheme: ColorScheme
     let onActivate: () -> Void
@@ -418,7 +446,7 @@ struct StickyNoteTextEditor: NSViewRepresentable {
 
     private func applyStyle(to textView: NSTextView) {
         let nsText = textNSColor
-        textView.font = .systemFont(ofSize: 13)
+        textView.font = .systemFont(ofSize: fontSize)
         textView.textColor = nsText
         textView.insertionPointColor = nsText
     }

@@ -62,6 +62,9 @@ final class StickyNoteWindowRegistry: StickyNoteWindowPresenting {
             onToggleCollapse: { id in
                 manager.toggleCollapse(id: id)
             },
+            onAdjustFontSize: { id, larger in
+                manager.adjustFontSize(id: id, larger: larger)
+            },
             onComplete: { id in
                 manager.complete(id: id)
             },

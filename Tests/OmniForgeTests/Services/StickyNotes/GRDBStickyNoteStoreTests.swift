@@ -38,6 +38,7 @@ final class GRDBStickyNoteStoreTests: XCTestCase {
             hidden: false,
             completed: true,
             collapsed: true,
+            fontSize: 20,
             reminderAt: Date(timeIntervalSince1970: 1_800_000_000),
             reminderFiredAt: nil,
             createdAt: Date(timeIntervalSince1970: 1_700_000_000),
@@ -87,6 +88,44 @@ final class GRDBStickyNoteStoreTests: XCTestCase {
         XCTAssertEqual(loaded.count, 1)
         XCTAssertEqual(loaded[0].content, "旧便签")
         XCTAssertEqual(loaded[0].collapsed, false)
+    }
+
+    func test_loadNotes_afterFontSizeColumnMigration_defaultsToStandardLevel() throws {
+        // 模拟 v2 旧库：无 fontSize 列的表结构与一行旧数据。
+        let queue = try DatabaseQueue(path: databaseURL.path)
+        try queue.write { db in
+            try db.execute(sql: "CREATE TABLE grdb_migrations (identifier TEXT NOT NULL PRIMARY KEY)")
+            try db.execute(sql: "INSERT INTO grdb_migrations VALUES ('createStickyNote')")
+            try db.execute(sql: "INSERT INTO grdb_migrations VALUES ('addStickyNoteCollapsed')")
+            try db.create(table: "stickyNote") { t in
+                t.column("id", .text).notNull().primaryKey()
+                t.column("content", .text).notNull()
+                t.column("color", .text).notNull()
+                t.column("x", .double).notNull()
+                t.column("y", .double).notNull()
+                t.column("width", .double).notNull()
+                t.column("height", .double).notNull()
+                t.column("pinned", .boolean).notNull().defaults(to: false)
+                t.column("hidden", .boolean).notNull().defaults(to: false)
+                t.column("completed", .boolean).notNull().defaults(to: false)
+                t.column("collapsed", .boolean).notNull().defaults(to: false)
+                t.column("reminderAt", .double)
+                t.column("reminderFiredAt", .double)
+                t.column("createdAt", .double).notNull()
+                t.column("updatedAt", .double).notNull()
+            }
+            try db.execute(sql: """
+                INSERT INTO stickyNote (id, content, color, x, y, width, height, pinned, hidden, completed, collapsed, createdAt, updatedAt)
+                VALUES ('00000000-0000-0000-0000-000000000001', '旧便签', 'yellow', 0, 0, 320, 260, 0, 0, 0, 0, 1000, 1000)
+                """)
+        }
+
+        // v3 迁移在 store 初始化时执行
+        let store = makeStore()
+        let loaded = store.loadNotes()
+
+        XCTAssertEqual(loaded.count, 1)
+        XCTAssertEqual(loaded[0].fontSize, StickyNote.defaultFontSize)
     }
 
     func test_saveNote_roundTripsNilReminderFields() {
