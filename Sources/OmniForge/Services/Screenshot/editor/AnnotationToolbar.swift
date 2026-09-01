@@ -357,6 +357,7 @@ final class AnnotationToolbarView: NSView {
 
     // MARK: 回调（控制器注入）
     var onToolSelected: ((EditTool) -> Void)?
+    var onMoveSelectionToggle: (() -> Void)?
     var onUndo: (() -> Void)?
     var onRedo: (() -> Void)?
     var onSave: (() -> Void)?
@@ -422,6 +423,11 @@ final class AnnotationToolbarView: NSView {
         buttons[.scrollCapture]?.isSelected = active
     }
 
+    /// 移动模式激活态同步到手柄高亮。
+    func setMoveModeActive(_ active: Bool) {
+        moveSelectionHandle?.isModeActive = active
+    }
+
     /// 某项的按钮 frame（工具栏自身坐标系）。
     func frame(for id: AnnotationToolbarItem) -> NSRect? {
         if id == .moveSelection { return moveSelectionHandle?.frame }
@@ -484,6 +490,7 @@ final class AnnotationToolbarView: NSView {
                 handle.onDragStart = { [weak self] in self?.onMoveSelectionStart?() }
                 handle.onDrag = { [weak self] delta in self?.onMoveSelectionDrag?(delta) }
                 handle.onDragEnd = { [weak self] in self?.onMoveSelectionEnd?() }
+                handle.onClick = { [weak self] in self?.onMoveSelectionToggle?() }
                 moveSelectionHandle = handle
                 addSubview(handle)
                 continue
@@ -540,7 +547,7 @@ final class AnnotationToolbarView: NSView {
             // 点击已选中工具回退到 .none（调整模式）。
             onToolSelected?(tool == currentTool ? .none : tool)
         case .moveSelection, .separator, .image:
-            // 拖动手柄走 mouseDown/Dragged/Up；separator/image 无工具栏入口。
+            // 移动手柄的点击切换走自身 onClick；separator/image 无工具栏入口。
             break
         case .scrollCapture: onScrollCapture?()
         case .record:      onRecord?()
@@ -563,6 +570,15 @@ final class MoveSelectionDragHandle: NSView {
     var onDragStart: (() -> Void)?
     var onDrag: ((CGSize) -> Void)?
     var onDragEnd: (() -> Void)?
+    /// 原地点击（未构成拖动）时触发：进入/退出移动模式。
+    var onClick: (() -> Void)?
+
+    /// 移动模式激活时的持续高亮。
+    var isModeActive: Bool = false {
+        didSet {
+            if oldValue != isModeActive { needsDisplay = true }
+        }
+    }
 
     private let symbolName: String
     private let symbolImage: NSImage?
@@ -570,6 +586,9 @@ final class MoveSelectionDragHandle: NSView {
     private var isDragging = false {
         didSet { needsDisplay = true }
     }
+
+    /// 位移两轴均小于该阈值视为点击而非拖动。
+    private static let clickThreshold: CGFloat = 3
 
     init(frame: NSRect, symbolName: String) {
         self.symbolName = symbolName
@@ -615,12 +634,18 @@ final class MoveSelectionDragHandle: NSView {
         isDragging = false
         NSCursor.openHand.set()
         onDragEnd?()
+        let current = convert(event.locationInWindow, from: nil)
+        let dx = abs(current.x - dragStartLocation.x)
+        let dy = abs(current.y - dragStartLocation.y)
+        if dx < Self.clickThreshold, dy < Self.clickThreshold {
+            onClick?()
+        }
         dragStartLocation = .zero
     }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        if isDragging {
+        if isDragging || isModeActive {
             let bg = NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 6, yRadius: 6)
             EditorHUD.selectedFill().setFill()
             bg.fill()
@@ -633,8 +658,9 @@ final class MoveSelectionDragHandle: NSView {
             y: round((bounds.height - size.height) / 2)
         )
         let drawRect = NSRect(origin: origin, size: size)
+        let tint: NSColor = isModeActive ? EditorHUD.accentGreen : .labelColor
         let tinted = img.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(hierarchicalColor: .labelColor)
+            NSImage.SymbolConfiguration(hierarchicalColor: tint)
         ) ?? img
         tinted.draw(in: drawRect, from: .zero, operation: .sourceOver, fraction: 1.0)
     }

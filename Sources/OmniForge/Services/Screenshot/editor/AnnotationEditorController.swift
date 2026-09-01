@@ -69,6 +69,8 @@ final class AnnotationEditorController {
     private var subToolbarView: NSView?
 
     private(set) var activeTool: EditTool = .none
+    /// 移动模式：无标注工具，选区内按住拖动即移动选区（工具栏手柄点击切换）。
+    private var isMoveModeActive = false
 
     // MARK: - 长截图状态
 
@@ -328,6 +330,7 @@ final class AnnotationEditorController {
 
     private func wireToolbar(_ tv: AnnotationToolbarView) {
         tv.onToolSelected = { [weak self] tool in self?.selectTool(tool) }
+        tv.onMoveSelectionToggle = { [weak self] in self?.toggleMoveMode() }
         tv.onUndo = { [weak self] in _ = self?.document.undo(); self?.canvasView?.needsDisplay = true }
         tv.onRedo = { [weak self] in _ = self?.document.redo(); self?.canvasView?.needsDisplay = true }
         tv.onSave = { [weak self] in self?.save() }
@@ -417,12 +420,27 @@ final class AnnotationEditorController {
         }
         activeTool = tool
         canvasView?.activeTool = tool
+        if tool != .none {
+            isMoveModeActive = false
+        }
         normalizeShapeStrokeStyle(for: tool)
         pushCurrentStyleToCanvas()
         toolbars.forEach { $0.updateSelection(tool: tool) }
+        toolbars.forEach { $0.setMoveModeActive(isMoveModeActive && tool == .none) }
         showSubToolbar(for: tool)
         updateEditorInteractionState()
         bringEditorToFront()
+    }
+
+    /// 点击工具栏移动手柄：进入/退出移动模式。
+    /// 进入时切到无工具态（选区内部拖动即移动选区），再次点击退出。
+    private func toggleMoveMode() {
+        isMoveModeActive.toggle()
+        if isMoveModeActive && activeTool != .none {
+            selectTool(.none)
+            return
+        }
+        toolbars.forEach { $0.setMoveModeActive(isMoveModeActive) }
     }
 
     /// 同步选区交互标志、scroll 透传与 chrome 显隐（对齐 CapCap）。
