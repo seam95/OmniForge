@@ -10,6 +10,7 @@ struct UninstallerAppPickerView: View {
     @State private var apps: [InstalledApps.InstalledApp] = []
     @State private var query = ""
     @State private var isLoading = false
+    @FocusState private var searchFocused: Bool
 
     private var filteredApps: [InstalledApps.InstalledApp] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -34,12 +35,25 @@ struct UninstallerAppPickerView: View {
             TextField(strings.uninstallerPickerSearch, text: $query)
                 .textFieldStyle(.roundedBorder)
                 .font(Theme.Stats.font12Medium)
+                .focused($searchFocused)
 
             appList
         }
         .padding(18)
         .frame(width: 520, height: 560)
-        .onAppear { loadAppsIfNeeded() }
+        // sheet 首个可聚焦控件（取消按钮）会带出系统蓝色键盘焦点环，按仓库惯例禁用。
+        .omniNoFocusRing()
+        .onAppear {
+            loadAppsIfNeeded()
+            focusSearchField()
+        }
+    }
+
+    /// sheet 过场动画期间直接设焦点常被系统初始焦点覆盖，延后到动画落地后再聚焦。
+    private func focusSearchField() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            searchFocused = true
+        }
     }
 
     @ViewBuilder
