@@ -22,6 +22,26 @@ struct StickyNoteContentView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var toolbarWidth: CGFloat = 0
     @State private var showsReminderPanel = false
+    @State private var showsFontPanel = false
+
+    /// `debugShowsFontPanel` 仅供离屏渲染 / 预览直出档位面板打开态。
+    init(
+        viewModel: StickyNoteViewModel,
+        actions: @escaping () -> StickyNoteViewActions,
+        stringsProvider: @escaping () -> Strings,
+        onActivateForTyping: @escaping () -> Void,
+        onToolbarDragEvent: @escaping (NSEvent) -> Void,
+        onResizeEvent: @escaping (NSEvent) -> Void,
+        debugShowsFontPanel: Bool = false
+    ) {
+        _viewModel = ObservedObject(wrappedValue: viewModel)
+        self.actions = actions
+        self.stringsProvider = stringsProvider
+        self.onActivateForTyping = onActivateForTyping
+        self.onToolbarDragEvent = onToolbarDragEvent
+        self.onResizeEvent = onResizeEvent
+        _showsFontPanel = State(initialValue: debugShowsFontPanel)
+    }
 
     private var note: StickyNote { viewModel.note }
     private var palette: StickyNotePalette { StickyNotePalette.palette(for: note.color) }
@@ -45,6 +65,7 @@ struct StickyNoteContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(palette.background(colorScheme: colorScheme))
         .overlay(alignment: .topTrailing) { reminderPanel }
+        .overlay(alignment: .top) { fontPanel }
         .overlay(alignment: .bottomTrailing) { resizeHandle }
         .overlay(RoundedRectangle(cornerRadius: StickyNoteChrome.cornerRadius, style: .continuous)
             .strokeBorder(Color.black.opacity(colorScheme == .dark ? 0.35 : 0.12), lineWidth: 1))
@@ -81,8 +102,10 @@ struct StickyNoteContentView: View {
                     symbol: note.reminderAt != nil ? "bell.fill" : "bell",
                     label: note.reminderAt != nil ? strings.stickyNoteEditReminder : strings.stickyNoteSetReminder
                 ) {
+                    showsFontPanel = false
                     showsReminderPanel.toggle()
                 }
+                fontSizeToolbarButton
                 toolbarButton(
                     symbol: note.collapsed ? "chevron.down" : "chevron.up",
                     label: note.collapsed ? strings.stickyNoteExpand : strings.stickyNoteCollapse
@@ -147,6 +170,23 @@ struct StickyNoteContentView: View {
         }
         .buttonStyle(.plain)
         .help(label)
+    }
+
+    /// 字号按钮：文字「Aa」而非 SF Symbol——textformat.size 在中文系统
+    /// 会渲染成汉字「大小」，与线框 symbol 族风格冲突（对齐 pinButton 专用视图先例）。
+    private var fontSizeToolbarButton: some View {
+        Button {
+            showsReminderPanel = false
+            showsFontPanel.toggle()
+        } label: {
+            Text("Aa")
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(palette.text(colorScheme: colorScheme).opacity(0.8))
+                .frame(width: StickyNoteChrome.toolbarButtonSize, height: StickyNoteChrome.toolbarButtonSize)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(strings.stickyNoteFontSize)
     }
 
     /// 置顶按钮：激活态为橙色圆角方块底 + 白色实心图钉（设计稿 01）。
@@ -228,38 +268,12 @@ struct StickyNoteContentView: View {
                 }
                 .foregroundStyle(palette.accent)
             }
-            fontSizeControls
         }
         .overlay(alignment: .top) {
             Rectangle()
                 .fill(Color.black.opacity(colorScheme == .dark ? 0.25 : 0.08))
                 .frame(height: 0.5)
         }
-    }
-
-    /// 字号档位调节（状态栏最右常驻）：工具栏在最小窗宽下已无余量，
-    /// 正文属性就近放状态栏；到边界后按钮置灰。
-    private var fontSizeControls: some View {
-        HStack(spacing: 2) {
-            fontSizeButton(symbol: "textformat.size.smaller", label: strings.stickyNoteDecreaseFontSize, larger: false)
-            fontSizeButton(symbol: "textformat.size.larger", label: strings.stickyNoteIncreaseFontSize, larger: true)
-        }
-    }
-
-    private func fontSizeButton(symbol: String, label: String, larger: Bool) -> some View {
-        let isAtBound = note.nextFontSize(larger: larger) == nil
-        return Button {
-            actions().onAdjustFontSize(note.id, larger)
-        } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(palette.text(colorScheme: colorScheme).opacity(isAtBound ? 0.25 : 0.6))
-                .frame(width: 20, height: 18)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(isAtBound)
-        .help(label)
     }
 
     private func reminderStatusText(for date: Date) -> String {
@@ -290,6 +304,45 @@ struct StickyNoteContentView: View {
             .padding(10)
             .zIndex(10)
             .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topTrailing)))
+        }
+    }
+
+    // MARK: - 字号档位面板
+
+    /// 横向档位条：数字以档位字号直接渲染（即所见预览），当前档 accent 高亮，
+    /// 点选即关。水平居中 + 顶部留白 34 落在工具栏下方（下拉式展开）：
+    /// 面板宽恒小于最小窗宽 240，任何便签宽度下完整可点，Aa 按钮保持可见可再点关闭。
+    @ViewBuilder
+    private var fontPanel: some View {
+        if showsFontPanel {
+            HStack(spacing: 4) {
+                ForEach(StickyNote.fontSizeSteps, id: \.self) { size in
+                    let isCurrent = note.fontSize == size
+                    Button {
+                        actions().onSetFontSize(note.id, size)
+                        showsFontPanel = false
+                    } label: {
+                        Text("\(Int(size))")
+                            .font(.system(size: size, weight: isCurrent ? .semibold : .regular))
+                            .minimumScaleFactor(0.6)
+                            .foregroundStyle(isCurrent ? palette.accent : palette.text(colorScheme: colorScheme).opacity(0.75))
+                            .frame(width: 30, height: 30)
+                            .background(
+                                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    .fill(isCurrent ? palette.accent.opacity(0.12) : Color.clear)
+                            )
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(8)
+            .background(.background)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
+            .padding(.top, 34)
+            .zIndex(10)
+            .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
         }
     }
 

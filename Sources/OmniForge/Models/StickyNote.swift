@@ -85,23 +85,6 @@ struct StickyNote: Identifiable, Codable, Equatable {
         content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// 字号档位步进；返回 nil 表示已在目标方向边界（UI 据此禁用按钮）。
-    /// 当前值不在档位内（旧数据异常值）时先就近对齐：
-    /// 落在档位间隙 → 升到上沿档、降到下沿档；超出两端 → 收敛回端点档。
-    func nextFontSize(larger: Bool) -> Double? {
-        let steps = Self.fontSizeSteps
-        // upperIndex：第一个 ≥ 当前值的档位索引；count = 当前值超过最大档
-        let upperIndex = steps.firstIndex(where: { $0 >= fontSize }) ?? steps.count
-        let target: Int
-        if upperIndex < steps.count && steps[upperIndex] == fontSize {
-            target = upperIndex + (larger ? 1 : -1)
-        } else {
-            target = larger ? upperIndex : upperIndex - 1
-        }
-        guard steps.indices.contains(target) else { return nil }
-        return steps[target]
-    }
-
     /// 窗口 frame（AppKit 全局坐标）；DB 四列的便捷视图。
     var frame: CGRect {
         get { CGRect(x: x, y: y, width: width, height: height) }

@@ -159,11 +159,12 @@ final class StickyNoteManager: ObservableObject {
         setCollapse(id: id, collapsed: !note.collapsed)
     }
 
-    /// 正文字号档位步进（状态栏 A-/A+）：已在边界时保持不变、不落库。
-    func adjustFontSize(id: UUID, larger: Bool) {
-        guard let note = notes.first(where: { $0.id == id }),
-              let next = note.nextFontSize(larger: larger) else { return }
-        mutate(id) { $0.fontSize = next }
+    /// 设置正文字号（工具栏 Aa 档位面板）：仅接受档位表内的值。
+    func setFontSize(id: UUID, fontSize: Double) {
+        guard StickyNote.fontSizeSteps.contains(fontSize),
+              let note = notes.first(where: { $0.id == id }),
+              note.fontSize != fontSize else { return }
+        mutate(id) { $0.fontSize = fontSize }
         syncWindow(id: id)
     }
 

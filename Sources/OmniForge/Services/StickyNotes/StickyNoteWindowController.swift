@@ -7,7 +7,7 @@ struct StickyNoteViewActions {
     let onColorSelected: (UUID, StickyNoteColor) -> Void
     let onTogglePin: (UUID) -> Void
     let onToggleCollapse: (UUID) -> Void
-    let onAdjustFontSize: (UUID, Bool) -> Void
+    let onSetFontSize: (UUID, Double) -> Void
     let onComplete: (UUID) -> Void
     let onCreateNew: () -> Void
     let onSetReminder: (UUID, Date) -> Result<Void, StickyNoteReminderError>
@@ -18,7 +18,7 @@ struct StickyNoteViewActions {
         onColorSelected: { _, _ in },
         onTogglePin: { _ in },
         onToggleCollapse: { _ in },
-        onAdjustFontSize: { _, _ in },
+        onSetFontSize: { _, _ in },
         onComplete: { _ in },
         onCreateNew: {},
         onSetReminder: { _, _ in .failure(.noteNotFound) },

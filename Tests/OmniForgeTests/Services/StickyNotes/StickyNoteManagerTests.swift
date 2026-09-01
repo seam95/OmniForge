@@ -250,31 +250,7 @@ final class StickyNoteManagerTests: XCTestCase {
         XCTAssertEqual(manager.notes[0].collapsed, false)
     }
 
-    // MARK: - 3.1 字号档位（状态栏 A-/A+）
-
-    func test_nextFontSize_stepsBetweenAdjacentLevels() {
-        var note = StickyNote(content: "a")
-        note.fontSize = 13
-        XCTAssertEqual(note.nextFontSize(larger: true), 15)
-        XCTAssertEqual(note.nextFontSize(larger: false), 11)
-        note.fontSize = 24
-        XCTAssertNil(note.nextFontSize(larger: true), "最大档再升应返回 nil 供 UI 置灰")
-        note.fontSize = 11
-        XCTAssertNil(note.nextFontSize(larger: false), "最小档再降应返回 nil 供 UI 置灰")
-    }
-
-    func test_nextFontSize_alignsOffLevelValuesToNearestStep() {
-        var note = StickyNote(content: "a")
-        note.fontSize = 14
-        XCTAssertEqual(note.nextFontSize(larger: true), 15, "间隙值升档到上沿")
-        XCTAssertEqual(note.nextFontSize(larger: false), 13, "间隙值降档到下沿")
-        note.fontSize = 30
-        XCTAssertNil(note.nextFontSize(larger: true))
-        XCTAssertEqual(note.nextFontSize(larger: false), 24, "超最大值降档收敛回最大档")
-        note.fontSize = 5
-        XCTAssertNil(note.nextFontSize(larger: false))
-        XCTAssertEqual(note.nextFontSize(larger: true), 11, "低于最小值升档收敛回最小档")
-    }
+    // MARK: - 3.1 字号档位（工具栏 Aa 面板）
 
     func test_create_defaultsToStandardFontSize() {
         let manager = makeManager()
@@ -284,34 +260,30 @@ final class StickyNoteManagerTests: XCTestCase {
         XCTAssertEqual(note.fontSize, StickyNote.defaultFontSize)
     }
 
-    func test_adjustFontSize_stepsLevelPersistsAndSyncsWindow() {
+    func test_setFontSize_updatesPersistsAndSyncsWindow() {
         let manager = makeManager()
         let note = manager.create()!
         store.resetRecording()
         presenter.resetRecording()
 
-        manager.adjustFontSize(id: note.id, larger: true)
+        manager.setFontSize(id: note.id, fontSize: 20)
 
-        XCTAssertEqual(manager.notes[0].fontSize, 15)
-        XCTAssertEqual(store.savedNotes.last?.fontSize, 15)
-        XCTAssertEqual(presenter.shownNotes.last?.fontSize, 15, "字号变化需同步窗口刷新 NSTextView")
-
-        manager.adjustFontSize(id: note.id, larger: false)
-        XCTAssertEqual(manager.notes[0].fontSize, 13)
+        XCTAssertEqual(manager.notes[0].fontSize, 20)
+        XCTAssertEqual(store.savedNotes.last?.fontSize, 20)
+        XCTAssertEqual(presenter.shownNotes.last?.fontSize, 20, "字号变化需同步窗口刷新 NSTextView")
     }
 
-    func test_adjustFontSize_clampsAtBoundariesWithoutPersisting() {
+    func test_setFontSize_sameLevelOrInvalidValue_isNoop() {
         let manager = makeManager()
         let note = manager.create()!
         store.resetRecording()
 
-        for _ in 0..<10 { manager.adjustFontSize(id: note.id, larger: false) }
-        XCTAssertEqual(manager.notes[0].fontSize, StickyNote.fontSizeSteps.first)
-        for _ in 0..<10 { manager.adjustFontSize(id: note.id, larger: true) }
-        XCTAssertEqual(manager.notes[0].fontSize, StickyNote.fontSizeSteps.last)
+        manager.setFontSize(id: note.id, fontSize: StickyNote.defaultFontSize)
+        manager.setFontSize(id: note.id, fontSize: 14)  // 非档位值
+        manager.setFontSize(id: note.id, fontSize: 99)  // 非档位值
 
-        // 有效步进仅 1 次降档（13→11）+ 5 次升档（→24）；边界 no-op 不落库
-        XCTAssertEqual(store.saveCallCount, 6)
+        XCTAssertEqual(manager.notes[0].fontSize, StickyNote.defaultFontSize)
+        XCTAssertEqual(store.saveCallCount, 0, "同档重复设置与非法档位值均不落库")
     }
 
     func test_complete_overridesCollapseAndHidesWindow() {
