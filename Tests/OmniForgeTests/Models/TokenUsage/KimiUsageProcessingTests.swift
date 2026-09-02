@@ -30,7 +30,7 @@ final class KimiUsageProcessingTests: XCTestCase {
         XCTAssertEqual(normalized?.cacheCreationInputTokens, 100)
         XCTAssertEqual(normalized?.outputTokens, 250)
         XCTAssertEqual(normalized?.reasoningOutputTokens, 0)
-        XCTAssertEqual(normalized?.totalTokens, 9000 + 8000 + 100 + 250, "total 四列之和")
+        XCTAssertEqual(normalized?.totalTokens, 9000 + 250, "total = input + output（缓存不计入）")
     }
 
     func test_normalized_openAICompat_subtractsCachedFromInput() {
@@ -55,7 +55,7 @@ final class KimiUsageProcessingTests: XCTestCase {
         XCTAssertEqual(normalized?.cachedInputTokens, 8000)
         XCTAssertEqual(normalized?.cacheCreationInputTokens, 100)
         XCTAssertEqual(normalized?.outputTokens, 250)
-        XCTAssertEqual(normalized?.totalTokens, 1500 + 8000 + 100 + 250)
+        XCTAssertEqual(normalized?.totalTokens, 1500 + 250)
     }
 
     func test_normalized_legacyStatusUpdate_mapsSnakeFields() {
@@ -67,7 +67,7 @@ final class KimiUsageProcessingTests: XCTestCase {
         XCTAssertEqual(normalized?.inputTokens, 14218)
         XCTAssertEqual(normalized?.cachedInputTokens, 6144)
         XCTAssertEqual(normalized?.outputTokens, 123)
-        XCTAssertEqual(normalized?.totalTokens, 14218 + 6144 + 123)
+        XCTAssertEqual(normalized?.totalTokens, 14218 + 123)
     }
 
     func test_normalized_emptyOrZero_returnsNil() {

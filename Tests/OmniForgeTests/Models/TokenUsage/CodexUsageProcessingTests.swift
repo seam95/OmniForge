@@ -16,8 +16,8 @@ final class CodexUsageProcessingTests: XCTestCase {
         XCTAssertEqual(usage.cacheCreationInputTokens, 0)
         XCTAssertEqual(usage.outputTokens, 10)
         XCTAssertEqual(usage.reasoningOutputTokens, 0)
-        XCTAssertEqual(usage.totalTokens, 110, "total 按四列重算，不信任事件中的累计字段")
-        XCTAssertEqual(usage.adding(usage).totalTokens, 220, "叠加幂等语义正常")
+        XCTAssertEqual(usage.totalTokens, 30, "total = input + output（缓存两列不计入总量），不信任事件中的累计字段")
+        XCTAssertEqual(usage.adding(usage).totalTokens, 60, "叠加幂等语义正常")
     }
 
     func test_normalized_usesCacheWriteAliasForCreation() throws {
@@ -25,7 +25,7 @@ final class CodexUsageProcessingTests: XCTestCase {
         counts.cacheWriteInputTokens = 30
         let usage = try XCTUnwrap(CodexUsageProcessing.normalized(from: counts))
         XCTAssertEqual(usage.cacheCreationInputTokens, 30, "cache_write_input_tokens 是 cache_creation 的别名")
-        XCTAssertEqual(usage.totalTokens, 40)
+        XCTAssertEqual(usage.totalTokens, 10, "缓存写进分项列，不计入总量")
     }
 
     func test_normalized_clampsNegativesToZero() throws {
@@ -35,7 +35,7 @@ final class CodexUsageProcessingTests: XCTestCase {
         XCTAssertEqual(usage.inputTokens, 0)
         XCTAssertEqual(usage.cachedInputTokens, 10)
         XCTAssertEqual(usage.outputTokens, 3)
-        XCTAssertEqual(usage.totalTokens, 13)
+        XCTAssertEqual(usage.totalTokens, 3)
     }
 
     func test_normalized_allZeroReturnsNil() {
@@ -53,7 +53,7 @@ final class CodexUsageProcessingTests: XCTestCase {
             last: last, total: total, previousTotal: nil, isStreamStart: true
         ))
         XCTAssertEqual(delta.inputTokens, 25, "last 归一化时同样做 cached 减法")
-        XCTAssertEqual(delta.totalTokens, 35, "total 按四列重算：25 + 5 + 0 + 5，不信任事件累计字段（40 为未减口径）")
+        XCTAssertEqual(delta.totalTokens, 30, "total = input + output：25 + 5，不信任事件累计字段（40 为未减口径）")
     }
 
     func test_delta_lastSkipsWhenCumulativeTotalUnchanged() {
@@ -74,7 +74,7 @@ final class CodexUsageProcessingTests: XCTestCase {
         let delta = try XCTUnwrap(CodexUsageProcessing.delta(
             last: last, total: total, previousTotal: previous, isStreamStart: false
         ))
-        XCTAssertEqual(delta.totalTokens, 35)
+        XCTAssertEqual(delta.totalTokens, 30)
     }
 
     func test_delta_fallsBackToTotalDelta_withPreviousTotal() throws {
@@ -86,7 +86,7 @@ final class CodexUsageProcessingTests: XCTestCase {
         XCTAssertEqual(delta.inputTokens, 10, "total - previous 的逐字段差值，差值同样做 cached 减法（20 - 10）")
         XCTAssertEqual(delta.cachedInputTokens, 10)
         XCTAssertEqual(delta.outputTokens, 10)
-        XCTAssertEqual(delta.totalTokens, 30, "按四列重算：10 + 10 + 0 + 10")
+        XCTAssertEqual(delta.totalTokens, 20, "按不含缓存口径重算：10 + 0 + 10")
     }
 
     func test_delta_streamStartCountsTotal_whenNoLastExists() throws {
@@ -96,7 +96,7 @@ final class CodexUsageProcessingTests: XCTestCase {
             last: nil, total: total, previousTotal: nil, isStreamStart: true
         ))
         XCTAssertEqual(delta.inputTokens, 50)
-        XCTAssertEqual(delta.totalTokens, 65)
+        XCTAssertEqual(delta.totalTokens, 55)
     }
 
     func test_delta_incrementalTailWithoutLast_isSkipped() {

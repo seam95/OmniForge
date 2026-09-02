@@ -88,7 +88,7 @@ enum DshUsageProcessing {
         let creation = max(0, usage.cacheWriteTokens ?? 0)
         let output = max(0, usage.outputTokens ?? 0)
         let reasoning = max(0, usage.reasoningTokens ?? 0)
-        let total = input + cached + creation + output + reasoning
+        let total = input + output + reasoning
         guard total > 0 else { return nil }
         return TokenUsage(
             inputTokens: input,

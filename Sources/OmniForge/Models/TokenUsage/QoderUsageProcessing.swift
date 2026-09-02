@@ -20,7 +20,7 @@ enum QoderUsageProcessing {
         let cachedInt = min(promptInt, Int(cachedRaw))
         let output = Int(completion)
         let input = max(0, promptInt - cachedInt)
-        let total = promptInt + output
+        let total = input + output
         guard total > 0 else { return nil }
         return TokenUsage(
             inputTokens: input,

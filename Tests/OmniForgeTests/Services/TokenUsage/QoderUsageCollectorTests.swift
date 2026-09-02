@@ -104,7 +104,7 @@ final class QoderUsageCollectorTests: XCTestCase {
 
         let buckets = store.bucketsByKey.filter { $0.key.provider == .qoder }
         XCTAssertEqual(buckets.count, 1, "同一半小时桶")
-        XCTAssertEqual(buckets.first?.value.usage.totalTokens, 1300 + 550)
+        XCTAssertEqual(buckets.first?.value.usage.totalTokens, 1100 + 450, "缓存不计入总量")
         XCTAssertEqual(buckets.first?.value.conversationCount, 1, "同 request 只计 1 会话")
         XCTAssertEqual(buckets.first?.key.model, "glm-4.6")
     }
@@ -119,7 +119,7 @@ final class QoderUsageCollectorTests: XCTestCase {
         collector.start()
         collector.waitForIdle()
         pumpUntil { self.collector.scanCount == 1 }
-        XCTAssertEqual(store.totalTokens(), 1850)
+        XCTAssertEqual(store.totalTokens(), 1550)
 
         // m1 变化：token_info 增长 + gmt_create 移到下一个半小时桶。
         try queue.write { db in
@@ -141,9 +141,9 @@ final class QoderUsageCollectorTests: XCTestCase {
         XCTAssertEqual(buckets.count, 2)
         let bucketA = buckets.first { $0.key.bucketStart.timeIntervalSince1970 == 1_784_502_000 }
         let bucketB = buckets.first { $0.key.bucketStart.timeIntervalSince1970 == 1_784_503_800 }
-        XCTAssertEqual(bucketA?.value.usage.totalTokens, 550, "旧桶减旧后只剩 m2")
-        XCTAssertEqual(bucketB?.value.usage.totalTokens, 2300, "新桶加新")
-        XCTAssertEqual(store.totalTokens(), 2850)
+        XCTAssertEqual(bucketA?.value.usage.totalTokens, 450, "旧桶减旧后只剩 m2")
+        XCTAssertEqual(bucketB?.value.usage.totalTokens, 2100, "新桶加新")
+        XCTAssertEqual(store.totalTokens(), 2550)
         XCTAssertEqual(bucketA?.value.conversationCount, 1, "归属重算后 m2 拥有会话计数")
         XCTAssertEqual(bucketB?.value.conversationCount, 0)
     }

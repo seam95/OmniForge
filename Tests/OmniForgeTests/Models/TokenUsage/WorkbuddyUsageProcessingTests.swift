@@ -23,7 +23,7 @@ final class WorkbuddyUsageProcessingTests: XCTestCase {
         XCTAssertEqual(usage?.usage.inputTokens, 700, "totalInput 含缓存 → 拆分")
         XCTAssertEqual(usage?.usage.cachedInputTokens, 300)
         XCTAssertEqual(usage?.usage.outputTokens, 200)
-        XCTAssertEqual(usage?.usage.totalTokens, 1200)
+        XCTAssertEqual(usage?.usage.totalTokens, 900, "缓存不计入总量")
     }
 
     func test_traceUsage_secondsTimestampAdaptive() throws {

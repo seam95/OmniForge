@@ -77,7 +77,7 @@ final class CursorUsageCollectorTests: XCTestCase {
         XCTAssertEqual(bucket.usage.cachedInputTokens, 578_207 + 20)
         XCTAssertEqual(bucket.usage.cacheCreationInputTokens, 10)
         XCTAssertEqual(bucket.usage.outputTokens, 2_055 + 5)
-        XCTAssertEqual(bucket.usage.totalTokens, 740_262 + 65, "总额 = 四列之和（不以 CSV Total 列口径）")
+        XCTAssertEqual(bucket.usage.totalTokens, 162_045 + 45, "总额 = input + output（缓存不计入；不以 CSV Total 列口径）")
         XCTAssertEqual(bucket.conversationCount, 2)
     }
 
@@ -112,19 +112,19 @@ final class CursorUsageCollectorTests: XCTestCase {
     // MARK: - 轮询幂等与窗口化导出
 
     func test_poll_refetchReplacesSameBucket_authoritativeSnapshot() throws {
-        // 云端行以重新导出为准：同 (model, 半小时桶) 的快照被替换；总额 = 四列之和。
+        // 云端行以重新导出为准：同 (model, 半小时桶) 的快照被替换；总额不含缓存。
         let row1 = "\"2026-08-22T06:56:12.521Z\",auto,\"100000\",\"99000\",\"5000\",\"2000\",\"106000\",\"0.1\""
         let corrected = "\"2026-08-22T06:56:12.521Z\",auto,\"40000\",\"39000\",\"1000\",\"1000\",\"41000\",\"0.1\""
         fetcher.results = [.success(csv([row1])), .success(csv([corrected]))]
         collector.start()
         pumpUntil { self.collector.pollCount == 1 }
-        XCTAssertEqual(store.bucketsByKey.values.first?.usage.totalTokens, 99_000 + 1_000 + 5_000 + 2_000)
+        XCTAssertEqual(store.bucketsByKey.values.first?.usage.totalTokens, 99_000 + 2_000, "缓存不计入总量")
 
         scheduler.fire()
         pumpUntil { self.fetcher.callCount == 2 }
         XCTAssertEqual(
             store.bucketsByKey.values.first?.usage.totalTokens,
-            39_000 + 1_000 + 1_000 + 1_000,
+            39_000 + 1_000,
             "云端行以重新导出为准（快照替换）"
         )
         XCTAssertEqual(backfillStates, [true, false], "仅首个轮次标记回填")
@@ -141,7 +141,7 @@ final class CursorUsageCollectorTests: XCTestCase {
         scheduler.fire()
         pumpUntil { self.fetcher.callCount == 2 }
         XCTAssertEqual(store.bucketsByKey.count, 2, "导出窗口外的旧桶不删除（绝不回零覆盖）")
-        XCTAssertEqual(store.bucketsByKey.values.map(\.usage.totalTokens).sorted(), [550, 1_100])
+        XCTAssertEqual(store.bucketsByKey.values.map(\.usage.totalTokens).sorted(), [460, 920])
     }
 
     // MARK: - 定时兜底

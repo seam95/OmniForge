@@ -109,7 +109,7 @@ final class CursorUsageProcessingTests: XCTestCase {
         XCTAssertEqual(usage.cacheCreationInputTokens, 10)
         XCTAssertEqual(usage.outputTokens, 2_055)
         XCTAssertEqual(usage.reasoningOutputTokens, 0)
-        XCTAssertEqual(usage.totalTokens, 159_990 + 578_207 + 10 + 2_055, "total = 四列之和（规格口径）")
+        XCTAssertEqual(usage.totalTokens, 159_990 + 2_055, "total = input + output（缓存两列不计入总量）")
     }
 
     func test_bucketStates_groupsSameHalfHourAndSums() throws {
@@ -122,15 +122,15 @@ final class CursorUsageProcessingTests: XCTestCase {
         let rows = CursorUsageProcessing.parseCSV(csv)
         let states = CursorUsageProcessing.bucketStates(rows: rows, provider: .cursor)
         XCTAssertEqual(states.count, 2, "06 半小时同模型合并；07 独立桶")
-        // 06 桶：input 130 + cacheRead 30 + cacheWrite 20 + output 10 = 190（四列之和）。
-        let firstBucket = try XCTUnwrap(states.first { $0.key.model == "auto" && $0.usage.totalTokens == 190 })
+        // 06 桶：input 130 + output 10 = 140（缓存两列不计入总量）。
+        let firstBucket = try XCTUnwrap(states.first { $0.key.model == "auto" && $0.usage.totalTokens == 140 })
         XCTAssertEqual(firstBucket.usage.inputTokens, 130, "90 + 40")
         XCTAssertEqual(firstBucket.usage.cachedInputTokens, 30, "10 + 20")
         XCTAssertEqual(firstBucket.usage.cacheCreationInputTokens, 20, "10 + 10")
         XCTAssertEqual(firstBucket.usage.outputTokens, 10, "5 + 5")
         XCTAssertEqual(firstBucket.conversationCount, 2)
         XCTAssertEqual(firstBucket.key.provider, .cursor, "provider 固定 cursor")
-        let secondBucket = try XCTUnwrap(states.first { $0.usage.totalTokens == 5 + 5 + 5 + 2 })
+        let secondBucket = try XCTUnwrap(states.first { $0.usage.totalTokens == 5 + 2 })
         XCTAssertEqual(secondBucket.conversationCount, 1)
     }
 

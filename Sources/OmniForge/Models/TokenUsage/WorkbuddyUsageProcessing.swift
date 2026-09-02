@@ -146,7 +146,7 @@ extension WorkbuddyUsageProcessing {
             cacheCreationInputTokens: 0,
             outputTokens: totalOutput,
             reasoningOutputTokens: 0,
-            totalTokens: input + totalCached + totalOutput
+            totalTokens: input + totalOutput
         )
         return TraceUsage(
             traceId: traceId,

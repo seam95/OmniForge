@@ -44,7 +44,7 @@ final class OpencodeUsageProcessingTests: XCTestCase {
         XCTAssertEqual(totals?.cacheCreationInputTokens, 3)
         XCTAssertEqual(totals?.outputTokens, 20)
         XCTAssertEqual(totals?.reasoningOutputTokens, 5)
-        XCTAssertEqual(totals?.totalTokens, 138)
+        XCTAssertEqual(totals?.totalTokens, 125, "缓存两列不计入总量")
     }
 
     func test_normalizedTotals_nilWhenAllZero() {

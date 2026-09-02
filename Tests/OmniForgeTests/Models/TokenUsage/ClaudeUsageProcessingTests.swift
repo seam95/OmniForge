@@ -59,7 +59,7 @@ final class ClaudeUsageProcessingTests: XCTestCase {
         XCTAssertEqual(usage?.cacheCreationInputTokens, 20)
         XCTAssertEqual(usage?.outputTokens, 10)
         XCTAssertEqual(usage?.reasoningOutputTokens, 0, "Claude 口径 reasoning 不单列（output 已含）")
-        XCTAssertEqual(usage?.totalTokens, 160, "total = 四列之和（参考 02）")
+        XCTAssertEqual(usage?.totalTokens, 110, "total = input + output（缓存两列不计入总量）")
     }
 
     func test_tokenUsage_missingFieldsDefaultToZero() {

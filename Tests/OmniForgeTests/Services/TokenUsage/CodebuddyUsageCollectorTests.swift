@@ -102,7 +102,7 @@ final class CodebuddyUsageCollectorTests: XCTestCase {
         XCTAssertEqual(buckets.first?.value.usage.inputTokens, 750)
         XCTAssertEqual(buckets.first?.value.usage.cachedInputTokens, 200)
         XCTAssertEqual(buckets.first?.value.usage.outputTokens, 270)
-        XCTAssertEqual(buckets.first?.value.usage.totalTokens, 750 + 200 + 50 + 270 + 30)
+        XCTAssertEqual(buckets.first?.value.usage.totalTokens, 750 + 270 + 30, "缓存不计入总量")
         XCTAssertEqual(buckets.first?.value.conversationCount, 1)
         XCTAssertEqual(buckets.first?.key.model, "deepseek-v4")
     }

@@ -152,7 +152,7 @@ enum KimiUsageProcessing {
             creation = max(0, usage.inputCacheCreation ?? 0)
             output = max(0, usage.output ?? 0)
         }
-        let total = input + cached + creation + output
+        let total = input + output
         guard total > 0 else { return nil }
         return TokenUsage(
             inputTokens: input,

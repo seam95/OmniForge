@@ -111,7 +111,7 @@ enum TraeCnUsageProcessing {
         let cachedInput = min(inputRaw, cacheRead)
         let cacheCreation = min(inputRaw - cachedInput, cacheWrite)
         let input = inputRaw - cachedInput - cacheCreation
-        let total = inputRaw + output
+        let total = input + output
         let model = (row.modelName?.isEmpty == false ? row.modelName! : unknownModel)
         let usage = TokenUsage(
             inputTokens: input,

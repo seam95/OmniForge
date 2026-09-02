@@ -12,7 +12,7 @@ final class QoderUsageProcessingTests: XCTestCase {
         XCTAssertEqual(totals?.inputTokens, 800, "prompt 含 cached → 拆分")
         XCTAssertEqual(totals?.cachedInputTokens, 200)
         XCTAssertEqual(totals?.outputTokens, 300)
-        XCTAssertEqual(totals?.totalTokens, 1300, "total = prompt + completion")
+        XCTAssertEqual(totals?.totalTokens, 1100, "total = input + output（cached 拆分后不计入）")
     }
 
     func test_normalizedTotals_nilForInvalid() {

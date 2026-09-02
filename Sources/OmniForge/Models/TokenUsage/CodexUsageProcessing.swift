@@ -101,7 +101,7 @@ enum CodexUsageProcessing {
         let cached = canonical(counts.cachedInputTokens)
         let creation = canonical(counts.cacheCreationInputTokens ?? counts.cacheWriteInputTokens)
         let output = canonical(counts.outputTokens)
-        let total = input + cached + creation + output
+        let total = input + output
         guard total > 0 else { return nil }
         return TokenUsage(
             inputTokens: input,

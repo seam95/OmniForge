@@ -481,7 +481,65 @@ final class GRDBUsageStore: UsageStoring {
                 t.primaryKey(["provider", "message_key"])
             }
         }
+        // 总量口径切换（2026-09-02）：total = input + output + reasoning，缓存读写
+        // 不再计入。历史桶行与差分账本内嵌的 totalTokens 一并重算，保证：
+        // 1) 桶累计快照与新口径增量同构（否则新旧份额混加失真）；
+        // 2) 差分回退判定（current.total < previous.total → 重记整行）不因旧口径
+        //    total 偏大而恒触发——否则每条已见消息都会被重复计数一遍。
+        migrator.registerMigration("recalculateTotalsExcludingCache") { db in
+            try db.execute(sql: """
+                UPDATE usage_buckets
+                SET total_tokens = input_tokens + output_tokens + reasoning_output_tokens
+                """)
+            // 状态账本 payload 内嵌 TokenUsage 有两种形态（键名不同）：
+            // - SQLite 差分系（opencode/zcode/qoder）MessageState：{lastTotals: {...}}
+            // - TraeCn 会话对账 SessionState：{model, bucketStart, totals: {...}}
+            // 两者都重算 totalTokens；其余字段（fingerprint 等）原样保留。
+            let rows = try Row.fetchAll(
+                db,
+                sql: "SELECT provider, message_key, payload FROM provider_message_state"
+            )
+            for row in rows {
+                let provider = row["provider"] as String
+                let messageKey = row["message_key"] as String
+                let payload = row["payload"] as String
+                guard let updatedPayload = Self.recalculatedMessageStatePayload(payload) else {
+                    continue
+                }
+                try db.execute(
+                    sql: "UPDATE provider_message_state SET payload = ? WHERE provider = ? AND message_key = ?",
+                    arguments: [updatedPayload, provider, messageKey]
+                )
+            }
+        }
         return migrator
+    }
+
+    /// 重算消息状态 payload 内嵌 TokenUsage 的 totalTokens（口径迁移用）。
+    /// payload 结构宽松解析：对顶层 `lastTotals` / `totals` 键下的六列对象重算；
+    /// 无该结构或解析失败 → 原样返回 nil（调用方跳过该行）。
+    private static func recalculatedMessageStatePayload(_ payload: String) -> String? {
+        guard let data = payload.data(using: .utf8),
+              var object = try? JSONDecoder().decode([String: JSONValue].self, from: data) else {
+            return nil
+        }
+        var changed = false
+        for key in ["lastTotals", "totals"] {
+            guard case .object(var usage)? = object[key] else { continue }
+            func int(_ name: String) -> Int {
+                guard case .number(let value)? = usage[name], value.isFinite else { return 0 }
+                return Int(value)
+            }
+            let recalculated = int("inputTokens") + int("outputTokens") + int("reasoningOutputTokens")
+            guard case .number(let oldTotal)? = usage["totalTokens"], oldTotal != Double(recalculated) else {
+                continue
+            }
+            usage["totalTokens"] = .number(Double(recalculated))
+            object[key] = .object(usage)
+            changed = true
+        }
+        guard changed else { return nil }
+        return String(data: (try? JSONEncoder().encode(object)) ?? Data(), encoding: .utf8)
     }
 
     private static func makeBucketState(from row: Row) -> UsageBucketState {
@@ -527,5 +585,48 @@ final class GRDBUsageStore: UsageStoring {
             model: row["model"] as String,
             totalTokens: Int(row["sum_total_tokens"] as Int64)
         )
+    }
+}
+
+// MARK: - 迁移用宽松 JSON 值（口径重算专用）
+
+/// 迁移内部使用的宽松 JSON 值树 — 仅服务于 `recalculatedMessageStatePayload`
+/// 的结构无关重写；业务代码请使用强类型模型。
+private enum JSONValue: Codable, Equatable {
+    case object([String: JSONValue])
+    case array([JSONValue])
+    case string(String)
+    case number(Double)
+    case bool(Bool)
+    case null
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            self = .null
+        } else if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? container.decode(Double.self) {
+            self = .number(value)
+        } else if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? container.decode([JSONValue].self) {
+            self = .array(value)
+        } else {
+            let object = try container.decode([String: JSONValue].self)
+            self = .object(object)
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .object(let value): try container.encode(value)
+        case .array(let value): try container.encode(value)
+        case .string(let value): try container.encode(value)
+        case .number(let value): try container.encode(value)
+        case .bool(let value): try container.encode(value)
+        case .null: try container.encodeNil()
+        }
     }
 }

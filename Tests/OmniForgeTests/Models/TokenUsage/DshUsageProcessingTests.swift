@@ -27,7 +27,7 @@ final class DshUsageProcessingTests: XCTestCase {
         XCTAssertEqual(tokens?.cacheCreationInputTokens, 5, "cache_write 并入 cache_creation 列")
         XCTAssertEqual(tokens?.outputTokens, 40)
         XCTAssertEqual(tokens?.reasoningOutputTokens, 3)
-        XCTAssertEqual(tokens?.totalTokens, 100 + 40 + 10 + 5 + 3, "total 为五列之和（字段互斥）")
+        XCTAssertEqual(tokens?.totalTokens, 100 + 40 + 3, "total 为 input + output + reasoning（字段互斥）")
     }
 
     func test_tokenUsage_nilWhenAllZero() {

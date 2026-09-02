@@ -87,7 +87,7 @@ enum CursorUsageProcessing {
     }
 
     /// 六列归一化：`input` = 不含缓存写列，`cached` = Cache Read，`cacheCreation` = 缓存写差，
-    /// `total` = 四列之和（规格口径，不以 CSV 的 Total 列为准）。
+    /// `total` = input + output（缓存两列分项不计入总量；不以 CSV 的 Total 列为准）。
     static func tokenUsage(from row: CursorCsvRow) -> TokenUsage? {
         let usage = TokenUsage(
             inputTokens: row.inputWithoutCache,
@@ -95,7 +95,7 @@ enum CursorUsageProcessing {
             cacheCreationInputTokens: row.cacheWrite,
             outputTokens: row.outputTokens,
             reasoningOutputTokens: 0,
-            totalTokens: row.inputWithoutCache + row.cacheRead + row.cacheWrite + row.outputTokens
+            totalTokens: row.inputWithoutCache + row.outputTokens
         )
         return usage.totalTokens > 0 ? usage : nil
     }

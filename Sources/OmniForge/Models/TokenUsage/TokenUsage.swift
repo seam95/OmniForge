@@ -4,7 +4,9 @@ import Foundation
 
 /// 统一六列 token 用量（参考 02）：`input` 为纯非缓存输入，`cached` 为缓存读，
 /// `cacheCreation` 为缓存写，`output` 为输出（Claude 口径已含 thinking），
-/// `reasoning` 保留给分项口径（Claude 填 0），`total` 为四列之和。
+/// `reasoning` 保留给分项口径（Claude 填 0）。
+/// `total = input + output + reasoning`：缓存读写是复用流量、非新增计费口径，
+/// 只分项存储展示，不计入总量（与各官方客户端「今日消耗」对账口径一致）。
 struct TokenUsage: Codable, Equatable {
     var inputTokens: Int
     var cachedInputTokens: Int
@@ -115,7 +117,7 @@ enum ClaudeUsageProcessing {
         let cached = max(0, usage.cacheReadInputTokens ?? 0)
         let creation = max(0, usage.cacheCreationInputTokens ?? 0)
         let output = max(0, usage.outputTokens ?? 0)
-        let total = input + cached + creation + output
+        let total = input + output
         guard total > 0 else { return nil }
         return TokenUsage(
             inputTokens: input,

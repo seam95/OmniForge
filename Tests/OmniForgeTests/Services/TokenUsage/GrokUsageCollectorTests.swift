@@ -101,7 +101,7 @@ final class GrokUsageCollectorTests: XCTestCase {
         let buckets = store.bucketsByKey.filter { $0.key.provider == .grok }
         XCTAssertEqual(buckets.count, 1)
         XCTAssertEqual(buckets.first?.key.model, "grok-4.5-build")
-        XCTAssertEqual(buckets.first?.value.usage.totalTokens, 80_000 + 20_000 + 500)
+        XCTAssertEqual(buckets.first?.value.usage.totalTokens, 80_000 + 500 + 100, "缓存不计入总量（含 reasoning）")
         XCTAssertEqual(buckets.first?.value.usage.cachedInputTokens, 20_000)
         XCTAssertEqual(buckets.first?.value.conversationCount, 1)
     }
@@ -196,7 +196,7 @@ final class GrokUsageCollectorTests: XCTestCase {
         collector.start()
         collector.waitForIdle()
         pumpUntil { self.collector.scanCount == 1 }
-        XCTAssertEqual(store.totalTokens(), 10_000 - 2_000 + 2_000 + 500, "有 updates.jsonl 时不叠加信号兜底")
+        XCTAssertEqual(store.totalTokens(), 10_000 - 2_000 + 500, "有 updates.jsonl 时不叠加信号兜底（缓存不计入总量）")
     }
 
     // MARK: - 目录监听

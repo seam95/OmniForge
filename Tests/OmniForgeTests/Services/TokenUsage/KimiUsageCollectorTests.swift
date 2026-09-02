@@ -115,7 +115,7 @@ final class KimiUsageCollectorTests: XCTestCase {
         XCTAssertEqual(bucket.usage.cachedInputTokens, 8_000)
         XCTAssertEqual(bucket.usage.cacheCreationInputTokens, 100)
         XCTAssertEqual(bucket.usage.outputTokens, 330)
-        XCTAssertEqual(bucket.usage.totalTokens, 11_000 + 330 + 8_000 + 100)
+        XCTAssertEqual(bucket.usage.totalTokens, 11_000 + 330, "缓存不计入总量")
         XCTAssertEqual(store.seenKeys.count, 2, "step.end 消息级去重")
         XCTAssertEqual(watcher.watchedURL, codeSessionsDir)
         XCTAssertEqual(scheduler.lastInterval, KimiUsageCollector.defaultScanInterval)
@@ -179,7 +179,7 @@ final class KimiUsageCollectorTests: XCTestCase {
         XCTAssertEqual(bucket?.usage.cachedInputTokens, 8_000)
         XCTAssertEqual(bucket?.usage.cacheCreationInputTokens, 100)
         XCTAssertEqual(bucket?.usage.outputTokens, 330)
-        XCTAssertEqual(store.totalTokens(), 3_500 + 330 + 8_000 + 100)
+        XCTAssertEqual(store.totalTokens(), 3_500 + 330, "缓存不计入总量")
         XCTAssertEqual(store.seenKeys.count, 2, "usage.record 不计")
     }
 
@@ -198,7 +198,7 @@ final class KimiUsageCollectorTests: XCTestCase {
         collector.start()
         collector.waitForIdle()
         pumpUntil { self.collector.scanCount == 1 }
-        XCTAssertEqual(store.totalTokens(), 14_218 + 123 + 6_144 + 553 + 357 + 20_224, "重复 TEST1 跳过")
+        XCTAssertEqual(store.totalTokens(), 14_218 + 123 + 553 + 357, "重复 TEST1 跳过（缓存不计入总量）")
         XCTAssertEqual(store.seenKeys.count, 2)
         let bucket = store.bucketsByKey.first { $0.value.key.provider == .kimi }?.value
         XCTAssertEqual(bucket?.key.model, KimiUsageProcessing.defaultModel, "旧版无模型信息 → unknown")

@@ -35,7 +35,7 @@ final class TraeCnUsageProcessingTests: XCTestCase {
         XCTAssertEqual(contribution?.usage.cachedInputTokens, 300)
         XCTAssertEqual(contribution?.usage.cacheCreationInputTokens, 40)
         XCTAssertEqual(contribution?.usage.outputTokens, 200)
-        XCTAssertEqual(contribution?.usage.totalTokens, 1200, "total = input + output（含缓存）")
+        XCTAssertEqual(contribution?.usage.totalTokens, 860, "total = input + output（不含缓存）")
         XCTAssertEqual(contribution?.model, "doubao-1.5")
     }
 

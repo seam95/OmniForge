@@ -21,7 +21,7 @@ final class GrokUsageProcessingTests: XCTestCase {
         XCTAssertEqual(tokens?.cachedInputTokens, 20_000)
         XCTAssertEqual(tokens?.outputTokens, 500)
         XCTAssertEqual(tokens?.reasoningOutputTokens, 100)
-        XCTAssertEqual(tokens?.totalTokens, 80_000 + 20_000 + 500, "total 为四列之和")
+        XCTAssertEqual(tokens?.totalTokens, 80_000 + 500 + 100, "total 为 input + output + reasoning")
     }
 
     func test_tokenUsage_nilWhenAllZero() {

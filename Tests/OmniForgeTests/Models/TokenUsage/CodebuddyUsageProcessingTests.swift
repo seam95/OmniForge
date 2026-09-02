@@ -47,7 +47,7 @@ final class CodebuddyUsageProcessingTests: XCTestCase {
         XCTAssertEqual(usage?.cacheCreationInputTokens, 50)
         XCTAssertEqual(usage?.outputTokens, 270, "300 - reasoning 30")
         XCTAssertEqual(usage?.reasoningOutputTokens, 30)
-        XCTAssertEqual(usage?.totalTokens, 750 + 200 + 50 + 270 + 30)
+        XCTAssertEqual(usage?.totalTokens, 750 + 270 + 30, "缓存两列不计入总量")
     }
 
     func test_tokenUsage_cacheReadTakesMaxAcrossMirrors() {

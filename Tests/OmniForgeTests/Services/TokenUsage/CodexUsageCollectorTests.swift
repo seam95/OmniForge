@@ -137,11 +137,11 @@ final class CodexUsageCollectorTests: XCTestCase {
 
         XCTAssertEqual(backfillStates, [true, false], "首次扫描经历回填中 → 完成")
         XCTAssertEqual(usageChanges, 1)
-        XCTAssertEqual(store.totalTokens(), 57, "两条 last 事件（25+5+5=35 与 22）cached 减法后合计 57")
+        XCTAssertEqual(store.totalTokens(), 52, "两条 last 事件（25+5=30 与 22）cached 减法后合计 52")
         let bucket = store.bucketsByKey.first { $0.value.key.model == "gpt-5-codex" }?.value
         XCTAssertEqual(bucket?.usage.inputTokens, 25 + 20, "i1 = max(0, 30-5) = 25；i2 = 20")
         XCTAssertEqual(bucket?.usage.cachedInputTokens, 5)
-        XCTAssertEqual(bucket?.usage.totalTokens, 57)
+        XCTAssertEqual(bucket?.usage.totalTokens, 52)
 
         let stored = store.cursors[file.standardizedFileURL.path]
         XCTAssertNotNil(stored)
@@ -166,7 +166,7 @@ final class CodexUsageCollectorTests: XCTestCase {
         collector.start()
         collector.waitForIdle()
         pumpUntil { self.collector.scanCount == 1 }
-        XCTAssertEqual(store.totalTokens(), 65, "total - cached 减法后 50+10+5 = 65")
+        XCTAssertEqual(store.totalTokens(), 55, "cached 减法后 input 50 + output 5 = 55（缓存不计入总量）")
     }
 
     // MARK: - 增量 / 去重 / 截断
@@ -247,8 +247,8 @@ final class CodexUsageCollectorTests: XCTestCase {
         let bucket = try XCTUnwrap(store.bucketsByKey.first { $0.value.key.model == "gpt-5.2-codex" }?.value)
         XCTAssertEqual(bucket.usage.inputTokens, 20, "input = max(0, 100-80)")
         XCTAssertEqual(bucket.usage.cachedInputTokens, 80)
-        XCTAssertEqual(bucket.usage.totalTokens, 110, "20 + 80 + 0 + 10，按归一化口径总额不变")
-        XCTAssertEqual(store.totalTokens(), 110)
+        XCTAssertEqual(bucket.usage.totalTokens, 30, "20 + 0 + 0 + 10，缓存不计入总量")
+        XCTAssertEqual(store.totalTokens(), 30)
         XCTAssertEqual(store.seenKeys.count, 1)
         XCTAssertNotNil(store.cursors[gpt.standardizedFileURL.path])
     }

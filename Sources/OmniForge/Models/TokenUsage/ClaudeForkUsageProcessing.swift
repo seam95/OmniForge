@@ -109,7 +109,7 @@ enum ClaudeForkUsageProcessing {
         let reasoning = min(completionRaw, max(0, rawUsage.completionTokensDetails?.reasoningTokens ?? 0))
         let output = max(0, completionRaw - reasoning)
         let input = max(0, promptTokens - cacheRead - cacheCreation)
-        let total = input + output + cacheRead + cacheCreation + reasoning
+        let total = input + output + reasoning
         guard total > 0 else { return nil }
         return TokenUsage(
             inputTokens: input,

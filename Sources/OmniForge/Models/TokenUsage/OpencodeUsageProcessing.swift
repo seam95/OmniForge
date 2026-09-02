@@ -121,7 +121,7 @@ enum OpencodeUsageProcessing {
         let reasoning = max(0, tokens.reasoning ?? 0)
         let cached = max(0, tokens.cache?.read ?? 0)
         let cacheWrite = max(0, tokens.cache?.write ?? 0)
-        let total = input + output + reasoning + cached + cacheWrite
+        let total = input + output + reasoning
         guard total > 0 else { return nil }
         return TokenUsage(
             inputTokens: input,

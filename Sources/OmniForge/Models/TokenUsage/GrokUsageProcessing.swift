@@ -174,15 +174,15 @@ enum GrokUsageProcessing {
         let output = max(0, usage.outputTokens ?? 0)
         let cached = max(0, usage.cachedReadTokens ?? 0)
         let reasoning = max(0, usage.reasoningTokens ?? 0)
-        guard inputRaw + output + cached + reasoning > 0 else { return nil }
         let input = max(0, inputRaw - cached)
+        guard input + output + reasoning > 0 else { return nil }
         return TokenUsage(
             inputTokens: Int(input),
             cachedInputTokens: Int(cached),
             cacheCreationInputTokens: 0,
             outputTokens: Int(output),
             reasoningOutputTokens: Int(reasoning),
-            totalTokens: Int(input + cached + output)
+            totalTokens: Int(input + output + reasoning)
         )
     }
 

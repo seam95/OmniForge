@@ -138,7 +138,7 @@ final class WorkbuddyUsageCollectorTests: XCTestCase {
         XCTAssertEqual(buckets.count, 1)
         XCTAssertEqual(buckets.first?.value.usage.inputTokens, 700)
         XCTAssertEqual(buckets.first?.value.usage.cachedInputTokens, 300)
-        XCTAssertEqual(buckets.first?.value.usage.totalTokens, 1200)
+        XCTAssertEqual(buckets.first?.value.usage.totalTokens, 900, "缓存不计入总量")
         XCTAssertEqual(buckets.first?.value.conversationCount, 1)
     }
 

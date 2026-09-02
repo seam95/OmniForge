@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import XCTest
 @testable import OmniForge
 
@@ -176,5 +177,79 @@ final class GRDBUsageStoreTests: XCTestCase {
         let permissions = (attrs[.posixPermissions] as? NSNumber)?.uint16Value
         XCTAssertNotNil(permissions)
         XCTAssertEqual(permissions! & 0o777, 0o600, "数据库文件须 0600")
+    }
+
+    // MARK: - 总量口径迁移（total 不含缓存）
+
+    /// 模拟既有用户库：抹掉口径迁移的已应用记录，使下次初始化重新执行该迁移。
+    private func unapplyTotalRecalculationMigration() throws {
+        let queue = try DatabaseQueue(path: databaseURL.path)
+        try queue.write { db in
+            try db.execute(
+                sql: "DELETE FROM grdb_migrations WHERE identifier = ?",
+                arguments: ["recalculateTotalsExcludingCache"]
+            )
+        }
+    }
+
+    func test_migration_recalculatesBucketTotalsExcludingCache() throws {
+        // 旧口径行：total = 四列之和（含缓存读写）。
+        let legacy = UsageBucketState(
+            key: UsageBucketKey(
+                provider: .zcode,
+                model: "GLM-5.3",
+                bucketStart: Date(timeIntervalSince1970: 1_784_700_000)
+            ),
+            usage: TokenUsage(
+                inputTokens: 1000,
+                cachedInputTokens: 800,
+                cacheCreationInputTokens: 50,
+                outputTokens: 200,
+                reasoningOutputTokens: 30,
+                totalTokens: 2080
+            ),
+            conversationCount: 1
+        )
+        store.upsertBucket(legacy)
+        try unapplyTotalRecalculationMigration()
+        // 重新初始化触发迁移（migrator 在 init 执行）。
+        store = GRDBUsageStore(databaseURL: databaseURL)
+        let migrated = try XCTUnwrap(store.loadBucket(legacy.key))
+        XCTAssertEqual(migrated.usage.totalTokens, 1230, "total = input + output + reasoning")
+        XCTAssertEqual(migrated.usage.inputTokens, 1000, "分项列不受迁移影响")
+        XCTAssertEqual(migrated.usage.cachedInputTokens, 800)
+        XCTAssertEqual(migrated.usage.cacheCreationInputTokens, 50)
+        XCTAssertEqual(migrated.usage.outputTokens, 200)
+        XCTAssertEqual(migrated.usage.reasoningOutputTokens, 30)
+        XCTAssertEqual(migrated.conversationCount, 1)
+        // 幂等：迁移是重算而非增量，重复初始化结果不变。
+        store = GRDBUsageStore(databaseURL: databaseURL)
+        XCTAssertEqual(store.loadBucket(legacy.key)?.usage.totalTokens, 1230)
+    }
+
+    func test_migration_recalculatesMessageStateTotals() throws {
+        // SQLite 差分系 MessageState 形态（lastTotals，opencode/zcode/qoder）。
+        let messageState = """
+        {"lastTotals":{"inputTokens":1000,"cachedInputTokens":800,"cacheCreationInputTokens":50,"outputTokens":200,"reasoningOutputTokens":0,"totalTokens":2050},"fingerprint":"fp-1","dedupedForkCopy":true}
+        """
+        // TraeCn 会话对账 SessionState 形态（totals）。
+        let sessionState = """
+        {"model":"doubao-1.5","bucketStart":1784700000,"totals":{"inputTokens":660,"cachedInputTokens":300,"cacheCreationInputTokens":40,"outputTokens":200,"reasoningOutputTokens":0,"totalTokens":1200}}
+        """
+        store.storeProviderMessageState(.zcode, entries: ["sess_1|msg_1": messageState])
+        store.storeProviderMessageState(.traeCN, entries: ["sess_2": sessionState])
+        try unapplyTotalRecalculationMigration()
+        store = GRDBUsageStore(databaseURL: databaseURL)
+
+        let migratedZcode = store.loadProviderMessageState(.zcode)
+        let payload = try XCTUnwrap(migratedZcode["sess_1|msg_1"])
+        XCTAssertTrue(payload.contains("\"totalTokens\":1200"), "lastTotals.totalTokens 重算为 input + output")
+        XCTAssertTrue(payload.contains("\"fingerprint\":\"fp-1\""), "指纹等其他字段原样保留")
+        XCTAssertTrue(payload.contains("\"dedupedForkCopy\":true"), "tombstone 标记原样保留")
+
+        let migratedTraeCN = store.loadProviderMessageState(.traeCN)
+        let traePayload = try XCTUnwrap(migratedTraeCN["sess_2"])
+        XCTAssertTrue(traePayload.contains("\"totalTokens\":860"), "totals.totalTokens 重算为 input + output")
+        XCTAssertTrue(traePayload.contains("\"model\":\"doubao-1.5\""), "模型与桶字段原样保留")
     }
 }
