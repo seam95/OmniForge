@@ -18,13 +18,13 @@ final class MonitorCardModelBuilderTests: XCTestCase {
 
     // MARK: - CPU
 
-    func test_cpuCard_formatsTotalAndSplitCaption() {
+    func test_cpuCard_formatsTotalWithoutSplitCaption() {
         var snap = SystemSnapshot()
         snap.cpuUsage = CPUUsageReading(total: 0.42, user: 0.30, system: 0.12)
         let models = build(snap, strings: .zhHans)
         let cpu = models.first { $0.id == .cpu }
         XCTAssertEqual(cpu?.primaryText, "42%")
-        XCTAssertEqual(cpu?.secondaryText, "系统 12% • 用户 30%")
+        XCTAssertNil(cpu?.secondaryText) // 系统/用户拆分已随新设计稿下线
         XCTAssertEqual(cpu?.processMetricKind, .cpu)
     }
 
@@ -39,14 +39,14 @@ final class MonitorCardModelBuilderTests: XCTestCase {
         XCTAssertEqual(cpu?.trend, [0.5, 0.5])
     }
 
-    func test_cpuCard_temperatureGoesToMarker() {
+    func test_cpuCard_temperatureGoesToAccessory() {
         var snap = SystemSnapshot()
         snap.cpuUsage = CPUUsageReading(total: 0.42, user: 0.30, system: 0.12)
         snap.cpuTemperature = 45
         let models = build(snap, strings: .zhHans)
         let cpu = models.first { $0.id == .cpu }
         XCTAssertEqual(cpu?.primaryText, "42%")
-        XCTAssertEqual(cpu?.temperatureText, "45°")
+        XCTAssertEqual(cpu?.accessoryText, "45°")
     }
 
     func test_cpuCard_missingReadingShowsPlaceholders() {
@@ -54,12 +54,12 @@ final class MonitorCardModelBuilderTests: XCTestCase {
         let cpu = models.first { $0.id == .cpu }
         XCTAssertEqual(cpu?.primaryText, "--")
         XCTAssertNil(cpu?.secondaryText)
-        XCTAssertNil(cpu?.temperatureText)
+        XCTAssertNil(cpu?.accessoryText)
     }
 
     // MARK: - Memory
 
-    func test_memoryCard_percentPrimaryAndPairCaption() {
+    func test_memoryCard_percentPrimaryAndUsedAccessory() {
         var snap = SystemSnapshot()
         snap.memoryUsed = 4_000_000_000
         snap.memoryTotal = 8_000_000_000
@@ -67,25 +67,10 @@ final class MonitorCardModelBuilderTests: XCTestCase {
         let models = build(snap, strings: .en)
         let memory = models.first { $0.id == .memory }
         XCTAssertEqual(memory?.primaryText, "50%")
-        let sep = Strings.en.monitorSubtitleSeparator
-        XCTAssertEqual(
-            memory?.secondaryText,
-            "\(MetricFormat.shortMemoryPair(used: 4_000_000_000, total: 8_000_000_000)!) \(sep) \(Strings.en.monitorPressureWarning)"
-        )
+        // 大数字旁显示已用量（始终一位小数带单位）；压力文案已随新设计稿下线
+        XCTAssertEqual(memory?.accessoryText, "3.7 GB")
+        XCTAssertNil(memory?.secondaryText)
         XCTAssertEqual(memory?.progress ?? -1, 0.5, accuracy: 0.0001)
-    }
-
-    func test_memoryCard_unknownPressureOmitsSuffix() {
-        var snap = SystemSnapshot()
-        snap.memoryUsed = 4_000_000_000
-        snap.memoryTotal = 8_000_000_000
-        snap.memoryPressure = .unknown
-        let models = build(snap, strings: .en)
-        let memory = models.first { $0.id == .memory }
-        XCTAssertEqual(
-            memory?.secondaryText,
-            MetricFormat.shortMemoryPair(used: 4_000_000_000, total: 8_000_000_000)
-        )
     }
 
     func test_memoryCard_missingValuesFallsBackToPlaceholders() {
@@ -96,7 +81,7 @@ final class MonitorCardModelBuilderTests: XCTestCase {
         let models = build(snap, strings: .zhHans)
         let memory = models.first { $0.id == .memory }
         XCTAssertEqual(memory?.primaryText, "--")
-        XCTAssertEqual(memory?.secondaryText, Strings.zhHans.monitorPressureWarning)
+        XCTAssertNil(memory?.accessoryText)
         XCTAssertNil(memory?.progress)
     }
 
@@ -169,14 +154,14 @@ final class MonitorCardModelBuilderTests: XCTestCase {
 
     // MARK: - GPU
 
-    func test_gpuCard_primaryIsPurePercentAndTemperatureMarker() {
+    func test_gpuCard_primaryIsPurePercentAndTemperatureAccessory() {
         var snap = SystemSnapshot()
         snap.gpuUsage = 0.46
         snap.gpuTemperature = 63
         let models = build(snap, strings: .zhHans)
         let gpu = models.first { $0.id == .gpu }
         XCTAssertEqual(gpu?.primaryText, "46%")
-        XCTAssertEqual(gpu?.temperatureText, "63°")
+        XCTAssertEqual(gpu?.accessoryText, "63°")
         XCTAssertNil(gpu?.secondaryText)
         XCTAssertEqual(gpu?.processMetricKind, .gpu)
     }

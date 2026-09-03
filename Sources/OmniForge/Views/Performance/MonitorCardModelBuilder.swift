@@ -20,8 +20,8 @@ struct MonitorCardModel: Equatable, Identifiable {
     var secondaryTrend: [Double]? = nil
     /// 速率文本（磁盘读/写、网络下行/上行，纯文本无方向前缀）
     var chipTexts: [String] = []
-    /// 温度标记（三栏标签行右侧，仅 CPU/GPU）
-    var temperatureText: String? = nil
+    /// 大数字旁的次要文本（标签行右侧）：CPU/GPU 为温度，内存为已用量
+    var accessoryText: String? = nil
 }
 
 /// Pure mapping from snapshot + history + configuration into overview card models.
@@ -93,27 +93,19 @@ enum MonitorCardModelBuilder {
         history: MetricHistory
     ) -> MonitorCardModel {
         let total = snapshot.cpuUsage?.total
-        let secondary: String? = {
-            guard let user = snapshot.cpuUsage?.user, let system = snapshot.cpuUsage?.system else {
-                return nil
-            }
-            return "\(strings.monitorCPUSystem) \(MetricFormat.percent(system) ?? "--")"
-                + " \(strings.monitorSubtitleSeparator) "
-                + "\(strings.monitorCPUUser) \(MetricFormat.percent(user) ?? "--")"
-        }()
         return MonitorCardModel(
             id: .cpu,
             title: strings.monitorMetricCpu,
             systemImage: "cpu",
             primaryText: MetricFormat.percent(total) ?? "--",
-            secondaryText: secondary,
+            secondaryText: nil,
             progress: total,
             badgeText: nil,
             showsLiveDot: false,
             issueText: issueText(for: snapshot.issues[.cpu], strings: strings),
             processMetricKind: .cpu,
             trend: history.cpu,
-            temperatureText: MetricFormat.temperature(snapshot.cpuTemperature, unit: temperatureUnit)
+            accessoryText: MetricFormat.temperature(snapshot.cpuTemperature, unit: temperatureUnit)
         )
     }
 
@@ -128,27 +120,19 @@ enum MonitorCardModelBuilder {
             guard let used, let total, total > 0 else { return nil }
             return Double(used) / Double(total)
         }()
-        // caption：`13.0 / 16 GB`（unknown 压力省略后缀）
-        var captionParts: [String] = []
-        if let pair = MetricFormat.shortMemoryPair(used: used, total: total) {
-            captionParts.append(pair)
-        }
-        if let pressure = pressureSecondary(snapshot.memoryPressure, strings: strings) {
-            captionParts.append(pressure)
-        }
-        let caption = captionParts.isEmpty ? nil : captionParts.joined(separator: " \(strings.monitorSubtitleSeparator) ")
         return MonitorCardModel(
             id: .memory,
             title: strings.monitorMetricMemory,
             systemImage: "memorychip",
             primaryText: MetricFormat.percent(fraction) ?? "--",
-            secondaryText: caption,
+            secondaryText: nil,
             progress: fraction,
             badgeText: nil,
             showsLiveDot: false,
             issueText: issueText(for: snapshot.issues[.memory], strings: strings),
             processMetricKind: .memory,
-            trend: history.memory
+            trend: history.memory,
+            accessoryText: MetricFormat.memoryUsedShort(used)
         )
     }
 
@@ -283,7 +267,6 @@ enum MonitorCardModelBuilder {
         temperatureUnit: TemperatureUnit,
         history: MetricHistory
     ) -> MonitorCardModel {
-        // 大数字只放百分比；温度移到标签行右侧标记
         return MonitorCardModel(
             id: .gpu,
             title: strings.monitorMetricGpu,
@@ -296,7 +279,7 @@ enum MonitorCardModelBuilder {
             issueText: issueText(for: snapshot.issues[.gpu], strings: strings),
             processMetricKind: .gpu,
             trend: history.gpu,
-            temperatureText: MetricFormat.temperature(snapshot.gpuTemperature, unit: temperatureUnit)
+            accessoryText: MetricFormat.temperature(snapshot.gpuTemperature, unit: temperatureUnit)
         )
     }
 
@@ -332,15 +315,6 @@ enum MonitorCardModelBuilder {
             return strings.monitorIssueUnsupported
         case .failed:
             return strings.monitorIssueFailed
-        }
-    }
-
-    private static func pressureSecondary(_ pressure: MemoryPressure, strings: Strings) -> String? {
-        switch pressure {
-        case .normal: return strings.monitorPressureNormal
-        case .warning: return strings.monitorPressureWarning
-        case .critical: return strings.monitorPressureCritical
-        case .unknown: return nil
         }
     }
 }

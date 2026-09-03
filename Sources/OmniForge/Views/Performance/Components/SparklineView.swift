@@ -4,6 +4,7 @@ import SwiftUI
 ///
 /// 不加隐式动画，随 snapshot 同频直接重绘；空/单点/恒定值由 `SparklineNormalizer` 兜底。
 /// `fillHeight > 0` 时线下叠面积渐变；`endDotRadius > 0` 时在右端点画圆点标记最新值。
+/// `hoverFormatter` 非 nil 时启用悬浮取值：指示线 + 选中点 + 数值气泡。
 struct SparklineView: View {
     let values: [Double]
     let color: Color
@@ -11,13 +12,19 @@ struct SparklineView: View {
     var lineWidth: CGFloat = 1.5
     var fillHeight: CGFloat = 0.18
     var endDotRadius: CGFloat = 0
+    /// 非 nil 启用悬浮取值：把悬停采样点的原始值转成气泡文本
+    var hoverFormatter: ((Double) -> String)? = nil
+
+    @State private var hoveredIndex: Int?
+
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         GeometryReader { proxy in
             let points = resolvedPoints(size: proxy.size)
 
-            if points.count >= 2 {
-                ZStack {
+            ZStack {
+                if points.count >= 2 {
                     if fillHeight > 0 {
                         areaPath(points: points, size: proxy.size)
                     }
@@ -29,9 +36,35 @@ struct SparklineView: View {
                             .position(tip)
                     }
                 }
+                if let index = hoveredIndex,
+                   points.indices.contains(index) {
+                    let tip = points[index]
+                    hoverIndicator(point: tip, height: proxy.size.height)
+                    hoverBubble(point: tip, width: proxy.size.width)
+                }
+            }
+            .contentShape(Rectangle())
+            .onContinuousHover(coordinateSpace: .local) { phase in
+                updateHover(phase: phase, width: proxy.size.width)
             }
         }
     }
+
+    // MARK: - 悬浮取值
+
+    private func updateHover(phase: HoverPhase, width: CGFloat) {
+        guard hoverFormatter != nil else { return }
+        switch phase {
+        case .active(let location):
+            hoveredIndex = SparklineHoverLocator.index(
+                atX: location.x, width: width, count: values.count
+            )
+        case .ended:
+            hoveredIndex = nil
+        }
+    }
+
+    // MARK: - 绘制
 
     /// 归一化并映射到视图坐标；单点补成水平基线，不足两点返回原样（不绘制）。
     private func resolvedPoints(size: CGSize) -> [CGPoint] {
@@ -79,6 +112,80 @@ struct SparklineView: View {
             )
         )
     }
+
+    // MARK: - 悬浮层
+
+    /// 悬停 x 处的全高指示线 + 折线上的选中点。
+    private func hoverIndicator(point: CGPoint, height: CGFloat) -> some View {
+        SparklineHoverIndicator(point: point, height: height, color: color)
+    }
+
+    /// 数值气泡：锚在选中点上方，水平按三档对齐避免出界。
+    private func hoverBubble(point: CGPoint, width: CGFloat) -> some View {
+        Color.clear
+            .frame(width: 1, height: 1)
+            .position(point)
+            .overlay(alignment: SparklineHoverLocator.bubbleAlignment(atX: point.x, width: width)) {
+                if let formatter = hoverFormatter,
+                   let index = hoveredIndex,
+                   values.indices.contains(index) {
+                    SparklineBubbleShell(colorScheme: colorScheme) {
+                        Text(formatter(values[index]))
+                            .font(.system(size: 11, weight: .medium).monospacedDigit())
+                    }
+                    .padding(.bottom, 10)
+                }
+            }
+            .allowsHitTesting(false)
+    }
+}
+
+/// 折线悬浮气泡壳 — 胶囊底 + 发丝描边 + 微阴影，内容自定义（单值文本 / 双值行）。
+struct SparklineBubbleShell<Content: View>: View {
+    let colorScheme: ColorScheme
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        content
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(colorScheme == .light ? Color.white : Color(white: 0.24))
+                    .shadow(color: .black.opacity(0.14), radius: 3, y: 1)
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(
+                        colorScheme == .light ? Theme.Stats.separator : Color.white.opacity(0.14),
+                        lineWidth: 1
+                    )
+            )
+            .fixedSize()
+    }
+}
+
+/// 折线悬浮指示层 — 全高竖线 + 描边选中点，单线与双线共用。
+struct SparklineHoverIndicator: View {
+    let point: CGPoint
+    let height: CGFloat
+    let color: Color
+
+    var body: some View {
+        ZStack {
+            Rectangle()
+                .fill(Color.secondary.opacity(0.3))
+                .frame(width: 1, height: height)
+                .position(x: point.x, y: height / 2)
+
+            Circle()
+                .fill(color)
+                .overlay(Circle().strokeBorder(Color.white, lineWidth: 1.5))
+                .frame(width: 7, height: 7)
+                .position(point)
+        }
+    }
 }
 
 /// 归一化工具 — 纯函数，独立可测。
@@ -97,5 +204,23 @@ enum SparklineNormalizer {
             let clamped = min(max(value, domain.lowerBound), domain.upperBound)
             return (clamped - domain.lowerBound) / span
         }
+    }
+}
+
+/// 悬浮取值几何工具 — 纯函数，独立可测。
+enum SparklineHoverLocator {
+    /// 悬停 x → 最近采样点下标；不足两点（无法定位趋势）返回 nil。
+    static func index(atX x: CGFloat, width: CGFloat, count: Int) -> Int? {
+        guard count >= 2, width > 0 else { return nil }
+        let clamped = min(max(x, 0), width)
+        let ratio = clamped / width
+        return min(Int((ratio * CGFloat(count - 1)).rounded()), count - 1)
+    }
+
+    /// 气泡水平对齐三档：左 1/3 左贴、右 1/3 右贴、中间居中，避免气泡出界。
+    static func bubbleAlignment(atX x: CGFloat, width: CGFloat) -> Alignment {
+        if x < width / 3 { return .bottomLeading }
+        if x > width * 2 / 3 { return .bottomTrailing }
+        return .bottom
     }
 }

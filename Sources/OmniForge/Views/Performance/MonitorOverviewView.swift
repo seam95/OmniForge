@@ -23,8 +23,8 @@ enum MonitorOverviewPalette {
     }
 }
 
-/// Overview page（平面分区布局）：设备摘要 Header → CPU|GPU|内存三栏 → 网络 → 磁盘 → 电池。
-/// 无卡片：浅色白底 + 发丝线分区；点击导航（三栏/网络 → 排名，磁盘 → 详情）保留。
+/// Overview page（平面分区布局）：设备摘要 Header → CPU/GPU/内存全宽指标区 → 网络 → 磁盘+电池两栏。
+/// 无卡片：浅色白底 + 发丝线分区；点击导航（指标/网络 → 排名，磁盘 → 详情）保留。
 struct MonitorOverviewView: View {
     let snapshot: SystemSnapshot
     let history: MetricHistory
@@ -90,7 +90,7 @@ struct MonitorOverviewView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .center) {
                 Text(deviceSummary.hostName)
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                     .lineLimit(1)
 
@@ -99,7 +99,8 @@ struct MonitorOverviewView: View {
                 statusPill
             }
 
-            HStack(alignment: .center) {
+            // 刷新按钮紧跟副标题文字（设计稿不贴右缘）
+            HStack(alignment: .center, spacing: 2) {
                 if let subtitle = subtitleText {
                     Text(subtitle)
                         .font(.system(size: 12, weight: .regular))
@@ -107,16 +108,13 @@ struct MonitorOverviewView: View {
                         .lineLimit(1)
                 }
 
-                Spacer(minLength: 8)
-
-                // 负 padding 抵消 IconButton 的 24pt 点击框，让图标视觉贴合行高与右缘
+                // 负 padding 抵消 IconButton 的 24pt 点击框，让图标视觉贴合行高
                 IconButton(
                     systemImage: "arrow.clockwise",
                     tint: MonitorOverviewPalette.auxiliary(colorScheme),
                     help: strings.monitorRefreshAll,
                     action: onRefresh
                 )
-                .padding(.trailing, -6)
                 .padding(.vertical, -4)
             }
         }
@@ -167,31 +165,28 @@ struct MonitorOverviewView: View {
     @ViewBuilder
     private func sectionView(_ section: MonitorOverviewSection) -> some View {
         switch section {
-        case let .triple(models):
-            HStack(alignment: .top, spacing: 0) {
-                ForEach(models) { model in
-                    MonitorMetricColumn(
-                        model: model,
-                        accent: MonitorCardAccent.color(for: model.id),
-                        action: model.processMetricKind.map { kind in
-                            { onSelectRankable(kind) }
-                        }
-                    )
-                    // idealWidth 置 0：HStack 对 maxWidth:.infinity 子视图是
-                    // 「理想宽度 + 均分剩余空间」而非 flex:1 均分，三栏文本长度
-                    // 不同会分得不同宽度；理想宽归零后严格等宽，折线起点对齐。
-                    .frame(idealWidth: 0, maxWidth: .infinity, alignment: .leading)
+        case let .metric(model):
+            MonitorMetricSection(
+                model: model,
+                accent: MonitorCardAccent.color(for: model.id),
+                action: model.processMetricKind.map { kind in
+                    { onSelectRankable(kind) }
                 }
-            }
-            // 栏内水平 12 + hover 底 4 = 设计稿栏内 16；整区 4 补齐首栏 20 / 末栏 20
-            .padding(.horizontal, 4)
-            .padding(.vertical, 16)
+            )
 
         case let .network(model):
             MonitorNetworkSection(
                 model: model,
                 strings: strings,
                 action: { onSelectRankable(.network) }
+            )
+
+        case let .diskBattery(disk, battery):
+            MonitorDiskBatterySection(
+                disk: disk,
+                battery: battery,
+                strings: strings,
+                onSelectDiskDetail: onSelectDiskDetail
             )
 
         case let .disk(model):
@@ -207,16 +202,16 @@ struct MonitorOverviewView: View {
     }
 }
 
-/// 区块公共样式：6pt 彩色方块标签、悬浮底、字号梯度。
+/// 区块公共样式：8pt 彩色圆点标签、悬浮底、字号梯度。
 private enum MonitorSectionStyle {
     static let labelFont = Font.system(size: 12, weight: .semibold)
     static let labelTracking: CGFloat = 1
-    static let squareSize: CGFloat = 6
+    static let dotSize: CGFloat = 8
 
-    static func square(_ color: Color) -> some View {
-        RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+    static func dot(_ color: Color) -> some View {
+        Circle()
             .fill(color)
-            .frame(width: squareSize, height: squareSize)
+            .frame(width: dotSize, height: dotSize)
     }
 }
 
@@ -247,8 +242,8 @@ private struct MonitorTappableSection<Content: View>: View {
     }
 }
 
-/// 三栏指标列：标签 + 温度标记 → 28pt 大数字 → 36pt 细线折线 → 明细（仅 CPU）。
-private struct MonitorMetricColumn: View {
+/// 全宽指标区（CPU/GPU/内存共用）：标签行（圆点+名称 → 大数字+附属值）→ 全宽折线。
+private struct MonitorMetricSection: View {
     let model: MonitorCardModel
     let accent: Color
     /// nil 不可点（当前三栏均可点进排名，保留口子）
@@ -256,32 +251,58 @@ private struct MonitorMetricColumn: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
+    /// 悬浮取值格式化：百分比域的采样点直接回显百分数。
+    private var hoverFormatter: ((Double) -> String)? {
+        model.trend == nil ? nil : { MetricFormat.percent($0) ?? "--" }
+    }
+
+    /// 走势域自适应数据 min...max（对齐设计稿满幅形态）；退化时回 0...1 由归一化兜底。
+    private var trendDomain: ClosedRange<Double> {
+        guard let trend = model.trend,
+              let low = trend.min(),
+              let high = trend.max(),
+              high > low else { return 0...1 }
+        return low...high
+    }
+
     var body: some View {
         Group {
             if let action {
-                MonitorTappableSection(action: action) { column }
+                MonitorTappableSection(action: action) { content }
             } else {
-                column
+                content
             }
         }
     }
 
-    private var column: some View {
+    private var content: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
+            HStack(alignment: .center, spacing: 6) {
+                MonitorSectionStyle.dot(accent)
+
                 Text(model.title)
                     .font(MonitorSectionStyle.labelFont)
                     .tracking(MonitorSectionStyle.labelTracking)
                     .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
                     .lineLimit(1)
 
-                Spacer(minLength: 4)
+                Spacer(minLength: 8)
 
-                if let temperature = model.temperatureText {
-                    Text(temperature)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(accent)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(model.primaryText)
+                        .font(.system(size: 20, weight: .semibold).monospacedDigit())
+                        .tracking(-0.5)
+                        .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                         .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+
+                    if let accessory = model.accessoryText {
+                        Text(accessory)
+                            .font(.system(size: 14, weight: .regular).monospacedDigit())
+                            .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
                 }
             }
 
@@ -292,34 +313,20 @@ private struct MonitorMetricColumn: View {
                     .lineLimit(2)
                     .minimumScaleFactor(0.8)
             } else {
-                Text(model.primaryText)
-                    .font(.system(size: 28, weight: .semibold).monospacedDigit())
-                    .tracking(-0.8)
-                    .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-
                 SparklineView(
                     values: model.trend ?? [],
                     color: accent,
-                    lineWidth: 1.3,
+                    domain: trendDomain,
+                    lineWidth: 1.5,
                     fillHeight: 0,
-                    endDotRadius: 2
+                    endDotRadius: 2.5,
+                    hoverFormatter: hoverFormatter
                 )
-                .frame(height: 36)
-
-                    // 明细行仅 CPU（系统/用户拆分）有内容，其余栏留空保持顶部对齐
-                if model.id == .cpu, let detail = model.secondaryText {
-                    Text(detail)
-                        .font(Theme.Stats.font10Regular)
-                        .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
+                .frame(height: 44)
             }
         }
-        .padding(.horizontal, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 }
 
@@ -344,7 +351,7 @@ private struct MonitorNetworkSection: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .center, spacing: 8) {
                     HStack(spacing: 6) {
-                        MonitorSectionStyle.square(Theme.Stats.down)
+                        MonitorSectionStyle.dot(Theme.Stats.down)
                         Text(model.title)
                             .font(MonitorSectionStyle.labelFont)
                             .tracking(MonitorSectionStyle.labelTracking)
@@ -384,7 +391,8 @@ private struct MonitorNetworkSection: View {
                 } else {
                     DualSparklineView(
                         downValues: model.trend ?? [],
-                        upValues: model.secondaryTrend ?? []
+                        upValues: model.secondaryTrend ?? [],
+                        hoverFormatter: { MetricFormat.bytesPerSec($0) }
                     )
                     .frame(height: 44)
 
@@ -403,7 +411,174 @@ private struct MonitorNetworkSection: View {
     }
 }
 
-/// 磁盘区：标签行（右侧「已用 x GB」）→ IO 行（读主色 / 写次要）。
+/// 磁盘+电池左右两栏（等宽 + 中间竖直发丝线）；磁盘栏可点进详情，电池栏不可点。
+private struct MonitorDiskBatterySection: View {
+    let disk: MonitorCardModel
+    let battery: MonitorCardModel
+    let strings: Strings
+    let onSelectDiskDetail: () -> Void
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            MonitorTappableSection(action: onSelectDiskDetail) {
+                diskColumn
+            }
+            // idealWidth 置 0 + maxWidth .infinity：两栏严格等宽（同三栏等宽的处理）
+            .frame(idealWidth: 0, maxWidth: .infinity, alignment: .leading)
+
+            Rectangle()
+                .fill(MonitorOverviewPalette.hairline(colorScheme))
+                .frame(width: 1)
+                .padding(.vertical, 10)
+
+            batteryColumn
+                .frame(idealWidth: 0, maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 12)
+    }
+
+    // MARK: 磁盘栏
+
+    private var diskReadText: String {
+        disk.chipTexts.indices.contains(0) ? disk.chipTexts[0] : "--"
+    }
+
+    private var diskWriteText: String {
+        disk.chipTexts.indices.contains(1) ? disk.chipTexts[1] : "--"
+    }
+
+    /// 栏内水平 padding 已按 hover 底外扩 4pt 折算：视觉 20 = 16+4、12 = 8+4
+    private var diskColumn: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 6) {
+                MonitorSectionStyle.dot(MonitorCardAccent.color(for: .disk))
+
+                Text(disk.title)
+                    .font(MonitorSectionStyle.labelFont)
+                    .tracking(MonitorSectionStyle.labelTracking)
+                    .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
+                    .lineLimit(1)
+
+                Spacer(minLength: 6)
+
+                if let badge = disk.badgeText {
+                    Text(badge)
+                        .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+            }
+
+            if let issue = disk.issueText {
+                Text(issue)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(Theme.Stats.up)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    ioRow(
+                        systemImage: "arrow.down",
+                        iconOpacity: 1,
+                        text: "\(strings.monitorMetricRead) \(diskReadText)",
+                        font: .system(size: 14, weight: .medium),
+                        color: MonitorOverviewPalette.primary(colorScheme)
+                    )
+                    ioRow(
+                        systemImage: "arrow.up",
+                        iconOpacity: 0.6,
+                        text: "\(strings.monitorMetricWrite) \(diskWriteText)",
+                        font: .system(size: 14, weight: .regular),
+                        color: MonitorOverviewPalette.secondary(colorScheme)
+                    )
+                }
+            }
+        }
+        .padding(.leading, 16)
+        .padding(.trailing, 8)
+        .padding(.vertical, 2)
+    }
+
+    private func ioRow(
+        systemImage: String,
+        iconOpacity: Double,
+        text: String,
+        font: Font,
+        color: Color
+    ) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: systemImage)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(MonitorCardAccent.color(for: .disk).opacity(iconOpacity))
+            Text(text)
+                .font(font.monospacedDigit())
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+    }
+
+    // MARK: 电池栏
+
+    private var batteryColumn: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 6) {
+                MonitorSectionStyle.dot(MonitorCardAccent.color(for: .battery))
+
+                Text(battery.title)
+                    .font(MonitorSectionStyle.labelFont)
+                    .tracking(MonitorSectionStyle.labelTracking)
+                    .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
+                    .lineLimit(1)
+
+                Spacer(minLength: 6)
+
+                Text(battery.primaryText)
+                    .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+
+            if let issue = battery.issueText {
+                Text(issue)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(Theme.Stats.up)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            } else {
+                if let progress = battery.progress {
+                    GeometryReader { proxy in
+                        ZStack(alignment: .leading) {
+                            Capsule(style: .continuous)
+                                .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.12))
+                            Capsule(style: .continuous)
+                                .fill(MonitorCardAccent.barTint(for: .battery, progress: progress))
+                                .frame(width: proxy.size.width * min(max(progress, 0), 1))
+                        }
+                    }
+                    .frame(height: 5)
+                }
+
+                if let caption = battery.secondaryText {
+                    Text(caption)
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+            }
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, 16)
+        .padding(.vertical, 2)
+    }
+}
+
+/// 磁盘独占全宽（电池被隐藏时）：标签行（右侧「已用 x GB」）→ IO 行（读/写横排）。
 private struct MonitorDiskSection: View {
     let model: MonitorCardModel
     let strings: Strings
@@ -423,7 +598,7 @@ private struct MonitorDiskSection: View {
         MonitorTappableSection(action: action) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .center, spacing: 6) {
-                    MonitorSectionStyle.square(MonitorCardAccent.color(for: .disk))
+                    MonitorSectionStyle.dot(MonitorCardAccent.color(for: .disk))
                     Text(model.title)
                         .font(MonitorSectionStyle.labelFont)
                         .tracking(MonitorSectionStyle.labelTracking)
@@ -490,7 +665,7 @@ private struct MonitorDiskSection: View {
     }
 }
 
-/// 电池区：标签行（右侧「电量 · 温度」）→ 4pt 进度条 → 明细行。不可点。
+/// 电池独占全宽（磁盘被隐藏时）：标签行（右侧「电量 · 温度」）→ 4pt 进度条 → 明细行。不可点。
 private struct MonitorBatterySection: View {
     let model: MonitorCardModel
 
@@ -499,7 +674,7 @@ private struct MonitorBatterySection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 6) {
-                MonitorSectionStyle.square(MonitorCardAccent.color(for: .battery))
+                MonitorSectionStyle.dot(MonitorCardAccent.color(for: .battery))
                 Text(model.title)
                     .font(MonitorSectionStyle.labelFont)
                     .tracking(MonitorSectionStyle.labelTracking)
@@ -531,7 +706,7 @@ private struct MonitorBatterySection: View {
                                 .frame(width: proxy.size.width * min(max(progress, 0), 1))
                         }
                     }
-                    .frame(height: 4)
+                    .frame(height: 5)
                 }
 
                 if let caption = model.secondaryText {

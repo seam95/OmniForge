@@ -14,34 +14,55 @@ final class MonitorOverviewSectionPlannerTests: XCTestCase {
         )
     }
 
-    func test_defaultConfiguration_producesFourSectionsInOrder() {
+    func test_defaultConfiguration_producesMetricSectionsNetworkAndDiskBattery() {
         let sections = MonitorOverviewSectionPlanner.sections(from: buildModels())
         XCTAssertEqual(sections.map(\.id), [
-            "section.triple", "section.network", "section.disk", "section.battery",
+            "section.metric.cpu", "section.metric.gpu", "section.metric.memory",
+            "section.network", "section.diskBattery",
         ])
-        guard case let .triple(models) = sections.first else {
-            return XCTFail("首分区应为三栏")
+        guard case let .diskBattery(disk, battery) = sections.last else {
+            return XCTFail("末分区应为磁盘+电池两栏")
         }
-        XCTAssertEqual(models.map(\.id), [.cpu, .gpu, .memory])
+        XCTAssertEqual(disk.id, .disk)
+        XCTAssertEqual(battery.id, .battery)
     }
 
-    func test_hidingSingleMetric_shrinksTripleButKeepsOrder() {
+    func test_hidingSingleMetric_removesThatMetricSectionOnly() {
         var config = MonitorConfiguration()
         config.visiblePanelMetrics.remove(.gpu)
         let sections = MonitorOverviewSectionPlanner.sections(from: buildModels(configuration: config))
-        guard case let .triple(models) = sections.first else {
-            return XCTFail("首分区应为三栏")
-        }
-        XCTAssertEqual(models.map(\.id), [.cpu, .memory])
-        XCTAssertEqual(sections.count, 4)
+        XCTAssertEqual(sections.map(\.id), [
+            "section.metric.cpu", "section.metric.memory",
+            "section.network", "section.diskBattery",
+        ])
     }
 
-    func test_hidingSystemSection_removesTripleEntirely() {
+    func test_hidingSystemSection_removesMetricSectionsEntirely() {
         var config = MonitorConfiguration()
         config.visibleSections = [.network, .disk, .power]
         let sections = MonitorOverviewSectionPlanner.sections(from: buildModels(configuration: config))
         XCTAssertEqual(sections.map(\.id), [
-            "section.network", "section.disk", "section.battery",
+            "section.network", "section.diskBattery",
+        ])
+    }
+
+    func test_hidingBatterySection_keepsDiskAsFullWidth() {
+        var config = MonitorConfiguration()
+        config.visibleSections = [.system, .network, .disk]
+        let sections = MonitorOverviewSectionPlanner.sections(from: buildModels(configuration: config))
+        XCTAssertEqual(sections.map(\.id), [
+            "section.metric.cpu", "section.metric.gpu", "section.metric.memory",
+            "section.network", "section.disk",
+        ])
+    }
+
+    func test_hidingDiskSection_keepsBatteryAsFullWidth() {
+        var config = MonitorConfiguration()
+        config.visibleSections = [.system, .network, .power]
+        let sections = MonitorOverviewSectionPlanner.sections(from: buildModels(configuration: config))
+        XCTAssertEqual(sections.map(\.id), [
+            "section.metric.cpu", "section.metric.gpu", "section.metric.memory",
+            "section.network", "section.battery",
         ])
     }
 
@@ -52,10 +73,20 @@ final class MonitorOverviewSectionPlannerTests: XCTestCase {
         XCTAssertTrue(sections.isEmpty)
     }
 
-    func test_sectionModelsCarryCardData() {
+    func test_singleModelSectionsCarryCardData() {
         let sections = MonitorOverviewSectionPlanner.sections(from: buildModels())
-        for section in sections.dropFirst() {
+        for section in sections.dropLast() {
             XCTAssertNotNil(section.model)
+        }
+    }
+
+    func test_everySectionExposesAccentCardID() {
+        let sections = MonitorOverviewSectionPlanner.sections(from: buildModels())
+        for section in sections {
+            XCTAssertNotNil(section.accentCardID)
+        }
+        if case let .diskBattery(disk, _) = sections.last {
+            XCTAssertEqual(disk.id, .disk, "两栏分区主色取首栏（磁盘）")
         }
     }
 }

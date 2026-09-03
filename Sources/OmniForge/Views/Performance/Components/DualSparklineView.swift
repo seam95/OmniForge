@@ -4,10 +4,17 @@ import SwiftUI
 ///
 /// 共享 domain `0...max(up, down, 1)`：上行通常远小于下行，自然沉在下方区域。
 /// 上行线降低不透明度以区分主次；下行右端圆点标记最新值。
+/// `hoverFormatter` 非 nil 时启用悬浮取值：指示线 + 下行选中点 + 下/上双值气泡。
 struct DualSparklineView: View {
     let downValues: [Double]
     let upValues: [Double]
     var lineWidth: CGFloat = 1.4
+    /// 非 nil 启用悬浮取值；下行/上行共用同一格式化器（网络场景均为速率）。
+    var hoverFormatter: ((Double) -> String)? = nil
+
+    @State private var hoveredIndex: Int?
+
+    @Environment(\.colorScheme) private var colorScheme
 
     private var domain: ClosedRange<Double> {
         let peak = max(downValues.max() ?? 0, upValues.max() ?? 0)
@@ -15,22 +22,94 @@ struct DualSparklineView: View {
     }
 
     var body: some View {
-        ZStack {
-            SparklineView(
-                values: upValues,
-                color: Theme.Stats.up.opacity(0.55),
-                domain: domain,
-                lineWidth: lineWidth,
-                fillHeight: 0
-            )
-            SparklineView(
-                values: downValues,
-                color: Theme.Stats.down,
-                domain: domain,
-                lineWidth: lineWidth,
-                fillHeight: 0,
-                endDotRadius: 2.2
-            )
+        GeometryReader { proxy in
+            ZStack {
+                SparklineView(
+                    values: upValues,
+                    color: Theme.Stats.up.opacity(0.55),
+                    domain: domain,
+                    lineWidth: lineWidth,
+                    fillHeight: 0
+                )
+                SparklineView(
+                    values: downValues,
+                    color: Theme.Stats.down,
+                    domain: domain,
+                    lineWidth: lineWidth,
+                    fillHeight: 0,
+                    endDotRadius: 2.2
+                )
+
+                if let index = hoveredIndex, downValues.indices.contains(index) {
+                    let point = CGPoint(x: hoverX(index: index, width: proxy.size.width),
+                                        y: downY(index: index, height: proxy.size.height))
+                    SparklineHoverIndicator(point: point, height: proxy.size.height, color: Theme.Stats.down)
+                    hoverBubble(point: point, width: proxy.size.width)
+                }
+            }
+            .contentShape(Rectangle())
+            .onContinuousHover(coordinateSpace: .local) { phase in
+                updateHover(phase: phase, width: proxy.size.width)
+            }
         }
+    }
+
+    // MARK: - 悬浮取值
+
+    private func updateHover(phase: HoverPhase, width: CGFloat) {
+        guard hoverFormatter != nil else { return }
+        switch phase {
+        case .active(let location):
+            hoveredIndex = SparklineHoverLocator.index(
+                atX: location.x, width: width, count: downValues.count
+            )
+        case .ended:
+            hoveredIndex = nil
+        }
+    }
+
+    /// 悬停 x 与共享 domain 下行线的 y。
+    private func hoverX(index: Int, width: CGFloat) -> CGFloat {
+        guard downValues.count > 1, width > 0 else { return 0 }
+        return width * CGFloat(index) / CGFloat(downValues.count - 1)
+    }
+
+    private func downY(index: Int, height: CGFloat) -> CGFloat {
+        let normalized = SparklineNormalizer.normalize(values: downValues, domain: domain)
+        guard normalized.indices.contains(index) else { return height / 2 }
+        return height * (1 - normalized[index])
+    }
+
+    private func hoverBubble(point: CGPoint, width: CGFloat) -> some View {
+        Color.clear
+            .frame(width: 1, height: 1)
+            .position(point)
+            .overlay(alignment: SparklineHoverLocator.bubbleAlignment(atX: point.x, width: width)) {
+                if let formatter = hoverFormatter,
+                   let index = hoveredIndex,
+                   downValues.indices.contains(index) {
+                    SparklineBubbleShell(colorScheme: colorScheme) {
+                        HStack(spacing: 6) {
+                            HStack(spacing: 2) {
+                                Image(systemName: "arrow.down")
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .foregroundStyle(Theme.Stats.down)
+                                Text(formatter(downValues[index]))
+                                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                            }
+                            HStack(spacing: 2) {
+                                Image(systemName: "arrow.up")
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .foregroundStyle(Theme.Stats.up)
+                                Text(upValues.indices.contains(index)
+                                    ? formatter(upValues[index]) : "--")
+                                    .font(.system(size: 11, weight: .regular).monospacedDigit())
+                            }
+                        }
+                    }
+                    .padding(.bottom, 10)
+                }
+            }
+            .allowsHitTesting(false)
     }
 }

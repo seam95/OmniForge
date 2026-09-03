@@ -156,6 +156,14 @@ enum MetricFormat {
         return String(format: "%.1f / %@", usedValue, bytes(total))
     }
 
+    /// 大数字旁的内存已用量短格式：`"13.3 GB"` — 始终一位小数带单位。
+    /// 与 `bytes(_:)` 的区别：≥10 也保留小数，跟住设计稿次要文本的精度。
+    static func memoryUsedShort(_ used: UInt64?) -> String? {
+        guard let used else { return nil }
+        let (value, unit) = scale(Double(used))
+        return String(format: "%.1f %@", value, unit)
+    }
+
     static func temperature(_ value: Double?, unit: TemperatureUnit) -> String? {
         switch unit {
         case .celsius: return celsius(value)
