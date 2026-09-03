@@ -58,12 +58,29 @@ extension View {
     }
 }
 
+/// 实用工具页内部导航：列表 ↔ 详情。由宿主（控制中心容器）持有，
+/// 面板切换期间视图销毁重建也不丢失所在层级。
+enum UtilityToolsRoute: Equatable {
+    case list
+    case detail(UtilityTool)
+}
+
 enum UtilityToolsPresentation {
     static func resolvedSelection(
         storedRawValue: String,
         visibleTools: [UtilityTool]
     ) -> UtilityTool? {
         UtilityTool.resolvedSelection(UtilityTool(rawValue: storedRawValue), in: visibleTools)
+    }
+
+    /// 重新进入本页时的路由决策：仅"单工具且仍停列表层"时直达详情，
+    /// 其余情况保留现状（面板切换回来不再弹回列表）。
+    static func resolvedReentryRoute(
+        current: UtilityToolsRoute,
+        visibleTools: [UtilityTool]
+    ) -> UtilityToolsRoute {
+        guard current == .list, visibleTools.count == 1 else { return current }
+        return .detail(visibleTools[0])
     }
 }
 
@@ -94,23 +111,17 @@ struct UtilityUninstallGuard: Equatable {
 struct UtilityToolsView: View {
     let strings: Strings
     @ObservedObject var runtime: FeatureRuntime
+    @Binding var route: UtilityToolsRoute
     @AppStorage(UserDefaultsKeys.lastUtilityTool) private var storedTool = UtilityTool.cleaner.rawValue
 
-    /// 本页内部导航：列表 ↔ 详情。不持久化，切回本 tab 默认落在列表。
-    @State private var route: Route = .list
-
-    init(strings: Strings) {
-        self.init(strings: strings, runtime: .shared)
+    init(strings: Strings, route: Binding<UtilityToolsRoute>) {
+        self.init(strings: strings, route: route, runtime: .shared)
     }
 
-    init(strings: Strings, runtime: FeatureRuntime) {
+    init(strings: Strings, route: Binding<UtilityToolsRoute>, runtime: FeatureRuntime) {
         self.strings = strings
+        self._route = route
         self.runtime = runtime
-    }
-
-    private enum Route: Equatable {
-        case list
-        case detail(UtilityTool)
     }
 
     private var visibleTools: [UtilityTool] {
@@ -125,19 +136,26 @@ struct UtilityToolsView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        // ZStack 承载层级推入转场：进详情自右滑入、返回列表自左滑回。
+        ZStack {
             switch route {
             case .list:
                 toolListView
+                    .pushTransition(from: .leading)
             case .detail(let tool):
                 toolDetailView(tool)
+                    .pushTransition(from: .trailing)
             }
         }
+        .animation(Theme.Animation.pageTransition, value: route)
         // 宽度拉满；高度跟随子工具内容，供控制中心 popover 按 tab 自适应。
         .frame(maxWidth: .infinity, alignment: .top)
         .onAppear {
             repairSelection()
-            route = autoRoute()
+            route = UtilityToolsPresentation.resolvedReentryRoute(
+                current: route,
+                visibleTools: visibleTools
+            )
         }
         .onChange(of: runtime.revision) { _, _ in
             repairSelection()
@@ -146,11 +164,6 @@ struct UtilityToolsView: View {
                 route = .list
             }
         }
-    }
-
-    /// 单工具可见时跳过列表直进详情，与原分段逻辑的 count==1 分支同构。
-    private func autoRoute() -> Route {
-        visibleTools.count == 1 ? .detail(visibleTools[0]) : .list
     }
 
     @ViewBuilder

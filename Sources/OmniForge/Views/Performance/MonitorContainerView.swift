@@ -1,9 +1,12 @@
 import SwiftUI
 
 struct MonitorContainerView: View {
-    @StateObject var coordinator = ProcessBreakdownCoordinator()
-    @StateObject private var diskProtection = DiskProtectionService()
-    @State private var route: MonitorPanelRoute = .overview
+    /// 由宿主注入：切走面板时本视图销毁，这两个有状态对象不随之重建
+    /// （保留磁盘推出进度与已展开的进程指标）。
+    @ObservedObject var coordinator: ProcessBreakdownCoordinator
+    @ObservedObject var diskProtection: DiskProtectionService
+    /// 路由由宿主持有：面板切换回来保留所在层级（overview / 排名 / 磁盘详情）。
+    @Binding var route: MonitorPanelRoute
     /// 设备摘要缓存：Host/sysctl 只在进入面板时算一次，避免随 snapshot 每帧重算。
     @State private var deviceSummary = DeviceSummary(
         hostName: "",
@@ -27,7 +30,8 @@ struct MonitorContainerView: View {
     var deviceSummaryProvider: DeviceSummaryProvider = DeviceSummaryProvider()
 
     var body: some View {
-        Group {
+        // ZStack 承载层级推入转场：子页自右滑入、回 overview 自左滑回。
+        ZStack {
             switch route {
             case .overview:
                 MonitorOverviewView(
@@ -47,6 +51,7 @@ struct MonitorContainerView: View {
                     showsSettingsAction: showsSettingsAction,
                     onRefresh: { onRefresh(false) }
                 )
+                .pushTransition(from: .leading)
             case .diskDetail:
                 MonitorDiskDetailView(
                     snapshot: snapshot,
@@ -58,6 +63,7 @@ struct MonitorContainerView: View {
                     showsSettingsAction: showsSettingsAction,
                     onRefresh: { onRefresh(false) }
                 )
+                .pushTransition(from: .trailing)
             case .ranking(let kind):
                 MonitorRankingView(
                     kind: kind,
@@ -71,8 +77,10 @@ struct MonitorContainerView: View {
                     showsSettingsAction: showsSettingsAction,
                     onRefresh: { onRefresh(true) }
                 )
+                .pushTransition(from: .trailing)
             }
         }
+        .animation(Theme.Animation.pageTransition, value: route)
         .onAppear {
             coordinator.onToggle = { onExpandedMetric($0) }
             if deviceSummary.hostName.isEmpty {
@@ -81,6 +89,10 @@ struct MonitorContainerView: View {
                 )
             }
             updateDemand()
+            // 面板切回时若仍停在排名页，恢复对应进程采样（切走时 close 已停止）。
+            if let kind = Self.rankingRestoration(for: route) {
+                coordinator.open(kind)
+            }
         }
         // systemMonitor 从 unavailable→available 或 isEnabled 重新打开时，面板仍打开需重新 assert demand
         .onChange(of: featureRuntime.revision) { _, _ in updateDemand() }
@@ -89,9 +101,14 @@ struct MonitorContainerView: View {
         .onDisappear {
             onDemandChange(.none)
             coordinator.close()
-            route = .overview
             coordinator.onToggle = nil
         }
+    }
+
+    /// 切回面板时需恢复采样的排名指标；nil 表示无需恢复。
+    static func rankingRestoration(for route: MonitorPanelRoute) -> ProcessMetricKind? {
+        if case .ranking(let kind) = route { return kind }
+        return nil
     }
 
     private func updateDemand() {

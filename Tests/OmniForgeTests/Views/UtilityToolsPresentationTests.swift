@@ -73,6 +73,43 @@ final class UtilityToolsPresentationTests: XCTestCase {
         )
     }
 
+    func test_reentryRoute_keepsDetailLevelWhenMultipleToolsVisible() {
+        // 面板切走再切回：用户停在详情层时不再弹回列表（回归保护）。
+        XCTAssertEqual(
+            UtilityToolsPresentation.resolvedReentryRoute(
+                current: .detail(.cleaner),
+                visibleTools: [.cleaner, .uninstaller, .colorPicker]
+            ),
+            .detail(.cleaner)
+        )
+        XCTAssertEqual(
+            UtilityToolsPresentation.resolvedReentryRoute(
+                current: .list,
+                visibleTools: [.cleaner, .uninstaller, .colorPicker]
+            ),
+            .list
+        )
+    }
+
+    func test_reentryRoute_autoEntersDetailOnlyWhenSingleToolRemainsAtList() {
+        // 单工具且仍处列表层 → 直达详情（保留原自动直达行为）。
+        XCTAssertEqual(
+            UtilityToolsPresentation.resolvedReentryRoute(
+                current: .list,
+                visibleTools: [.stickyNotes]
+            ),
+            .detail(.stickyNotes)
+        )
+        // 单工具但已在详情层（即唯一工具本身）→ 保留现状，不重复路由。
+        XCTAssertEqual(
+            UtilityToolsPresentation.resolvedReentryRoute(
+                current: .detail(.stickyNotes),
+                visibleTools: [.stickyNotes]
+            ),
+            .detail(.stickyNotes)
+        )
+    }
+
     func test_busyUtilityBlocksOnlyDestructiveAvailabilityChanges() {
         let guardPolicy = UtilityUninstallGuard(cleanerIsBusy: true, uninstallerIsBusy: false)
 

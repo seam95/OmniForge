@@ -114,6 +114,35 @@ final class MonitorPanelRoutingTests: XCTestCase {
         XCTAssertFalse(monitor.isSampling)
     }
 
+    /// 路由层：面板切回时若仍停在排名页，需恢复对应进程采样（切走时 close 已停止）。
+    func test_rankingRestoration_returnsKindOnlyForRankingRoute() {
+        XCTAssertEqual(MonitorContainerView.rankingRestoration(for: .ranking(.cpu)), .cpu)
+        XCTAssertEqual(MonitorContainerView.rankingRestoration(for: .ranking(.memory)), .memory)
+        XCTAssertNil(MonitorContainerView.rankingRestoration(for: .overview))
+        XCTAssertNil(MonitorContainerView.rankingRestoration(for: .diskDetail))
+    }
+
+    /// 路由保留后，切走再切回的完整链路：close 停采样 → onAppear 恢复采样。
+    func test_rankingRestoration_reopensExpandedMetricAfterReentry() {
+        let monitor = makeFakeMonitor()
+        monitor.setPanelDemand(.init(system: true, cpu: true))
+
+        let coordinator = ProcessBreakdownCoordinator()
+        coordinator.onToggle = { monitor.setExpandedProcessMetric($0) }
+        coordinator.open(.cpu)
+        XCTAssertEqual(monitor.processState.kind, .cpu)
+
+        // 切走面板：close 停止采样，但路由保留在 ranking。
+        coordinator.close()
+        XCTAssertNil(monitor.processState.kind)
+
+        // 切回面板：按保留的路由恢复采样。
+        let restored = MonitorContainerView.rankingRestoration(for: .ranking(.cpu))
+        XCTAssertNotNil(restored)
+        coordinator.open(restored!)
+        XCTAssertEqual(monitor.processState.kind, .cpu)
+    }
+
     /// 路由层：coordinator.toggle → onExpandedMetric → setExpandedProcessMetric
     func test_toggleBreakdown_setsExpandedProcessMetric() {
         let monitor = makeFakeMonitor()

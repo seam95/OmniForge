@@ -46,6 +46,8 @@ private struct AdaptiveHeightScroll<Content: View>: View {
         .onPreferenceChange(AdaptiveContentHeightKey.self) { contentHeight = $0 }
         // 未测到前不强制高度，避免首帧被撑到 maxHeight。
         .frame(height: displayHeight > 0 ? displayHeight : nil, alignment: .top)
+        // 高度随内容（面板切换）平滑过渡，消除突跳。
+        .animation(Theme.Animation.pageTransition, value: displayHeight)
     }
 }
 
@@ -64,6 +66,13 @@ struct ControlCenterContainerView: View {
     private var selectedPanelRawValue = MenuPanel.systemMonitor.rawValue
     @Environment(\.colorScheme) private var colorScheme
     @State private var keepAwakeConfigError: String?
+    @Namespace private var navIndicator
+    // 监控面板的有状态对象提升到容器层：切走面板不再销毁，保留磁盘推出进度与已展开的进程指标。
+    @StateObject private var monitorCoordinator = ProcessBreakdownCoordinator()
+    @StateObject private var monitorDiskProtection = DiskProtectionService()
+    // 监控/工具页路由由宿主持有：面板切换回来保留用户所在层级。
+    @State private var monitorRoute: MonitorPanelRoute = .overview
+    @State private var utilityRoute: UtilityToolsRoute = .list
 
     var body: some View {
         let visiblePanels = MenuPanel.visibleCases(isAvailable: runtime.isAvailable)
@@ -128,9 +137,10 @@ struct ControlCenterContainerView: View {
                     title: title,
                     isActive: isActive,
                     activeFill: navigationActiveFill,
-                    colorScheme: colorScheme
+                    colorScheme: colorScheme,
+                    indicatorNamespace: navIndicator
                 ) {
-                    withAnimation(Theme.Animation.spring) {
+                    withAnimation(Theme.Animation.pageTransition) {
                         selectedPanelRawValue = panel.rawValue
                     }
                 }
@@ -149,14 +159,31 @@ struct ControlCenterContainerView: View {
 
     @ViewBuilder
     private func panelContent(visiblePanels: [MenuPanel]) -> some View {
-        if let panel = MenuPanel.resolvedSelection(selectedPanel, in: visiblePanels) {
-            switch panel {
+        // ZStack 让新旧面板在转场期间叠放淡切，高度变化随同一动画过渡。
+        ZStack {
+            if let panel = MenuPanel.resolvedSelection(selectedPanel, in: visiblePanels) {
+                panelCase(panel)
+                    .peerTransition()
+            } else {
+                unavailablePanel
+                    .peerTransition()
+            }
+        }
+        .animation(Theme.Animation.pageTransition, value: selectedPanelRawValue)
+    }
+
+    @ViewBuilder
+    private func panelCase(_ panel: MenuPanel) -> some View {
+        switch panel {
             case .systemMonitor:
                 if let monitor = state.monitor,
                    let preferences = state.monitorPreferences,
                    runtime.isAvailable(.systemMonitor) {
                     AdaptiveHeightScroll(maxHeight: ControlCenterContentMetrics.maxContentHeight) {
                         MonitorContainerView(
+                            coordinator: monitorCoordinator,
+                            diskProtection: monitorDiskProtection,
+                            route: $monitorRoute,
                             snapshot: monitor.snapshot,
                             history: monitor.history,
                             processState: monitor.processState,
@@ -205,9 +232,9 @@ struct ControlCenterContainerView: View {
                     keepAwakePanel
                 }
             case .clipboard:
-                AdaptiveHeightScroll(maxHeight: ControlCenterContentMetrics.maxContentHeight) {
-                    UtilityToolsView(strings: state.l10n.s)
-                }
+                    AdaptiveHeightScroll(maxHeight: ControlCenterContentMetrics.maxContentHeight) {
+                        UtilityToolsView(strings: state.l10n.s, route: $utilityRoute)
+                    }
             case .providerSwitch:
                 if let manager = state.providerSwitchManager,
                    runtime.isAvailable(.providerSwitch) {
@@ -223,9 +250,6 @@ struct ControlCenterContainerView: View {
                     unavailablePanel
                 }
             }
-        } else {
-            unavailablePanel
-        }
     }
 
     @ViewBuilder
@@ -412,11 +436,15 @@ struct ControlCenterContainerView: View {
 }
 
 private struct ControlCenterNavButton: View {
+    /// 选中底块 matchedGeometry 标识：同 id 全导航仅一处激活，底块在按钮间平滑滑移。
+    private static let activeIndicatorID = "control-center-nav-active"
+
     let panel: MenuPanel
     let title: String
     let isActive: Bool
     let activeFill: Color
     let colorScheme: ColorScheme
+    let indicatorNamespace: Namespace.ID
     let action: () -> Void
 
     @State private var isHovered = false
@@ -444,9 +472,19 @@ private struct ControlCenterNavButton: View {
         .buttonStyle(.plain)
         .foregroundStyle(isActive ? (colorScheme == .light ? Theme.Stats.text1 : Color.white) : (isHovered ? (colorScheme == .light ? Theme.Stats.text1 : Color.primary) : (colorScheme == .light ? Theme.Stats.text2 : Color.secondary)))
         .background(
-            RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous)
-                .fill(isActive ? activeFill : (isHovered ? Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04) : Color.clear))
-                .shadow(color: Color.black.opacity(isActive && colorScheme == .light ? 0.06 : 0.0), radius: 2, x: 0, y: 1)
+            ZStack {
+                // 选中底块：matchedGeometry 让矩形从上一个按钮滑移过来，而非就地出现。
+                if isActive {
+                    RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous)
+                        .fill(activeFill)
+                        .shadow(color: Color.black.opacity(colorScheme == .light ? 0.06 : 0.0), radius: 2, x: 0, y: 1)
+                        .matchedGeometryEffect(id: Self.activeIndicatorID, in: indicatorNamespace)
+                } else if isHovered {
+                    RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous)
+                        .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04))
+                        .transition(.opacity)
+                }
+            }
         )
         .onHover { hovering in
             withAnimation(Theme.Animation.hover) {

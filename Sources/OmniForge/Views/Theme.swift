@@ -33,6 +33,8 @@ public enum Theme {
         public static let hover = SwiftUI.Animation.easeInOut(duration: 0.15)
         public static let snappy = SwiftUI.Animation.snappy(duration: 0.20)
         public static let spring = SwiftUI.Animation.spring(response: 0.30, dampingFraction: 0.75)
+        /// 页面级切换（tab / 面板平级切换、层级推入）：比元素微反馈稍长、弱弹跳。
+        public static let pageTransition = SwiftUI.Animation.spring(response: 0.32, dampingFraction: 0.86)
     }
 
     /// 根据资源使用率百分比（0.0 ~ 1.0 或 0 ~ 100）返回语义状态色
