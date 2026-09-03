@@ -19,7 +19,8 @@ struct OnboardingView: View {
                     .tag(3)
             }
             .tabViewStyle(.automatic)
-            .animation(.easeInOut(duration: 0.25), value: coordinator.currentStep)
+            // 步骤切换与全应用页面级转场同曲线（统一节奏，无过冲）。
+            .animation(Theme.Animation.pageTransition, value: coordinator.currentStep)
 
             Divider()
 

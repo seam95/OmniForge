@@ -40,8 +40,14 @@ struct SettingsView: View {
             .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
         } detail: {
-            detail(for: navigation.selectedTab)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            // detail 各分区整页切换：peer 淡切与控制中心/主浮窗 tab 手感对齐，
+            // ZStack 让新旧分区在转场期间叠放。
+            ZStack {
+                detail(for: navigation.selectedTab)
+                    .peerTransition()
+            }
+            .animation(Theme.Animation.pageTransition, value: navigation.selectedTab)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 760, idealWidth: 820, minHeight: 480, idealHeight: 560)

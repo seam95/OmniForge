@@ -59,12 +59,16 @@ enum ProviderSwitchAddProviderRoute: Equatable {
 /// - 底部辅助：居中展示供应商相关文字链接
 /// - 异常状态：未托管 / 损坏卡片视觉融入卡片体系
 struct ProviderSwitchSettingsView: View {
+    /// 工具分段选中底块 matchedGeometry 标识：底块在分段间平滑滑移。
+    private static let toolSegmentIndicatorID = "provider-tool-segment-active"
+
     @ObservedObject var manager: ProviderSwitchManager
     let strings: Strings
     var presentation: ProviderSwitchPresentation = .settings
     var onOpenSettings: (SettingsToolbarTab?) -> Void = { _ in }
     var commandCopier: ProviderLaunchCommandCopying = ProviderLaunchCommandCopier()
 
+    @Namespace private var toolSegmentIndicator
     @State private var selectedTool: ProviderTool = .claudeCode
     @State private var addingProfileForTool: ProviderTool?
     @State private var editingProfile: ProviderProfile?
@@ -82,23 +86,32 @@ struct ProviderSwitchSettingsView: View {
         VStack(alignment: .leading, spacing: 12) {
             toolSegment
 
-            VStack(spacing: 8) {
-                officialCard
+            // 工具分段主体：id 随 selectedTool 变化触发整组 peer 淡切，
+            // 底部静态链接随整组统一过渡。
+            ZStack(alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: 12) {
+                    VStack(spacing: 8) {
+                        officialCard
 
-                let profiles = manager.profiles(for: selectedTool)
-                ForEach(profiles) { profile in
-                    profileCard(profile)
+                        let profiles = manager.profiles(for: selectedTool)
+                        ForEach(profiles) { profile in
+                            profileCard(profile)
+                        }
+                    }
+
+                    unmanagedCard
+                    corruptedCard
+
+                    if presentation.showsInlineAddProviderButton {
+                        addProviderButton
+                    }
+
+                    footerLinks
                 }
+                .id(selectedTool)
+                .peerTransition()
             }
-
-            unmanagedCard
-            corruptedCard
-
-            if presentation.showsInlineAddProviderButton {
-                addProviderButton
-            }
-
-            footerLinks
+            .animation(Theme.Animation.pageTransition, value: selectedTool)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -154,9 +167,7 @@ struct ProviderSwitchSettingsView: View {
             ForEach(ProviderTool.allCases) { tool in
                 let isSelected = selectedTool == tool
                 Button {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        selectedTool = tool
-                    }
+                    selectedTool = tool
                 } label: {
                     Text(tool.displayName(in: strings))
                         .font(.system(size: 13.5, weight: isSelected ? .semibold : .medium))
@@ -169,6 +180,7 @@ struct ProviderSwitchSettingsView: View {
                                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                                         .fill(colorScheme == .dark ? Color.white.opacity(0.18) : Color.white)
                                         .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.0 : 0.06), radius: 2, x: 0, y: 1)
+                                        .matchedGeometryEffect(id: Self.toolSegmentIndicatorID, in: toolSegmentIndicator)
                                 } else {
                                     Color.clear
                                 }
@@ -178,6 +190,8 @@ struct ProviderSwitchSettingsView: View {
                 .buttonStyle(.plain)
             }
         }
+        // 动画统一由 value 驱动，底块滑移与下方内容转场同享一套曲线。
+        .animation(Theme.Animation.pageTransition, value: selectedTool)
         .padding(3)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)

@@ -9,6 +9,9 @@ import SwiftUI
 /// 汇总卡 ×4 + 活跃度热力图 + 趋势图（日/周/月/总计，自带切换器）+ 模型 Top 列表；
 /// provider 切换器过滤全部四个子区块。
 struct TokenUsagePanelView: View {
+    /// Provider 胶囊选中底块 matchedGeometry 标识：底块在胶囊间平滑滑移。
+    private static let providerChipIndicatorID = "token-provider-chip-active"
+
     @ObservedObject var manager: TokenUsageManager
     @ObservedObject var preferences: TokenUsagePreferences
     /// DeepSeek 余额（可选：管理器尚未接线/未注册时为 nil）。
@@ -24,6 +27,7 @@ struct TokenUsagePanelView: View {
     @State private var showsLimitsSettings = false
     /// 凭证已配置但暂无有效限额窗口的 provider（OpenCode / 方舟 Coding Plan）。
     @State private var credentialConfiguredProviders: Set<TokenUsageProvider> = []
+    @Namespace private var providerChipIndicator
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -136,6 +140,8 @@ struct TokenUsagePanelView: View {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.06))
                 )
+                // 动画统一由 value 驱动：底块滑移与内容淡切同享一套曲线。
+                .animation(Theme.Animation.pageTransition, value: selectedProvider)
             }
             .onChange(of: selectedProvider) { _, newProvider in
                 if let newProvider {
@@ -180,6 +186,7 @@ struct TokenUsagePanelView: View {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(colorScheme == .dark ? Color.white.opacity(0.14) : Theme.Stats.cardBackground)
                         .shadow(color: Color.black.opacity(colorScheme == .light ? 0.06 : 0.0), radius: 2, x: 0, y: 1)
+                        .matchedGeometryEffect(id: Self.providerChipIndicatorID, in: providerChipIndicator)
                 }
             }
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -204,10 +211,17 @@ struct TokenUsagePanelView: View {
             TokenUsageEmptyStateView(strings: strings)
                 .frame(maxWidth: .infinity, minHeight: ControlCenterContentMetrics.emptyContentMinHeight)
         } else {
-            VStack(alignment: .leading, spacing: 10) {
-                providerCardsBlock
-                usageBlock
+            // 内容随选中 provider 整组重算：id 变化触发 peer 淡切，
+            // ZStack 顶对齐让新旧内容在转场期间叠放不跳动。
+            ZStack(alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: 10) {
+                    providerCardsBlock
+                    usageBlock
+                }
+                .id(selectedProvider)
+                .peerTransition()
             }
+            .animation(Theme.Animation.pageTransition, value: selectedProvider)
         }
     }
 

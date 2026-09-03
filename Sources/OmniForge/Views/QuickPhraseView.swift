@@ -106,33 +106,41 @@ struct QuickPhraseView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
         }
+        // 选中态填充/描边颜色随分组切换平滑过渡。
+        .animation(Theme.Animation.pageTransition, value: uiState.selectedGroup)
     }
 
     private var phraseList: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 3) {
-                    ForEach(filteredPhrases) { phrase in
-                        PhraseRow(
-                            phrase: phrase,
-                            isSelected: uiState.selectedPhraseID == phrase.id,
-                            isHovered: hoveredPhraseID == phrase.id,
-                            onTap: { uiState.selectedPhraseID = phrase.id },
-                            onDoubleTap: { paste(phrase) },
-                            onEdit: { editPhrase(phrase) },
-                            onDelete: { deletePhrase(phrase) },
-                            onHover: { hoveredPhraseID = $0 }
-                        )
-                        .id(phrase.id)
+                // 列表随分组整组重建：id 变化触发 peer 淡切，ZStack 顶对齐保证转场期叠放不跳动。
+                ZStack(alignment: .top) {
+                    LazyVStack(spacing: 3) {
+                        ForEach(filteredPhrases) { phrase in
+                            PhraseRow(
+                                phrase: phrase,
+                                isSelected: uiState.selectedPhraseID == phrase.id,
+                                isHovered: hoveredPhraseID == phrase.id,
+                                onTap: { uiState.selectedPhraseID = phrase.id },
+                                onDoubleTap: { paste(phrase) },
+                                onEdit: { editPhrase(phrase) },
+                                onDelete: { deletePhrase(phrase) },
+                                onHover: { hoveredPhraseID = $0 }
+                            )
+                            .id(phrase.id)
+                        }
+                        if filteredPhrases.isEmpty {
+                            emptyState
+                        }
                     }
-                    if filteredPhrases.isEmpty {
-                        emptyState
-                    }
+                    .id(uiState.selectedGroup)
+                    .peerTransition()
                 }
                 .padding(.horizontal, 6)
                 .padding(.vertical, 6)
             }
             .background(listBackground)
+            .animation(Theme.Animation.pageTransition, value: uiState.selectedGroup)
             .onChange(of: uiState.selectedPhraseID) { _, newID in
                 if let newID {
                     withAnimation(.easeInOut(duration: 0.15)) {

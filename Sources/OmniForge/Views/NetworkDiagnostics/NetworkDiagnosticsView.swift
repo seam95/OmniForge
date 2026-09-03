@@ -33,14 +33,18 @@ struct NetworkDiagnosticsView: View {
                 selection: segmentBinding
             )
 
-            Group {
+            // ZStack 让新旧分段内容在转场期间叠放淡切；顶对齐保持两段不同高度下的稳定布局。
+            ZStack(alignment: .topLeading) {
                 switch segment {
                 case .network:
                     NetworkSegmentView(strings: strings, service: service)
+                        .peerTransition()
                 case .ports:
                     PortSegmentView(strings: strings, service: service)
+                        .peerTransition()
                 }
             }
+            .animation(Theme.Animation.pageTransition, value: storedSegment)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .padding(.horizontal, 12)

@@ -140,12 +140,13 @@ struct ControlCenterContainerView: View {
                     colorScheme: colorScheme,
                     indicatorNamespace: navIndicator
                 ) {
-                    withAnimation(Theme.Animation.pageTransition) {
-                        selectedPanelRawValue = panel.rawValue
-                    }
+                    // 动画统一由 value 驱动（对齐主浮窗 tab 模式）：
+                    // 点击、resolveSelection 等任意赋值路径下底块与内容同享一套转场。
+                    selectedPanelRawValue = panel.rawValue
                 }
             }
         }
+        .animation(Theme.Animation.pageTransition, value: selectedPanelRawValue)
         .padding(3)
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)

@@ -1,7 +1,13 @@
 import SwiftUI
 
 /// 轨道 + 等分 pill 分段，外观对齐控制中心稿，替代系统 SegmentedControl。
+/// 选中底块经 matchedGeometry 在分段间平滑滑移；动画统一由 value 驱动，
+/// 使用方任意赋值路径（点击、外部 binding）均同享一套转场。
 struct PanelSegmentedControl<Tag: Hashable>: View {
+    /// 选中底块 matchedGeometry 标识：底块在分段间平滑滑移。
+    /// （泛型类型不支持 static 存储属性，用实例常量。）
+    private let activeIndicatorID = "panel-segment-active"
+
     struct Option: Identifiable {
         let tag: Tag
         let title: String
@@ -11,6 +17,7 @@ struct PanelSegmentedControl<Tag: Hashable>: View {
     let options: [Option]
     @Binding var selection: Tag
 
+    @Namespace private var indicator
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -30,6 +37,7 @@ struct PanelSegmentedControl<Tag: Hashable>: View {
                                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                                     .fill(selectedFill)
                                     .shadow(color: Color.black.opacity(colorScheme == .light ? 0.06 : 0.0), radius: 2, x: 0, y: 1)
+                                    .matchedGeometryEffect(id: activeIndicatorID, in: indicator)
                             }
                         }
                         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -38,6 +46,7 @@ struct PanelSegmentedControl<Tag: Hashable>: View {
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
+        .animation(Theme.Animation.pageTransition, value: selection)
         .padding(3)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
