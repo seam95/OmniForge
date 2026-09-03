@@ -1,13 +1,11 @@
 import SwiftUI
 
-/// 控制中心「Token」页 — 单页布局：限额区块（上）+ 用量仪表盘区块（下）。
+/// 控制中心「Token」页 — 双分区（子 tab）布局：「余额」= 供应商限额/余额卡，
+/// 「用量」= 本地统计仪表盘（汇总卡 + 热力图 + 趋势图 + 模型 Top）。
 ///
-/// 顶部 provider 切换器始终保留；两区块任一无数据时整块隐藏，
-/// 均为空时走 `TokenUsageEmptyStateView` 空态（SPEC 4.2 / 4.3 / 4.6）。
-///
-/// 用量区块为仪表盘（SPEC 2026-08-25）：
-/// 汇总卡 ×4 + 活跃度热力图 + 趋势图（日/周/月/总计，自带切换器）+ 模型 Top 列表；
-/// provider 切换器过滤全部四个子区块。
+/// 顶部 provider 切换器与齿轮始终保留，且同时过滤两个分区；
+/// 任一分区无数据时整块隐藏，面板级无任何配置时走 `TokenUsageEmptyStateView`
+/// 空态（SPEC 4.2 / 4.3 / 4.6）。
 struct TokenUsagePanelView: View {
     /// Provider 胶囊选中底块 matchedGeometry 标识：底块在胶囊间平滑滑移。
     private static let providerChipIndicatorID = "token-provider-chip-active"
@@ -23,6 +21,8 @@ struct TokenUsagePanelView: View {
 
     /// nil = 全部（配置的全部 provider 卡片堆叠）。
     @State private var selectedProvider: TokenUsageProvider?
+    /// 当前子 tab 分区（余额 / 用量），默认余额。
+    @State private var selectedSection: TokenPanelSection = .balance
     /// 齿轮弹层（限额显示）展示状态。
     @State private var showsLimitsSettings = false
     /// 凭证已配置但暂无有效限额窗口的 provider（OpenCode / 方舟 Coding Plan）。
@@ -32,9 +32,6 @@ struct TokenUsagePanelView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if manager.usageBackfilling || manager.hasUsageData {
-                summaryCardsBlock
-            }
             headerRow
             content
         }
@@ -211,23 +208,40 @@ struct TokenUsagePanelView: View {
             TokenUsageEmptyStateView(strings: strings)
                 .frame(maxWidth: .infinity, minHeight: ControlCenterContentMetrics.emptyContentMinHeight)
         } else {
-            // 内容随选中 provider 整组重算：id 变化触发 peer 淡切，
-            // ZStack 顶对齐让新旧内容在转场期间叠放不跳动。
-            ZStack(alignment: .topLeading) {
-                VStack(alignment: .leading, spacing: 10) {
-                    providerCardsBlock
-                    usageBlock
+            VStack(alignment: .leading, spacing: 10) {
+                sectionSwitcher
+                // 内容随「provider × 分区」组合整组重算：id 变化触发 peer 淡切，
+                // ZStack 顶对齐让新旧内容在转场期间叠放不跳动。
+                ZStack(alignment: .topLeading) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        switch selectedSection {
+                        case .balance: balanceSection
+                        case .usage: usageSection
+                        }
+                    }
+                    .id(TokenPanelContentIdentity(provider: selectedProvider, section: selectedSection))
+                    .peerTransition()
                 }
-                .id(selectedProvider)
-                .peerTransition()
+                .animation(Theme.Animation.pageTransition, value: selectedProvider)
+                .animation(Theme.Animation.pageTransition, value: selectedSection)
             }
-            .animation(Theme.Animation.pageTransition, value: selectedProvider)
         }
     }
 
-    /// 供应商卡片区块：按偏好顺序展示选中 provider（或全部已配置 provider）的限额卡与余额卡 + 来源脚注行。
+    /// 「余额 / 用量」子 tab 分段（等分全宽，底块滑移与内容淡切同享一套曲线）。
+    private var sectionSwitcher: some View {
+        PanelSegmentedControl(
+            options: TokenPanelSection.allCases.map { option in
+                .init(tag: option, title: option.title(strings))
+            },
+            selection: $selectedSection
+        )
+    }
+
+    /// 余额分区：选中 provider（或全部）的限额卡与余额卡 + 来源脚注；
+    /// 无可展示卡片（如限额快照未返回）时给占位。
     @ViewBuilder
-    private var providerCardsBlock: some View {
+    private var balanceSection: some View {
         let providers = selectedProvider.map { [$0] } ?? visibleProviders
         let displayableProviders = TokenUsageProviderDisplayPolicy.displayableCardProviders(
             from: providers,
@@ -235,7 +249,9 @@ struct TokenUsagePanelView: View {
             credentialConfiguredProviders: credentialConfiguredProviders,
             showingDeepSeekBalance: balanceManager?.showingBalanceCard ?? false
         )
-        if !displayableProviders.isEmpty {
+        if displayableProviders.isEmpty {
+            sectionPlaceholder(strings.tokenBalanceEmptyHint)
+        } else {
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(Array(displayableProviders.enumerated()), id: \.element.id) { index, provider in
@@ -272,6 +288,30 @@ struct TokenUsagePanelView: View {
         }
     }
 
+    /// 用量分区：汇总卡 + 仪表盘（热力图 / 趋势 / 模型 Top）+ 本地统计脚注。
+    /// 有本地数据或回填中时显示（回填中以现有数据渲染，数值逐步回填），否则占位。
+    @ViewBuilder
+    private var usageSection: some View {
+        if manager.usageBackfilling || manager.hasUsageData {
+            VStack(alignment: .leading, spacing: 10) {
+                summaryCardsBlock
+                usageBlock
+            }
+        } else {
+            sectionPlaceholder(strings.tokenEmptyHint)
+        }
+    }
+
+    /// 分区级空态占位（居中轻文案，保持分段切换器在位）。
+    private func sectionPlaceholder(_ text: String) -> some View {
+        Text(text)
+            .font(Theme.Stats.font12Medium)
+            .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 24)
+    }
+
     private func limitSnapshot(for provider: TokenUsageProvider) -> ProviderUsageLimits? {
         if let limits = manager.limits[provider] {
             return limits
@@ -293,8 +333,8 @@ struct TokenUsagePanelView: View {
             .frame(height: 0.5)
     }
 
-    /// 用量仪表盘区块（2026-08-25 重设计）：汇总卡 + 活跃度 + 趋势 + 模型 + 本地统计脚注。
-    /// 有本地数据或回填中时显示；回填中各区块以现有数据渲染（数值逐步回填）。
+    /// 用量仪表盘（2026-08-25 重设计）：活跃度 + 趋势 + 模型 + 本地统计脚注，
+    /// 由「用量」分区承载（汇总卡在分区层先行）。
     @ViewBuilder
     private var usageBlock: some View {
         if manager.usageBackfilling || manager.hasUsageData {
@@ -394,4 +434,24 @@ struct TokenUsageEmptyStateView: View {
         }
         .padding(20)
     }
+}
+
+/// Token 面板内部分区（子 tab）：余额（供应商限额/余额卡）与用量（本地统计仪表盘）。
+/// CaseIterable 声明顺序即分段展示顺序（余额在前，用量在后）。
+enum TokenPanelSection: CaseIterable {
+    case balance
+    case usage
+
+    func title(_ strings: Strings) -> String {
+        switch self {
+        case .balance: return strings.tokenSectionBalance
+        case .usage: return strings.tokenSectionUsage
+        }
+    }
+}
+
+/// 内容区身份：provider × 分区任一变化时整组触发 peer 淡切（作为 `.id(_:)` 的值）。
+private struct TokenPanelContentIdentity: Hashable {
+    let provider: TokenUsageProvider?
+    let section: TokenPanelSection
 }

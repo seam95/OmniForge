@@ -1087,6 +1087,9 @@ struct Strings: Equatable {
     let tokenReauthHint: String
     let tokenRefresh: String
     let tokenProviderAll: String
+    let tokenSectionBalance: String
+    let tokenSectionUsage: String
+    let tokenBalanceEmptyHint: String
     let tokenWindowSession5h: String
     let tokenWindowWeekly: String
     let tokenWindowMonthly: String
