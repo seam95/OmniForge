@@ -5,7 +5,7 @@ final class MonitorCardIDTests: XCTestCase {
     func test_defaultConfiguration_includesFixedOrderCards() {
         let config = MonitorConfiguration()
         let cards = MonitorCardID.visibleCards(configuration: config)
-        XCTAssertEqual(cards, [.cpu, .memory, .network, .battery, .gpu, .disk])
+        XCTAssertEqual(cards, [.cpu, .gpu, .memory, .network, .disk, .battery])
     }
 
     func test_hidingSystemSection_removesCpuMemoryGpu() {
@@ -50,6 +50,6 @@ final class MonitorCardIDTests: XCTestCase {
         config.panelSectionOrder = [.power, .disk, .system, .network]
 
         let cards = MonitorCardID.visibleCards(configuration: config)
-        XCTAssertEqual(cards, [.cpu, .memory, .network, .battery, .gpu, .disk])
+        XCTAssertEqual(cards, [.cpu, .gpu, .memory, .network, .disk, .battery])
     }
 }

@@ -1,46 +1,54 @@
 import SwiftUI
 
-/// 单序列面积折线 — 用于 CPU/GPU 百分比趋势（domain 0...1）与网络速率趋势。
+/// 单序列折线 — 用于 CPU/GPU/内存百分比趋势（domain 0...1）与网络速率趋势。
 ///
 /// 不加隐式动画，随 snapshot 同频直接重绘；空/单点/恒定值由 `SparklineNormalizer` 兜底。
+/// `fillHeight > 0` 时线下叠面积渐变；`endDotRadius > 0` 时在右端点画圆点标记最新值。
 struct SparklineView: View {
     let values: [Double]
     let color: Color
     var domain: ClosedRange<Double> = 0...1
     var lineWidth: CGFloat = 1.5
     var fillHeight: CGFloat = 0.18
+    var endDotRadius: CGFloat = 0
 
     var body: some View {
         GeometryReader { proxy in
-            let points = SparklineNormalizer.normalize(values: values, domain: domain)
-                .enumerated()
-                .map { index, value in
-                    CGPoint(
-                        x: proxy.size.width * CGFloat(index) / CGFloat(max(pointsCount - 1, 1)),
-                        y: proxy.size.height * (1 - value)
-                    )
-                }
+            let points = resolvedPoints(size: proxy.size)
 
             if points.count >= 2 {
                 ZStack {
-                    areaPath(points: points, size: proxy.size)
+                    if fillHeight > 0 {
+                        areaPath(points: points, size: proxy.size)
+                    }
                     linePath(points: points)
-                }
-            } else if let single = points.first {
-                let baselinePoints = [
-                    CGPoint(x: 0, y: single.y),
-                    CGPoint(x: proxy.size.width, y: single.y)
-                ]
-                ZStack {
-                    areaPath(points: baselinePoints, size: proxy.size)
-                    linePath(points: baselinePoints)
+                    if endDotRadius > 0, let tip = points.last {
+                        Circle()
+                            .fill(color)
+                            .frame(width: endDotRadius * 2, height: endDotRadius * 2)
+                            .position(tip)
+                    }
                 }
             }
         }
     }
 
-    private var pointsCount: Int {
-        max(values.count, 1)
+    /// 归一化并映射到视图坐标；单点补成水平基线，不足两点返回原样（不绘制）。
+    private func resolvedPoints(size: CGSize) -> [CGPoint] {
+        let normalized = SparklineNormalizer.normalize(values: values, domain: domain)
+        var points = normalized.enumerated().map { index, value in
+            CGPoint(
+                x: size.width * CGFloat(index) / CGFloat(max(normalized.count - 1, 1)),
+                y: size.height * (1 - value)
+            )
+        }
+        if points.count == 1, let single = points.first {
+            points = [
+                CGPoint(x: 0, y: single.y),
+                CGPoint(x: size.width, y: single.y)
+            ]
+        }
+        return points
     }
 
     private func linePath(points: [CGPoint]) -> some View {

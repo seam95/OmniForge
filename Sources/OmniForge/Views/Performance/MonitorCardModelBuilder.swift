@@ -18,8 +18,10 @@ struct MonitorCardModel: Equatable, Identifiable {
     var trend: [Double]? = nil
     /// 第二序列（仅网络：上传）
     var secondaryTrend: [Double]? = nil
-    /// 灰框 chips（磁盘读/写、网络速率）
+    /// 速率文本（磁盘读/写、网络下行/上行，纯文本无方向前缀）
     var chipTexts: [String] = []
+    /// 温度标记（三栏标签行右侧，仅 CPU/GPU）
+    var temperatureText: String? = nil
 }
 
 /// Pure mapping from snapshot + history + configuration into overview card models.
@@ -51,9 +53,14 @@ enum MonitorCardModelBuilder {
     ) -> MonitorCardModel {
         switch id {
         case .cpu:
-            return cpuModel(snapshot: snapshot, strings: strings, history: history)
+            return cpuModel(
+                snapshot: snapshot,
+                strings: strings,
+                temperatureUnit: temperatureUnit,
+                history: history
+            )
         case .memory:
-            return memoryModel(snapshot: snapshot, strings: strings)
+            return memoryModel(snapshot: snapshot, strings: strings, history: history)
         case .battery:
             return batteryModel(
                 snapshot: snapshot,
@@ -82,6 +89,7 @@ enum MonitorCardModelBuilder {
     private static func cpuModel(
         snapshot: SystemSnapshot,
         strings: Strings,
+        temperatureUnit: TemperatureUnit,
         history: MetricHistory
     ) -> MonitorCardModel {
         let total = snapshot.cpuUsage?.total
@@ -104,13 +112,15 @@ enum MonitorCardModelBuilder {
             showsLiveDot: false,
             issueText: issueText(for: snapshot.issues[.cpu], strings: strings),
             processMetricKind: .cpu,
-            trend: history.cpu
+            trend: history.cpu,
+            temperatureText: MetricFormat.temperature(snapshot.cpuTemperature, unit: temperatureUnit)
         )
     }
 
     private static func memoryModel(
         snapshot: SystemSnapshot,
-        strings: Strings
+        strings: Strings,
+        history: MetricHistory
     ) -> MonitorCardModel {
         let used = snapshot.memoryUsed
         let total = snapshot.memoryTotal
@@ -137,7 +147,8 @@ enum MonitorCardModelBuilder {
             badgeText: nil,
             showsLiveDot: false,
             issueText: issueText(for: snapshot.issues[.memory], strings: strings),
-            processMetricKind: .memory
+            processMetricKind: .memory,
+            trend: history.memory
         )
     }
 
@@ -231,10 +242,7 @@ enum MonitorCardModelBuilder {
             issueText: issueText(for: snapshot.issues[.disk], strings: strings),
             processMetricKind: nil,
             opensDiskDetail: true,
-            chipTexts: [
-                "↓ \(readText)",
-                "↑ \(writeText)",
-            ]
+            chipTexts: [readText, writeText]
         )
     }
 
@@ -265,10 +273,7 @@ enum MonitorCardModelBuilder {
             processMetricKind: .network,
             trend: history.netDown,
             secondaryTrend: history.netUp,
-            chipTexts: [
-                "↓ \(down)",
-                "↑ \(up)",
-            ]
+            chipTexts: [down, up]
         )
     }
 
@@ -278,27 +283,20 @@ enum MonitorCardModelBuilder {
         temperatureUnit: TemperatureUnit,
         history: MetricHistory
     ) -> MonitorCardModel {
-        // primary：`46% · 63°`
-        var primaryParts: [String] = []
-        if let pct = MetricFormat.percent(snapshot.gpuUsage) {
-            primaryParts.append(pct)
-        }
-        if let tempText = MetricFormat.temperature(snapshot.gpuTemperature, unit: temperatureUnit) {
-            primaryParts.append(tempText)
-        }
-        let primary = primaryParts.isEmpty ? "--" : primaryParts.joined(separator: " \(strings.monitorSubtitleSeparator) ")
+        // 大数字只放百分比；温度移到标签行右侧标记
         return MonitorCardModel(
             id: .gpu,
             title: strings.monitorMetricGpu,
             systemImage: "rectangle.3.group",
-            primaryText: primary,
+            primaryText: MetricFormat.percent(snapshot.gpuUsage) ?? "--",
             secondaryText: nil,
             progress: snapshot.gpuUsage,
             badgeText: nil,
             showsLiveDot: false,
             issueText: issueText(for: snapshot.issues[.gpu], strings: strings),
             processMetricKind: .gpu,
-            trend: history.gpu
+            trend: history.gpu,
+            temperatureText: MetricFormat.temperature(snapshot.gpuTemperature, unit: temperatureUnit)
         )
     }
 

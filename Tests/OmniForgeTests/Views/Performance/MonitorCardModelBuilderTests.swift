@@ -39,11 +39,22 @@ final class MonitorCardModelBuilderTests: XCTestCase {
         XCTAssertEqual(cpu?.trend, [0.5, 0.5])
     }
 
+    func test_cpuCard_temperatureGoesToMarker() {
+        var snap = SystemSnapshot()
+        snap.cpuUsage = CPUUsageReading(total: 0.42, user: 0.30, system: 0.12)
+        snap.cpuTemperature = 45
+        let models = build(snap, strings: .zhHans)
+        let cpu = models.first { $0.id == .cpu }
+        XCTAssertEqual(cpu?.primaryText, "42%")
+        XCTAssertEqual(cpu?.temperatureText, "45°")
+    }
+
     func test_cpuCard_missingReadingShowsPlaceholders() {
         let models = build(SystemSnapshot(), strings: .en)
         let cpu = models.first { $0.id == .cpu }
         XCTAssertEqual(cpu?.primaryText, "--")
         XCTAssertNil(cpu?.secondaryText)
+        XCTAssertNil(cpu?.temperatureText)
     }
 
     // MARK: - Memory
@@ -87,6 +98,18 @@ final class MonitorCardModelBuilderTests: XCTestCase {
         XCTAssertEqual(memory?.primaryText, "--")
         XCTAssertEqual(memory?.secondaryText, Strings.zhHans.monitorPressureWarning)
         XCTAssertNil(memory?.progress)
+    }
+
+    func test_memoryCard_injectsTrendFromHistory() {
+        var snap = SystemSnapshot()
+        snap.memoryUsed = 8_000_000_000
+        snap.memoryTotal = 16_000_000_000
+        var history = MetricHistory()
+        history.append(snap)
+        let models = build(snap, history: history)
+        let memory = models.first { $0.id == .memory }
+        XCTAssertEqual(memory?.trend?.count, 1)
+        XCTAssertEqual(memory?.trend?.first ?? -1, 0.5, accuracy: 0.0001)
     }
 
     // MARK: - Battery
@@ -146,13 +169,14 @@ final class MonitorCardModelBuilderTests: XCTestCase {
 
     // MARK: - GPU
 
-    func test_gpuCard_primaryPercentAndTemperature() {
+    func test_gpuCard_primaryIsPurePercentAndTemperatureMarker() {
         var snap = SystemSnapshot()
         snap.gpuUsage = 0.46
         snap.gpuTemperature = 63
         let models = build(snap, strings: .zhHans)
         let gpu = models.first { $0.id == .gpu }
-        XCTAssertEqual(gpu?.primaryText, "46% • 63°")
+        XCTAssertEqual(gpu?.primaryText, "46%")
+        XCTAssertEqual(gpu?.temperatureText, "63°")
         XCTAssertNil(gpu?.secondaryText)
         XCTAssertEqual(gpu?.processMetricKind, .gpu)
     }
@@ -179,7 +203,7 @@ final class MonitorCardModelBuilderTests: XCTestCase {
         let network = models.first { $0.id == .network }
         let down = MetricFormat.bytesPerSec(1_500 as Double) ?? "--"
         let up = MetricFormat.bytesPerSec(500 as Double) ?? "--"
-        XCTAssertEqual(network?.chipTexts, ["↓ \(down)", "↑ \(up)"])
+        XCTAssertEqual(network?.chipTexts, [down, up])
         let sep = Strings.en.monitorSubtitleSeparator
         XCTAssertEqual(
             network?.secondaryText,
@@ -223,8 +247,8 @@ final class MonitorCardModelBuilderTests: XCTestCase {
         XCTAssertNil(disk?.secondaryText)
         XCTAssertNil(disk?.progress)
         XCTAssertEqual(disk?.chipTexts, [
-            "↓ \(MetricFormat.bytesPerSec(1_000_000 as Double) ?? "--")",
-            "↑ \(MetricFormat.bytesPerSec(500_000 as Double) ?? "--")",
+            MetricFormat.bytesPerSec(1_000_000 as Double) ?? "--",
+            MetricFormat.bytesPerSec(500_000 as Double) ?? "--",
         ])
         XCTAssertNil(disk?.processMetricKind)
         XCTAssertTrue(disk?.opensDiskDetail == true)
@@ -245,7 +269,7 @@ final class MonitorCardModelBuilderTests: XCTestCase {
         let models = build(snap, strings: .en)
         let disk = models.first { $0.id == .disk }
         XCTAssertNil(disk?.badgeText) // total 缺失 → 无"已用"
-        XCTAssertEqual(disk?.chipTexts, ["↓ --", "↑ --"])
+        XCTAssertEqual(disk?.chipTexts, ["--", "--"])
         XCTAssertTrue(disk?.opensDiskDetail == true)
     }
 
@@ -253,6 +277,6 @@ final class MonitorCardModelBuilderTests: XCTestCase {
 
     func test_models_fixedSixCardOrderAndNoEnergy() {
         let models = build(SystemSnapshot())
-        XCTAssertEqual(models.map(\.id), [.cpu, .memory, .network, .battery, .gpu, .disk])
+        XCTAssertEqual(models.map(\.id), [.cpu, .gpu, .memory, .network, .disk, .battery])
     }
 }

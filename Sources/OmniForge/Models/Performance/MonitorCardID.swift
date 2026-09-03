@@ -22,9 +22,9 @@ enum MonitorCardID: String, CaseIterable, Hashable {
         }
     }
 
-    /// Overview 固定卡片顺序（去掉自定义排序）：CPU|内存 → 网络整宽 → 电池|GPU → 磁盘整宽。
+    /// Overview 固定卡片顺序：CPU|GPU|内存 三栏 → 网络整宽 → 磁盘 → 电池。
     private static let fixedOrder: [MonitorCardID] = [
-        .cpu, .memory, .network, .battery, .gpu, .disk
+        .cpu, .gpu, .memory, .network, .disk, .battery
     ]
 
     /// Returns visible overview cards for the given configuration.

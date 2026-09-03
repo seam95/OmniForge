@@ -47,8 +47,6 @@ struct MonitorContainerView: View {
                     onSelectDiskDetail: {
                         route = .diskDetail
                     },
-                    onOpenSettings: onOpenSettings,
-                    showsSettingsAction: showsSettingsAction,
                     onRefresh: { onRefresh(false) }
                 )
                 .pushTransition(from: .leading)

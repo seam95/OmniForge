@@ -10,6 +10,7 @@ struct MetricHistory: Equatable {
 
     private(set) var cpu: [Double] = []     // 0...1
     private(set) var gpu: [Double] = []     // 0...1
+    private(set) var memory: [Double] = []  // 占用比 0...1
     private(set) var netDown: [Double] = [] // bytes/s
     private(set) var netUp: [Double] = []   // bytes/s
 
@@ -17,6 +18,7 @@ struct MetricHistory: Equatable {
     mutating func append(_ snapshot: SystemSnapshot) {
         cpu = Self.appended(snapshot.cpuUsage?.total, to: cpu)
         gpu = Self.appended(snapshot.gpuUsage, to: gpu)
+        memory = Self.appended(Self.memoryFraction(snapshot), to: memory)
         netDown = Self.appended(snapshot.netDownBytesPerSec, to: netDown)
         netUp = Self.appended(snapshot.netUpBytesPerSec, to: netUp)
     }
@@ -24,8 +26,17 @@ struct MetricHistory: Equatable {
     mutating func reset() {
         cpu = []
         gpu = []
+        memory = []
         netDown = []
         netUp = []
+    }
+
+    /// 内存占用比；total 为 0 或缺失时返回 nil（本轮不追加）。
+    private static func memoryFraction(_ snapshot: SystemSnapshot) -> Double? {
+        guard let used = snapshot.memoryUsed, let total = snapshot.memoryTotal, total > 0 else {
+            return nil
+        }
+        return Double(used) / Double(total)
     }
 
     private static func appended(_ value: Double?, to buffer: [Double]) -> [Double] {

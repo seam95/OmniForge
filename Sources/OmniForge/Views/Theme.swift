@@ -66,6 +66,8 @@ public enum Theme {
         public static let text2 = Color(red: 0x6E/255.0, green: 0x6E/255.0, blue: 0x73/255.0)
         public static let text3 = Color(red: 0xAD/255.0, green: 0xAD/255.0, blue: 0xB2/255.0)
         public static let separator = Color(red: 0xE5/255.0, green: 0xE5/255.0, blue: 0xEA/255.0)
+        /// 平面分区的发丝横线（比 separator 更浅，仅作分区节奏）
+        public static let hairline = Color(red: 0xF0/255.0, green: 0xF0/255.0, blue: 0xF0/255.0)
 
         // 模块色
         public static let cpu = Color(red: 0x0A/255.0, green: 0x84/255.0, blue: 0xFF/255.0)

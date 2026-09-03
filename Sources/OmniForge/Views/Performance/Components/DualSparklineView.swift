@@ -1,11 +1,13 @@
 import SwiftUI
 
-/// 网络双序列镜像图 — 上行红从中线向上、下行绿从中线向下（Activity Monitor 风格）。
+/// 网络双序列走势图 — 下行绿线与上行红线在同一坐标域内全幅绘制。
 ///
-/// 上下各占半高，共享同一 domain `0...max(up, down, 1)`，避免遮挡。
+/// 共享 domain `0...max(up, down, 1)`：上行通常远小于下行，自然沉在下方区域。
+/// 上行线降低不透明度以区分主次；下行右端圆点标记最新值。
 struct DualSparklineView: View {
     let downValues: [Double]
     let upValues: [Double]
+    var lineWidth: CGFloat = 1.4
 
     private var domain: ClosedRange<Double> {
         let peak = max(downValues.max() ?? 0, upValues.max() ?? 0)
@@ -13,32 +15,22 @@ struct DualSparklineView: View {
     }
 
     var body: some View {
-        GeometryReader { proxy in
-            let half = proxy.size.height / 2
-            ZStack {
-                // 下行（绿）从中线向下：默认映射 value=1 在帧顶（中线），垂直翻转后落在底边。
-                SparklineView(
-                    values: downValues,
-                    color: Theme.Stats.down,
-                    domain: domain,
-                    lineWidth: 1.5,
-                    fillHeight: 0.18
-                )
-                .frame(height: half)
-                .frame(maxHeight: .infinity, alignment: .bottom)
-                .scaleEffect(x: 1, y: -1)
-
-                // 上行（红）从中线向上：默认映射 value=1 在帧顶即面板顶，无需翻转。
-                SparklineView(
-                    values: upValues,
-                    color: Theme.Stats.up,
-                    domain: domain,
-                    lineWidth: 1.5,
-                    fillHeight: 0.18
-                )
-                .frame(height: half)
-                .frame(maxHeight: .infinity, alignment: .top)
-            }
+        ZStack {
+            SparklineView(
+                values: upValues,
+                color: Theme.Stats.up.opacity(0.55),
+                domain: domain,
+                lineWidth: lineWidth,
+                fillHeight: 0
+            )
+            SparklineView(
+                values: downValues,
+                color: Theme.Stats.down,
+                domain: domain,
+                lineWidth: lineWidth,
+                fillHeight: 0,
+                endDotRadius: 2.2
+            )
         }
     }
 }
