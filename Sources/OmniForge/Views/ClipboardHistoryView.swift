@@ -8,8 +8,6 @@ struct ClipboardHistoryView: View {
     @ObservedObject var l10n: L10n
     @ObservedObject var uiState: ClipboardOverlayState
     let onRequestClose: () -> Void
-    let isReadyToPaste: () -> Bool
-    let pasteTargetPIDProvider: () -> pid_t?
 
     @State private var loadedEntryCount: Int = 15
     @State private var containerHeight: CGFloat = 0
@@ -706,12 +704,7 @@ struct ClipboardHistoryView: View {
         default:
             break
         }
-        pasteService.paste(
-            entry: entryToPaste,
-            close: onRequestClose,
-            isReadyToPaste: isReadyToPaste,
-            targetPID: pasteTargetPIDProvider()
-        )
+        pasteService.paste(entry: entryToPaste, close: onRequestClose)
     }
 
 }

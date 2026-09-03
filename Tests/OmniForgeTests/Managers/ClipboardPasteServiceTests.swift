@@ -2,18 +2,12 @@ import AppKit
 import XCTest
 @testable import OmniForge
 
+/// 对齐 Maccy 后的粘贴服务：写入剪贴板 → 关闭面板 → 权限预检 → 同步注入 Cmd+V（无轮询/延时）。
 final class ClipboardPasteServiceTests: XCTestCase {
     func test_unloadedPayloadDoesNotClearCloseOrPostPaste() {
         let writer = FakePasteboardWriter()
         let poster = FakeKeyEventPoster()
-        let service = ClipboardPasteService(
-            writer: writer,
-            keyPoster: poster,
-            pasteDelay: 0,
-            maxWaitForDeactivate: 0,
-            pollInterval: 0.01,
-            isAppActive: { false }
-        )
+        let service = makeService(writer: writer, poster: poster)
         let entry = ClipboardEntry(
             id: UUID(),
             createdAt: Date(),
@@ -32,203 +26,87 @@ final class ClipboardPasteServiceTests: XCTestCase {
         XCTAssertEqual(poster.postCount, 0)
     }
 
-    func test_pasteWritesTextAndTriggersPaste() {
+    func test_pasteWritesTextAndPostsCommandVSynchronously() {
         let writer = FakePasteboardWriter()
         let poster = FakeKeyEventPoster()
-        let service = ClipboardPasteService(
-            writer: writer,
-            keyPoster: poster,
-            pasteDelay: 0,
-            maxWaitForDeactivate: 0,
-            pollInterval: 0.01,
-            isAppActive: { false }
-        )
+        let service = makeService(writer: writer, poster: poster)
 
-        let entry = makeTextEntry()
+        service.paste(entry: makeTextEntry(), close: nil)
 
-        let expectation = expectation(description: "Paste triggered")
-        poster.onPost = { expectation.fulfill() }
-
-        service.paste(entry: entry, close: nil)
-
-        waitForExpectations(timeout: 1)
         XCTAssertEqual(writer.clearCount, 1)
         XCTAssertEqual(writer.lastString, "Hello")
+        XCTAssertEqual(poster.postCount, 1)
     }
 
-    func test_pasteCallsCloseBeforeTriggeringPaste() {
+    func test_pasteCallsCloseBeforePosting() {
+        let poster = FakeKeyEventPoster()
+        let service = makeService(poster: poster)
+
+        var events: [String] = []
+        poster.onPost = { events.append("post") }
+
+        service.paste(entry: makeTextEntry(), close: { events.append("close") })
+
+        XCTAssertEqual(events, ["close", "post"])
+    }
+
+    func test_pasteWithoutAccessibilityWritesPasteboardButDoesNotPost() {
         let writer = FakePasteboardWriter()
         let poster = FakeKeyEventPoster()
+        var deniedPromptCount = 0
         let service = ClipboardPasteService(
             writer: writer,
             keyPoster: poster,
-            pasteDelay: 0,
-            maxWaitForDeactivate: 0,
-            pollInterval: 0.01,
-            isAppActive: { false }
+            isAccessibilityGranted: { false },
+            onAccessibilityDenied: { deniedPromptCount += 1 }
         )
-
-        var didClose = false
-        let expectation = expectation(description: "Paste triggered")
-        poster.onPost = {
-            XCTAssertTrue(didClose)
-            expectation.fulfill()
-        }
-
-        service.paste(entry: makeTextEntry(), close: { didClose = true })
-
-        waitForExpectations(timeout: 1)
-    }
-
-    func test_pasteWaitsForAppToDeactivateBeforeTriggeringPaste() {
-        let writer = FakePasteboardWriter()
-        let poster = FakeKeyEventPoster()
-
-        var appActive = true
-        let service = ClipboardPasteService(
-            writer: writer,
-            keyPoster: poster,
-            pasteDelay: 0,
-            maxWaitForDeactivate: 1,
-            pollInterval: 0.01,
-            isAppActive: { appActive }
-        )
-
-        let expectation = expectation(description: "Paste triggered after app deactivates")
-        poster.onPost = {
-            XCTAssertFalse(appActive)
-            expectation.fulfill()
-        }
 
         service.paste(entry: makeTextEntry(), close: nil)
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            appActive = false
-        }
-
-        waitForExpectations(timeout: 1)
+        // 权限缺失时合成按键会静默失效：内容仍写入（可手动 Cmd+V 补救），改为触发授权引导。
+        XCTAssertEqual(writer.clearCount, 1)
+        XCTAssertEqual(writer.lastString, "Hello")
+        XCTAssertEqual(poster.postCount, 0)
+        XCTAssertEqual(deniedPromptCount, 1)
     }
 
-    func test_pasteTriggersAfterTimeoutIfAppStaysActive() {
-        let writer = FakePasteboardWriter()
+    func test_pasteDoesNotPromptWhenAccessibilityGranted() {
         let poster = FakeKeyEventPoster()
-
+        var deniedPromptCount = 0
         let service = ClipboardPasteService(
-            writer: writer,
             keyPoster: poster,
-            pasteDelay: 0,
-            maxWaitForDeactivate: 0.05,
-            pollInterval: 0.01,
-            isAppActive: { true }
+            isAccessibilityGranted: { true },
+            onAccessibilityDenied: { deniedPromptCount += 1 }
         )
-
-        let expectation = expectation(description: "Paste triggered after timeout")
-        poster.onPost = { expectation.fulfill() }
 
         service.paste(entry: makeTextEntry(), close: nil)
 
-        waitForExpectations(timeout: 1)
-    }
-
-    func test_pasteWaitsForCustomReadyCondition() {
-        let writer = FakePasteboardWriter()
-        let poster = FakeKeyEventPoster()
-
-        var readyToPaste = false
-        let service = ClipboardPasteService(
-            writer: writer,
-            keyPoster: poster,
-            pasteDelay: 0,
-            maxWaitForDeactivate: 1,
-            pollInterval: 0.01,
-            isAppActive: { false }
-        )
-
-        let expectation = expectation(description: "Paste triggered after ready condition becomes true")
-        poster.onPost = {
-            XCTAssertTrue(readyToPaste)
-            expectation.fulfill()
-        }
-
-        service.paste(entry: makeTextEntry(), close: nil, isReadyToPaste: { readyToPaste })
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            readyToPaste = true
-        }
-
-        waitForExpectations(timeout: 1)
-    }
-
-    func test_pasteUsesGlobalPasteWhenReadyEvenIfTargetPIDProvided() {
-        let writer = FakePasteboardWriter()
-        let poster = FakeKeyEventPoster()
-        let targetPID: pid_t = 123
-        let service = ClipboardPasteService(
-            writer: writer,
-            keyPoster: poster,
-            pasteDelay: 0,
-            maxWaitForDeactivate: 1,
-            pollInterval: 0.01,
-            isAppActive: { true }
-        )
-
-        let expectation = expectation(description: "Paste posted globally when ready")
-        poster.onPost = {
-            XCTAssertNil(poster.lastTargetPID)
-            expectation.fulfill()
-        }
-
-        service.paste(entry: makeTextEntry(), close: nil, isReadyToPaste: { true }, targetPID: targetPID)
-
-        waitForExpectations(timeout: 1)
-    }
-
-    func test_pastePostsToTargetPIDAfterTimeoutWhenNotReady() {
-        let writer = FakePasteboardWriter()
-        let poster = FakeKeyEventPoster()
-        let targetPID: pid_t = 456
-        let service = ClipboardPasteService(
-            writer: writer,
-            keyPoster: poster,
-            pasteDelay: 0,
-            maxWaitForDeactivate: 0.05,
-            pollInterval: 0.01,
-            isAppActive: { true }
-        )
-
-        let expectation = expectation(description: "Paste posted to target PID after timeout")
-        poster.onPost = {
-            XCTAssertEqual(poster.lastTargetPID, targetPID)
-            expectation.fulfill()
-        }
-
-        service.paste(entry: makeTextEntry(), close: nil, isReadyToPaste: { false }, targetPID: targetPID)
-
-        waitForExpectations(timeout: 1)
+        XCTAssertEqual(poster.postCount, 1)
+        XCTAssertEqual(deniedPromptCount, 0)
     }
 
     func test_pasteWritesURLAsPlainTextAndURLFormats() {
         let writer = FakePasteboardWriter()
         let poster = FakeKeyEventPoster()
-        let service = ClipboardPasteService(
-            writer: writer,
-            keyPoster: poster,
-            pasteDelay: 0,
-            maxWaitForDeactivate: 0,
-            pollInterval: 0.01,
-            isAppActive: { false }
-        )
+        let service = makeService(writer: writer, poster: poster)
 
-        let entry = makeURLEntry()
-        let expectation = expectation(description: "Paste triggered")
-        poster.onPost = { expectation.fulfill() }
+        service.paste(entry: makeURLEntry(), close: nil)
 
-        service.paste(entry: entry, close: nil)
-
-        waitForExpectations(timeout: 1)
         XCTAssertEqual(writer.stringByType[.string], "https://example.com/docs?q=inputlock")
         XCTAssertEqual(writer.stringByType[.URL], "https://example.com/docs?q=inputlock")
         XCTAssertEqual(writer.writeObjectsCallCount, 1)
+        XCTAssertEqual(poster.postCount, 1)
+    }
+
+    private func makeService(
+        writer: FakePasteboardWriter = FakePasteboardWriter(),
+        poster: FakeKeyEventPoster
+    ) -> ClipboardPasteService {
+        ClipboardPasteService(
+            writer: writer,
+            keyPoster: poster,
+            isAccessibilityGranted: { true }
+        )
     }
 }
 
@@ -287,12 +165,10 @@ private final class FakePasteboardWriter: PasteboardWriting {
 
 private final class FakeKeyEventPoster: KeyEventPosting {
     var onPost: (() -> Void)?
-    private(set) var lastTargetPID: pid_t?
     private(set) var postCount = 0
 
-    func postCommandV(targetPID: pid_t?) {
+    func postCommandV() {
         postCount += 1
-        lastTargetPID = targetPID
         onPost?()
     }
 }

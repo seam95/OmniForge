@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import Carbon
 import Foundation
 
@@ -43,96 +44,69 @@ final class SystemPasteboardWriter: PasteboardWriting {
 }
 
 protocol KeyEventPosting {
-    func postCommandV(targetPID: pid_t?)
+    func postCommandV()
 }
 
+/// 模拟 Cmd+V 注入到当前会话（对齐 Maccy 的 Clipboard.paste 实现）。
 final class SystemKeyEventPoster: KeyEventPosting {
-    func postCommandV(targetPID: pid_t?) {
-        // 注意：使用 CGEvent 模拟按键需要在「系统设置 -> 隐私与安全性 -> 辅助功能」中授予权限，
-        // 否则这里的 Cmd+V 事件不会生效。
-        guard let source = CGEventSource(stateID: .combinedSessionState) else { return }
-        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: true)
-        keyDown?.flags = .maskCommand
-        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: false)
-        keyUp?.flags = .maskCommand
+    /// 低位 0x8 为区分左/右修饰键的设备依赖标志位，部分应用要求其存在才响应合成 Cmd 组合键。
+    private static let commandFlags = CGEventFlags(rawValue: CGEventFlags.maskCommand.rawValue | 0x000008)
 
-        if let targetPID {
-            keyDown?.postToPid(targetPID)
-            keyUp?.postToPid(targetPID)
-        } else {
-            keyDown?.post(tap: .cghidEventTap)
-            keyUp?.post(tap: .cghidEventTap)
-        }
+    func postCommandV() {
+        guard let source = CGEventSource(stateID: .combinedSessionState) else { return }
+        // 粘贴瞬间抑制本地物理键盘事件，防止用户物理按键（如回车的 keyUp）与合成 Cmd+V 竞态混入。
+        source.setLocalEventsFilterDuringSuppressionState(
+            [.permitLocalMouseEvents, .permitSystemDefinedEvents],
+            state: .eventSuppressionStateSuppressionInterval
+        )
+        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: true)
+        keyDown?.flags = Self.commandFlags
+        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: false)
+        keyUp?.flags = Self.commandFlags
+        // 必须走 session tap：macOS 26 起 WindowServer 校验合成事件来源，
+        // HID tap 注入的合成事件在部分分发路径被静默丢弃（需「辅助功能」权限，否则同样不生效）。
+        keyDown?.post(tap: .cgSessionEventTap)
+        keyUp?.post(tap: .cgSessionEventTap)
     }
 }
 
 final class ClipboardPasteService {
     private let writer: PasteboardWriting
     private let keyPoster: KeyEventPosting
-    private let pasteDelay: TimeInterval
-    private let maxWaitForDeactivate: TimeInterval
-    private let pollInterval: TimeInterval
-    private let isAppActive: () -> Bool
+    private let isAccessibilityGranted: () -> Bool
+    private let onAccessibilityDenied: () -> Void
 
     init(
         writer: PasteboardWriting = SystemPasteboardWriter(),
         keyPoster: KeyEventPosting = SystemKeyEventPoster(),
-        pasteDelay: TimeInterval = 0.08,
-        maxWaitForDeactivate: TimeInterval = 1.2,
-        pollInterval: TimeInterval = 0.02,
-        isAppActive: @escaping () -> Bool = { NSApp.isActive }
+        isAccessibilityGranted: @escaping () -> Bool = { AXIsProcessTrusted() },
+        onAccessibilityDenied: @escaping () -> Void = {
+            // 触发系统授权弹窗（自带「打开系统设置」入口）；仅用 C API 以规避严格并发限制。
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+            _ = AXIsProcessTrustedWithOptions(options)
+        }
     ) {
         self.writer = writer
         self.keyPoster = keyPoster
-        self.pasteDelay = pasteDelay
-        self.maxWaitForDeactivate = maxWaitForDeactivate
-        self.pollInterval = pollInterval
-        self.isAppActive = isAppActive
+        self.isAccessibilityGranted = isAccessibilityGranted
+        self.onAccessibilityDenied = onAccessibilityDenied
     }
 
-    func paste(
-        entry: ClipboardEntry,
-        close: (() -> Void)?,
-        isReadyToPaste: (() -> Bool)? = nil,
-        targetPID: pid_t? = nil
-    ) {
+    /// 写入系统剪贴板并注入 Cmd+V 粘贴回原输入框。
+    ///
+    /// 前提：剪贴板面板为 nonactivating（呼出期间原应用从未失去键盘焦点），
+    /// 因此 close（面板 orderOut）后立即注入即可命中原输入框，无需任何焦点恢复与等待。
+    func paste(entry: ClipboardEntry, close: (() -> Void)?) {
         guard writeEntry(entry) else { return }
 
         close?()
 
-        let ready = isReadyToPaste ?? { !self.isAppActive() }
-        waitForDeactivateAndPaste(startTime: Date(), isReadyToPaste: ready, targetPID: targetPID)
-    }
-
-    private func waitForDeactivateAndPaste(
-        startTime: Date,
-        isReadyToPaste: @escaping () -> Bool,
-        targetPID: pid_t?
-    ) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + pasteDelay) { [weak self] in
-            self?.attemptPaste(startTime: startTime, isReadyToPaste: isReadyToPaste, targetPID: targetPID)
-        }
-    }
-
-    private func attemptPaste(
-        startTime: Date,
-        isReadyToPaste: @escaping () -> Bool,
-        targetPID: pid_t?
-    ) {
-        if isReadyToPaste() {
-            // 就绪后优先走系统分发，兼容性更高；超时后再回落到定向 PID。
-            keyPoster.postCommandV(targetPID: nil)
+        // 无「辅助功能」权限时合成按键会静默失效：此时剪贴板内容已写入（可手动 Cmd+V 补救），改为引导授权。
+        guard isAccessibilityGranted() else {
+            onAccessibilityDenied()
             return
         }
-
-        if Date().timeIntervalSince(startTime) >= maxWaitForDeactivate {
-            keyPoster.postCommandV(targetPID: targetPID)
-            return
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + pollInterval) { [weak self] in
-            self?.attemptPaste(startTime: startTime, isReadyToPaste: isReadyToPaste, targetPID: targetPID)
-        }
+        keyPoster.postCommandV()
     }
 
     private func writeEntry(_ entry: ClipboardEntry) -> Bool {

@@ -14,7 +14,6 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
     private var quickPhraseState: QuickPhraseOverlayState?
     private var tabState: TabPanelState?
     private var previousActiveApp: NSRunningApplication?
-    private var pasteTargetPID: pid_t?
     private var keyEventMonitor: Any?
     private var activeAppObserver: Any?
     private var lastNonSelfActiveApp: NSRunningApplication?
@@ -124,8 +123,8 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
         panel.makeKeyAndOrderFront(nil)
         panel.orderFrontRegardless()
         ensureValidVisibleFrame()
-        // 临时激活应用以支持中文输入法
-        NSApp.activate(ignoringOtherApps: true)
+        // 注意：不要在此处 NSApp.activate —— 面板为 nonactivating，原应用保持前台与键盘焦点，
+        // 粘贴时注入 Cmd+V 才能直接命中原输入框（对齐 Maccy 策略）。
     }
 
     private func resetCurrentTabState() {
@@ -156,12 +155,12 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
     }
 
     func hide() {
-        dismiss(shouldRestorePreviousApp: true)
+        dismiss()
     }
 
     func windowWillClose(_ notification: Notification) {
         saveWindowFrame()
-        dismiss(shouldRestorePreviousApp: true)
+        dismiss()
     }
 
     func windowDidResize(_ notification: Notification) {
@@ -177,8 +176,8 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
         guard !isProgrammaticDismiss else { return }
         // 有 sheet（如快捷短语编辑器）显示时，不关闭面板
         if panel.attachedSheet != nil { return }
-        // 用户点击窗口外导致窗口失去焦点时，不要再强行激活”之前的应用”，避免抢走用户刚点击的焦点。
-        dismiss(shouldRestorePreviousApp: false)
+        // 点击窗外失焦即关闭；原应用从未被夺走焦点，无需任何恢复动作。
+        dismiss()
     }
 
     func handleEscapeKey() {
@@ -225,12 +224,6 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
                     uiState: uiState,
                     onRequestClose: { [weak self] in
                         self?.hide()
-                    },
-                    isReadyToPaste: { [weak self] in
-                        self?.isReadyToPaste() ?? true
-                    },
-                    pasteTargetPIDProvider: { [weak self] in
-                        self?.pasteTargetPID
                     }
                 ),
                 quickPhraseView: QuickPhraseView(
@@ -240,12 +233,6 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
                     l10n: l10n,
                     onRequestClose: { [weak self] in
                         self?.hide()
-                    },
-                    isReadyToPaste: { [weak self] in
-                        self?.isReadyToPaste() ?? true
-                    },
-                    pasteTargetPIDProvider: { [weak self] in
-                        self?.pasteTargetPID
                     }
                 )
             ))
@@ -257,6 +244,7 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
         installView()
     }
 
+    /// 记录呼出面板前的应用，仅用于「将粘贴到 XXX」的名称展示。
     private func rememberPreviousApp() {
         let frontmost = NSWorkspace.shared.frontmostApplication
         if isSelfApp(frontmost) {
@@ -264,16 +252,10 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
         } else {
             previousActiveApp = frontmost
         }
-        pasteTargetPID = previousActiveApp?.processIdentifier
     }
 
-    private func dismiss(shouldRestorePreviousApp: Bool) {
-        guard panel.isVisible else {
-            if !shouldRestorePreviousApp {
-                previousActiveApp = nil
-            }
-            return
-        }
+    private func dismiss() {
+        guard panel.isVisible else { return }
 
         saveWindowFrame()
         isProgrammaticDismiss = true
@@ -284,14 +266,8 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
         panel.orderOut(nil)
         NSCursor.arrow.set()
 
-        let app = previousActiveApp
         previousActiveApp = nil
         isProgrammaticDismiss = false
-
-        guard shouldRestorePreviousApp, let app else { return }
-        // non-activating panel 模式下，原应用可能仍是 frontmost，但再次 activate 能确保其拿回键盘焦点，
-        // 避免后续 CGEvent 的 Cmd+V 落到本应用的 key window（搜索框）里。
-        app.activate(options: [.activateIgnoringOtherApps])
     }
 
     private func releaseViewSession() {
@@ -306,18 +282,6 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
         uiState = nil
         quickPhraseState = nil
         tabState = nil
-    }
-
-    private func isPasteTargetActive() -> Bool {
-        guard let pasteTargetPID else { return true }
-        return NSWorkspace.shared.frontmostApplication?.processIdentifier == pasteTargetPID
-    }
-
-    private func isReadyToPaste() -> Bool {
-        // 非激活面板模式下 NSApp.isActive 可能始终为 false，
-        // 需要额外确保面板已隐藏，否则 Cmd+V 可能仍会落到搜索框里。
-        guard panel.isVisible == false else { return false }
-        return isPasteTargetActive()
     }
 
     private func startActiveAppObserver() {
@@ -524,12 +488,7 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
             break
         }
 
-        pasteService.paste(
-            entry: entry,
-            close: { [weak self] in self?.hide() },
-            isReadyToPaste: { [weak self] in self?.isReadyToPaste() ?? true },
-            targetPID: pasteTargetPID
-        )
+        pasteService.paste(entry: entry, close: { [weak self] in self?.hide() })
     }
 
     private func stopKeyMonitor() {
@@ -590,11 +549,6 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
             imageHeight: nil,
             contentHash: nil
         )
-        pasteService.paste(
-            entry: entry,
-            close: { [weak self] in self?.hide() },
-            isReadyToPaste: { [weak self] in self?.isReadyToPaste() ?? true },
-            targetPID: pasteTargetPID
-        )
+        pasteService.paste(entry: entry, close: { [weak self] in self?.hide() })
     }
 }

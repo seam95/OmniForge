@@ -6,8 +6,6 @@ struct QuickPhraseView: View {
     @ObservedObject var tabState: TabPanelState
     let l10n: L10n
     let onRequestClose: () -> Void
-    let isReadyToPaste: () -> Bool
-    let pasteTargetPIDProvider: () -> pid_t?
 
     @State private var hoveredPhraseID: UUID?
     @State private var showEditor = false
@@ -250,12 +248,7 @@ struct QuickPhraseView: View {
             contentHash: nil
         )
 
-        pasteService.paste(
-            entry: entry,
-            close: onRequestClose,
-            isReadyToPaste: isReadyToPaste,
-            targetPID: pasteTargetPIDProvider()
-        )
+        pasteService.paste(entry: entry, close: onRequestClose)
     }
 
     private func editPhrase(_ phrase: QuickPhraseEntry) {
