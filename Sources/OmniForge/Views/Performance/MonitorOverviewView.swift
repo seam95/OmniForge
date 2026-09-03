@@ -177,7 +177,10 @@ struct MonitorOverviewView: View {
                             { onSelectRankable(kind) }
                         }
                     )
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    // idealWidth 置 0：HStack 对 maxWidth:.infinity 子视图是
+                    // 「理想宽度 + 均分剩余空间」而非 flex:1 均分，三栏文本长度
+                    // 不同会分得不同宽度；理想宽归零后严格等宽，折线起点对齐。
+                    .frame(idealWidth: 0, maxWidth: .infinity, alignment: .leading)
                 }
             }
             // 栏内水平 12 + hover 底 4 = 设计稿栏内 16；整区 4 补齐首栏 20 / 末栏 20
