@@ -100,9 +100,6 @@ struct ControlCenterContainerView: View {
                 .frame(maxWidth: .infinity, alignment: .top)
 
             footer
-                .frame(height: 36)
-                .padding(.horizontal, 12)
-                .padding(.bottom, 6)
         }
         .frame(width: ControlCenterContentMetrics.panelWidth)
         .background(
@@ -390,27 +387,53 @@ struct ControlCenterContainerView: View {
             )
     }
 
+    /// 监控页为平面白底风格（对齐设计稿）：footer 与内容区同底、顶部发丝线分隔、
+    /// 按钮用主色；其余面板维持面板灰底默认样式。
     private var footer: some View {
-        HStack {
-            FooterButton(label: state.l10n.s.settingsTitle, systemImage: "gearshape") {
-                onOpenSettings(nil)
+        let flat = selectedPanel == .systemMonitor
+        let tint = flat ? MonitorOverviewPalette.primary(colorScheme) : nil
+
+        return VStack(spacing: 0) {
+            if flat {
+                Rectangle()
+                    .fill(MonitorOverviewPalette.hairline(colorScheme))
+                    .frame(height: 1)
             }
 
-            Spacer()
-
-            // Token 页底栏右位为「刷新」；其余面板保持「退出」（UI 稿 4.2）。
-            // 手动刷新穿透内存/磁盘新鲜缓存，但 429 冷却不可穿透（#03）。
-            if selectedPanel == .tokenUsage {
-                FooterButton(label: state.l10n.s.tokenRefresh, systemImage: "arrow.clockwise") {
-                    state.tokenUsageManager?.refreshNow(force: true)
-                    state.deepSeekBalanceManager?.refreshNow()
+            HStack {
+                FooterButton(
+                    label: state.l10n.s.settingsTitle,
+                    systemImage: "gearshape",
+                    tint: tint
+                ) {
+                    onOpenSettings(nil)
                 }
-            } else {
-                FooterButton(label: state.l10n.s.actionQuit, systemImage: nil) {
-                    NSApp.terminate(nil)
+
+                Spacer()
+
+                // Token 页底栏右位为「刷新」；其余面板保持「退出」（UI 稿 4.2）。
+                // 手动刷新穿透内存/磁盘新鲜缓存，但 429 冷却不可穿透（#03）。
+                if selectedPanel == .tokenUsage {
+                    FooterButton(label: state.l10n.s.tokenRefresh, systemImage: "arrow.clockwise") {
+                        state.tokenUsageManager?.refreshNow(force: true)
+                        state.deepSeekBalanceManager?.refreshNow()
+                    }
+                } else {
+                    FooterButton(
+                        label: state.l10n.s.actionQuit,
+                        systemImage: flat ? "rectangle.portrait.and.arrow.right" : nil,
+                        tint: tint
+                    ) {
+                        NSApp.terminate(nil)
+                    }
                 }
             }
+            .frame(height: 36)
+            .padding(.horizontal, 12)
         }
+        .padding(.bottom, 6)
+        .frame(maxWidth: .infinity)
+        .background(flat && colorScheme == .light ? Color.white : Color.clear)
     }
 
     private func resolveSelection(in visiblePanels: [MenuPanel]) {

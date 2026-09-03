@@ -72,9 +72,6 @@ struct MonitorOverviewView: View {
                     }
                     sectionView(section)
                 }
-
-                // 与共享 footer（设置/退出）之间的收尾发丝线
-                hairline
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
