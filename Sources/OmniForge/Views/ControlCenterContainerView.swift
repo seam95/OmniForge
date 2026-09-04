@@ -168,6 +168,11 @@ struct ControlCenterContainerView: View {
             }
         }
         .animation(Theme.Animation.pageTransition, value: selectedPanelRawValue)
+        // token 页与监控 overview 同为平面白底风格：白底挂在转场容器层而非内容根部，
+        // 避免转场包装高度略大于内容固有高度时底部余量透出面板灰底。
+        .background(
+            selectedPanel == .tokenUsage && colorScheme == .light ? Color.white : Color.clear
+        )
     }
 
     @ViewBuilder
@@ -387,10 +392,10 @@ struct ControlCenterContainerView: View {
             )
     }
 
-    /// 监控页为平面白底风格（对齐设计稿）：footer 与内容区同底、顶部发丝线分隔、
+    /// 监控页与 token 页为平面白底风格（对齐设计稿）：footer 与内容区同底、顶部发丝线分隔、
     /// 按钮用主色；其余面板维持面板灰底默认样式。
     private var footer: some View {
-        let flat = selectedPanel == .systemMonitor
+        let flat = selectedPanel == .systemMonitor || selectedPanel == .tokenUsage
         let tint = flat ? MonitorOverviewPalette.primary(colorScheme) : nil
 
         return VStack(spacing: 0) {
@@ -414,7 +419,7 @@ struct ControlCenterContainerView: View {
                 // Token 页底栏右位为「刷新」；其余面板保持「退出」（UI 稿 4.2）。
                 // 手动刷新穿透内存/磁盘新鲜缓存，但 429 冷却不可穿透（#03）。
                 if selectedPanel == .tokenUsage {
-                    FooterButton(label: state.l10n.s.tokenRefresh, systemImage: "arrow.clockwise") {
+                    FooterButton(label: state.l10n.s.tokenRefresh, systemImage: "arrow.clockwise", tint: tint) {
                         state.tokenUsageManager?.refreshNow(force: true)
                         state.deepSeekBalanceManager?.refreshNow()
                     }

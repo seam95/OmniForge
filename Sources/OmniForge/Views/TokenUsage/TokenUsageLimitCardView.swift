@@ -10,6 +10,8 @@ struct TokenUsageLimitCardView: View {
     /// 注入「现在」以便说明行文案可测。
     let now: Date
 
+    @Environment(\.colorScheme) private var colorScheme
+
     private var status: TokenUsageCardStatus {
         TokenUsageCardStatus.derive(from: limits)
     }
@@ -67,12 +69,12 @@ struct TokenUsageLimitCardView: View {
             TokenUsageProviderIconView(provider: limits.provider, size: 16, cornerRadius: 4)
             Text(headerTitle)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(Theme.Stats.text1)
+                .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
             Spacer()
             if let planSubtitle {
                 Text(planSubtitle)
                     .font(.system(size: 10, weight: .regular))
-                    .foregroundColor(Theme.Stats.text3)
+                    .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
             }
         }
     }
@@ -176,7 +178,7 @@ struct TokenUsageLimitCardView: View {
         HStack(spacing: 8) {
             Text(label)
                 .font(Theme.Stats.font11Regular)
-                .foregroundColor(Theme.Stats.text2)
+                .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
                 .lineLimit(1)
                 .frame(width: 40, alignment: .leading)
 
@@ -187,13 +189,13 @@ struct TokenUsageLimitCardView: View {
 
             Text(valueText)
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundColor(Theme.Stats.text1)
+                .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                 .lineLimit(1)
                 .frame(width: 34, alignment: .trailing)
 
             Text(resetTime ?? "")
                 .font(.system(size: 10, weight: .regular, design: .monospaced))
-                .foregroundColor(Theme.Stats.text3)
+                .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                 .lineLimit(1)
                 .frame(width: Self.resetTimeColumnWidth, alignment: .trailing)
         }
@@ -214,7 +216,7 @@ struct TokenUsageLimitCardView: View {
                         // 官方只给了数量没有明细时的退化展示
                         Text(String(format: strings.tokenResetBankCountOnlyFormat, count))
                             .font(Theme.Stats.font10Regular)
-                            .foregroundColor(Theme.Stats.text3)
+                            .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                     } else {
                         VStack(alignment: .leading, spacing: 4) {
                             ForEach(rows.indices, id: \.self) { index in
@@ -233,7 +235,7 @@ struct TokenUsageLimitCardView: View {
         HStack(spacing: 8) {
             Text(row.label)
                 .font(Theme.Stats.font11Regular)
-                .foregroundColor(Theme.Stats.text2)
+                .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
                 .lineLimit(1)
                 .frame(width: 40, alignment: .leading)
 
@@ -244,7 +246,7 @@ struct TokenUsageLimitCardView: View {
 
             Text(row.expiryText)
                 .font(.system(size: 10, weight: .regular, design: .monospaced))
-                .foregroundColor(Theme.Stats.text3)
+                .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                 .lineLimit(1)
                 .frame(width: 72, alignment: .trailing)
         }
@@ -282,15 +284,17 @@ struct TokenUsageLimitCardView: View {
                 .foregroundColor(tint)
             Text(caption)
                 .font(Theme.Stats.font10Regular)
-                .foregroundColor(Theme.Stats.text2)
+                .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
         }
     }
 }
 
-/// 连续式极简进度条：高 5pt，圆角 2.5，底轨 #EDEDEF。
+/// 连续式极简进度条：高 5pt，圆角 2.5；底轨对齐监控进度条语义色。
 private struct LimitBar: View {
     let value: Double
     let barColor: Color
+
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         GeometryReader { proxy in
@@ -300,7 +304,7 @@ private struct LimitBar: View {
 
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(Color(red: 0xED / 255.0, green: 0xED / 255.0, blue: 0xEF / 255.0))
+                    .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.12))
                     .frame(height: 5)
 
                 if fillWidth > 0 {

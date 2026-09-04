@@ -18,12 +18,12 @@ struct TokenUsageTrendChartView: View {
             sectionHeader
             if points.isEmpty {
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(colorScheme == .light ? Color(red: 0xED / 255.0, green: 0xED / 255.0, blue: 0xEF / 255.0) : Color.white.opacity(0.06))
+                    .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.06))
                     .frame(height: 140)
                     .overlay(
                         Text(strings.tokenEmptyHint)
                             .font(Theme.Stats.font10Regular)
-                            .foregroundStyle(Theme.Stats.text3)
+                            .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                     )
             } else {
                 chart
@@ -41,14 +41,15 @@ struct TokenUsageTrendChartView: View {
                 .frame(width: 6, height: 6)
             Text(strings.tokenTrendTitle)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(Theme.Stats.text1)
+                .tracking(1)
+                .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
             Spacer()
             if let hovered {
                 Text(
                     "\(hovered.date.formatted(xAxisFormat)) - \(TokenUsageFormat.compactTokens(hovered.tokens)) \(strings.tokenUnit)"
                 )
                 .font(Theme.Stats.font10Regular)
-                .foregroundStyle(Theme.Stats.text2)
+                .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
                 .transition(.opacity)
             }
             periodPicker

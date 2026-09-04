@@ -1,8 +1,10 @@
 import SwiftUI
 
-/// 控制中心「Token」页 — 双分区（子 tab）布局：「余额」= 供应商限额/余额卡，
-/// 「用量」= 本地统计仪表盘（汇总卡 + 热力图 + 趋势图 + 模型 Top）。
+/// 控制中心「Token」页 — 双分区（子 tab）布局：「余额」= 供应商限额/余额分区，
+/// 「用量」= 本地统计仪表盘（汇总指标 + 热力图 + 趋势图 + 模型 Top）。
 ///
+/// 平面分区布局（对齐监控 overview）：无卡片，浅色白底由容器转场层承载，
+/// 分区之间 1pt 发丝线分隔，脚注以 caption 形式挂在内容尾部。
 /// 余额区固定展示全部已配置供应商（无 provider 筛选）；「限额显示」齿轮位于
 /// 分段行右端；任一分区无数据时整块隐藏，面板级无任何配置时走
 /// `TokenUsageEmptyStateView` 空态（SPEC 4.2 / 4.3 / 4.6）。
@@ -25,16 +27,12 @@ struct TokenUsagePanelView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            content
-        }
-        .padding(.horizontal, 12)
-        .padding(.top, 2)
-        .padding(.bottom, 4)
-        .onAppear { reloadCredentialConfiguredProviders() }
-        .onChange(of: manager.limits) { _, _ in
-            reloadCredentialConfiguredProviders()
-        }
+        content
+            .padding(.top, 2)
+            .onAppear { reloadCredentialConfiguredProviders() }
+            .onChange(of: manager.limits) { _, _ in
+                reloadCredentialConfiguredProviders()
+            }
     }
 
     private var summaryCardsBlock: some View {
@@ -125,12 +123,14 @@ struct TokenUsagePanelView: View {
             TokenUsageEmptyStateView(strings: strings)
                 .frame(maxWidth: .infinity, minHeight: ControlCenterContentMetrics.emptyContentMinHeight)
         } else {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 0) {
                 sectionSwitcherRow
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 6)
                 // 内容随分区整组重算：id 变化触发 peer 淡切，
                 // ZStack 顶对齐让新旧内容在转场期间叠放不跳动。
                 ZStack(alignment: .topLeading) {
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 0) {
                         switch selectedSection {
                         case .balance: balanceSection
                         case .usage: usageSection
@@ -144,8 +144,8 @@ struct TokenUsagePanelView: View {
         }
     }
 
-    /// 余额分区：全部已配置 provider 的限额卡与余额卡 + 来源脚注；
-    /// 无可展示卡片（如限额快照未返回）时给占位。
+    /// 余额分区：全部已配置 provider 的限额/余额平面分区（发丝线分隔）+ 来源 caption；
+    /// 无可展示分区（如限额快照未返回）时给占位。
     @ViewBuilder
     private var balanceSection: some View {
         let displayableProviders = TokenUsageProviderDisplayPolicy.displayableCardProviders(
@@ -157,54 +157,99 @@ struct TokenUsagePanelView: View {
         if displayableProviders.isEmpty {
             sectionPlaceholder(strings.tokenBalanceEmptyHint)
         } else {
-            VStack(alignment: .leading, spacing: 10) {
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(Array(displayableProviders.enumerated()), id: \.element.id) { index, provider in
-                        if index > 0 {
-                            providerSeparator
-                        }
-                        if let limits = limitSnapshot(for: provider) {
-                            TokenUsageLimitCardView(
-                                limits: limits,
-                                strings: strings,
-                                displayMode: preferences.configuration.limitsDisplayMode,
-                                now: Date()
-                            )
-                        }
-                        if provider == .deepSeek,
-                           let balanceManager,
-                           balanceManager.showingBalanceCard {
-                            DeepSeekBalanceCardView(
-                                snapshot: balanceManager.snapshot,
-                                threshold: preferences.configuration.deepSeekBalanceSettings.lowBalanceThreshold,
-                                strings: strings,
-                                now: Date()
-                            )
-                        }
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(displayableProviders.enumerated()), id: \.element.id) { index, provider in
+                    if index > 0 {
+                        hairline
                     }
+                    providerBlock(provider)
                 }
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color.white)
-                )
-                footerLine
+                sourceCaption
             }
         }
     }
 
-    /// 用量分区：汇总卡 + 仪表盘（热力图 / 趋势 / 模型 Top）+ 本地统计脚注。
+    /// 单个 provider 余额分区：限额卡（或未配置占位）+ DeepSeek 余额块。
+    private func providerBlock(_ provider: TokenUsageProvider) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let limits = limitSnapshot(for: provider) {
+                TokenUsageLimitCardView(
+                    limits: limits,
+                    strings: strings,
+                    displayMode: preferences.configuration.limitsDisplayMode,
+                    now: Date()
+                )
+            }
+            if provider == .deepSeek,
+               let balanceManager,
+               balanceManager.showingBalanceCard {
+                DeepSeekBalanceCardView(
+                    snapshot: balanceManager.snapshot,
+                    threshold: preferences.configuration.deepSeekBalanceSettings.lowBalanceThreshold,
+                    strings: strings,
+                    now: Date()
+                )
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+
+    /// 分区分隔发丝线（与监控 overview 同款 1pt，浅色 #F0F0F0）。
+    private var hairline: some View {
+        Rectangle()
+            .fill(MonitorOverviewPalette.hairline(colorScheme))
+            .frame(height: 1)
+    }
+
+    /// 用量分区：汇总指标区 + 仪表盘（热力图 / 趋势 / 模型 Top）平面分区 + 本地统计 caption。
     /// 有本地数据或回填中时显示（回填中以现有数据渲染，数值逐步回填），否则占位。
     @ViewBuilder
     private var usageSection: some View {
         if manager.usageBackfilling || manager.hasUsageData {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 0) {
                 summaryCardsBlock
-                usageBlock
+
+                hairline
+                usageSectionView(
+                    TokenUsageActivityHeatmapView(
+                        heatmap: manager.activityHeatmap(filteredBy: nil),
+                        strings: strings
+                    )
+                )
+
+                hairline
+                usageSectionView(
+                    TokenUsageTrendChartView(
+                        points: manager.trendPoints(filteredBy: nil, period: trendPeriod),
+                        period: trendPeriodBinding,
+                        strings: strings
+                    )
+                )
+
+                let topModels = manager.topModels(filteredBy: nil, period: trendPeriod)
+                if !topModels.isEmpty {
+                    hairline
+                    usageSectionView(
+                        TokenUsageTopModelsView(
+                            models: topModels,
+                            strings: strings
+                        )
+                    )
+                }
+
+                localStatsCaption
             }
         } else {
             sectionPlaceholder(strings.tokenEmptyHint)
         }
+    }
+
+    /// 仪表盘分区统一内边距（对齐监控网络/磁盘分区 h16 v12）。
+    private func usageSectionView(_ view: some View) -> some View {
+        view
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
     }
 
     /// 分区级空态占位（居中轻文案，保持分段切换器在位）。
@@ -232,43 +277,6 @@ struct TokenUsagePanelView: View {
         credentialConfiguredProviders = TokenUsageCredentialStateReader.configuredProviders()
     }
 
-    private var providerSeparator: some View {
-        Rectangle()
-            .fill(colorScheme == .light ? Theme.Stats.separator : Color.white.opacity(0.08))
-            .frame(height: 0.5)
-    }
-
-    /// 用量仪表盘（2026-08-25 重设计）：活跃度 + 趋势 + 模型 + 本地统计脚注，
-    /// 由「用量」分区承载（汇总卡在分区层先行）。
-    @ViewBuilder
-    private var usageBlock: some View {
-        if manager.usageBackfilling || manager.hasUsageData {
-            VStack(alignment: .leading, spacing: 10) {
-                VStack(alignment: .leading, spacing: 14) {
-                    TokenUsageActivityHeatmapView(
-                        heatmap: manager.activityHeatmap(filteredBy: nil),
-                        strings: strings
-                    )
-                    TokenUsageTrendChartView(
-                        points: manager.trendPoints(filteredBy: nil, period: trendPeriod),
-                        period: trendPeriodBinding,
-                        strings: strings
-                    )
-                    TokenUsageTopModelsView(
-                        models: manager.topModels(filteredBy: nil, period: trendPeriod),
-                        strings: strings
-                    )
-                }
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color.white)
-                )
-                usageFooterLine
-            }
-        }
-    }
-
     /// 趋势周期（读写 `configuration.trendPeriodDefault`，持久化）。
     private var trendPeriod: TokenTrendPeriod {
         preferences.configuration.trendPeriodDefault
@@ -281,16 +289,19 @@ struct TokenUsagePanelView: View {
         )
     }
 
-    /// 用量来源标注：「本地统计 · 每 5 分钟汇总」。
-    private var usageFooterLine: some View {
+    /// 用量来源 caption：「本地统计 · 每 5 分钟汇总」（挂仪表盘尾部，左对齐）。
+    private var localStatsCaption: some View {
         Text(String(format: strings.tokenUsageLocalFormat, Int(ClaudeUsageCollector.defaultScanInterval / 60)))
             .font(Theme.Stats.font10Regular)
-            .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
-            .frame(maxWidth: .infinity, alignment: .center)
+            .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
+            .padding(.horizontal, 16)
+            .padding(.bottom, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// 来源脚注：「10 分钟前更新 · 官方来源 · 5 家已配置 4 家」（ⓘ 提示可打开的设置页，参考 UI 稿）。
-    private var footerLine: some View {
+    /// 来源 caption：「10 分钟前更新 · 官方来源 · 5 家已配置 4 家」
+    /// （ⓘ 提示可打开的设置页，挂余额分区尾部，左对齐）。
+    private var sourceCaption: some View {
         let allConfiguredProviders = TokenUsageProviderDisplayPolicy.providers(
             providerOrder: preferences.configuration.providerOrder,
             configuredLimitProviders: Set(manager.configuredProviders),
@@ -317,8 +328,10 @@ struct TokenUsagePanelView: View {
             )
         }
         .font(Theme.Stats.font10Regular)
-        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
-        .frame(maxWidth: .infinity, alignment: .center)
+        .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

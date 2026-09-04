@@ -35,7 +35,8 @@ struct TokenUsageTopModelsView: View {
                 .frame(width: 6, height: 6)
             Text(strings.tokenTopModelsTitle)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(Theme.Stats.text1)
+                .tracking(1)
+                .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
             Spacer()
         }
     }

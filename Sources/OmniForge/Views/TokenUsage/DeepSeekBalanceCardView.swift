@@ -36,7 +36,7 @@ struct DeepSeekBalanceCardView: View {
                 // 已配置但首拉尚未完成
                 Text(strings.deepSeekBalanceLoading)
                     .font(Theme.Stats.font11Regular)
-                    .foregroundStyle(Theme.Stats.text3)
+                    .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
             }
         }
     }
@@ -48,12 +48,12 @@ struct DeepSeekBalanceCardView: View {
             TokenUsageProviderIconView(provider: .deepSeek, size: 16, cornerRadius: 4)
             Text(strings.deepSeekBalanceCardTitle)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(Theme.Stats.text1)
+                .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
             Spacer()
             if let primaryBalance = primaryTotalBalanceText {
                 Text(primaryBalance)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(Theme.Stats.text1)
+                    .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                     .monospacedDigit()
             }
         }
@@ -86,19 +86,19 @@ struct DeepSeekBalanceCardView: View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(info.currency)
                 .font(Theme.Stats.font11Regular)
-                .foregroundColor(Theme.Stats.text2)
+                .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
             Spacer()
             Text(DeepSeekBalanceFormat.amount(info.totalBalance, rawText: info.totalBalanceText, currency: info.currency))
                 .font(Theme.Stats.font12Medium)
-                .foregroundColor(Theme.Stats.text1)
+                .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                 .monospacedDigit()
         }
     }
 
     private var currencySeparator: some View {
         Rectangle()
-            .fill(colorScheme == .light ? Theme.Stats.separator : Color.white.opacity(0.08))
-            .frame(height: 0.5)
+            .fill(MonitorOverviewPalette.hairline(colorScheme))
+            .frame(height: 1)
             .padding(.vertical, 1)
     }
 
@@ -110,7 +110,7 @@ struct DeepSeekBalanceCardView: View {
                 .foregroundColor(status.tint)
             Text(TokenUsageFormat.errorCaption(for: issue, now: now, strings: strings))
                 .font(Theme.Stats.font10Regular)
-                .foregroundColor(Theme.Stats.text2)
+                .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
         }
     }
 }

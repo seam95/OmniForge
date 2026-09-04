@@ -32,7 +32,7 @@ struct TokenUsageActivityHeatmapView: View {
                 legend
             } else {
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(colorScheme == .light ? Color(red: 0xED / 255.0, green: 0xED / 255.0, blue: 0xEF / 255.0) : Color.white.opacity(0.06))
+                    .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.06))
                     .frame(height: 7 * (cellSize + spacing) - spacing)
             }
         }
@@ -48,17 +48,18 @@ struct TokenUsageActivityHeatmapView: View {
                 .frame(width: 6, height: 6)
             Text(strings.tokenActivityTitle)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(Theme.Stats.text1)
+                .tracking(1)
+                .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
             Spacer()
             if let heatmap, let cell = hoveredCell(in: heatmap) {
                 Text(hoverSummary(cell))
                     .font(Theme.Stats.font10Regular)
-                    .foregroundStyle(Theme.Stats.text2)
+                    .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
                     .transition(.opacity)
             } else if let heatmap {
                 Text(String(format: strings.tokenSummaryActiveDaysFormat, heatmap.activeDays))
                     .font(Theme.Stats.font10Regular)
-                    .foregroundStyle(Theme.Stats.text3)
+                    .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
             }
         }
     }
