@@ -15,10 +15,9 @@ struct MonitorContainerView: View {
     )
     @ObservedObject private var featureRuntime = FeatureRuntime.shared
     @Environment(\.colorScheme) private var colorScheme
-    let snapshot: SystemSnapshot
-    let history: MetricHistory
-    let processState: ProcessBreakdownState
-    let speedTestState: SpeedTestState
+    /// 监控运行时直连观察（SPEC §9.4.2）：快照/历史/进程/测速状态由本页面
+    /// 自行订阅刷新，不再经 AppState 转发驱动控制中心根视图重算。
+    @ObservedObject var monitor: SystemMonitorManager
     let configuration: MonitorConfiguration
     let strings: Strings
     /// 配置变化（分区/开关/可用性）时重断言采样需求；route 级的面板需求
@@ -38,8 +37,8 @@ struct MonitorContainerView: View {
             switch route {
             case .overview:
                 MonitorOverviewView(
-                    snapshot: snapshot,
-                    history: history,
+                    snapshot: monitor.snapshot,
+                    history: monitor.history,
                     configuration: configuration,
                     strings: strings,
                     deviceSummary: deviceSummary,
@@ -55,7 +54,7 @@ struct MonitorContainerView: View {
                 .pushTransition(from: .leading)
             case .diskDetail:
                 MonitorDiskDetailView(
-                    snapshot: snapshot,
+                    snapshot: monitor.snapshot,
                     strings: strings,
                     temperatureUnit: configuration.temperatureUnit,
                     protection: diskProtection,
@@ -68,7 +67,7 @@ struct MonitorContainerView: View {
             case .ranking(let kind):
                 MonitorRankingView(
                     kind: kind,
-                    state: processState,
+                    state: monitor.processState,
                     strings: strings,
                     onBack: {
                         coordinator.close()

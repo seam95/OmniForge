@@ -198,10 +198,7 @@ struct ControlCenterContainerView: View {
                             coordinator: monitorCoordinator,
                             diskProtection: monitorDiskProtection,
                             route: $monitorRoute,
-                            snapshot: monitor.snapshot,
-                            history: monitor.history,
-                            processState: monitor.processState,
-                            speedTestState: monitor.speedTestState,
+                            monitor: monitor,
                             configuration: preferences.configuration,
                             strings: state.l10n.s,
                             onDemandChange: { demand in

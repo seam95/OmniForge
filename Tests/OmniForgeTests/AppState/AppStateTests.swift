@@ -25,14 +25,32 @@ final class AppStateTests: XCTestCase {
         withExtendedLifetime(cancellable) {}
     }
 
-    func test_monitorIsSamplingChange_forwardsObjectWillChange() {
+    /// SPEC §9.4.3：高频监控快照不再转发为控制中心根视图刷新信号
+    /// （监控页经 MonitorContainerView 直连观察 manager 刷新）。
+    func test_monitorSamplingChange_doesNotForwardAppStateChange() {
         let state = makeStateForObservation()
         var changeCount = 0
         let cancellable = state.objectWillChange.sink { changeCount += 1 }
 
         state.monitor?.setPanelDemand(.init(system: true, cpu: true))
 
-        XCTAssertGreaterThan(changeCount, 0, "AppState 应转发 SystemMonitorManager 的 objectWillChange")
+        XCTAssertEqual(
+            changeCount, 0,
+            "监控采样更新不得转发为 AppState 根刷新（SPEC §9.4.3）"
+        )
+        withExtendedLifetime(cancellable) {}
+    }
+
+    /// SPEC §9.4：快捷短语列表更新不触发 AppState 根刷新
+    /// （剪贴板浮窗的 QuickPhraseView 直连观察 manager）。
+    func test_quickPhraseChange_doesNotForwardAppStateChange() {
+        let state = makeStateForObservation()
+        var changeCount = 0
+        let cancellable = state.objectWillChange.sink { changeCount += 1 }
+
+        state.quickPhrases?.add(content: "phrase")
+
+        XCTAssertEqual(changeCount, 0)
         withExtendedLifetime(cancellable) {}
     }
 

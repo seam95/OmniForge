@@ -193,26 +193,18 @@ final class AppState: ObservableObject {
     private func wireFeatureSideEffects() {
         featureCancellables.removeAll()
 
+        // 转发范围（SPEC §9.4）：只转发壳层与设置窗仍以值传递消费的低频状态；
+        // 高频监控快照、Token 更新、快捷短语与供应商列表不转发——控制中心各页面
+        // 直接观察自身管理器，菜单栏指标走 StatusBarController 直连 Combine 管线，
+        // 功能安装/卸载的解包身份变化由 rebindFromRuntime 的 objectWillChange 覆盖。
         if let lockState {
             forwardObjectWillChange(from: lockState, storeIn: &featureCancellables)
-        }
-        if let quickPhrases {
-            forwardObjectWillChange(from: quickPhrases, storeIn: &featureCancellables)
-        }
-        if let monitor {
-            forwardObjectWillChange(from: monitor, storeIn: &featureCancellables)
-        }
-        if let tokenUsageManager {
-            forwardObjectWillChange(from: tokenUsageManager, storeIn: &featureCancellables)
         }
         if let deepSeekBalanceManager {
             forwardObjectWillChange(from: deepSeekBalanceManager, storeIn: &featureCancellables)
         }
         if let keepAwakeManager {
             forwardObjectWillChange(from: keepAwakeManager, storeIn: &featureCancellables)
-        }
-        if let providerSwitchManager {
-            forwardObjectWillChange(from: providerSwitchManager, storeIn: &featureCancellables)
         }
 
         refreshInputSources()
