@@ -189,6 +189,19 @@ final class ClipboardHistoryManager: ObservableObject {
         return store.loadFullContent(for: entryID)
     }
 
+    /// 后台图片加载通道：绕过主线程读取完整 blob（SPEC §9.3.2）。
+    /// 需在主线程捕获 `store`（已按隔离规则访问）后传入；本函数非隔离，
+    /// 内部只调用 store 的数据库读取（GRDB 串行队列实现线程安全）。
+    nonisolated static func loadImagePayload(
+        for entryID: UUID,
+        store: ClipboardStore
+    ) -> ClipboardContent? {
+        store.loadFullContent(for: entryID)
+    }
+
+    /// 主线程访问器：视图在 body 阶段捕获 store 引用，供后台加载闭包使用。
+    var storeForBackgroundLoad: ClipboardStore? { store }
+
     static func pruneEntries(
         _ entries: [ClipboardEntry],
         retentionDays: Int,

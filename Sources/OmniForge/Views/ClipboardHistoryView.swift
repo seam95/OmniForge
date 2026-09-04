@@ -470,32 +470,21 @@ struct ClipboardHistoryView: View {
                     font: .systemFont(ofSize: 16)
                 )
             case .image:
-                GeometryReader { proxy in
-                    let maxPointSize = max(proxy.size.width, min(proxy.size.height, 320))
-                    let maxPixelSize = Int(ceil(maxPointSize * displayScale))
-
-                    if let image = ClipboardImageCache.shared.detailImage(
-                        for: entry.id,
-                        maxPixelSize: maxPixelSize,
-                        loader: {
-                            guard let fullContent = history.fullContent(for: entry.id),
-                                  case .image(let data) = fullContent else {
-                                return nil
-                            }
-                            return data
-                        }
-                    ) {
-                        Image(nsImage: image)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        Text(l10n.s.clipboardDetailUnavailable)
-                            .font(.system(size: 15))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .frame(maxHeight: 320)
+                // 异步图片详情（SPEC §9.3）：先显示固定尺寸 placeholder，再后台
+                // 读取 blob 并降采样解码；旧请求经 generation 校验不会覆盖新选择。
+                let store = history.storeForBackgroundLoad
+                AsyncClipboardImageDetail(
+                    entryID: entry.id,
+                    displayScale: displayScale,
+                    loadPayload: {
+                        guard let store else { return nil }
+                        return ClipboardHistoryManager.loadImagePayload(
+                            for: entry.id,
+                            store: store
+                        )
+                    },
+                    unavailableText: l10n.s.clipboardDetailUnavailable
+                )
             case .rtf:
                 Text(l10n.s.clipboardDetailRtf)
                     .font(.system(size: 15))
@@ -1107,6 +1096,52 @@ private extension ClipboardEntry {
             return "doc.richtext"
         case .unknown:
             return "questionmark"
+        }
+    }
+}
+
+
+/// 异步剪贴板图片详情（SPEC §9.3）：渲染路径只读缓存命中与 placeholder；
+/// blob 读取与降采样解码经 `ClipboardDetailImageLoader` 在后台执行。
+private struct AsyncClipboardImageDetail: View {
+    let entryID: UUID
+    let displayScale: CGFloat
+    let loadPayload: () -> ClipboardContent?
+    let unavailableText: String
+
+    @StateObject private var loader = ClipboardDetailImageLoader()
+    @Environment(\.displayScale) private var environmentScale
+
+    private var effectiveScale: CGFloat {
+        displayScale > 0 ? displayScale : environmentScale
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            if let image = loader.image {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if loader.failed {
+                Text(unavailableText)
+                    .font(.system(size: 15))
+                    .foregroundStyle(.secondary)
+            } else {
+                // 占位：与最终图片区同尺寸的透明底，加载完成不引起布局跳动（SPEC §9.3.4）。
+                Color.clear
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .overlay(ProgressView().controlSize(.small))
+            }
+        }
+        .frame(maxHeight: 320)
+        .task(id: entryID) {
+            let storeRef = loadPayload
+            loader.request(
+                entryID: entryID,
+                maxPixelSize: Int(ceil(320 * effectiveScale)),
+                loadPayload: storeRef
+            )
         }
     }
 }

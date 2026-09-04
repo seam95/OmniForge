@@ -19,6 +19,30 @@ final class ClipboardImageCache {
         thumbnailCache.countLimit = 200
     }
 
+    /// 测试隔离实例（默认缓存容量）。
+    init(testInstance: Void = ()) {
+        detailCache = NSCache()
+        detailCache.countLimit = 5
+        detailCache.totalCostLimit = 50 * 1024 * 1024  // 50 MB
+
+        thumbnailCache = NSCache()
+        thumbnailCache.countLimit = 200
+    }
+
+    /// 只查询详情图片缓存（零成本命中；未命中返回 nil，不触发加载/解码）。
+    func cachedDetailImage(for entryID: UUID, maxPixelSize: Int) -> NSImage? {
+        guard maxPixelSize > 0 else { return nil }
+        let key = detailKey(entryID: entryID, maxPixelSize: maxPixelSize)
+        return detailCache.object(forKey: key)
+    }
+
+    /// 后台加载/解码完成后回写详情缓存（主线程调用）。
+    func storeDetailImage(_ image: NSImage, for entryID: UUID, maxPixelSize: Int) {
+        let key = detailKey(entryID: entryID, maxPixelSize: maxPixelSize)
+        let cost = estimateImageCost(image)
+        detailCache.setObject(image, forKey: key, cost: cost)
+    }
+
     /// 获取详情图片；缓存键包含显示尺寸，避免复用分辨率不足的图片。
     func detailImage(
         for entryID: UUID,
@@ -26,7 +50,7 @@ final class ClipboardImageCache {
         loader: () -> Data?
     ) -> NSImage? {
         guard maxPixelSize > 0 else { return nil }
-        let key = "\(entryID.uuidString):\(maxPixelSize)" as NSString
+        let key = detailKey(entryID: entryID, maxPixelSize: maxPixelSize)
         if let cached = detailCache.object(forKey: key) {
             return cached
         }
@@ -40,6 +64,10 @@ final class ClipboardImageCache {
         let cost = estimateImageCost(image)
         detailCache.setObject(image, forKey: key, cost: cost)
         return image
+    }
+
+    private func detailKey(entryID: UUID, maxPixelSize: Int) -> NSString {
+        "\(entryID.uuidString):\(maxPixelSize)" as NSString
     }
 
     /// 获取列表行缩略图，未命中时从 data 创建
