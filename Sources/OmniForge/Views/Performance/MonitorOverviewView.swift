@@ -82,7 +82,6 @@ struct MonitorOverviewView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(colorScheme == .light ? Color.white : Color.clear)
     }
 
     private var hairline: some View {

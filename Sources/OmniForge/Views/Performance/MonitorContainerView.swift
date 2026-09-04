@@ -14,6 +14,7 @@ struct MonitorContainerView: View {
         uptimeText: nil
     )
     @ObservedObject private var featureRuntime = FeatureRuntime.shared
+    @Environment(\.colorScheme) private var colorScheme
     let snapshot: SystemSnapshot
     let history: MetricHistory
     let processState: ProcessBreakdownState
@@ -79,6 +80,9 @@ struct MonitorContainerView: View {
             }
         }
         .animation(Theme.Animation.pageTransition, value: route)
+        // overview 的平面白底挂在转场容器层而非内容根部：转场容器高度可能比
+        // 内容固有高度略大，背景只盖内容根时底部余量会透出面板灰底（底部灰带）。
+        .background(colorScheme == .light && route == .overview ? Color.white : Color.clear)
         .onAppear {
             coordinator.onToggle = { onExpandedMetric($0) }
             if deviceSummary.hostName.isEmpty {
