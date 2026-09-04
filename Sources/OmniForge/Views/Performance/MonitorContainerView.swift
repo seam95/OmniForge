@@ -21,6 +21,8 @@ struct MonitorContainerView: View {
     let speedTestState: SpeedTestState
     let configuration: MonitorConfiguration
     let strings: Strings
+    /// 配置变化（分区/开关/可用性）时重断言采样需求；route 级的面板需求
+    /// 由控制中心宿主协调（SPEC §9.1.1），本视图不再挂 onAppear/onDisappear 生命周期。
     let onDemandChange: (MonitorDemand) -> Void
     let onExpandedMetric: (ProcessMetricKind?) -> Void
     let onStartSpeedTest: () -> Void
@@ -90,21 +92,13 @@ struct MonitorContainerView: View {
                     fallbackHostName: strings.monitorDeviceFallbackName
                 )
             }
-            updateDemand()
-            // 面板切回时若仍停在排名页，恢复对应进程采样（切走时 close 已停止）。
-            if let kind = Self.rankingRestoration(for: route) {
-                coordinator.open(kind)
-            }
         }
-        // systemMonitor 从 unavailable→available 或 isEnabled 重新打开时，面板仍打开需重新 assert demand
+        // 配置变化（展示分区/开关/功能可用性）重断言采样需求；route 级的
+        // 面板需求由控制中心宿主协调（SPEC §9.1.1），本视图不再经
+        // onAppear/onDisappear 驱动采样生命周期。
         .onChange(of: featureRuntime.revision) { _, _ in updateDemand() }
         .onChange(of: configuration.isEnabled) { _, _ in updateDemand() }
         .onChange(of: configuration.visibleSections) { _, _ in updateDemand() }
-        .onDisappear {
-            onDemandChange(.none)
-            coordinator.close()
-            coordinator.onToggle = nil
-        }
     }
 
     /// 切回面板时需恢复采样的排名指标；nil 表示无需恢复。

@@ -47,11 +47,11 @@ final class PageSwitchBaselineProbeTests: XCTestCase {
         XCTAssertEqual(counter.current, 1, "sanity：切换完成后仅 diskDetail 挂载")
     }
 
-    // MARK: - 探针 B：离开监控页的主线程阻塞（SPEC §2.3）
+    // MARK: - 探针 B：离开监控页的主线程阻塞（SPEC §2.3 → 阶段 3 已修复）
 
-    /// 采样队列正在执行慢采样时，主线程停止采样（离开监控页路径）
-    /// 必须同步等待采样队列完成 —— 当前实现违反 SPEC §9.1.2。
-    func test_probeB_leavingMonitorWhileSampling_blocksMainThread() {
+    /// 采样队列正在执行慢采样时，主线程停止采样（离开监控页路径）必须立即返回。
+    /// 阶段 3 修复前实测阻塞 ≈ 0.3s（queue.sync 等待采样队列），修复后 ≤ 0.01s。
+    func test_probeB_leavingMonitorWhileSampling_returnsImmediately() {
         let manager = SystemMonitorManager(
             scheduler: TestRepeatingScheduler(),
             cpuSampler: SlowCPUSampler(delay: 0.3),
@@ -68,13 +68,13 @@ final class PageSwitchBaselineProbeTests: XCTestCase {
         Self.tick(0.02) // 让慢采样已在串行队列上执行
 
         let start = CFAbsoluteTimeGetCurrent()
-        manager.setPanelDemand(.none) // → stopSampling → queue.sync 等待采样队列
+        manager.setPanelDemand(.none) // → stopSampling（异步清理）
         let elapsed = CFAbsoluteTimeGetCurrent() - start
-        baselineRecord(String(format: "离开监控页主线程阻塞：%.3fs", elapsed))
+        baselineRecord(String(format: "离开监控页主线程阻塞：%.4fs", elapsed))
 
-        XCTAssertGreaterThan(
-            elapsed, 0.2,
-            "现状记录：主线程同步等待采样队列（阶段 3 修复后本断言反转为 ≤ 0.01s）"
+        XCTAssertLessThanOrEqual(
+            elapsed, 0.01,
+            "停止采样的主线程路径不得等待采样队列（SPEC §9.1.2）"
         )
     }
 

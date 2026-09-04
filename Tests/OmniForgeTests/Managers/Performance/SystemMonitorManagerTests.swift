@@ -101,14 +101,71 @@ final class SystemMonitorManagerTests: XCTestCase {
         wait(for: [expectation], timeout: 1.0)
     }
 
-    func test_stopSamplingClearsSnapshot() {
+    /// SPEC §9.1.4：普通停止保留最近 snapshot/history（下次打开面板立即有内容，
+    /// 新采样到达后覆盖）。
+    func test_stopSamplingKeepsLastSnapshot() async throws {
         let manager = makeManager()
         manager.setPanelDemand(.init(system: true, cpu: true))
-        XCTAssertTrue(manager.isSampling)
+        try await waitForSnapshot(manager) { $0.cpuUsage != nil }
         manager.setPanelDemand(.none)
         XCTAssertFalse(manager.isSampling)
-        XCTAssertNil(manager.snapshot.sampledAt)
-        XCTAssertTrue(manager.snapshot.issues.isEmpty)
+        XCTAssertNotNil(manager.snapshot.sampledAt, "停止后保留最近快照")
+    }
+
+    /// SPEC §9.1.2：采样队列忙时，停止采样（离开监控页路径）不得在主线程
+    /// 同步等待采样队列。
+    func test_stopSamplingWhileQueueBusy_returnsImmediately() {
+        let manager = SystemMonitorManager(
+            scheduler: TestRepeatingScheduler(),
+            cpuSampler: SlowTestCPUSampler(delay: 0.3),
+            gpuSampler: TestGPUSampler(),
+            memorySampler: TestMemorySampler(),
+            temperatureSampler: TestTemperatureSampler(),
+            networkSampler: TestNetworkSampler(),
+            diskSampler: TestDiskSampler(),
+            powerSampler: TestPowerSampler(),
+            peripheralBatterySampler: TestPeripheralBatterySampler(),
+            processSampler: TestProcessUsageSampler()
+        )
+        manager.setPanelDemand(.init(system: true))
+        // 让慢采样已在串行队列上执行。
+        let expectation = expectation(description: "queue busy")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { expectation.fulfill() }
+        wait(for: [expectation], timeout: 1.0)
+
+        let start = CFAbsoluteTimeGetCurrent()
+        manager.setPanelDemand(.none)
+        let elapsed = CFAbsoluteTimeGetCurrent() - start
+        XCTAssertLessThanOrEqual(
+            elapsed, 0.01,
+            "停止采样的主线程同步路径不得等待采样队列，实测 \(elapsed)s"
+        )
+    }
+
+    /// SPEC §9.1.3：generation 令牌使停止后到达的在途采样结果失效，不覆盖状态。
+    func test_inFlightSampleResultAfterStop_isDiscarded() async throws {
+        let manager = SystemMonitorManager(
+            scheduler: TestRepeatingScheduler(),
+            cpuSampler: SlowTestCPUSampler(delay: 0.15),
+            gpuSampler: TestGPUSampler(),
+            memorySampler: TestMemorySampler(),
+            temperatureSampler: TestTemperatureSampler(),
+            networkSampler: TestNetworkSampler(),
+            diskSampler: TestDiskSampler(),
+            powerSampler: TestPowerSampler(),
+            peripheralBatterySampler: TestPeripheralBatterySampler(),
+            processSampler: TestProcessUsageSampler()
+        )
+        manager.setPanelDemand(.init(cpu: true))
+        try await Task.sleep(nanoseconds: 30_000_000) // 慢采样在途
+        manager.setPanelDemand(.none) // generation 令牌已换
+
+        let before = manager.snapshot
+        try await Task.sleep(nanoseconds: 400_000_000) // 在途结果晚到
+        XCTAssertEqual(
+            manager.snapshot.sampledAt, before.sampledAt,
+            "停止后的在途采样结果必须被丢弃"
+        )
     }
 
     func test_foregroundSamplingAppendsHistory() async throws {
@@ -127,14 +184,13 @@ final class SystemMonitorManagerTests: XCTestCase {
         XCTAssertTrue(manager.history.gpu.isEmpty)
     }
 
-    func test_stopSamplingResetsHistory() async throws {
+    func test_stopSamplingKeepsHistory() async throws {
         let manager = makeManager()
         manager.setPanelDemand(.init(system: true, cpu: true))
         try await waitForSnapshot(manager) { $0.cpuUsage != nil }
         XCTAssertFalse(manager.history.cpu.isEmpty)
         manager.setPanelDemand(.none)
-        XCTAssertTrue(manager.history.cpu.isEmpty)
-        XCTAssertTrue(manager.history.gpu.isEmpty)
+        XCTAssertFalse(manager.history.cpu.isEmpty, "停止后保留最近历史（SPEC §9.1.4）")
     }
 
     func test_menuBarMetricsDriveSampling() {
@@ -812,4 +868,16 @@ private func waitForBaselineQuery(
         try await Task.sleep(nanoseconds: 20_000_000)
     }
     XCTFail("Timed out waiting for hasProcessBaseline query")
+}
+
+
+/// 慢 CPU 采样器：模拟真实 GPU/proc 采样耗时，阻塞串行采样队列。
+final class SlowTestCPUSampler: CPUUsageSampling {
+    let delay: TimeInterval
+    init(delay: TimeInterval) { self.delay = delay }
+
+    func sample() throws -> CPUUsageReading? {
+        Thread.sleep(forTimeInterval: delay)
+        return CPUUsageReading(total: 0.5, user: 0.3, system: 0.2)
+    }
 }

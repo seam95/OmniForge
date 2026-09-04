@@ -17,6 +17,8 @@ final class SystemMonitorManager: ObservableObject {
     /// 测速状态订阅，独立于采样 scheduler，避免 stopSampling 清掉
     private var speedTestCancellable: AnyCancellable?
     private var demand = MonitorDemand.none
+    /// 停止采样令牌：stopSampling 时自增，使在途采样的主线程回写失效。
+    private var generation = 0
     private var menuBarMetrics = Set<MenuBarMetric>()
     private var alertRequirements = Set<MonitorMetric>()
     private var refreshInterval: TimeInterval = 2.0
@@ -209,11 +211,15 @@ final class SystemMonitorManager: ObservableObject {
         stopActiveProcessSamplerIfNeeded()
         processState = .collapsed
         lastProcessSampleAt = nil
-        // lastGPUUsage is only read/written on the sample queue; clear there to avoid
-        // a main-vs-utility race with in-flight sampleAll blocks.
-        queue.sync { lastGPUUsage = nil }
-        snapshot = SystemSnapshot()
-        history.reset()
+        // SPEC §9.1.2/§9.1.3：停止路径不得在主线程等待采样队列。lastGPUUsage 只在
+        // 采样队列读写，清理放回队列异步执行；generation 令牌使在途采样的
+        // 主线程回写失效（晚到结果不覆盖停止后的状态）。
+        generation &+= 1
+        queue.async { [weak self] in
+            self?.lastGPUUsage = nil
+        }
+        // SPEC §9.1.4：普通停止/页面切换保留最近 snapshot 与 history（下次打开
+        // 立即有内容可显示，新采样到达后覆盖）；功能卸载时随 manager 释放。
         tickCount = 0
     }
 
@@ -260,6 +266,8 @@ final class SystemMonitorManager: ObservableObject {
         let isForeground = demand != .none
         let previousSnapshot = snapshot
         let now = Date()
+        // 捕获当次 generation：停止采样（generation 变化）后，在途结果回写被丢弃。
+        let capturedGeneration = generation
 
         queue.async { [weak self] in
             guard let self else { return }
@@ -376,6 +384,8 @@ final class SystemMonitorManager: ObservableObject {
             }
 
             DispatchQueue.main.async {
+                // 停止采样（generation 已换）后到达的旧轮结果直接丢弃。
+                guard self.generation == capturedGeneration else { return }
                 self.snapshot = newSnapshot
                 // 仅前台（面板可见）追加历史，保证等距 x 轴；后台降频采样与
                 // 面板打开补采（非定时点）不追加。
