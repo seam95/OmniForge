@@ -51,24 +51,21 @@ enum ProviderSwitchAddProviderRoute: Equatable {
     case providerSettings
 }
 
-/// 供应商切换设置页（卡片式 UI 对齐最新设计稿）：
-/// - 分段选择器：Claude Code / Codex 全宽胶囊分段切换
-/// - 卡片列表：官方卡片 + Profile 卡片栈，激活项带有系统蓝外边框与「使用中」绿色胶囊微章；Profile 卡片右侧均展示 `•••` 更多操作菜单
+/// 供应商切换设置页（平面分区风格对齐监控 overview / Token 面板）：
+/// - 分段选择器：Claude Code / Codex 复用 `PanelSegmentedControl`
+/// - 平面列表：官方行 + Profile 行，行间 1pt 发丝线分隔；激活项带「使用中」绿色胶囊微章，
+///   Profile 行右侧均展示 `•••` 更多操作菜单
 /// - 设置窗口：展示全宽「+ 新增供应商」主按钮并打开新增表单
 /// - 菜单栏：将新增操作放入底部链接（「编辑配置文件」左侧）并路由到供应商设置页
 /// - 底部辅助：居中展示供应商相关文字链接
-/// - 异常状态：未托管 / 损坏卡片视觉融入卡片体系
+/// - 异常状态：未托管 / 损坏警示横幅融入平面分区体系
 struct ProviderSwitchSettingsView: View {
-    /// 工具分段选中底块 matchedGeometry 标识：底块在分段间平滑滑移。
-    private static let toolSegmentIndicatorID = "provider-tool-segment-active"
-
     @ObservedObject var manager: ProviderSwitchManager
     let strings: Strings
     var presentation: ProviderSwitchPresentation = .settings
     var onOpenSettings: (SettingsToolbarTab?) -> Void = { _ in }
     var commandCopier: ProviderLaunchCommandCopying = ProviderLaunchCommandCopier()
 
-    @Namespace private var toolSegmentIndicator
     @State private var selectedTool: ProviderTool = .claudeCode
     @State private var addingProfileForTool: ProviderTool?
     @State private var editingProfile: ProviderProfile?
@@ -83,24 +80,17 @@ struct ProviderSwitchSettingsView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            toolSegment
+        VStack(alignment: .leading, spacing: 0) {
+            sectionSwitcherRow
 
             // 工具分段主体：id 随 selectedTool 变化触发整组 peer 淡切，
             // 底部静态链接随整组统一过渡。
             ZStack(alignment: .topLeading) {
-                VStack(alignment: .leading, spacing: 12) {
-                    VStack(spacing: 8) {
-                        officialCard
+                VStack(alignment: .leading, spacing: 0) {
+                    providerList
 
-                        let profiles = manager.profiles(for: selectedTool)
-                        ForEach(profiles) { profile in
-                            profileCard(profile)
-                        }
-                    }
-
-                    unmanagedCard
-                    corruptedCard
+                    unmanagedBanner
+                    corruptedBanner
 
                     if presentation.showsInlineAddProviderButton {
                         addProviderButton
@@ -113,8 +103,8 @@ struct ProviderSwitchSettingsView: View {
             }
             .animation(Theme.Animation.pageTransition, value: selectedTool)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.top, 12)
+        .padding(.bottom, 12)
         .providerToast(message: $toastMessage)
         .sheet(item: $addingProfileForTool) { tool in
             ProfileEditorView(manager: manager, strings: strings, tool: tool)
@@ -162,88 +152,80 @@ struct ProviderSwitchSettingsView: View {
 
     // MARK: - 分段选择器
 
-    private var toolSegment: some View {
-        HStack(spacing: 0) {
-            ForEach(ProviderTool.allCases) { tool in
-                let isSelected = selectedTool == tool
-                Button {
-                    selectedTool = tool
-                } label: {
-                    Text(tool.displayName(in: strings))
-                        .font(.system(size: 13.5, weight: isSelected ? .semibold : .medium))
-                        .foregroundStyle(isSelected ? Color.primary : Color.secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 7)
-                        .background(
-                            Group {
-                                if isSelected {
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .fill(colorScheme == .dark ? Color.white.opacity(0.18) : Color.white)
-                                        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.0 : 0.06), radius: 2, x: 0, y: 1)
-                                        .matchedGeometryEffect(id: Self.toolSegmentIndicatorID, in: toolSegmentIndicator)
-                                } else {
-                                    Color.clear
-                                }
-                            }
-                        )
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        // 动画统一由 value 驱动，底块滑移与下方内容转场同享一套曲线。
-        .animation(Theme.Animation.pageTransition, value: selectedTool)
-        .padding(3)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color(red: 0xEB / 255.0, green: 0xEB / 255.0, blue: 0xED / 255.0))
+    /// 「Claude Code / Codex」分段行：复用 Token 面板分段控件（底块滑移与内容淡切同享一套曲线）。
+    private var sectionSwitcherRow: some View {
+        PanelSegmentedControl(
+            options: ProviderTool.allCases.map { tool in
+                .init(tag: tool, title: tool.displayName(in: strings))
+            },
+            selection: $selectedTool
         )
+        .padding(.horizontal, 12)
+        .padding(.bottom, 6)
     }
 
-    // MARK: - 官方卡片
+    // MARK: - 平面列表
 
-    private var officialCard: some View {
-        let isActive = isOfficialActive
-        return HStack(spacing: 12) {
-            Button {
-                if !isActive {
-                    activateOfficial()
-                }
-            } label: {
-                HStack(spacing: 12) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(ProviderBrandVisual.officialColor(for: selectedTool))
-                            .frame(width: 36, height: 36)
-                        // 显式约束尺寸：GlyphView 内部 GeometryReader 是贪婪布局，不约束会撑爆卡片。
-                        ProviderLogoGlyphView(layers: ProviderBrandVisual.officialLogo(for: selectedTool))
-                            .frame(width: 36, height: 36)
-                    }
+    /// 官方 + Profile 平面列表：行间 1pt 发丝线分隔（无卡片底/描边/阴影）。
+    private var providerList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            officialRow
 
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(strings.providerOfficial)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Color.primary)
-                        Text(officialCaption)
-                            .font(.system(size: 12.5))
-                            .foregroundStyle(Color.secondary)
-                            .lineLimit(1)
-                    }
-
-                    Spacer(minLength: 0)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            if isActive {
-                inUseBadge
+            let profiles = manager.profiles(for: selectedTool)
+            ForEach(profiles) { profile in
+                hairline
+                profileRow(profile)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(cardBackground(isActive: isActive))
-        .overlay(cardBorder(isActive: isActive))
-        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    /// 分区分隔发丝线（与监控 overview 同款 1pt，浅色 #F0F0F0）。
+    private var hairline: some View {
+        Rectangle()
+            .fill(MonitorOverviewPalette.hairline(colorScheme))
+            .frame(height: 1)
+    }
+
+    // MARK: - 官方行
+
+    private var officialRow: some View {
+        let isActive = isOfficialActive
+        return Button {
+            if !isActive {
+                activateOfficial()
+            }
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(ProviderBrandVisual.officialColor(for: selectedTool))
+                        .frame(width: 36, height: 36)
+                    // 显式约束尺寸：GlyphView 内部 GeometryReader 是贪婪布局，不约束会撑爆布局。
+                    ProviderLogoGlyphView(layers: ProviderBrandVisual.officialLogo(for: selectedTool))
+                        .frame(width: 36, height: 36)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(strings.providerOfficial)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Color.primary)
+                    Text(officialCaption)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Color.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+
+                if isActive {
+                    inUseBadge
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var officialCaption: String {
@@ -260,9 +242,9 @@ struct ProviderSwitchSettingsView: View {
         }
     }
 
-    // MARK: - Profile 卡片
+    // MARK: - Profile 行
 
-    private func profileCard(_ profile: ProviderProfile) -> some View {
+    private func profileRow(_ profile: ProviderProfile) -> some View {
         let active = isActive(profile)
         let visual = ProviderBrandVisual.resolve(for: profile)
         let hostSummary = ProviderURLFormatter.hostOrSummary(from: profile.baseURL)
@@ -332,18 +314,15 @@ struct ProviderSwitchSettingsView: View {
                 }
             }
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(cardBackground(isActive: active))
-        .overlay(cardBorder(isActive: active))
-        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private func isActive(_ profile: ProviderProfile) -> Bool {
         manager.active(tool: selectedTool) == .profile(profileID: profile.id)
     }
 
-    // MARK: - 徽章与卡片底板
+    // MARK: - 徽章与警示横幅
 
     private var inUseBadge: some View {
         Text(strings.providerInUseBadge)
@@ -357,25 +336,36 @@ struct ProviderSwitchSettingsView: View {
             )
     }
 
-    private func cardBackground(isActive: Bool) -> some View {
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .fill(colorScheme == .dark ? Color(nsColor: .controlBackgroundColor) : Color.white)
-            .shadow(
-                color: Color.black.opacity(colorScheme == .dark || isActive ? 0.0 : 0.03),
-                radius: 2,
-                x: 0,
-                y: 1
-            )
-    }
-
-    private func cardBorder(isActive: Bool) -> some View {
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .strokeBorder(
-                isActive
-                    ? Color.accentColor
-                    : (colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06)),
-                lineWidth: isActive ? 1.5 : 0.8
-            )
+    /// 未托管 / 损坏警示横幅：浅警示 tint 底 + 发丝线顶分隔，异常态融入平面分区体系。
+    private func warningBanner(
+        icon: String,
+        iconColor: Color,
+        title: String,
+        message: String,
+        actionTitle: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: icon)
+                    .foregroundStyle(iconColor)
+                Text(title)
+                    .font(.system(size: 13.5, weight: .semibold))
+            }
+            Text(message)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                Button(actionTitle, action: action)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(iconColor.opacity(colorScheme == .dark ? 0.12 : 0.06))
     }
 
     // MARK: - 「+ 新增供应商」主按钮
@@ -384,26 +374,26 @@ struct ProviderSwitchSettingsView: View {
         Button {
             addProvider()
         } label: {
-            HStack(spacing: 6) {
-                Text(strings.providerAddProvider)
-                    .font(.system(size: 13.5, weight: .medium))
-            }
-            .foregroundStyle(Color.accentColor)
-            .frame(maxWidth: .infinity)
-            .frame(height: 42)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(colorScheme == .dark ? Color(nsColor: .controlBackgroundColor) : Color.white)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(
-                        colorScheme == .dark ? Color.white.opacity(0.12) : Color.primary.opacity(0.12),
-                        lineWidth: 1
-                    )
-            )
+            Text(strings.providerAddProvider)
+                .font(.system(size: 13.5, weight: .medium))
+                .foregroundStyle(Color.accentColor)
+                .frame(maxWidth: .infinity)
+                .frame(height: 42)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(colorScheme == .dark ? Color(nsColor: .controlBackgroundColor) : Color.white)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(
+                            colorScheme == .dark ? Color.white.opacity(0.12) : Color.primary.opacity(0.12),
+                            lineWidth: 1
+                        )
+                )
         }
         .buttonStyle(ProviderAddButtonStyle())
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
     }
 
     // MARK: - 居中辅助链接
@@ -436,80 +426,42 @@ struct ProviderSwitchSettingsView: View {
             .buttonStyle(ProviderFooterLinkButtonStyle())
         }
         .frame(maxWidth: .infinity, alignment: .center)
-        .padding(.top, 4)
+        .padding(.top, 12)
     }
 
-    // MARK: - 未托管 / 损坏卡片
+    // MARK: - 未托管 / 损坏警示
 
     @ViewBuilder
-    private var unmanagedCard: some View {
+    private var unmanagedBanner: some View {
         if case .unmanaged(let summary) = manager.active(tool: selectedTool) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                    Text(strings.providerActiveUnmanagedTitle)
-                        .font(.system(size: 13.5, weight: .semibold))
-                }
-                Text(String(format: strings.providerActiveUnmanagedSummaryFormat, summary))
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                HStack {
-                    Spacer()
-                    Button(strings.providerUnmanagedAdopt) {
-                        adoptingName = summary
-                        adoptPromptPresented = true
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
+            hairline
+            warningBanner(
+                icon: "exclamationmark.triangle.fill",
+                iconColor: .orange,
+                title: strings.providerActiveUnmanagedTitle,
+                message: String(format: strings.providerActiveUnmanagedSummaryFormat, summary),
+                actionTitle: strings.providerUnmanagedAdopt
+            ) {
+                adoptingName = summary
+                adoptPromptPresented = true
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(colorScheme == .dark ? Color(nsColor: .controlBackgroundColor) : Color.white)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Color.orange.opacity(0.4), lineWidth: 1)
-            )
         }
     }
 
     @ViewBuilder
-    private var corruptedCard: some View {
+    private var corruptedBanner: some View {
         if case .unreadable = manager.active(tool: selectedTool) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Image(systemName: "xmark.octagon.fill")
-                        .foregroundStyle(.red)
-                    Text(strings.providerActiveUnreadableTitle)
-                        .font(.system(size: 13.5, weight: .semibold))
-                }
-                Text(strings.providerActiveUnreadableCaption)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                HStack {
-                    Spacer()
-                    Button(strings.providerCorruptedBackupAndRebuild) {
-                        confirmingRebuildTool = selectedTool
-                        rebuildPromptPresented = true
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
+            hairline
+            warningBanner(
+                icon: "xmark.octagon.fill",
+                iconColor: .red,
+                title: strings.providerActiveUnreadableTitle,
+                message: strings.providerActiveUnreadableCaption,
+                actionTitle: strings.providerCorruptedBackupAndRebuild
+            ) {
+                confirmingRebuildTool = selectedTool
+                rebuildPromptPresented = true
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(colorScheme == .dark ? Color(nsColor: .controlBackgroundColor) : Color.white)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Color.red.opacity(0.4), lineWidth: 1)
-            )
         }
     }
 
