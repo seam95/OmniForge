@@ -138,7 +138,7 @@ struct QuickPhraseView: View {
                 .padding(.vertical, 6)
             }
             .background(listBackground)
-            .animation(Theme.Animation.pageTransition, value: uiState.selectedGroup)
+            .animation(PageSwitchMotionToken.filterSelection, value: uiState.selectedGroup)
             .onChange(of: uiState.selectedPhraseID) { _, newID in
                 if let newID {
                     withAnimation(.easeInOut(duration: 0.15)) {
