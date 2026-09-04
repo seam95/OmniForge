@@ -1006,7 +1006,6 @@ extension Strings {
         tokenEmptyHint: "未检测到登录 · 运行一次任一 CLI 即可",
         tokenReauthHint: "登录已失效 · 重新登录对应 CLI 即可",
         tokenRefresh: "刷新",
-        tokenProviderAll: "全部",
         tokenSectionBalance: "余额",
         tokenSectionUsage: "用量",
         tokenBalanceEmptyHint: "暂无余额数据 · 稍后自动更新",

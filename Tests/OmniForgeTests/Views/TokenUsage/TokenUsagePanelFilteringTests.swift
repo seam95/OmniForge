@@ -1,35 +1,37 @@
 import XCTest
 @testable import OmniForge
 
-/// Token 用量面板 Provider 过滤与显隐纯逻辑测试。
+/// Token 用量面板 provider 展示候选、排序与显隐纯逻辑测试。
+/// （面板已移除 provider 筛选胶囊，余额区固定展示全部已配置供应商。）
 final class TokenUsagePanelFilteringTests: XCTestCase {
-    func test_balanceCardVisibility_visibleOnlyForNilOrDeepSeek() {
-        // 当 DeepSeek 余额卡已配置（showingBalanceCard == true）
-        let showingBalanceCard = true
+    func test_balanceCard_deepSeekIncludedInAllProvidersViewOnlyWhenConfigured() {
+        // DeepSeek 余额卡仅在配置余额后随全部视图展示；未配置时不出现在卡片列表。
+        let withBalance = TokenUsageProviderDisplayPolicy.displayableCardProviders(
+            from: [.codex, .kimi, .deepSeek],
+            limits: [:],
+            credentialConfiguredProviders: [],
+            showingDeepSeekBalance: true
+        )
+        XCTAssertEqual(withBalance, [.deepSeek], "配置余额后全部视图包含 DeepSeek")
 
-        func shouldShowBalance(selectedProvider: TokenUsageProvider?) -> Bool {
-            (selectedProvider == nil || selectedProvider == .deepSeek) && showingBalanceCard
-        }
-
-        XCTAssertTrue(shouldShowBalance(selectedProvider: nil), "全部（nil）时应展示 DeepSeek 余额卡")
-        XCTAssertTrue(shouldShowBalance(selectedProvider: .deepSeek), "选中 DeepSeek 时应展示 DeepSeek 余额卡")
-        XCTAssertFalse(shouldShowBalance(selectedProvider: .codex), "选中 Codex 时绝不应展示 DeepSeek 余额卡")
-        XCTAssertFalse(shouldShowBalance(selectedProvider: .antigravity), "选中 Antigravity 时绝不应展示 DeepSeek 余额卡")
-        XCTAssertFalse(shouldShowBalance(selectedProvider: .kimi), "选中 Kimi 时绝不应展示 DeepSeek 余额卡")
-        XCTAssertFalse(shouldShowBalance(selectedProvider: .claude), "选中 Claude 时绝不应展示 DeepSeek 余额卡")
-        XCTAssertFalse(shouldShowBalance(selectedProvider: .cursor), "选中 Cursor 时绝不应展示 DeepSeek 余额卡")
+        let withoutBalance = TokenUsageProviderDisplayPolicy.displayableCardProviders(
+            from: [.codex, .kimi, .deepSeek],
+            limits: [:],
+            credentialConfiguredProviders: [],
+            showingDeepSeekBalance: false
+        )
+        XCTAssertTrue(withoutBalance.isEmpty, "未配置余额时不展示 DeepSeek 卡")
     }
 
-    func test_balanceCardVisibility_hiddenWhenNotConfigured() {
-        let showingBalanceCard = false
-
-        func shouldShowBalance(selectedProvider: TokenUsageProvider?) -> Bool {
-            (selectedProvider == nil || selectedProvider == .deepSeek) && showingBalanceCard
-        }
-
-        XCTAssertFalse(shouldShowBalance(selectedProvider: nil))
-        XCTAssertFalse(shouldShowBalance(selectedProvider: .deepSeek))
-        XCTAssertFalse(shouldShowBalance(selectedProvider: .codex))
+    func test_balanceCard_neverAttachedToNonDeepSeekProviders() {
+        // 余额卡只归属 DeepSeek：其余 provider 出示限额快照也不引入余额卡。
+        let displayable = TokenUsageProviderDisplayPolicy.displayableCardProviders(
+            from: [.opencode, .codebuddy, .workbuddy, .grok, .zcode, .traeCN, .qoder, .dsh, .arkCodingPlan],
+            limits: [:],
+            credentialConfiguredProviders: [],
+            showingDeepSeekBalance: true
+        )
+        XCTAssertTrue(displayable.isEmpty, "非 DeepSeek 的 provider 绝不展示 DeepSeek 余额卡")
     }
 
     func test_visibleProviders_includesDeepSeekWhenConfigured() {
@@ -74,18 +76,6 @@ final class TokenUsagePanelFilteringTests: XCTestCase {
         }
     }
 
-    func test_balanceCardVisibility_newProvidersNeverShowDeepSeekCard() {
-        let showingBalanceCard = true
-        let newProviders: [TokenUsageProvider] = [
-            .opencode, .codebuddy, .workbuddy, .grok, .zcode,
-            .traeCN, .qoder, .dsh, .arkCodingPlan,
-        ]
-        for provider in newProviders {
-            let showsBalance = (provider == .deepSeek) && showingBalanceCard
-            XCTAssertFalse(showsBalance, "选中 \(provider.rawValue) 时绝不应展示 DeepSeek 余额卡")
-        }
-    }
-
     func test_visibleProviders_respectsCustomProviderOrder() {
         let configuredProviders: [TokenUsageProvider] = [.codex, .antigravity, .kimi]
         let deepSeekConfigured = true
@@ -108,17 +98,7 @@ final class TokenUsagePanelFilteringTests: XCTestCase {
         let configuredSet: Set<TokenUsageProvider> = [.codex, .deepSeek, .antigravity]
 
         let visibleProviders = customOrder.filter { configuredSet.contains($0) }
-        XCTAssertEqual(visibleProviders, [.antigravity, .deepSeek, .codex])
-
-        // 模拟「全部」时卡片列表顺序
-        let selectedProvider: TokenUsageProvider? = nil
-        let targetProviders = selectedProvider.map { [$0] } ?? visibleProviders
-        XCTAssertEqual(targetProviders, [.antigravity, .deepSeek, .codex], "全部视图下卡片顺序与偏好设置严格一致")
-
-        // 模拟单选时仅展示选中的 provider 卡片
-        let singleSelect = TokenUsageProvider.deepSeek
-        let singleTarget = [singleSelect]
-        XCTAssertEqual(singleTarget, [.deepSeek])
+        XCTAssertEqual(visibleProviders, [.antigravity, .deepSeek, .codex], "卡片顺序与偏好设置严格一致")
     }
 
     // MARK: - 限额显示弹层（显隐过滤，2026-08-25）
@@ -198,10 +178,10 @@ final class TokenUsagePanelFilteringTests: XCTestCase {
         let separatorIndices = active.enumerated().compactMap { index, _ in index > 0 ? index : nil }
         XCTAssertEqual(separatorIndices, [1, 2], "3 个供应商卡片之间应有 2 条分割线")
 
-        // 单选 Codex 时：仅展示 1 个卡片，无分割线
-        let singleSelectActive = displayable(from: [.codex])
-        XCTAssertEqual(singleSelectActive, [.codex])
-        let singleSeparators = singleSelectActive.enumerated().compactMap { index, _ in index > 0 ? index : nil }
+        // 仅一家供应商有数据时：只展示 1 个卡片，无分割线
+        let singleActive = displayable(from: [.codex])
+        XCTAssertEqual(singleActive, [.codex])
+        let singleSeparators = singleActive.enumerated().compactMap { index, _ in index > 0 ? index : nil }
         XCTAssertTrue(singleSeparators.isEmpty, "单个供应商卡片不应有分割线")
     }
 

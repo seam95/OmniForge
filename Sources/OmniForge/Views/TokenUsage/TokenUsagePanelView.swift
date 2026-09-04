@@ -3,13 +3,10 @@ import SwiftUI
 /// 控制中心「Token」页 — 双分区（子 tab）布局：「余额」= 供应商限额/余额卡，
 /// 「用量」= 本地统计仪表盘（汇总卡 + 热力图 + 趋势图 + 模型 Top）。
 ///
-/// 顶部 provider 切换器与齿轮始终保留，且同时过滤两个分区；
-/// 任一分区无数据时整块隐藏，面板级无任何配置时走 `TokenUsageEmptyStateView`
-/// 空态（SPEC 4.2 / 4.3 / 4.6）。
+/// 余额区固定展示全部已配置供应商（无 provider 筛选）；「限额显示」齿轮位于
+/// 分段行右端；任一分区无数据时整块隐藏，面板级无任何配置时走
+/// `TokenUsageEmptyStateView` 空态（SPEC 4.2 / 4.3 / 4.6）。
 struct TokenUsagePanelView: View {
-    /// Provider 胶囊选中底块 matchedGeometry 标识：底块在胶囊间平滑滑移。
-    private static let providerChipIndicatorID = "token-provider-chip-active"
-
     @ObservedObject var manager: TokenUsageManager
     @ObservedObject var preferences: TokenUsagePreferences
     /// DeepSeek 余额（可选：管理器尚未接线/未注册时为 nil）。
@@ -19,20 +16,16 @@ struct TokenUsagePanelView: View {
     let strings: Strings
     var onOpenSettings: (SettingsToolbarTab?) -> Void = { _ in }
 
-    /// nil = 全部（配置的全部 provider 卡片堆叠）。
-    @State private var selectedProvider: TokenUsageProvider?
     /// 当前子 tab 分区（余额 / 用量），默认余额。
     @State private var selectedSection: TokenPanelSection = .balance
     /// 齿轮弹层（限额显示）展示状态。
     @State private var showsLimitsSettings = false
     /// 凭证已配置但暂无有效限额窗口的 provider（OpenCode / 方舟 Coding Plan）。
     @State private var credentialConfiguredProviders: Set<TokenUsageProvider> = []
-    @Namespace private var providerChipIndicator
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            headerRow
             content
         }
         .padding(.horizontal, 12)
@@ -41,12 +34,6 @@ struct TokenUsagePanelView: View {
         .onAppear { reloadCredentialConfiguredProviders() }
         .onChange(of: manager.limits) { _, _ in
             reloadCredentialConfiguredProviders()
-        }
-        .onChange(of: preferences.configuration.hiddenProviders) { _, hidden in
-            // 弹层隐藏了当前选中的 provider → 清除选中，回到「全部」视图
-            if let selected = selectedProvider, hidden.contains(selected) {
-                selectedProvider = nil
-            }
         }
     }
 
@@ -57,14 +44,7 @@ struct TokenUsagePanelView: View {
         )
     }
 
-    // MARK: - 头部行
-
-    private var headerRow: some View {
-        HStack(spacing: 8) {
-            providerSwitcher
-            limitsSettingsButton
-        }
-    }
+    // MARK: - 限额显示齿轮
 
     /// 齿轮按钮（「限额显示」弹层）：剩余/消耗切换、provider 显隐与排序、重置提示/撒花开关。
     private var limitsSettingsButton: some View {
@@ -112,85 +92,22 @@ struct TokenUsagePanelView: View {
         )
     }
 
-    /// Provider 分段胶囊（仅已配置 provider + 「全部」）。
-    private var providerSwitcher: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 3) {
-                    providerChip(
-                        title: strings.tokenProviderAll,
-                        provider: nil,
-                        selected: selectedProvider == nil
-                    ) {
-                        selectedProvider = nil
-                    }
-                    .id("all")
-                    ForEach(visibleProviders) { provider in
-                        providerChip(title: provider.displayName, provider: provider, selected: selectedProvider == provider) {
-                            selectedProvider = provider
-                        }
-                        .id(provider.id)
-                    }
-                }
-                .padding(3)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.06))
-                )
-                // 动画统一由 value 驱动：底块滑移与内容淡切同享一套曲线。
-                .animation(Theme.Animation.pageTransition, value: selectedProvider)
-            }
-            .onChange(of: selectedProvider) { _, newProvider in
-                if let newProvider {
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        proxy.scrollTo(newProvider.id, anchor: .center)
-                    }
-                } else {
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        proxy.scrollTo("all", anchor: .leading)
-                    }
-                }
-            }
+    /// 「余额 / 用量」子 tab 分段行：等分分段 + 右端「限额显示」齿轮。
+    private var sectionSwitcherRow: some View {
+        HStack(spacing: 8) {
+            sectionSwitcher
+            limitsSettingsButton
         }
     }
 
-    private func providerChip(
-        title: String,
-        provider: TokenUsageProvider?,
-        selected: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                if let provider {
-                    Circle()
-                        .fill(provider.accentColor)
-                        .frame(width: 5, height: 5)
-                }
-                Text(title)
-                    .font(Theme.Stats.font12Medium)
-                    .lineLimit(1)
-            }
-            .foregroundStyle(
-                selected
-                    ? (colorScheme == .light ? Theme.Stats.text1 : Color.white)
-                    : (colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
-            )
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background {
-                if selected {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(colorScheme == .dark ? Color.white.opacity(0.14) : Theme.Stats.cardBackground)
-                        .shadow(color: Color.black.opacity(colorScheme == .light ? 0.06 : 0.0), radius: 2, x: 0, y: 1)
-                        .matchedGeometryEffect(id: Self.providerChipIndicatorID, in: providerChipIndicator)
-                }
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .fixedSize(horizontal: true, vertical: false)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+    /// 「余额 / 用量」子 tab 分段（底块滑移与内容淡切同享一套曲线）。
+    private var sectionSwitcher: some View {
+        PanelSegmentedControl(
+            options: TokenPanelSection.allCases.map { option in
+                .init(tag: option, title: option.title(strings))
+            },
+            selection: $selectedSection
+        )
     }
 
     // MARK: - 内容区
@@ -209,8 +126,8 @@ struct TokenUsagePanelView: View {
                 .frame(maxWidth: .infinity, minHeight: ControlCenterContentMetrics.emptyContentMinHeight)
         } else {
             VStack(alignment: .leading, spacing: 10) {
-                sectionSwitcher
-                // 内容随「provider × 分区」组合整组重算：id 变化触发 peer 淡切，
+                sectionSwitcherRow
+                // 内容随分区整组重算：id 变化触发 peer 淡切，
                 // ZStack 顶对齐让新旧内容在转场期间叠放不跳动。
                 ZStack(alignment: .topLeading) {
                     VStack(alignment: .leading, spacing: 10) {
@@ -219,32 +136,20 @@ struct TokenUsagePanelView: View {
                         case .usage: usageSection
                         }
                     }
-                    .id(TokenPanelContentIdentity(provider: selectedProvider, section: selectedSection))
+                    .id(selectedSection)
                     .peerTransition()
                 }
-                .animation(Theme.Animation.pageTransition, value: selectedProvider)
                 .animation(Theme.Animation.pageTransition, value: selectedSection)
             }
         }
     }
 
-    /// 「余额 / 用量」子 tab 分段（等分全宽，底块滑移与内容淡切同享一套曲线）。
-    private var sectionSwitcher: some View {
-        PanelSegmentedControl(
-            options: TokenPanelSection.allCases.map { option in
-                .init(tag: option, title: option.title(strings))
-            },
-            selection: $selectedSection
-        )
-    }
-
-    /// 余额分区：选中 provider（或全部）的限额卡与余额卡 + 来源脚注；
+    /// 余额分区：全部已配置 provider 的限额卡与余额卡 + 来源脚注；
     /// 无可展示卡片（如限额快照未返回）时给占位。
     @ViewBuilder
     private var balanceSection: some View {
-        let providers = selectedProvider.map { [$0] } ?? visibleProviders
         let displayableProviders = TokenUsageProviderDisplayPolicy.displayableCardProviders(
-            from: providers,
+            from: visibleProviders,
             limits: manager.limits,
             credentialConfiguredProviders: credentialConfiguredProviders,
             showingDeepSeekBalance: balanceManager?.showingBalanceCard ?? false
@@ -341,16 +246,16 @@ struct TokenUsagePanelView: View {
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 14) {
                     TokenUsageActivityHeatmapView(
-                        heatmap: manager.activityHeatmap(filteredBy: selectedProvider),
+                        heatmap: manager.activityHeatmap(filteredBy: nil),
                         strings: strings
                     )
                     TokenUsageTrendChartView(
-                        points: manager.trendPoints(filteredBy: selectedProvider, period: trendPeriod),
+                        points: manager.trendPoints(filteredBy: nil, period: trendPeriod),
                         period: trendPeriodBinding,
                         strings: strings
                     )
                     TokenUsageTopModelsView(
-                        models: manager.topModels(filteredBy: selectedProvider, period: trendPeriod),
+                        models: manager.topModels(filteredBy: nil, period: trendPeriod),
                         strings: strings
                     )
                 }
@@ -448,10 +353,4 @@ enum TokenPanelSection: CaseIterable {
         case .usage: return strings.tokenSectionUsage
         }
     }
-}
-
-/// 内容区身份：provider × 分区任一变化时整组触发 peer 淡切（作为 `.id(_:)` 的值）。
-private struct TokenPanelContentIdentity: Hashable {
-    let provider: TokenUsageProvider?
-    let section: TokenPanelSection
 }

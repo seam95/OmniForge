@@ -1006,7 +1006,6 @@ extension Strings {
         tokenEmptyHint: "No login detected · Run any CLI once to get started",
         tokenReauthHint: "Login expired · Re-login with the CLI to refresh",
         tokenRefresh: "Refresh",
-        tokenProviderAll: "All",
         tokenSectionBalance: "Balance",
         tokenSectionUsage: "Usage",
         tokenBalanceEmptyHint: "No balance data yet · Updates automatically",
