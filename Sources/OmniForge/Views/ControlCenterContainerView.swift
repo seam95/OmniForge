@@ -1,61 +1,15 @@
 import ApplicationServices
 import SwiftUI
 
-/// 控制中心内容区高度策略：所有页按内容自适应收缩并设滚动上限。
+/// 控制中心内容区尺寸契约（SPEC §8.1）：宽度固定 380pt，页面内容 viewport
+/// 固定 580pt；超出 viewport 的页面在各自内容区内部滚动，popover 打开期间
+/// 不再由页面内容测高驱动尺寸变化。
 enum ControlCenterContentMetrics {
     static let panelWidth: CGFloat = 380
-    /// 各页滚动上限。
-    static let maxContentHeight: CGFloat = 580
-    /// 空状态 / 不可用页的最小内容高度，避免 popover 过扁。
+    /// 页面内容 viewport 固定高度。
+    static let viewportHeight: CGFloat = 580
+    /// 空状态 / 不可用页的最小内容高度，避免空态区域过扁。
     static let emptyContentMinHeight: CGFloat = 120
-
-    /// 所有页均支持自适应内容高度。
-    static func usesSelfSizedFixedHeight(_ panel: MenuPanel) -> Bool {
-        false
-    }
-
-    /// 根据测得的内容高度计算展示高度（不超过上限）。
-    static func resolvedHeight(contentHeight: CGFloat, maxHeight: CGFloat = maxContentHeight) -> CGFloat {
-        guard contentHeight.isFinite, contentHeight > 0 else { return 0 }
-        return min(contentHeight, maxHeight)
-    }
-}
-
-/// 按子视图固有高度收缩 popover；超过 `maxHeight` 后在限高内滚动。
-private struct AdaptiveHeightScroll<Content: View>: View {
-    var maxHeight: CGFloat
-    @ViewBuilder var content: () -> Content
-    @State private var contentHeight: CGFloat = 0
-
-    var body: some View {
-        let displayHeight = ControlCenterContentMetrics.resolvedHeight(
-            contentHeight: contentHeight,
-            maxHeight: maxHeight
-        )
-        ScrollView(showsIndicators: false) {
-            content()
-                .background(
-                    GeometryReader { proxy in
-                        Color.clear.preference(
-                            key: AdaptiveContentHeightKey.self,
-                            value: proxy.size.height
-                        )
-                    }
-                )
-        }
-        .onPreferenceChange(AdaptiveContentHeightKey.self) { contentHeight = $0 }
-        // 未测到前不强制高度，避免首帧被撑到 maxHeight。
-        .frame(height: displayHeight > 0 ? displayHeight : nil, alignment: .top)
-        // 高度随内容（面板切换）平滑过渡，消除突跳。
-        .animation(Theme.Animation.pageTransition, value: displayHeight)
-    }
-}
-
-private struct AdaptiveContentHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
 }
 
 struct ControlCenterContainerView: View {
@@ -65,6 +19,7 @@ struct ControlCenterContainerView: View {
     @AppStorage(UserDefaultsKeys.lastControlCenterPanel)
     private var selectedPanelRawValue = MenuPanel.systemMonitor.rawValue
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var keepAwakeConfigError: String?
     @Namespace private var navIndicator
     // 监控面板的有状态对象提升到容器层：切走面板不再销毁，保留磁盘推出进度与已展开的进程指标。
@@ -73,6 +28,9 @@ struct ControlCenterContainerView: View {
     // 监控/工具页路由由宿主持有：面板切换回来保留用户所在层级。
     @State private var monitorRoute: MonitorPanelRoute = .overview
     @State private var utilityRoute: UtilityToolsRoute = .list
+    /// 当前展示面板（displayedRoute）：footer 的 route 相关样式只在交换点更新
+    /// （SPEC §8.2.4），不读提前变化的请求 route。
+    @State private var displayedPanel: MenuPanel = .systemMonitor
 
     var body: some View {
         let visiblePanels = MenuPanel.visibleCases(isAvailable: runtime.isAvailable)
@@ -135,7 +93,10 @@ struct ControlCenterContainerView: View {
                     isActive: isActive,
                     activeFill: navigationActiveFill,
                     colorScheme: colorScheme,
-                    indicatorNamespace: navIndicator
+                    indicatorNamespace: navIndicator,
+                    indicatorAnimation: PageSwitchMotionToken.selectionIndicator(
+                        reduceMotion: reduceMotion
+                    )
                 ) {
                     // 动画统一由 value 驱动（对齐主浮窗 tab 模式）：
                     // 点击、resolveSelection 等任意赋值路径下底块与内容同享一套转场。
@@ -143,7 +104,10 @@ struct ControlCenterContainerView: View {
                 }
             }
         }
-        .animation(Theme.Animation.pageTransition, value: selectedPanelRawValue)
+        .animation(
+            PageSwitchMotionToken.selectionIndicator(reduceMotion: reduceMotion),
+            value: selectedPanelRawValue
+        )
         .padding(3)
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
@@ -155,24 +119,34 @@ struct ControlCenterContainerView: View {
         )
     }
 
-    @ViewBuilder
+    /// 页面内容统一 Host（SPEC §6）：单活动树、分阶段淡出后淡入；
+    /// 表面样式（白底/灰底）由 Host 持有、只在交换点更新。
     private func panelContent(visiblePanels: [MenuPanel]) -> some View {
-        // ZStack 让新旧面板在转场期间叠放淡切，高度变化随同一动画过渡。
-        ZStack {
-            if let panel = MenuPanel.resolvedSelection(selectedPanel, in: visiblePanels) {
+        PageSwitchHost(
+            requestedRoute: MenuPanel.resolvedSelection(selectedPanel, in: visiblePanels)
+                ?? .systemMonitor,
+            semantics: { _, _ in .peer },
+            surface: panelSurface,
+            onDisplayedSurfaceChange: { panel, _ in displayedPanel = panel }
+        ) { panel in
+            // 固定 viewport 内部滚动：页面内容不再向壳层上报高度（SPEC §8.1.3/§8.1.5）。
+            ScrollView(showsIndicators: false) {
                 panelCase(panel)
-                    .peerTransition()
-            } else {
-                unavailablePanel
-                    .peerTransition()
+                    .frame(maxWidth: .infinity, alignment: .top)
             }
+            .frame(maxHeight: .infinity)
         }
-        .animation(Theme.Animation.pageTransition, value: selectedPanelRawValue)
-        // token 页、供应商页与监控 overview 同为平面白底风格：白底挂在转场容器层而非内容根部，
-        // 避免转场包装高度略大于内容固有高度时底部余量透出面板灰底。
-        .background(
-            (selectedPanel == .tokenUsage || selectedPanel == .providerSwitch) && colorScheme == .light ? Color.white : Color.clear
-        )
+        .frame(height: ControlCenterContentMetrics.viewportHeight)
+        .clipped()
+    }
+
+    /// 页面表面样式（SPEC §8.2）：token/供应商页浅色白底（平面白底风格）；
+    /// 其余透明——监控 overview 白底由监控内层 route 持有（层级迁移见阶段 7）。
+    private func panelSurface(_ panel: MenuPanel) -> PageSurface {
+        if (panel == .tokenUsage || panel == .providerSwitch) && colorScheme == .light {
+            return PageSurface(background: .white)
+        }
+        return .clear
     }
 
     @ViewBuilder
@@ -182,8 +156,7 @@ struct ControlCenterContainerView: View {
                 if let monitor = state.monitor,
                    let preferences = state.monitorPreferences,
                    runtime.isAvailable(.systemMonitor) {
-                    AdaptiveHeightScroll(maxHeight: ControlCenterContentMetrics.maxContentHeight) {
-                        MonitorContainerView(
+                    MonitorContainerView(
                             coordinator: monitorCoordinator,
                             diskProtection: monitorDiskProtection,
                             route: $monitorRoute,
@@ -210,7 +183,6 @@ struct ControlCenterContainerView: View {
                                 monitor.refreshNow(forceProcess: forceProcess)
                             }
                         )
-                    }
                 } else {
                     unavailablePanel
                 }
@@ -218,37 +190,29 @@ struct ControlCenterContainerView: View {
                 if let manager = state.tokenUsageManager,
                    let preferences = state.tokenUsagePreferences,
                    runtime.isAvailable(.tokenUsage) {
-                    AdaptiveHeightScroll(maxHeight: ControlCenterContentMetrics.maxContentHeight) {
-                        TokenUsagePanelView(
-                            manager: manager,
-                            preferences: preferences,
-                            balanceManager: state.deepSeekBalanceManager,
-                            strings: state.l10n.s,
-                            onOpenSettings: onOpenSettings
-                        )
-                    }
+                    TokenUsagePanelView(
+                        manager: manager,
+                        preferences: preferences,
+                        balanceManager: state.deepSeekBalanceManager,
+                        strings: state.l10n.s,
+                        onOpenSettings: onOpenSettings
+                    )
                 } else {
                     unavailablePanel
                 }
             case .keepAwake:
-                AdaptiveHeightScroll(maxHeight: ControlCenterContentMetrics.maxContentHeight) {
-                    keepAwakePanel
-                }
+                keepAwakePanel
             case .clipboard:
-                    AdaptiveHeightScroll(maxHeight: ControlCenterContentMetrics.maxContentHeight) {
-                        UtilityToolsView(strings: state.l10n.s, route: $utilityRoute)
-                    }
+                UtilityToolsView(strings: state.l10n.s, route: $utilityRoute)
             case .providerSwitch:
                 if let manager = state.providerSwitchManager,
                    runtime.isAvailable(.providerSwitch) {
-                    AdaptiveHeightScroll(maxHeight: ControlCenterContentMetrics.maxContentHeight) {
-                        ProviderSwitchSettingsView(
-                            manager: manager,
-                            strings: state.l10n.s,
-                            presentation: .menuBar,
-                            onOpenSettings: onOpenSettings
-                        )
-                    }
+                    ProviderSwitchSettingsView(
+                        manager: manager,
+                        strings: state.l10n.s,
+                        presentation: .menuBar,
+                        onOpenSettings: onOpenSettings
+                    )
                 } else {
                     unavailablePanel
                 }
@@ -395,7 +359,7 @@ struct ControlCenterContainerView: View {
     /// 监控、token、供应商页为平面白底风格（对齐设计稿）：footer 与内容区同底、顶部发丝线分隔、
     /// 按钮用主色；其余面板维持面板灰底默认样式。
     private var footer: some View {
-        let flat = selectedPanel == .systemMonitor || selectedPanel == .tokenUsage || selectedPanel == .providerSwitch
+        let flat = displayedPanel == .systemMonitor || displayedPanel == .tokenUsage || displayedPanel == .providerSwitch
         let tint = flat ? MonitorOverviewPalette.primary(colorScheme) : nil
 
         return VStack(spacing: 0) {
@@ -418,7 +382,7 @@ struct ControlCenterContainerView: View {
 
                 // Token 页底栏右位为「刷新」；其余面板保持「退出」（UI 稿 4.2）。
                 // 手动刷新穿透内存/磁盘新鲜缓存，但 429 冷却不可穿透（#03）。
-                if selectedPanel == .tokenUsage {
+                if displayedPanel == .tokenUsage {
                     FooterButton(label: state.l10n.s.tokenRefresh, systemImage: "arrow.clockwise", tint: tint) {
                         state.tokenUsageManager?.refreshNow(force: true)
                         state.deepSeekBalanceManager?.refreshNow()
@@ -474,6 +438,8 @@ private struct ControlCenterNavButton: View {
     let activeFill: Color
     let colorScheme: ColorScheme
     let indicatorNamespace: Namespace.ID
+    /// 选中底块滑移动画（Reduce Motion 下降级为透明度过渡）。
+    var indicatorAnimation: Animation = PageSwitchMotionToken.selectionIndicator(reduceMotion: false)
     let action: () -> Void
 
     @State private var isHovered = false

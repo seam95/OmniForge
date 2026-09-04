@@ -19,7 +19,7 @@ final class UtilityToolsPresentationTests: XCTestCase {
         let reservedChrome: CGFloat = 200
         XCTAssertLessThanOrEqual(
             UtilityContentLayout.compactResultsListHeight + reservedChrome,
-            ControlCenterContentMetrics.maxContentHeight
+            ControlCenterContentMetrics.viewportHeight
         )
         XCTAssertGreaterThan(UtilityContentLayout.compactResultsListHeight, 120)
     }
