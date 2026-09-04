@@ -168,10 +168,10 @@ struct ControlCenterContainerView: View {
             }
         }
         .animation(Theme.Animation.pageTransition, value: selectedPanelRawValue)
-        // token 页与监控 overview 同为平面白底风格：白底挂在转场容器层而非内容根部，
+        // token 页、供应商页与监控 overview 同为平面白底风格：白底挂在转场容器层而非内容根部，
         // 避免转场包装高度略大于内容固有高度时底部余量透出面板灰底。
         .background(
-            selectedPanel == .tokenUsage && colorScheme == .light ? Color.white : Color.clear
+            (selectedPanel == .tokenUsage || selectedPanel == .providerSwitch) && colorScheme == .light ? Color.white : Color.clear
         )
     }
 
@@ -392,10 +392,10 @@ struct ControlCenterContainerView: View {
             )
     }
 
-    /// 监控页与 token 页为平面白底风格（对齐设计稿）：footer 与内容区同底、顶部发丝线分隔、
+    /// 监控、token、供应商页为平面白底风格（对齐设计稿）：footer 与内容区同底、顶部发丝线分隔、
     /// 按钮用主色；其余面板维持面板灰底默认样式。
     private var footer: some View {
-        let flat = selectedPanel == .systemMonitor || selectedPanel == .tokenUsage
+        let flat = selectedPanel == .systemMonitor || selectedPanel == .tokenUsage || selectedPanel == .providerSwitch
         let tint = flat ? MonitorOverviewPalette.primary(colorScheme) : nil
 
         return VStack(spacing: 0) {
