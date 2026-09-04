@@ -106,35 +106,33 @@ struct QuickPhraseView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
         }
-        // 选中态填充/描边颜色随分组切换平滑过渡。
-        .animation(Theme.Animation.pageTransition, value: uiState.selectedGroup)
+        // 过滤器选中态（SPEC §7.1 filterSelection）：chip 颜色 120ms easeOut，
+        // 列表内容直接更新。
+        .animation(PageSwitchMotionToken.filterSelection, value: uiState.selectedGroup)
     }
 
     private var phraseList: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                // 列表随分组整组重建：id 变化触发 peer 淡切，ZStack 顶对齐保证转场期叠放不跳动。
-                ZStack(alignment: .top) {
-                    LazyVStack(spacing: 3) {
-                        ForEach(filteredPhrases) { phrase in
-                            PhraseRow(
-                                phrase: phrase,
-                                isSelected: uiState.selectedPhraseID == phrase.id,
-                                isHovered: hoveredPhraseID == phrase.id,
-                                onTap: { uiState.selectedPhraseID = phrase.id },
-                                onDoubleTap: { paste(phrase) },
-                                onEdit: { editPhrase(phrase) },
-                                onDelete: { deletePhrase(phrase) },
-                                onHover: { hoveredPhraseID = $0 }
-                            )
-                            .id(phrase.id)
-                        }
-                        if filteredPhrases.isEmpty {
-                            emptyState
-                        }
+                // 分组是过滤器（SPEC §5.2）：结果列表直接更新，不做整组页面转场。
+                // 行 id 保持稳定（phrase.id），行状态不随分组切换重建。
+                LazyVStack(spacing: 3) {
+                    ForEach(filteredPhrases) { phrase in
+                        PhraseRow(
+                            phrase: phrase,
+                            isSelected: uiState.selectedPhraseID == phrase.id,
+                            isHovered: hoveredPhraseID == phrase.id,
+                            onTap: { uiState.selectedPhraseID = phrase.id },
+                            onDoubleTap: { paste(phrase) },
+                            onEdit: { editPhrase(phrase) },
+                            onDelete: { deletePhrase(phrase) },
+                            onHover: { hoveredPhraseID = $0 }
+                        )
+                        .id(phrase.id)
                     }
-                    .id(uiState.selectedGroup)
-                    .peerTransition()
+                    if filteredPhrases.isEmpty {
+                        emptyState
+                    }
                 }
                 .padding(.horizontal, 6)
                 .padding(.vertical, 6)
@@ -292,7 +290,7 @@ private struct GroupChip: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                .font(.system(size: 12, weight: .medium))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
                 .background(chipBackground)

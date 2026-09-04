@@ -136,19 +136,23 @@ struct UtilityToolsView: View {
     }
 
     var body: some View {
-        // ZStack 承载层级推入转场：进详情自右滑入、返回列表自左滑回。
-        ZStack {
-            switch route {
+        // 层级页面统一 Host（SPEC §5/§6）：列表 → 详情为前进，返回为后退，
+        // 小幅位移 + 淡出后淡入（4pt/12pt，Reduce Motion 归零）。
+        PageSwitchHost(
+            requestedRoute: route,
+            semantics: { from, to in
+                from == .list ? .forward : (to == .list ? .backward : .peer)
+            },
+            surface: { _ in .clear }
+        ) { currentRoute in
+            switch currentRoute {
             case .list:
                 toolListView
-                    .pushTransition(from: .leading)
             case .detail(let tool):
                 toolDetailView(tool)
-                    .pushTransition(from: .trailing)
             }
         }
-        .animation(Theme.Animation.pageTransition, value: route)
-        // 宽度拉满；高度跟随子工具内容，供控制中心 popover 按 tab 自适应。
+        // 宽度拉满；高度由控制中心固定 viewport 承载。
         .frame(maxWidth: .infinity, alignment: .top)
         .onAppear {
             repairSelection()

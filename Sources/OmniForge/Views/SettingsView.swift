@@ -1,6 +1,17 @@
 import SwiftUI
 import KeyboardShortcuts
 
+/// 设置窗口分区切换转场：行为与既有实现完全一致（SPEC §4.1 设置窗口不改动）。
+/// PageSwitch 统一模块面向控制中心/浮窗/Tab；设置窗口保留独立实现。
+fileprivate extension View {
+    func settingsPeerTransition() -> some View {
+        transition(
+            AnyTransition.opacity.combined(with: .offset(y: 6))
+        )
+    }
+}
+
+
 struct SettingsView: View {
     @ObservedObject var state: AppState
     @ObservedObject var navigation: SettingsNavigationModel
@@ -44,7 +55,7 @@ struct SettingsView: View {
             // ZStack 让新旧分区在转场期间叠放。
             ZStack {
                 detail(for: navigation.selectedTab)
-                    .peerTransition()
+                    .settingsPeerTransition()
             }
             .animation(Theme.Animation.pageTransition, value: navigation.selectedTab)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

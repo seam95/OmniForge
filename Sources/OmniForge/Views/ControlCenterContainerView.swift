@@ -73,11 +73,10 @@ struct ControlCenterContainerView: View {
         .onChange(of: runtime.revision) { _, _ in
             resolveSelection(in: MenuPanel.visibleCases(isAvailable: runtime.isAvailable))
         }
-        // popover 关闭（宿主销毁）：面板级采样需求清零、折叠展开的进程采样状态，
-        // 菜单栏/告警需求由 manager 内部继续维护（SPEC §9.1.1）。
+        // popover 关闭（宿主销毁）：面板级采样需求清零；进程采样状态由监控
+        // 内容视图的 onDisappear 折叠。菜单栏/告警需求由 manager 内部继续维护。
         .onDisappear {
             state.monitor?.setPanelDemand(.none)
-            monitorCoordinator.close()
         }
         .omniNoFocusRing()
     }
@@ -151,7 +150,8 @@ struct ControlCenterContainerView: View {
 
     /// 监控采样需求由「popover 是否打开 + 当前展示 route」驱动（SPEC §9.1.1）：
     /// 展示监控页时按配置聚合断言，切到其他面板清面板需求（菜单栏/告警需求
-    /// 由 manager 内部合并，不受影响）。
+    /// 由 manager 内部合并，不受影响）。进程采样（展开的排名）恢复与折叠由
+    /// 监控内容视图在挂载/卸载时管理（此时 onToggle 已绑定）。
     private func coordinateMonitorDemand(for panel: MenuPanel) {
         guard let monitor = state.monitor,
               let preferences = state.monitorPreferences else { return }
@@ -167,15 +167,6 @@ struct ControlCenterContainerView: View {
                 isAvailable: runtime.isAvailable(.systemMonitor)
             )
         )
-
-        if isActivePanel {
-            // 切回监控页仍停在排名 route 时，恢复对应进程采样（切走时已 close）。
-            if let kind = MonitorContainerView.rankingRestoration(for: monitorRoute) {
-                monitorCoordinator.open(kind)
-            }
-        } else {
-            monitorCoordinator.close()
-        }
     }
 
     /// 页面表面样式（SPEC §8.2）：token/供应商页浅色白底（平面白底风格）；

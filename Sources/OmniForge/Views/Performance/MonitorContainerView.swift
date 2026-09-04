@@ -21,7 +21,7 @@ struct MonitorContainerView: View {
     let configuration: MonitorConfiguration
     let strings: Strings
     /// 配置变化（分区/开关/可用性）时重断言采样需求；route 级的面板需求
-    /// 由控制中心宿主协调（SPEC §9.1.1），本视图不再挂 onAppear/onDisappear 生命周期。
+    /// 由控制中心宿主协调（SPEC §9.1.1）。
     let onDemandChange: (MonitorDemand) -> Void
     let onExpandedMetric: (ProcessMetricKind?) -> Void
     let onStartSpeedTest: () -> Void
@@ -32,58 +32,15 @@ struct MonitorContainerView: View {
     var deviceSummaryProvider: DeviceSummaryProvider = DeviceSummaryProvider()
 
     var body: some View {
-        // ZStack 承载层级推入转场：子页自右滑入、回 overview 自左滑回。
-        ZStack {
-            switch route {
-            case .overview:
-                MonitorOverviewView(
-                    snapshot: monitor.snapshot,
-                    history: monitor.history,
-                    configuration: configuration,
-                    strings: strings,
-                    deviceSummary: deviceSummary,
-                    onSelectRankable: { kind in
-                        coordinator.open(kind)
-                        route = .ranking(kind)
-                    },
-                    onSelectDiskDetail: {
-                        route = .diskDetail
-                    },
-                    onRefresh: { onRefresh(false) }
-                )
-                .pushTransition(from: .leading)
-            case .diskDetail:
-                MonitorDiskDetailView(
-                    snapshot: monitor.snapshot,
-                    strings: strings,
-                    temperatureUnit: configuration.temperatureUnit,
-                    protection: diskProtection,
-                    onBack: { route = .overview },
-                    onOpenSettings: onOpenSettings,
-                    showsSettingsAction: showsSettingsAction,
-                    onRefresh: { onRefresh(false) }
-                )
-                .pushTransition(from: .trailing)
-            case .ranking(let kind):
-                MonitorRankingView(
-                    kind: kind,
-                    state: monitor.processState,
-                    strings: strings,
-                    onBack: {
-                        coordinator.close()
-                        route = .overview
-                    },
-                    onOpenSettings: onOpenSettings,
-                    showsSettingsAction: showsSettingsAction,
-                    onRefresh: { onRefresh(true) }
-                )
-                .pushTransition(from: .trailing)
-            }
+        // 层级页面统一 Host（SPEC §5/§6）：overview → 排名/磁盘详情为前进，
+        // 返回 overview 为后退；小幅位移 + 淡出后淡入（4pt/12pt，Reduce Motion 归零）。
+        PageSwitchHost(
+            requestedRoute: route,
+            semantics: Self.semantics,
+            surface: pageSurface
+        ) { currentRoute in
+            content(for: currentRoute)
         }
-        .animation(Theme.Animation.pageTransition, value: route)
-        // overview 的平面白底挂在转场容器层而非内容根部：转场容器高度可能比
-        // 内容固有高度略大，背景只盖内容根时底部余量会透出面板灰底（底部灰带）。
-        .background(colorScheme == .light && route == .overview ? Color.white : Color.clear)
         .onAppear {
             coordinator.onToggle = { onExpandedMetric($0) }
             if deviceSummary.hostName.isEmpty {
@@ -91,13 +48,83 @@ struct MonitorContainerView: View {
                     fallbackHostName: strings.monitorDeviceFallbackName
                 )
             }
+            // 面板切回时若仍停在排名 route，恢复对应进程采样
+            // （切走时 onDisappear 已 close，此处 onToggle 已绑定）。
+            if let kind = Self.rankingRestoration(for: route) {
+                coordinator.open(kind)
+            }
         }
-        // 配置变化（展示分区/开关/功能可用性）重断言采样需求；route 级的
-        // 面板需求由控制中心宿主协调（SPEC §9.1.1），本视图不再经
-        // onAppear/onDisappear 驱动采样生命周期。
+        .onDisappear {
+            // 本内容树卸载 = 离开监控面板或切到其他层级；折叠进程采样状态
+            // 并断开 toggle 绑定。面板级指标采样由宿主 route 协调，不受影响。
+            coordinator.close()
+            coordinator.onToggle = nil
+        }
+        // 配置变化（展示分区/开关/功能可用性）重断言采样需求。
         .onChange(of: featureRuntime.revision) { _, _ in updateDemand() }
         .onChange(of: configuration.isEnabled) { _, _ in updateDemand() }
         .onChange(of: configuration.visibleSections) { _, _ in updateDemand() }
+    }
+
+    /// 层级方向语义：进子页为前进、回 overview 为后退（SPEC §7.3.5）。
+    static func semantics(from: MonitorPanelRoute, to: MonitorPanelRoute) -> PageSwitchSemantics {
+        if from == .overview { return .forward }
+        if to == .overview { return .backward }
+        return .peer // 排名与磁盘详情之间无直达路径，防御性兜底
+    }
+
+    /// 页面表面：overview 浅色平面白底，其余透明（露面板灰底）。
+    private func pageSurface(_ page: MonitorPanelRoute) -> PageSurface {
+        if colorScheme == .light && page == .overview {
+            return PageSurface(background: .white)
+        }
+        return .clear
+    }
+
+    @ViewBuilder
+    private func content(for page: MonitorPanelRoute) -> some View {
+        switch page {
+        case .overview:
+            MonitorOverviewView(
+                snapshot: monitor.snapshot,
+                history: monitor.history,
+                configuration: configuration,
+                strings: strings,
+                deviceSummary: deviceSummary,
+                onSelectRankable: { kind in
+                    coordinator.open(kind)
+                    route = .ranking(kind)
+                },
+                onSelectDiskDetail: {
+                    route = .diskDetail
+                },
+                onRefresh: { onRefresh(false) }
+            )
+        case .diskDetail:
+            MonitorDiskDetailView(
+                snapshot: monitor.snapshot,
+                strings: strings,
+                temperatureUnit: configuration.temperatureUnit,
+                protection: diskProtection,
+                onBack: { route = .overview },
+                onOpenSettings: onOpenSettings,
+                showsSettingsAction: showsSettingsAction,
+                onRefresh: { onRefresh(false) }
+            )
+        case .ranking(let kind):
+            MonitorRankingView(
+                kind: kind,
+                state: monitor.processState,
+                strings: strings,
+                onBack: {
+                    coordinator.close()
+                    route = .overview
+                },
+                onOpenSettings: onOpenSettings,
+                showsSettingsAction: showsSettingsAction,
+                onRefresh: { onRefresh(true) }
+            )
+        }
     }
 
     /// 切回面板时需恢复采样的排名指标；nil 表示无需恢复。

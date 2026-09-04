@@ -6,6 +6,7 @@ struct TabPanelView: View {
     let quickPhraseView: QuickPhraseView
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var tabIndicator
 
     var body: some View {
@@ -27,14 +28,20 @@ struct TabPanelView: View {
                     title: tab.rawValue,
                     isSelected: tabState.selectedTab == tab,
                     indicatorNamespace: tabIndicator,
+                    indicatorAnimation: PageSwitchMotionToken.selectionIndicator(
+                        reduceMotion: reduceMotion
+                    ),
                     action: {
                         tabState.selectedTab = tab
                     }
                 )
             }
         }
-        // 动画统一由 value 驱动：按钮点击、快捷键切换、外部赋值同享一套转场。
-        .animation(Theme.Animation.pageTransition, value: tabState.selectedTab)
+        // 选中底块动画（SPEC §7.1 selectionIndicator；Reduce Motion 降级）。
+        .animation(
+            PageSwitchMotionToken.selectionIndicator(reduceMotion: reduceMotion),
+            value: tabState.selectedTab
+        )
         .padding(.horizontal, 16)
         .frame(height: 38)
         .background(headerBackground)
@@ -42,18 +49,19 @@ struct TabPanelView: View {
 
     @ViewBuilder
     private var contentView: some View {
-        // ZStack 让新旧 tab 内容在转场期间叠放淡切。
-        ZStack {
-            switch tabState.selectedTab {
+        // 剪贴板历史/快捷短语平级切换：单活动树分阶段淡出后淡入（SPEC §6）。
+        PageSwitchHost(
+            requestedRoute: tabState.selectedTab,
+            semantics: { _, _ in .peer },
+            surface: { _ in .clear }
+        ) { tab in
+            switch tab {
             case .clipboard:
                 clipboardView
-                    .peerTransition()
             case .quickPhrase:
                 quickPhraseView
-                    .peerTransition()
             }
         }
-        .animation(Theme.Animation.pageTransition, value: tabState.selectedTab)
     }
 
     private var background: Color {
@@ -75,6 +83,8 @@ private struct TabButton: View {
     let title: String
     let isSelected: Bool
     let indicatorNamespace: Namespace.ID
+    /// 选中底块滑移动画（Reduce Motion 下降级为透明度过渡）。
+    var indicatorAnimation: Animation = PageSwitchMotionToken.selectionIndicator(reduceMotion: false)
     let action: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
@@ -82,7 +92,7 @@ private struct TabButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundColor(isSelected ? .primary : .secondary)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 6)

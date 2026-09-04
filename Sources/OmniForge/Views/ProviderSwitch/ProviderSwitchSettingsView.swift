@@ -83,9 +83,13 @@ struct ProviderSwitchSettingsView: View {
         VStack(alignment: .leading, spacing: 0) {
             sectionSwitcherRow
 
-            // 工具分段主体：id 随 selectedTool 变化触发整组 peer 淡切，
-            // 底部静态链接随整组统一过渡。
-            ZStack(alignment: .topLeading) {
+            // Claude Code / Codex 平级切换：单活动树分阶段淡出后淡入（SPEC §6），
+            // 不再整树交叉淡化；Provider 状态（展开/编辑 sheet 目标）不随切换重建。
+            PageSwitchHost(
+                requestedRoute: selectedTool,
+                semantics: { _, _ in .peer },
+                surface: { _ in .clear }
+            ) { tool in
                 VStack(alignment: .leading, spacing: 0) {
                     providerList
 
@@ -98,10 +102,9 @@ struct ProviderSwitchSettingsView: View {
 
                     footerLinks
                 }
-                .id(selectedTool)
-                .peerTransition()
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .animation(Theme.Animation.pageTransition, value: selectedTool)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .padding(.top, 12)
         .padding(.bottom, 12)

@@ -3,28 +3,24 @@ import SwiftUI
 import XCTest
 @testable import OmniForge
 
-/// 阶段 0 基线探针：量化现状页面切换行为，证明 SPEC §2 所列问题真实存在
-/// 且现有测试套件未覆盖。探针只做记录型断言（sanity），
-/// 数据以 `[baseline]` 前缀输出到测试日志并回填 BASELINE.md；
-/// 对应阶段迁移完成后，本文件的断言将收紧为 SPEC 不变量（单活动树等）。
+/// 阶段 0 基线探针（已随迁移完成收尾）：旧双树转场结构（ZStack + pushTransition）
+/// 已删除，S3/S4 改用统一 PageSwitchHost。本文件保留为真实监控视图的
+/// 单活动树挂载计数验证（结构与阶段 1 Host 单测互补）与阶段 8 对比基线。
 @MainActor
 final class PageSwitchBaselineProbeTests: XCTestCase {
 
-    // MARK: - 探针 A：转场窗口内双活动页面树（SPEC §2.1 / §6.3）
+    // MARK: - S3：真实 MonitorContainerView 单活动树（阶段 7 迁移后）
 
-    /// 监控页层级切换（overview → diskDetail）。harness 复刻 `MonitorContainerView`
-    /// 的转场结构（ZStack + switch + pushTransition + pageTransition 动画，参数一致），
-    /// 子页面用真实视图，挂载数经 onAppear/onDisappear 计数。
-    ///
-    /// 离屏局限（基线实测）：XCTest 进程无动画时钟，SwiftUI 转场在此环境同步完成
-    /// （旧视图移除与新视图插入同事务），峰值挂载数恒为 1 —— 双树行为在离屏环境
-    /// 不可复现，只能经结构审查（ZStack+AnyTransition 语义上转场期新旧分支共存）
-    /// 与真机验收矩阵（SPEC §13.3）验证。阶段 1 的 Host 以结构方式保证单树：
-    /// 内容闭包只消费 displayedRoute，route 交换发生在禁用动画的 Transaction。
-    func test_probeA_hierarchySwitch_mountedPageTreeCount() throws {
+    /// 监控层级切换（overview ↔ diskDetail）期间任意时刻最多一棵完整页面树。
+    func test_probeA_monitorHierarchySwitch_keepsSingleActiveTree() async throws {
         let counter = MountCounter()
         let box = RouteBox(route: .overview)
-        let harness = SwitchProbeHarness(route: box.binding, counter: counter)
+        let monitor = makeFakeMonitor()
+        let harness = MonitorHostHarness(
+            route: box.binding,
+            monitor: monitor,
+            counter: counter
+        )
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 380, height: 580),
@@ -32,25 +28,25 @@ final class PageSwitchBaselineProbeTests: XCTestCase {
             backing: .buffered,
             defer: false
         )
-        let hosting = NSHostingView(rootView: harness)
-        window.contentView = hosting
+        window.contentView = NSHostingView(rootView: harness)
         window.orderFrontRegardless()
-        Self.tick(0.05)
+        try await tick(0.05)
         XCTAssertEqual(counter.current, 1, "sanity：初始仅 overview 挂载")
 
         box.route = .diskDetail
-        Self.tick(0.08)
+        try await tick(0.05)
+        try await waitFor { counter.current == 1 }
+        XCTAssertEqual(counter.peak, 1, "真实监控层级切换期间最多一棵页面树")
 
-        baselineRecord(
-            "S3 层级切换转场窗口内峰值同时挂载页面树数（离屏）：\(counter.peakSimultaneous)（离屏无动画时钟，真实窗口为 2，见 BASELINE.md 结构审查）"
-        )
-        XCTAssertEqual(counter.current, 1, "sanity：切换完成后仅 diskDetail 挂载")
+        box.route = .overview
+        try await tick(0.05)
+        try await waitFor { counter.current == 1 }
+        XCTAssertEqual(counter.peak, 1)
+        baselineRecord("S3 真实监控层级往返切换单活动树峰值：\(counter.peak)")
     }
 
-    // MARK: - 探针 B：离开监控页的主线程阻塞（SPEC §2.3 → 阶段 3 已修复）
+    // MARK: - 探针 B：离开监控页主线程阻塞（阶段 3 已修复）
 
-    /// 采样队列正在执行慢采样时，主线程停止采样（离开监控页路径）必须立即返回。
-    /// 阶段 3 修复前实测阻塞 ≈ 0.3s（queue.sync 等待采样队列），修复后 ≤ 0.01s。
     func test_probeB_leavingMonitorWhileSampling_returnsImmediately() {
         let manager = SystemMonitorManager(
             scheduler: TestRepeatingScheduler(),
@@ -65,26 +61,22 @@ final class PageSwitchBaselineProbeTests: XCTestCase {
             processSampler: TestProcessUsageSampler()
         )
         manager.setPanelDemand(.init(system: true))
-        Self.tick(0.02) // 让慢采样已在串行队列上执行
+        Self.tick(0.02)
 
         let start = CFAbsoluteTimeGetCurrent()
-        manager.setPanelDemand(.none) // → stopSampling（异步清理）
+        manager.setPanelDemand(.none)
         let elapsed = CFAbsoluteTimeGetCurrent() - start
         baselineRecord(String(format: "离开监控页主线程阻塞：%.4fs", elapsed))
-
-        XCTAssertLessThanOrEqual(
-            elapsed, 0.01,
-            "停止采样的主线程路径不得等待采样队列（SPEC §9.1.2）"
-        )
+        XCTAssertLessThanOrEqual(elapsed, 0.01, "停止采样不得等待采样队列（SPEC §9.1.2）")
     }
 
-    // MARK: - 探针 C：20 次往返切换基线（SPEC §12）
+    // MARK: - 探针 C：20 次往返基线（与 BASELINE.md 阶段 0 对比）
 
-    func test_probeC_twentyRoundTrips_wallTimeBaseline() throws {
+    func test_probeC_twentyRoundTrips_wallTimeBaseline() async throws {
         let counter = MountCounter()
         let box = RouteBox(route: .overview)
-        let harness = SwitchProbeHarness(route: box.binding, counter: counter)
-
+        let monitor = makeFakeMonitor()
+        let harness = MonitorHostHarness(route: box.binding, monitor: monitor, counter: counter)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 380, height: 580),
             styleMask: [.borderless],
@@ -93,17 +85,16 @@ final class PageSwitchBaselineProbeTests: XCTestCase {
         )
         window.contentView = NSHostingView(rootView: harness)
         window.orderFrontRegardless()
-        Self.tick(0.05)
+        try await tick(0.05)
 
         let start = CFAbsoluteTimeGetCurrent()
         for index in 0..<20 {
             box.route = index.isMultiple(of: 2) ? .diskDetail : .overview
-            Self.tick(0.03)
+            try await tick(0.02)
         }
         let elapsed = CFAbsoluteTimeGetCurrent() - start
         baselineRecord(String(format: "20 次往返切换总耗时（debug 构建）：%.3fs", elapsed))
-        baselineRecord("20 次往返峰值同时挂载页面树数：\(counter.peakSimultaneous)")
-
+        baselineRecord("20 次往返峰值同时挂载页面树数：\(counter.peak)")
         XCTAssertEqual(box.route, .overview, "sanity：最终 route 正确")
     }
 
@@ -113,74 +104,61 @@ final class PageSwitchBaselineProbeTests: XCTestCase {
         RunLoop.main.run(until: Date(timeIntervalSinceNow: duration))
     }
 
+    private func tick(_ duration: TimeInterval) async throws {
+        try await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
+    }
+
+    private func waitFor(timeout: TimeInterval = 3, _ condition: @MainActor () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() && Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        if !condition() { XCTFail("等待条件超时") }
+    }
+
     private func baselineRecord(_ message: String) {
-        // 输出带前缀便于从测试日志收集回填 BASELINE.md。
         print("[baseline] \(name) — \(message)")
     }
 }
 
-/// 转场结构复刻 harness：与 `MonitorContainerView` 相同的 ZStack + pushTransition +
-/// pageTransition 动画，子页面为真实视图；挂载数由计数器追踪。
-private struct SwitchProbeHarness: View {
+/// 真实 MonitorContainerView harness：挂载数经内容视图 onAppear/onDisappear 计数。
+private struct MonitorHostHarness: View {
     @Binding var route: MonitorPanelRoute
+    @ObservedObject var monitor: SystemMonitorManager
     let counter: MountCounter
+    @StateObject private var coordinator = ProcessBreakdownCoordinator()
+    @StateObject private var diskProtection = DiskProtectionService()
 
     var body: some View {
-        ZStack {
-            switch route {
-            case .overview:
-                MonitorOverviewView(
-                    snapshot: SystemSnapshot(),
-                    history: MetricHistory(),
-                    configuration: MonitorConfiguration(),
-                    strings: .en,
-                    deviceSummary: DeviceSummary(
-                        hostName: "ProbeHost",
-                        osVersionText: nil,
-                        uptimeText: nil
-                    ),
-                    onSelectRankable: { _ in },
-                    onSelectDiskDetail: { self.route = .diskDetail },
-                    onRefresh: {}
-                )
-                .pushTransition(from: .leading)
-                .onAppear { counter.bump(+1) }
-                .onDisappear { counter.bump(-1) }
-            case .diskDetail:
-                MonitorDiskDetailView(
-                    snapshot: SystemSnapshot(),
-                    strings: .en,
-                    temperatureUnit: .celsius,
-                    protection: DiskProtectionService(),
-                    onBack: { self.route = .overview },
-                    onOpenSettings: {},
-                    showsSettingsAction: true,
-                    onRefresh: {}
-                )
-                .pushTransition(from: .trailing)
-                .onAppear { counter.bump(+1) }
-                .onDisappear { counter.bump(-1) }
-            case .ranking:
-                EmptyView()
-            }
-        }
-        .animation(Theme.Animation.pageTransition, value: route)
+        MonitorContainerView(
+            coordinator: coordinator,
+            diskProtection: diskProtection,
+            route: $route,
+            monitor: monitor,
+            configuration: MonitorConfiguration(),
+            strings: .en,
+            onDemandChange: { _ in },
+            onExpandedMetric: { _ in },
+            onStartSpeedTest: {}
+        )
+        .onAppear { counter.bump(+1) }
+        .onDisappear { counter.bump(-1) }
     }
 }
 
-/// 页面树挂载计数器（主线程使用）。
+/// 页面树挂载计数器。
 @MainActor
 final class MountCounter {
     private(set) var current = 0
-    private(set) var peakSimultaneous = 0
+    private(set) var peak = 0
 
     func bump(_ delta: Int) {
         current += delta
-        peakSimultaneous = max(peakSimultaneous, current)
+        peak = max(peak, current)
     }
 }
 
-/// 外部持有的 route 状态盒：让测试能从宿主视图外驱动切换。
+/// 外部持有的 route 状态盒。
 @MainActor
 final class RouteBox: ObservableObject {
     @Published var route: MonitorPanelRoute
