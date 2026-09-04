@@ -294,6 +294,13 @@ final class AntigravityLimitsFetcherTests: XCTestCase {
                 bucket("3p-5h", remaining: 0.4),
                 bucket("gemini-weekly", remaining: 0.9),
             ]))),
+            // 一级命中后补发取套餐：planName 与真机响应一致（无 planDisplayName 等前置字段）。
+            ("GetUserStatus", .success([
+                "userStatus": [
+                    "email": "dev@example.com",
+                    "planStatus": ["planInfo": ["planName": "Pro"]],
+                ],
+            ])),
         ]
         let limits = try await makeFetcher(shell: shell, client: client).fetchLimits(force: false)
 
@@ -302,7 +309,31 @@ final class AntigravityLimitsFetcherTests: XCTestCase {
         XCTAssertEqual(limits?.windows[.session]?.usedPercent, 60, "Cl 5h → session 槽")
         XCTAssertEqual(limits?.windows[.weekly]?.usedPercent, 30, "Cl 7d → weekly 槽")
         XCTAssertEqual(limits?.labeledWindows?.map(\.label), ["Gm 7d"], "Gm 双窗保持带标签")
+        XCTAssertEqual(limits?.planLabel, "Pro", "一级命中也补发 GetUserStatus 取套餐")
+        XCTAssertEqual(limits?.subscriptionStatus, .active)
         XCTAssertTrue(client.probes.contains(where: { $0.scheme == "https" && $0.port == 9443 }))
+    }
+
+    func test_fetchLimits_quotaSummarySucceedsButAccountLookupFails_degradesPlanToNil() async throws {
+        let shell = FakeShellRunner()
+        shell.psOutput = languageServerLine
+        shell.lsofOutput = "agy 50001 seam 12u IPv4 0x0 0t0 TCP *:9443 (LISTEN)"
+        let client = FakeLocalClient()
+        client.responses = [
+            ("RetrieveUserQuotaSummary", .success(summaryBody([
+                bucket("3p-weekly", remaining: 0.7),
+                bucket("3p-5h", remaining: 0.4),
+            ]))),
+            // GetUserStatus 失败 → 套餐静默降级为 nil，窗口数据不受影响。
+            ("GetUserStatus", .failure(LimitError.network("HTTP 500"))),
+        ]
+        let limits = try await makeFetcher(shell: shell, client: client).fetchLimits(force: false)
+
+        XCTAssertNil(limits?.issue)
+        XCTAssertEqual(limits?.windows[.session]?.usedPercent, 60)
+        XCTAssertEqual(limits?.windows[.weekly]?.usedPercent, 30)
+        XCTAssertNil(limits?.planLabel, "补发失败不放大失败面")
+        XCTAssertEqual(limits?.subscriptionStatus, .unknown)
     }
 
     func test_fetchLimits_fallsBackToUserStatusWhenSummaryUnavailable() async throws {

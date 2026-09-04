@@ -436,7 +436,12 @@ final class AntigravityLimitsFetcher: LimitsFetching {
             body: AntigravityRequestBodies.defaultBody,
             csrfToken: match.csrfToken
         ), let labeled = AntigravityUsageDecoder.decodeQuotaSummary(summary) {
-            return providerLimits(labeled: labeled, email: nil, planLabel: nil)
+            // quota summary 端点不带套餐信息 → 补发 GetUserStatus 仅取 planLabel。
+            return providerLimits(
+                labeled: labeled,
+                email: nil,
+                planLabel: await supplementaryPlanLabel(endpoint: endpoint, csrfToken: match.csrfToken)
+            )
         }
 
         if let status = try? await client.postJSON(
@@ -471,6 +476,24 @@ final class AntigravityLimitsFetcher: LimitsFetching {
 
     private func isCSRFPresent(_ match: AntigravityProcessProbe.Match) -> Bool {
         !(match.csrfToken ?? "").isEmpty
+    }
+
+    /// 一级 quota summary 端点不返回套餐 → 补发 GetUserStatus 只取 planLabel；
+    /// 任何失败静默返回 nil，不放大失败面（窗口数据仍来自 quota summary）。
+    private func supplementaryPlanLabel(
+        endpoint: (port: Int, scheme: String),
+        csrfToken: String?
+    ) async -> String? {
+        guard let status = try? await client.postJSON(
+            scheme: endpoint.scheme,
+            port: endpoint.port,
+            path: AntigravityLocalAPIClient.servicePath + "GetUserStatus",
+            body: AntigravityRequestBodies.defaultBody,
+            csrfToken: csrfToken
+        ) else {
+            return nil
+        }
+        return AntigravityUsageDecoder.planLabel(from: status["userStatus"] as? [String: Any])
     }
 
     private func hasInstallEvidence() -> Bool {
