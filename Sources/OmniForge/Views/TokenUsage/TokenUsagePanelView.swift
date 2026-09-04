@@ -29,15 +29,17 @@ struct TokenUsagePanelView: View {
     var body: some View {
         content
             .padding(.top, 2)
-            .onAppear { reloadCredentialConfiguredProviders() }
-            .onChange(of: manager.limits) { _, _ in
-                reloadCredentialConfiguredProviders()
+            // 凭证状态由 manager 缓存（SPEC §9.2.4）：进入页面/切换分区只读缓存，
+            // 不再在 SwiftUI 生命周期中访问 Keychain。
+            .task { credentialConfiguredProviders = manager.credentialConfiguredProviders }
+            .onChange(of: manager.credentialConfiguredProviders) { _, newValue in
+                credentialConfiguredProviders = newValue
             }
     }
 
     private var summaryCardsBlock: some View {
         TokenUsageSummaryCardsView(
-            cards: manager.summaryCards(filteredBy: nil),
+            cards: dashboard?.summaryCards ?? manager.summaryCards(filteredBy: nil),
             strings: strings
         )
     }
@@ -127,19 +129,22 @@ struct TokenUsagePanelView: View {
                 sectionSwitcherRow
                     .padding(.horizontal, 12)
                     .padding(.bottom, 6)
-                // 内容随分区整组重算：id 变化触发 peer 淡切，
-                // ZStack 顶对齐让新旧内容在转场期间叠放不跳动。
-                ZStack(alignment: .topLeading) {
+                // 余额/用量平级切换：单活动树分阶段淡出后淡入（SPEC §6）。
+                // 分区行（分段 + 齿轮）位于 Host 外，不随内容重建。
+                PageSwitchHost(
+                    requestedRoute: selectedSection,
+                    semantics: { _, _ in .peer },
+                    surface: { _ in .clear }
+                ) { section in
                     VStack(alignment: .leading, spacing: 0) {
-                        switch selectedSection {
+                        switch section {
                         case .balance: balanceSection
                         case .usage: usageSection
                         }
                     }
-                    .id(selectedSection)
-                    .peerTransition()
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
-                .animation(Theme.Animation.pageTransition, value: selectedSection)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
         }
     }
@@ -213,7 +218,7 @@ struct TokenUsagePanelView: View {
                 hairline
                 usageSectionView(
                     TokenUsageActivityHeatmapView(
-                        heatmap: manager.activityHeatmap(filteredBy: nil),
+                        heatmap: usageHeatmap,
                         strings: strings
                     )
                 )
@@ -221,13 +226,12 @@ struct TokenUsagePanelView: View {
                 hairline
                 usageSectionView(
                     TokenUsageTrendChartView(
-                        points: manager.trendPoints(filteredBy: nil, period: trendPeriod),
+                        points: trendPoints,
                         period: trendPeriodBinding,
                         strings: strings
                     )
                 )
 
-                let topModels = manager.topModels(filteredBy: nil, period: trendPeriod)
                 if !topModels.isEmpty {
                     hairline
                     usageSectionView(
@@ -273,8 +277,25 @@ struct TokenUsagePanelView: View {
         return .notConfigured(provider)
     }
 
-    private func reloadCredentialConfiguredProviders() {
-        credentialConfiguredProviders = TokenUsageCredentialStateReader.configuredProviders()
+    /// 用量分区渲染数据（SPEC §9.2.1）：优先读后台预计算的 dashboard 快照；
+    /// snapshot 尚未完成首次构建时回退到既有内存聚合（不访问存储）。
+    private var dashboard: TokenUsageDashboardSnapshot? {
+        manager.dashboardSnapshot
+    }
+
+    private var usageHeatmap: UsageActivityHeatmap? {
+        if let heatmap = dashboard?.heatmap { return heatmap }
+        return manager.activityHeatmap(filteredBy: nil)
+    }
+
+    private var trendPoints: [UsageTrendPoint] {
+        if let points = dashboard?.trendPoints[trendPeriod] { return points }
+        return manager.trendPoints(filteredBy: nil, period: trendPeriod)
+    }
+
+    private var topModels: [UsageTopModelEntry] {
+        if let models = dashboard?.topModels[trendPeriod], !models.isEmpty { return models }
+        return manager.topModels(filteredBy: nil, period: trendPeriod)
     }
 
     /// 趋势周期（读写 `configuration.trendPeriodDefault`，持久化）。

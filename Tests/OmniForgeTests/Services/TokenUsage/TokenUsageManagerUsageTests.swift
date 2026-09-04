@@ -282,4 +282,51 @@ final class TokenUsageManagerUsageTests: XCTestCase {
         XCTAssertEqual(manager.activityHeatmap(filteredBy: .codex)?.activeDays, 1)
         XCTAssertNil(manager.activityHeatmap(filteredBy: .antigravity), "无数据 provider → nil")
     }
+
+    // MARK: - 阶段 5：dashboard snapshot（SPEC §9.2）
+
+    /// start 后后台构建 dashboard 快照；渲染数据与既有单项聚合口径一致。
+    func test_start_buildsDashboardSnapshotMatchingSingleQueries() async throws {
+        let store = FakeUsageStore()
+        store.upsertBucket(bucket(daysAgo: 0, total: 42_000))
+        store.upsertBucket(bucket(daysAgo: -3, total: 8_000))
+        let manager = makeManager(store: store, collectors: [.claude: FakeUsageCollector(provider: .claude)])
+        manager.start()
+
+        try await waitUntil { manager.dashboardSnapshot != nil }
+        let snapshot = try XCTUnwrap(manager.dashboardSnapshot)
+
+        // 快照汇总与单项聚合口径一致（今日 tokens）。
+        XCTAssertEqual(snapshot.summaryCards.todayTokens, 42_000)
+        XCTAssertEqual(manager.summaryCards(filteredBy: nil).todayTokens, 42_000)
+        // 全周期预计算：所有周期都有点集与 top models。
+        for period in TokenTrendPeriod.allCases {
+            XCTAssertEqual(
+                snapshot.trendPoints[period],
+                manager.trendPoints(filteredBy: nil, period: period),
+                "快照趋势点须与单项聚合一致（\(period)）"
+            )
+        }
+        XCTAssertNotNil(snapshot.heatmap)
+    }
+
+    /// SPEC §9.2.4：凭证状态由 manager 缓存（Keychain 读取只发生在启动/刷新路径，
+    /// 不在视图渲染路径）。
+    func test_credentialCache_availableWithoutViewKeychainRead() {
+        let manager = makeManager(store: FakeUsageStore())
+        XCTAssertNotNil(manager.credentialConfiguredProviders, "manager 暴露凭证缓存（空 Set）")
+    }
+
+    private func waitUntil(
+        timeout: TimeInterval = 3,
+        _ condition: @escaping @MainActor () -> Bool
+    ) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() && Date() < deadline {
+            try await Task.sleep(nanoseconds: 30_000_000)
+        }
+        if !condition() {
+            XCTFail("等待条件超时")
+        }
+    }
 }

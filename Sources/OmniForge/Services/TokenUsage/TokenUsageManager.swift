@@ -23,6 +23,12 @@ final class TokenUsageManager: ObservableObject {
     /// 全历史日聚合缓存（按本地日 × provider；仪表盘汇总卡/热力图/趋势的单一数据源）。
     /// 在 `refreshUsageSnapshot()` 随用量变更全量刷新一次，避免每次渲染重复扫全历史。
     @Published private(set) var usageDailyProviderAggregates: [UsageDayProviderAggregate] = []
+    /// 仪表盘展示快照（SPEC §9.2）：后台算齐全部周期，渲染只读内存，
+    /// 不在 body / section 切换中访问存储。nil = 尚未完成首次构建。
+    @Published private(set) var dashboardSnapshot: TokenUsageDashboardSnapshot?
+    /// 已配置凭证的 provider（Keychain/环境变量判定）。进入页面只读此缓存，
+    /// 缓存在功能启动与手动刷新时重建（SPEC §9.2.4）。
+    @Published private(set) var credentialConfiguredProviders: Set<TokenUsageProvider> = []
 
     /// 用量区块显隐（SPEC 4.3）：有数据或回填中才显示。
     var showingUsageBlock: Bool {
@@ -47,6 +53,8 @@ final class TokenUsageManager: ObservableObject {
     /// 单飞合并：并发未命中共享同一次上游拉取，避免打爆 Claude OAuth 端点。
     private var inFlight = Set<TokenUsageProvider>()
     private var cancellables = Set<AnyCancellable>()
+    /// 仪表盘快照代际：每次发起重建自增，晚到结果不覆盖新代际（SPEC §9.2.3）。
+    private var dashboardGeneration = 0
 
     init(
         preferences: TokenUsagePreferences,
@@ -99,6 +107,7 @@ final class TokenUsageManager: ObservableObject {
     func start() {
         guard !isActive else { return }
         isActive = true
+        refreshCredentialCache()
         refreshLimits(force: false)
         rescheduleRefreshTimer()
         // #04：启动采集器（首次即后台全量回填），并先渲染一次已有快照。
@@ -122,9 +131,17 @@ final class TokenUsageManager: ObservableObject {
     }
 
     /// 手动刷新入口（底栏「刷新」）：force 穿透内存/磁盘新鲜缓存，但 429 冷却不可穿透（#03）。
+    /// 同时重建 Keychain 凭证缓存与仪表盘快照（用户可能刚保存/清除了凭证）。
     func refreshNow(force: Bool = false) {
         guard isActive else { return }
+        refreshCredentialCache()
+        rebuildDashboardSnapshot()
         refreshLimits(force: force)
+    }
+
+    /// 重建 Keychain/环境变量凭证缓存（读取较重，只在启动与显式刷新时执行）。
+    private func refreshCredentialCache() {
+        credentialConfiguredProviders = TokenUsageCredentialStateReader.configuredProviders()
     }
 
     // MARK: - 限额取数
@@ -186,6 +203,8 @@ final class TokenUsageManager: ObservableObject {
         alerts?.evaluate(result)
         // 重置监控同频评估（内部按窗口 resetAt 前进 + 用量下降判定，快照防抖）。
         resetMonitor?.evaluate(limits: limits)
+        // 轮询/刷新完成即自愈凭证缓存（低频，覆盖外部改动凭证的场景）。
+        refreshCredentialCache()
         // 仅当有实际数据（新鲜成功或 last-good 回退）时推进「更新时间」，且取两者较新者。
         guard result.configured, result.issue == nil || !result.windows.isEmpty else { return }
         let captured = result.capturedAt
@@ -197,83 +216,66 @@ final class TokenUsageManager: ObservableObject {
     // MARK: - 用量侧（#04 / 仪表盘重设计）
 
     /// 汇总卡快照（今日/7天/30天/总计），按 provider 过滤（nil = 全部）。无数据时为零值卡。
+    /// 主要供单元测试单项断言；面板渲染读 `dashboardSnapshot`（后台预计算）。
     func summaryCards(filteredBy provider: TokenUsageProvider?) -> UsageSummaryCards {
-        let daily = dailyAggregates(filteredBy: provider)
-        let now = Date()
-        return UsageSummaryCardsBuilder.make(daily: daily, now: now, calendar: .current)
+        TokenUsageDashboardSnapshotBuilder.summaryCards(
+            filteredBy: provider,
+            daily: usageDailyProviderAggregates,
+            now: Date(),
+            calendar: .current
+        )
     }
 
     /// 活跃度年度热力图，按 provider 过滤。无数据 → nil（视图显示占位）。
     func activityHeatmap(filteredBy provider: TokenUsageProvider?) -> UsageActivityHeatmap? {
-        let daily = dailyAggregates(filteredBy: provider)
-        let now = Date()
-        return UsageHeatmapBuilder.make(daily: daily, now: now, calendar: .current)
+        TokenUsageDashboardSnapshotBuilder.heatmap(
+            filteredBy: provider,
+            daily: usageDailyProviderAggregates,
+            now: Date(),
+            calendar: .current
+        )
     }
 
     /// 趋势点序列，按 provider 过滤 + 周期。对应周期无数据 → 空序列（视图显示占位）。
     func trendPoints(filteredBy provider: TokenUsageProvider?, period: TokenTrendPeriod) -> [UsageTrendPoint] {
-        let now = Date()
-        let calendar = Calendar.current
-        let daily = dailyAggregates(filteredBy: provider)
-        let hourly = period == .day ? todayBuckets(filteredBy: provider, now: now, calendar: calendar) : []
-        return UsageTrendBuilder.make(
+        TokenUsageDashboardSnapshotBuilder.trendPoints(
+            filteredBy: provider,
             period: period,
-            daily: daily,
-            hourlyBuckets: hourly,
-            now: now,
-            calendar: calendar
+            daily: usageDailyProviderAggregates,
+            store: usageStore,
+            now: Date(),
+            calendar: .current
         )
     }
 
     /// 模型 Top 列表，按 provider 过滤 + 周期窗口。无数据 → 空（视图隐藏该区）。
     func topModels(filteredBy provider: TokenUsageProvider?, period: TokenTrendPeriod) -> [UsageTopModelEntry] {
-        guard let usageStore else { return [] }
-        let now = Date()
-        let calendar = Calendar.current
-        let window = modelWindow(period: period, now: now, calendar: calendar)
-        let providers = provider.map { Set([$0]) }
-        let aggregates = usageStore.loadModelAggregates(from: window.start, to: window.end, providers: providers)
-        return UsageTopModelsBuilder.make(models: aggregates)
+        TokenUsageDashboardSnapshotBuilder.topModels(
+            filteredBy: provider,
+            period: period,
+            store: usageStore,
+            now: Date(),
+            calendar: .current
+        )
     }
 
-    /// 日聚合缓存按 provider 过滤（nil = 全部）。
-    private func dailyAggregates(filteredBy provider: TokenUsageProvider?) -> [UsageDayProviderAggregate] {
-        guard let provider else { return usageDailyProviderAggregates }
-        return usageDailyProviderAggregates.filter { $0.provider == provider }
-    }
-
-    /// 当日半小时桶（趋势「日」周期）。
-    private func todayBuckets(
-        filteredBy provider: TokenUsageProvider?,
-        now: Date,
-        calendar: Calendar
-    ) -> [UsageBucketState] {
-        guard let usageStore else { return [] }
-        let todayStart = calendar.startOfDay(for: now)
-        let tomorrow = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? now.addingTimeInterval(86_400)
-        let providers = provider.map { Set([$0]) }
-        return usageStore.loadBuckets(from: todayStart, to: tomorrow, providers: providers)
-    }
-
-    /// 模型统计窗口：日=今日；周=近 7 日；月=近 30 日；总计=全历史。
-    private func modelWindow(
-        period: TokenTrendPeriod,
-        now: Date,
-        calendar: Calendar
-    ) -> (start: Date, end: Date) {
-        let todayStart = calendar.startOfDay(for: now)
-        let tomorrow = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? now.addingTimeInterval(86_400)
-        switch period {
-        case .day:
-            return (todayStart, tomorrow)
-        case .week:
-            let start = calendar.date(byAdding: .day, value: -(UsageSummaryCardsBuilder.sevenDays - 1), to: todayStart) ?? todayStart
-            return (start, tomorrow)
-        case .month:
-            let start = calendar.date(byAdding: .day, value: -(UsageSummaryCardsBuilder.thirtyDays - 1), to: todayStart) ?? todayStart
-            return (start, tomorrow)
-        case .total:
-            return (Date(timeIntervalSince1970: 0), tomorrow)
+    /// 后台重建仪表盘快照（数据变化 / 显式刷新时调用）：
+    /// 存储读取与全周期聚合在后台执行，主线程只赋值结果（SPEC §9.2.3）。
+    private func rebuildDashboardSnapshot() {
+        dashboardGeneration &+= 1
+        let daily = usageDailyProviderAggregates
+        let store = usageStore
+        let generation = dashboardGeneration
+        Task.detached(priority: .utility) { [weak self] in
+            let snapshot = TokenUsageDashboardSnapshotBuilder.make(
+                daily: daily,
+                store: store,
+                now: Date()
+            )
+            await MainActor.run { [weak self] in
+                guard let self, self.dashboardGeneration == generation else { return }
+                self.dashboardSnapshot = snapshot
+            }
         }
     }
 
@@ -296,6 +298,7 @@ final class TokenUsageManager: ObservableObject {
             to: tomorrow,
             providers: nil
         )
+        rebuildDashboardSnapshot()
     }
 
     private func calendarTomorrow(now: Date) -> Date {
