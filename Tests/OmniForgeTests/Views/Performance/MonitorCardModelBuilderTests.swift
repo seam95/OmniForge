@@ -228,7 +228,8 @@ final class MonitorCardModelBuilderTests: XCTestCase {
         )
         let models = build(snap, strings: .zhHans)
         let disk = models.first { $0.id == .disk }
-        XCTAssertEqual(disk?.badgeText, "已用 50 GB")
+        XCTAssertEqual(disk?.primaryText, "50 GB")
+        XCTAssertEqual(disk?.badgeText, "可用 50 GB")
         XCTAssertNil(disk?.secondaryText)
         XCTAssertNil(disk?.progress)
         XCTAssertEqual(disk?.chipTexts, [
@@ -253,7 +254,8 @@ final class MonitorCardModelBuilderTests: XCTestCase {
         )
         let models = build(snap, strings: .en)
         let disk = models.first { $0.id == .disk }
-        XCTAssertNil(disk?.badgeText) // total 缺失 → 无"已用"
+        XCTAssertEqual(disk?.primaryText, "--") // total 缺失 → 无已用大数字
+        XCTAssertEqual(disk?.badgeText, "Free 50 GB") // 可用徽标只依赖 free
         XCTAssertEqual(disk?.chipTexts, ["--", "--"])
         XCTAssertTrue(disk?.opensDiskDetail == true)
     }

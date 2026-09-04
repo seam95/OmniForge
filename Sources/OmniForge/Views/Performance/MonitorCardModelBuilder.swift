@@ -201,13 +201,17 @@ enum MonitorCardModelBuilder {
         snapshot: SystemSnapshot,
         strings: Strings
     ) -> MonitorCardModel {
-        // badge：`已用 238 GB`（total − free，base-1000）
+        // 大数字：已用量（total − free，base-1000，无前缀）
         let free = snapshot.disk?.freeSpace
         let total = snapshot.disk?.totalSpace
-        let badge: String? = {
+        let used: String? = {
             guard let free, let total, total > free else { return nil }
-            return "\(strings.monitorDiskUsed) \(MetricFormat.diskBytes(total - free))"
+            return MetricFormat.diskBytes(total - free)
         }()
+        // 标题行徽标：可用量
+        let freeBadge: String? = free
+            .flatMap { MetricFormat.diskBytes($0) }
+            .map { "\(strings.monitorFreeLabel) \($0)" }
         let readRate = snapshot.disk?.readBytesPerSec
         let writeRate = snapshot.disk?.writeBytesPerSec
         let readText = (readRate ?? 0) > 0
@@ -218,10 +222,10 @@ enum MonitorCardModelBuilder {
             id: .disk,
             title: strings.monitorCardDisk,
             systemImage: "internaldrive",
-            primaryText: "--",
+            primaryText: used ?? "--",
             secondaryText: nil,
             progress: nil,
-            badgeText: badge,
+            badgeText: freeBadge,
             showsLiveDot: false,
             issueText: issueText(for: snapshot.issues[.disk], strings: strings),
             processMetricKind: nil,
