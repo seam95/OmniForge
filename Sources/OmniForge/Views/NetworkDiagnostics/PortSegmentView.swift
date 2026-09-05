@@ -21,7 +21,8 @@ struct PortSegmentView: View {
     @State private var postTermTask: Task<Void, Never>?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        // 平面分区：hero 区自持 h16 v12；横幅/工具条挂内容流；列表行平铺 + separator。
+        VStack(alignment: .leading, spacing: 0) {
             if showsHero {
                 heroCard
             }
@@ -138,8 +139,8 @@ struct PortSegmentView: View {
                 legendRow(stats)
             }
         }
-        .padding(12)
-        .utilityCardBackground()
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     private var scopeLabel: String {
@@ -216,24 +217,25 @@ struct PortSegmentView: View {
                 selection: $service.portScope
             )
 
-            Button {
-                service.refreshPorts()
-            } label: {
+            Group {
                 if service.isRefreshingPorts {
                     ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
+                        .controlSize(.mini)
                         .frame(width: 24, height: 24)
+                } else {
+                    IconButton(
+                        systemImage: "arrow.clockwise",
+                        tint: text2,
+                        help: strings.networkDiagnosticsRefresh
+                    ) {
+                        service.refreshPorts()
+                    }
                 }
             }
-            .buttonStyle(.borderless)
-            .help(strings.networkDiagnosticsRefresh)
-            .disabled(service.isRefreshingPorts)
             .accessibilityLabel(strings.networkDiagnosticsRefresh)
         }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
     }
 
     // MARK: Banner
@@ -256,17 +258,14 @@ struct PortSegmentView: View {
         }
     }
 
+    /// 权限提示横幅：tint 底（PanelTintBanner）+ 展开后的终端命令 inset 行。
     private var permissionBanner: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.Stats.ram)
-                Text(bannerTitle)
-                    .font(Theme.Stats.font11Regular)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
+            PanelTintBanner(
+                icon: "exclamationmark.triangle.fill",
+                tint: Theme.Stats.ram,
+                title: bannerTitle
+            ) {
                 Button {
                     withAnimation(.easeInOut(duration: 0.15)) {
                         isBannerExpanded.toggle()
@@ -316,12 +315,8 @@ struct PortSegmentView: View {
                 )
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Theme.Stats.ram.opacity(0.08))
-        )
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
         .onChange(of: service.permissionHint) { _, newValue in
             if newValue == .none {
                 isBannerExpanded = false
@@ -346,8 +341,14 @@ struct PortSegmentView: View {
                     .frame(maxWidth: .infinity, minHeight: 100, alignment: .center)
             } else {
                 // Outer ControlCenter AdaptiveHeightScroll owns scrolling — no nested ScrollView.
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(rows) { entry in
+                // 行平铺白底，行间 separator 分隔（区别于分区发丝线）。
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, entry in
+                        if index > 0 {
+                            Rectangle()
+                                .fill(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
+                                .frame(height: 1)
+                        }
                         PortRowView(
                             entry: entry,
                             processName: service.processDisplayName(for: entry),

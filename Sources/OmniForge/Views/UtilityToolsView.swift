@@ -19,7 +19,7 @@ enum UtilityContentLayout: Equatable {
     var horizontalPadding: CGFloat {
         switch self {
         case .settings: 28
-        case .compact: 12
+        case .compact: 16
         }
     }
 

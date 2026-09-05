@@ -41,9 +41,9 @@ struct PortRowView: View {
             return Theme.Stats.statusNormal
         }
         if normalized == unavailable.uppercased() {
-            return colorScheme == .light ? Theme.Stats.text3 : Color.secondary
+            return MonitorOverviewPalette.auxiliary(colorScheme)
         }
-        return colorScheme == .light ? Theme.Stats.text3 : Color.secondary
+        return MonitorOverviewPalette.auxiliary(colorScheme)
     }
 
     var body: some View {
@@ -51,7 +51,7 @@ struct PortRowView: View {
             HStack(alignment: .center, spacing: 8) {
                 Text(displayProcessName)
                     .font(Theme.Stats.font13SemiBold)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                    .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .help(displayProcessName)
@@ -66,7 +66,7 @@ struct PortRowView: View {
             HStack(spacing: 6) {
                 Text(entry.proto.displayName)
                     .font(Theme.Stats.font10Regular.monospaced())
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
+                    .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1.5)
                     .background(
@@ -82,19 +82,18 @@ struct PortRowView: View {
                 if entry.pid > 0 {
                     Text("•")
                         .font(.system(size: 8))
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                        .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
 
                     Text("PID \(entry.pid)")
                         .font(Theme.Stats.font10Regular.monospaced())
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                        .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                 }
 
                 Spacer(minLength: 0)
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .panelRowCard(isInteractive: true)
         .contextMenu { menuActions }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(

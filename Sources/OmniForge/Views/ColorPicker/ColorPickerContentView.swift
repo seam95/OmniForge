@@ -36,12 +36,13 @@ struct ColorPickerContentView: View {
             Spacer()
             Image(systemName: "eyedropper")
                 .font(.system(size: 46, weight: .light))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
             Text(strings.colorPickerIntroTitle)
                 .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
             Text(strings.colorPickerIntroCaption)
                 .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: 320)
@@ -59,11 +60,11 @@ struct ColorPickerContentView: View {
             Spacer()
             Image(systemName: "eyedropper")
                 .font(.system(size: 46, weight: .light))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                 .symbolEffect(.pulse, options: .repeating)
             Text(strings.colorPickerInProgress)
                 .font(.system(size: 13))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
             Spacer()
         }
     }
@@ -116,11 +117,11 @@ struct ColorPickerContentView: View {
             HStack(spacing: 10) {
                 Text(format.localizedLabel(in: strings))
                     .font(Theme.Stats.font11Regular)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
+                    .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
                     .frame(width: 34, alignment: .leading)
                 Text(text)
                     .font(Theme.Stats.font13SemiBold.monospaced())
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                    .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 0)
@@ -131,7 +132,7 @@ struct ColorPickerContentView: View {
                 } else {
                     Image(systemName: "doc.on.doc")
                         .font(.system(size: 11))
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                        .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                 }
             }
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))

@@ -25,7 +25,8 @@ struct NetworkDiagnosticsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        // 平面分区：分段行对齐 Token/供应商页节奏（h12、上 2 下 6），内容分区自行持有 h16 v12。
+        VStack(alignment: .leading, spacing: 0) {
             PanelSegmentedControl(
                 options: [
                     .init(tag: NetworkDiagnosticsSegment.network.rawValue, title: strings.networkDiagnosticsSegmentNetwork),
@@ -33,6 +34,9 @@ struct NetworkDiagnosticsView: View {
                 ],
                 selection: segmentBinding
             )
+            .padding(.horizontal, 12)
+            .padding(.top, 2)
+            .padding(.bottom, 6)
 
             // 网络/端口平级切换：单活动树分阶段淡出后淡入（SPEC §6）。
             PageSwitchHost(
@@ -54,8 +58,6 @@ struct NetworkDiagnosticsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
         .onAppear {
             // 进入详情：网络 + 端口各自动采一次；分段切换不重采。
             guard !didAutoRefreshOnEnter else { return }

@@ -1,10 +1,10 @@
 import SwiftUI
 
-// MARK: - 网络分段：公网 IP hero + 网卡 / 连接 inset 卡组
+// MARK: - 网络分段（平面分区）：公网 IP hero + 网卡 / 连接分区
 //
-// 仪表盘语言（对齐卸载器 / 清理页）：hero 白卡以公网 IP 为「数字主角」，
-// 主机名与主接口做身份摘要；明细退到次级 inset 卡。
-// 所有值整行点击复制，复制后短暂对勾 / 变绿反馈；刷新收进 hero 右上角。
+// hero 以公网 IP 为「数字主角」，主机名与主接口做身份摘要；明细退到
+// 「网卡 / 连接」两分区平铺，行间 separator 分隔（区别于分区发丝线）。
+// 所有值整行点击复制，复制后短暂对勾反馈；刷新收进 hero 右上角。
 
 struct NetworkSegmentView: View {
     @Environment(\.colorScheme) private var colorScheme
@@ -19,15 +19,24 @@ struct NetworkSegmentView: View {
     private var unavailable: String { strings.networkDiagnosticsValueUnavailable }
     private var tint: Color { UtilityTool.networkDiagnostics.tintColor }
 
-    private var text1: Color { colorScheme == .light ? Theme.Stats.text1 : Color.primary }
-    private var text2: Color { colorScheme == .light ? Theme.Stats.text2 : Color.secondary }
-    private var text3: Color { colorScheme == .light ? Theme.Stats.text3 : Color.secondary }
+    private var text1: Color { MonitorOverviewPalette.primary(colorScheme) }
+    private var text2: Color { MonitorOverviewPalette.secondary(colorScheme) }
+    private var text3: Color { MonitorOverviewPalette.auxiliary(colorScheme) }
+
+    /// 列表行间分隔线。
+    private var rowSeparator: some View {
+        Rectangle()
+            .fill(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
+            .frame(height: 1)
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(spacing: 0) {
             if let identity = service.networkIdentity {
-                heroCard(identity)
+                heroSection(identity)
+                FlatHairline()
                 interfacesSection(identity)
+                FlatHairline()
                 connectionSection(identity)
             } else if service.isRefreshingNetwork {
                 ProgressView()
@@ -41,7 +50,7 @@ struct NetworkSegmentView: View {
 
     // MARK: Hero
 
-    private func heroCard(_ identity: NetworkIdentity) -> some View {
+    private func heroSection(_ identity: NetworkIdentity) -> some View {
         HStack(spacing: 12) {
             UtilityGlyphTile(symbol: "globe", tint: tint, size: 40, symbolSize: 18)
 
@@ -63,8 +72,8 @@ struct NetworkSegmentView: View {
             publicIPHeroValue
             refreshButton
         }
-        .padding(12)
-        .utilityCardBackground()
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     /// hero 右侧大数字：公网 IPv4 优先，IPv6-only 兜底；点击复制，复制后短暂变绿。
@@ -90,7 +99,7 @@ struct NetworkSegmentView: View {
             } label: {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(ip ?? unavailable)
-                        .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                        .font(.system(size: 17, weight: .semibold).monospacedDigit())
                         .foregroundStyle(highlighted ? Theme.Stats.statusNormal : text1)
                         // 单行 + 高布局优先级：空间紧张时压缩左侧标题，IP 不换行；
                         // 极端长（IPv6-only）时中间截断兜底。
@@ -111,22 +120,21 @@ struct NetworkSegmentView: View {
     }
 
     private var refreshButton: some View {
-        Button {
-            service.refreshNetwork()
-        } label: {
+        Group {
             if service.isRefreshingNetwork {
                 ProgressView()
-                    .controlSize(.small)
-            } else {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(text2)
+                    .controlSize(.mini)
                     .frame(width: 24, height: 24)
+            } else {
+                IconButton(
+                    systemImage: "arrow.clockwise",
+                    tint: text2,
+                    help: strings.networkDiagnosticsRefresh
+                ) {
+                    service.refreshNetwork()
+                }
             }
         }
-        .buttonStyle(.borderless)
-        .help(strings.networkDiagnosticsRefresh)
-        .disabled(service.isRefreshingNetwork)
         .accessibilityLabel(strings.networkDiagnosticsRefresh)
     }
 
@@ -168,16 +176,20 @@ struct NetworkSegmentView: View {
                 Text(unavailable)
                     .font(Theme.Stats.font11Regular)
                     .foregroundStyle(text3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                ForEach(primary, id: \.name) { iface in
-                    interfaceCard(iface)
+                ForEach(Array(primary.enumerated()), id: \.element.name) { index, iface in
+                    if index > 0 { rowSeparator }
+                    interfaceRow(iface)
                 }
 
                 if !others.isEmpty {
+                    if !primary.isEmpty { rowSeparator }
                     otherInterfacesDisclosure(others)
                     if otherInterfacesExpanded {
                         ForEach(others, id: \.name) { iface in
-                            interfaceCard(iface)
+                            rowSeparator
+                            interfaceRow(iface)
                         }
                     }
                 }
@@ -199,15 +211,13 @@ struct NetworkSegmentView: View {
                 Spacer(minLength: 0)
             }
             .foregroundStyle(text2)
-            .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .utilityInsetBackground()
     }
 
-    private func interfaceCard(_ iface: NetworkInterface) -> some View {
+    private func interfaceRow(_ iface: NetworkInterface) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(iface.name)
                 .font(Theme.Stats.font12Medium)
@@ -244,9 +254,7 @@ struct NetworkSegmentView: View {
                     .foregroundStyle(text3)
             }
         }
-        .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .utilityInsetBackground()
     }
 
     // MARK: 连接（网关 / DNS / 公网 IPv6）
@@ -254,7 +262,7 @@ struct NetworkSegmentView: View {
     @ViewBuilder
     private func connectionSection(_ identity: NetworkIdentity) -> some View {
         section(title: strings.networkDiagnosticsConnectionSection) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 0) {
                 let route = identity.defaultRoute
                 valueRow(
                     id: "route",
@@ -263,6 +271,8 @@ struct NetworkSegmentView: View {
                     copyText: route.copyText
                 )
 
+                rowSeparator
+
                 let dnsText = identity.dnsServers.joined(separator: ", ")
                 valueRow(
                     id: "dns",
@@ -270,6 +280,8 @@ struct NetworkSegmentView: View {
                     value: dnsText.isEmpty ? unavailable : dnsText,
                     copyText: dnsText
                 )
+
+                rowSeparator
 
                 // 公网 IPv4 已是 hero 主角，这里只补 IPv6；查询中显示占位文案。
                 switch service.publicIPState {
@@ -289,9 +301,6 @@ struct NetworkSegmentView: View {
                     )
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .utilityInsetBackground()
         }
     }
 
@@ -300,7 +309,7 @@ struct NetworkSegmentView: View {
     private var emptyState: some View {
         VStack(spacing: 10) {
             Text(strings.networkDiagnosticsNetworkEmpty)
-                .font(Theme.Stats.font11Regular)
+                .font(Theme.Stats.font12Medium)
                 .foregroundStyle(text3)
             Button(strings.networkDiagnosticsRefresh) {
                 service.refreshNetwork()
@@ -313,22 +322,22 @@ struct NetworkSegmentView: View {
 
     // MARK: 通用行 / 分区
 
+    /// 平面分区：区头（tint 色块）+ 内容平铺，分区基准内边距 h16 v12。
     private func section<Content: View>(
         title: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(Theme.Stats.font10Regular)
-                .foregroundStyle(text2)
-                .textCase(.uppercase)
-            VStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
+            FlatSectionHeader(title: title, accent: tint)
+            VStack(spacing: 0) {
                 content()
             }
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
-    /// inset 卡内的轻量复制行：标签 + 等宽值 + 复制 / 对勾图标；空 copyText 时禁用。
+    /// 轻量复制行：标签 + 等宽值 + 复制 / 对勾图标；空 copyText 时禁用。
     private func valueRow(
         id: String,
         label: String,
