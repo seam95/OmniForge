@@ -29,37 +29,30 @@ struct WhatsNewEntry: Identifiable {
     let text: String
 }
 
-/// What's New 版本数据
-struct WhatsNewRelease {
+/// What's New 版本数据；条目内容维护在 WhatsNewReleaseCatalog
+struct WhatsNewRelease: Identifiable {
     let version: String
     let entries: [WhatsNewEntry]
 
-    /// 当前版本的更新内容（硬编码，随版本更新时修改）
-    static var currentRelease: WhatsNewRelease {
-        WhatsNewRelease(
-            version: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0",
-            entries: [
-                WhatsNewEntry(type: .added, text: "新增 Onboarding 引导流程"),
-                WhatsNewEntry(type: .changed, text: "优化权限管理，支持中断恢复"),
-            ]
-        )
-    }
+    var id: String { version }
 }
 
-/// 版本更新展示窗口
+/// 版本更新展示窗口 — 展示自 lastSeenVersion 以来各版本的更新，多版本时按版本分组
 struct WhatsNewView: View {
     let strings: Strings
+    let lastSeenVersion: String?
     let onClose: () -> Void
 
     var body: some View {
-        let release = WhatsNewRelease.currentRelease
+        // 新版本在前；为空时 Catalog 已保证回退到最新一组
+        let releases = WhatsNewReleaseCatalog.releases(after: lastSeenVersion)
 
         VStack(spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(strings.whatsNewTitle)
                         .font(.system(size: 22, weight: .bold))
-                    Text("v\(release.version)")
+                    Text("v\(releases.first?.version ?? "")")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                 }
@@ -73,8 +66,17 @@ struct WhatsNewView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    ForEach(release.entries) { entry in
-                        WhatsNewEntryRow(entry: entry)
+                    ForEach(releases) { release in
+                        // 单版本时顶部副标题已带版本号，仅多版本时再加组内小节标题
+                        if releases.count > 1 {
+                            Text("v\(release.version)")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                                .padding(.top, 6)
+                        }
+                        ForEach(release.entries) { entry in
+                            WhatsNewEntryRow(entry: entry)
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

@@ -34,6 +34,12 @@ final class OnboardingCoordinator: ObservableObject {
         return completed != currentAppVersion
     }
 
+    /// 上次查看更新内容的版本号（nil = 从未记录），供 What's New 计算展示范围
+    var lastSeenVersion: String? {
+        let value = userDefaults.string(forKey: UserDefaultsKeys.onboardingCompletedVersion) ?? ""
+        return value.isEmpty ? nil : value
+    }
+
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
         restoreStepIfNeeded()
