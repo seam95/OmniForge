@@ -3,8 +3,13 @@ import XCTest
 
 final class UtilityToolsPresentationTests: XCTestCase {
     func test_compactLayoutFitsControlCenterContentWidth() {
-        XCTAssertEqual(UtilityContentLayout.compact.contentWidth, 356)
-        XCTAssertEqual(UtilityContentLayout.compact.horizontalPadding, 12)
+        // 平面分区规范：内容 + 左右边距（h16×2）恰好铺满 380pt 面板。
+        XCTAssertEqual(UtilityContentLayout.compact.contentWidth, 348)
+        XCTAssertEqual(UtilityContentLayout.compact.horizontalPadding, 16)
+        XCTAssertEqual(
+            UtilityContentLayout.compact.contentWidth! + UtilityContentLayout.compact.horizontalPadding * 2,
+            ControlCenterContentMetrics.panelWidth
+        )
         XCTAssertEqual(UtilityContentLayout.settings.contentWidth, nil)
     }
 

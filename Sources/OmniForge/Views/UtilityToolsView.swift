@@ -12,7 +12,7 @@ enum UtilityContentLayout: Equatable {
     var contentWidth: CGFloat? {
         switch self {
         case .settings: nil
-        case .compact: 356
+        case .compact: 348
         }
     }
 
