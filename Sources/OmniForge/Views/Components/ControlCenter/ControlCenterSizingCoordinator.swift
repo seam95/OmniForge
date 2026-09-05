@@ -143,6 +143,7 @@ final class ControlCenterSizingContext: ObservableObject {
     /// popover 打开：绑定适配器并复位会话状态。
     func beginSession(sizer: ControlCenterPopoverSizer) {
         session += 1
+        ControlCenterSizingLog.log("beginSession session=\(session)")
         self.sizer = sizer
         pendingProceed = nil
         mountBudgetTask?.cancel()
@@ -157,6 +158,7 @@ final class ControlCenterSizingContext: ObservableObject {
     /// 重开会话携带新 session，旧回调全部失效。
     func endSession() {
         session += 1
+        ControlCenterSizingLog.log("endSession session=\(session)（关闭取消全部在途流程）")
         mountGeneration += 1
         sizer?.cancelActiveSubmits(interrupted: false)
         sizer = nil
@@ -184,10 +186,9 @@ final class ControlCenterSizingContext: ObservableObject {
         naturalHeight = nil
     }
 
-    /// 仅退出测高布局模式（viewport 恢复当前状态值），保留测量值，
-    /// 供宿主完成第二遍布局（chrome 差分）后再提交初始尺寸。
-    func endInitialMeasurementLayout() {
-        isMeasuringInitialSize = false
+    /// 首显测量是否就绪（自然高度与 chrome 均已上报）。
+    var hasInitialMeasurement: Bool {
+        naturalHeight != nil && shellHeight != nil
     }
 
     /// 首显测高完成：以测量结果解析初始尺寸并退出测高模式。
@@ -199,9 +200,12 @@ final class ControlCenterSizingContext: ObservableObject {
             // 无可靠尺寸：安全上限打开（SPEC §7.2.3）。
             let fallback = ControlCenterContentMetrics.viewportHeight
             viewportHeight = fallback
-            return fallback + (shellHeight ?? defaultChromeFallback)
+            let total = fallback + (shellHeight ?? defaultChromeFallback)
+            ControlCenterSizingLog.log("commitInitial 降级 fallback: natural=\(String(describing: naturalHeight?.value)) shell=\(String(describing: shellHeight)) → total=\(total)")
+            return total
         }
         viewportHeight = target.viewportHeight
+        ControlCenterSizingLog.log("commitInitial: natural=\(natural.value) isEmpty=\(natural.isEmpty) shell=\(shellHeight ?? -1) → viewport=\(target.viewportHeight) total=\(target.totalHeight)")
         return target.totalHeight
     }
 
@@ -229,6 +233,7 @@ final class ControlCenterSizingContext: ObservableObject {
         let gen = mountGeneration
         naturalHeight = nil
         pendingProceed = proceed
+        ControlCenterSizingLog.log("mountStarted path=\(path) gen=\(gen)")
         mountBudgetTask?.cancel()
         mountBudgetTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(self?.configuration.mountMeasurementBudget ?? 0.3 * 1_000_000_000))
@@ -245,6 +250,9 @@ final class ControlCenterSizingContext: ObservableObject {
         guard height.isFinite, height > 0 else { return }
         let previous = naturalHeight?.value
         naturalHeight = (height, isEmptyState)
+        if previous != height {
+            ControlCenterSizingLog.log("natural=\(height) isEmpty=\(isEmptyState) path=\(displayedPath) measuring=\(isMeasuringInitialSize) mounting=\(pendingProceed != nil)")
+        }
         if !displayedPath.isEmpty {
             heightCache[displayedPath] = height
         }
@@ -259,6 +267,9 @@ final class ControlCenterSizingContext: ObservableObject {
     /// 壳层（导航 + 恢复 Banner + footer）实测高度上报。
     func reportShellHeight(_ height: CGFloat) {
         guard height.isFinite, height > 0 else { return }
+        if shellHeight != height {
+            ControlCenterSizingLog.log("shell(chrome)=\(height)")
+        }
         shellHeight = height
     }
 
@@ -313,6 +324,7 @@ final class ControlCenterSizingContext: ObservableObject {
         guard !ControlCenterSizingPolicy.isEffectivelyEqual(
             currentTotalHeight, target.totalHeight, scale: scale
         ) else { return } // 测量相等不触发整页淡变（SPEC §7.1.5）
+        ControlCenterSizingLog.log("stable 改高 current=\(currentTotalHeight) → target=\(target.totalHeight)（淡出→改高→淡入）")
 
         isRunningStableResize = true
         let exitDuration: TimeInterval = reduceMotion ? 0.06 : 0.06
@@ -344,6 +356,7 @@ final class ControlCenterSizingContext: ObservableObject {
     private func adoptMeasurementForMount() {
         guard let natural = naturalHeight else { return }
         guard let target = resolveTarget(natural: natural) else {
+            ControlCenterSizingLog.log("mount 测量无效（resolveTarget=nil）→ 直接 proceed")
             finishMount(mountGeneration)
             return
         }
@@ -351,9 +364,11 @@ final class ControlCenterSizingContext: ObservableObject {
         if ControlCenterSizingPolicy.isEffectivelyEqual(
             currentTotalHeight, target.totalHeight, scale: scale
         ) {
+            ControlCenterSizingLog.log("mount 等高 current=\(currentTotalHeight) → 直接 proceed（跳过改高）")
             finishMount(mountGeneration)
             return
         }
+        ControlCenterSizingLog.log("mount 改高 current=\(currentTotalHeight) → target=\(target.totalHeight)")
         let gen = mountGeneration
         applyTarget(target) { [weak self] _ in
             guard let self else { return }
@@ -384,6 +399,7 @@ final class ControlCenterSizingContext: ObservableObject {
             completion?(true)
             return
         }
+        ControlCenterSizingLog.log("applyTarget → sizer.submit total=\(target.totalHeight) duration=\(duration) from=\(sizer.currentTotalHeight)")
         sizer.submit(
             targetTotalHeight: target.totalHeight,
             animationDuration: duration,
@@ -409,11 +425,15 @@ final class ControlCenterSizingContext: ObservableObject {
     }
 
     private func finishMount(_ gen: Int) {
-        guard gen == mountGeneration else { return }
+        guard gen == mountGeneration else {
+            ControlCenterSizingLog.log("finishMount gen=\(gen) 过期（当前 \(mountGeneration)）→ 忽略")
+            return
+        }
         mountBudgetTask?.cancel()
         mountBudgetTask = nil
         guard let proceed = pendingProceed else { return }
         pendingProceed = nil
+        ControlCenterSizingLog.log("finishMount gen=\(gen) → proceed 淡入")
         proceed()
     }
 }

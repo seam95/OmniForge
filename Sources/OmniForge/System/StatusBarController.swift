@@ -1022,18 +1022,19 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             NSSize(width: ControlCenterContentMetrics.panelWidth, height: 2000)
         )
         hostingView.layoutSubtreeIfNeeded()
-        // 布局 pass A（测高模式）：fitting = chrome + 页面自然高度。
-        let naturalTotal = hostingView.fittingSize.height
 
-        // 布局 pass B（常规模式 viewport=580）：fitting = chrome + 580，
-        // 差分反解 chrome 与自然高度（同步 fittingSize 路线，不依赖
-        // 异步 onPreferenceChange）。
-        context.endInitialMeasurementLayout()
-        hostingView.needsLayout = true
-        hostingView.layoutSubtreeIfNeeded()
-        let chromeHeight = hostingView.fittingSize.height - ControlCenterContentMetrics.viewportHeight
-        context.reportNaturalHeight(max(naturalTotal - chromeHeight, 1), isEmptyState: false)
-        context.reportShellHeight(max(chromeHeight, 0))
+        // 等待测量上报：onPreferenceChange 由 SwiftUI 在布局 pass 后的下一
+        // runloop 拍派发（同步 layoutSubtreeIfNeeded 拿不到），泵 run loop
+        // 至自然高度与 chrome 就绪；超预算走降级（viewport=580 上限）。
+        let waitDeadline = Date().addingTimeInterval(0.4)
+        var pumps = 0
+        while !context.hasInitialMeasurement && Date() < waitDeadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            pumps += 1
+        }
+        ControlCenterSizingLog.log(
+            "首显测高等待: \(context.hasInitialMeasurement ? "就绪" : "超时降级") pumps=\(pumps)"
+        )
         let totalHeight = context.commitInitialMeasurement()
         popover.contentSize = NSSize(
             width: ControlCenterContentMetrics.panelWidth,

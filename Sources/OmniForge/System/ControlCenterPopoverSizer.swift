@@ -80,6 +80,7 @@ final class ControlCenterPopoverSizer {
 
         let duration = max(animationDuration, Self.stepInterval * 2)
         let stepCount = max(2, Int((duration / Self.stepInterval).rounded()))
+        ControlCenterSizingLog.log("sizer.submit from=\(from) to=\(to) steps=\(stepCount) duration=\(duration)")
         var step = 0
         let timer = Timer(timeInterval: Self.stepInterval, repeats: true) { [weak self] timer in
             MainActor.assumeIsolated {
@@ -98,6 +99,7 @@ final class ControlCenterPopoverSizer {
                 if step >= stepCount {
                     timer.invalidate()
                     self.stepTimer = nil
+                    ControlCenterSizingLog.log("sizer 步进完成 step=\(step) end=\(self.popover.contentSize.height)")
                     self.confirmSettled(gen, target: to, onStep: onStep, completion: completion)
                 }
             }
@@ -108,6 +110,9 @@ final class ControlCenterPopoverSizer {
 
     /// 取消在途序列；`interrupted` 为 true 时向等待者报告未到达。
     func cancelActiveSubmits(interrupted: Bool = true) {
+        if stepTimer != nil || settleTimer != nil {
+            ControlCenterSizingLog.log("sizer.cancelActiveSubmits interrupted=\(interrupted)")
+        }
         stepTimer?.invalidate()
         stepTimer = nil
         settleTimer?.invalidate()
@@ -162,6 +167,7 @@ final class ControlCenterPopoverSizer {
                 if abs(boundsHeight - target) <= self.pixelTolerance {
                     timer.invalidate()
                     self.settleTimer = nil
+                    ControlCenterSizingLog.log("sizer 呈现确认 OK bounds=\(boundsHeight)")
                     if let pending = self.pendingCompletion {
                         self.pendingCompletion = nil
                         pending(true)
@@ -173,6 +179,7 @@ final class ControlCenterPopoverSizer {
                     //（SPEC §7.2，不强制瞬移）。
                     timer.invalidate()
                     self.settleTimer = nil
+                    ControlCenterSizingLog.log("sizer 呈现确认超时 bounds=\(boundsHeight) target=\(target)")
                     if let pending = self.pendingCompletion {
                         self.pendingCompletion = nil
                         pending(false)
