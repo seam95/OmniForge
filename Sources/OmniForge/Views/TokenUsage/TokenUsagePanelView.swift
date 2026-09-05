@@ -25,6 +25,7 @@ struct TokenUsagePanelView: View {
     /// 凭证已配置但暂无有效限额窗口的 provider（OpenCode / 方舟 Coding Plan）。
     @State private var credentialConfiguredProviders: Set<TokenUsageProvider> = []
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.controlCenterSizing) private var sizingContext
 
     var body: some View {
         content
@@ -134,7 +135,12 @@ struct TokenUsagePanelView: View {
                 PageSwitchHost(
                     requestedRoute: selectedSection,
                     semantics: { _, _ in .peer },
-                    surface: { _ in .clear }
+                    surface: { _ in .clear },
+                    onRouteMountedBarrier: sizingContext.map { context in
+                        { section, proceed in
+                            context.mountStarted(path: "token/\(section)", proceed: proceed)
+                        }
+                    }
                 ) { section in
                     VStack(alignment: .leading, spacing: 0) {
                         switch section {

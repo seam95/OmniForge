@@ -12,14 +12,19 @@ struct PageSurface: Equatable {
 enum PageSwitchPhaseEvent: Equatable {
     case exitStarted
     case routeSwapped
+    /// 挂载屏障完成（自适应尺寸宿主的测量/改高就绪；无屏障时与
+    /// routeSwapped 同拍）。自适应转场协议（SPEC §4.1）的 preparing/resizing
+    /// 结束点。
+    case mountPrepared
     case enterCompleted
 }
 
 /// SPEC §6.1 Page Switch 深模块宿主：单活动树、分阶段淡出后淡入。
 ///
 /// 调用方只提供：请求 route、(旧, 新) → 切换语义、route → 表面样式、
-/// 内容构造闭包。阶段推进、latest-wins 合并、动画参数、Reduce Motion
-/// 降级、背景切换时机、内容区 hit-testing 门控均为模块内部实现。
+/// 内容构造闭包；可选提供挂载屏障（`onRouteMountedBarrier`）。阶段推进、
+/// latest-wins 合并、动画参数、Reduce Motion 降级、背景切换时机、内容区
+/// hit-testing 门控均为模块内部实现。
 ///
 /// 单活动树不变量（SPEC §6.3）：`body` 中内容仅有一个构造调用点，只消费
 /// `displayedRoute`；route 替换发生在禁用动画的 `Transaction` 中；不使用
@@ -39,6 +44,12 @@ struct PageSwitchHost<Route: Equatable, Content: View>: View {
     var contentMountObserver: (@MainActor (Int) -> Void)? = nil
     var onPhaseEvent: (@MainActor (PageSwitchPhaseEvent) -> Void)? = nil
     var onDisplayedSurfaceChange: (@MainActor (Route, PageSurface) -> Void)? = nil
+    /// 挂载屏障：route 已在透明状态下挂载、准备就绪前调用；屏障完成
+    /// 必要准备（自适应宿主的测量与壳层改高）后必须调用 `proceed` 淡入。
+    /// nil（默认）= 挂载后立即淡入，与固定尺寸时代行为一致。
+    /// 屏障闭包由调用方负责 latest-wins：过期挂载的 proceed 会被宿主
+    /// 静默忽略，不会误启动旧目标淡入。
+    var onRouteMountedBarrier: (@MainActor (_ route: Route, _ proceed: @escaping @MainActor () -> Void) -> Void)? = nil
     @ViewBuilder let content: (Route) -> Content
 
     enum VisualState {
@@ -70,6 +81,7 @@ struct PageSwitchHost<Route: Equatable, Content: View>: View {
         contentMountObserver: (@MainActor (Int) -> Void)? = nil,
         onPhaseEvent: (@MainActor (PageSwitchPhaseEvent) -> Void)? = nil,
         onDisplayedSurfaceChange: (@MainActor (Route, PageSurface) -> Void)? = nil,
+        onRouteMountedBarrier: (@MainActor (_ route: Route, _ proceed: @escaping @MainActor () -> Void) -> Void)? = nil,
         @ViewBuilder content: @escaping (Route) -> Content
     ) {
         self.requestedRoute = requestedRoute
@@ -79,6 +91,7 @@ struct PageSwitchHost<Route: Equatable, Content: View>: View {
         self.contentMountObserver = contentMountObserver
         self.onPhaseEvent = onPhaseEvent
         self.onDisplayedSurfaceChange = onDisplayedSurfaceChange
+        self.onRouteMountedBarrier = onRouteMountedBarrier
         self.content = content
         _machine = State(initialValue: PageSwitchStateMachine(initial: requestedRoute))
         _displayedSurface = State(initialValue: surface(requestedRoute))
@@ -115,10 +128,20 @@ struct PageSwitchHost<Route: Equatable, Content: View>: View {
         let before = machine.phase
         machine.handle(.request(route))
         guard machine.phase != before else { return }
-        guard case .exiting = machine.phase else { return }
-        // 已在 exiting 中（仅替换 pending）：不重启退出动画（SPEC §6.2）。
-        if case .exiting = before { return }
-        startExit()
+        switch machine.phase {
+        case .exiting:
+            // 已在 exiting 中（仅替换 pending）：不重启退出动画（SPEC §6.2）。
+            if case .exiting = before { return }
+            startExit()
+        case .mounting(let displayed):
+            // mounting 中新请求直接透明替换挂载目标（SPEC §6.2）：
+            // 立即重挂新目标并重启屏障。
+            if case .mounting = before {
+                mountRoute(displayed)
+            }
+        default:
+            break
+        }
     }
 
     private func startExit() {
@@ -141,25 +164,58 @@ struct PageSwitchHost<Route: Equatable, Content: View>: View {
     }
 
     private func swapRoute() {
-        guard case .exiting(let displayed, let pending) = machine.phase else { return }
+        guard case .exiting(_, let pending) = machine.phase else { return }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            // exiting → mounting：route 无动画替换，内容保持透明（§4.1 preparing）。
+            machine.handle(.exitCompleted)
+            visual = .enteringStart
+        }
+        onPhaseEvent?(.routeSwapped)
+        PageSwitchSignpost.emit(PageSwitchSignpost.Event.routeSwapped)
+
+        mountRoute(pending)
+    }
+
+    /// 透明状态下挂载 route 并启动进入前置屏障；无屏障时立即淡入
+    ///（与固定尺寸路径行为一致）。表面样式与展示回调在每个挂载点同步
+    /// 更新——透明替换链的挂载点同样是合法交换点（SPEC §8.2.3）。
+    private func mountRoute(_ route: Route) {
         let motion = PageSwitchMotion.resolved(
-            semantics: semantics(displayed, pending),
+            semantics: semantics(machine.displayedRoute, route),
             reduceMotion: effectiveReduceMotion
         )
         transitionMotion = motion
 
-        // SPEC §6.3.2：route 替换与表面更新在禁用动画的 Transaction 中执行。
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
-            machine.handle(.exitCompleted)
-            displayedSurface = surface(pending)
-            visual = .enteringStart
+            displayedSurface = surface(route)
         }
-        onPhaseEvent?(.routeSwapped)
-        onDisplayedSurfaceChange?(pending, displayedSurface)
-        PageSwitchSignpost.emit(PageSwitchSignpost.Event.routeSwapped)
+        onDisplayedSurfaceChange?(route, displayedSurface)
 
+        if let barrier = onRouteMountedBarrier {
+            barrier(route) { proceedFromBarrier(route: route) }
+        } else {
+            machine.handle(.mountCompleted)
+            beginEnter(motion)
+        }
+    }
+
+    /// 屏障完成回调：仅对当前挂载 route 有效（过期挂载静默忽略，
+    /// SPEC §6 latest-wins）。
+    private func proceedFromBarrier(route: Route) {
+        guard case .mounting(let displayed) = machine.phase, displayed == route else { return }
+        machine.handle(.mountCompleted)
+        onPhaseEvent?(.mountPrepared)
+        beginEnter(transitionMotion ?? PageSwitchMotion.resolved(
+            semantics: .peer,
+            reduceMotion: effectiveReduceMotion
+        ))
+    }
+
+    private func beginEnter(_ motion: PageSwitchMotion) {
         withAnimation(motion.enterAnimation) {
             visual = .settled
         }

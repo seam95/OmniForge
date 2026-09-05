@@ -12,6 +12,7 @@ private enum NetworkDiagnosticsSegment: String {
 
 struct NetworkDiagnosticsView: View {
     let strings: Strings
+    @Environment(\.controlCenterSizing) private var sizingContext
 
     @ObservedObject private var service = NetworkDiagnosticsService.shared
     @AppStorage(UserDefaultsKeys.networkDiagnosticsSegment)
@@ -37,7 +38,12 @@ struct NetworkDiagnosticsView: View {
             PageSwitchHost(
                 requestedRoute: segment,
                 semantics: { _, _ in .peer },
-                surface: { _ in .clear }
+                surface: { _ in .clear },
+                onRouteMountedBarrier: sizingContext.map { context in
+                    { segment, proceed in
+                        context.mountStarted(path: "networkdiag/\(segment)", proceed: proceed)
+                    }
+                }
             ) { segment in
                 switch segment {
                 case .network:

@@ -980,23 +980,87 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         return window.convertToScreen(button.convert(button.bounds, to: nil))
     }
 
+    /// 控制中心尺寸上下文与适配器：popover 打开期间存在；关闭即释放，
+    /// 重新打开走全新会话（SPEC §7.2 关闭重开）。
+    private var sizingContext: ControlCenterSizingContext?
+    private var popoverSizer: ControlCenterPopoverSizer?
+
     func installPopoverContentIfNeeded() {
         guard popover.contentViewController == nil else { return }
+
+        let context = ControlCenterSizingContext()
+        context.availableTotalHeightProvider = { [weak self] in
+            self?.popoverAvailableHeight() ?? 1055
+        }
+        context.backingScaleProvider = { [weak self] in
+            self?.statusItem.button?.window?.screen?.backingScaleFactor ?? 2
+        }
+        let sizer = ControlCenterPopoverSizer(popover: popover)
+        context.beginSession(sizer: sizer)
+        sizingContext = context
+        popoverSizer = sizer
+
+        // 首显测高（SPEC §7.2.1）：show 之前以自然高度布局完成有效测量，
+        // 避免「先 580 再缩短」的显示后补跳。
+        context.beginInitialMeasurement()
         let controller = NSHostingController(
             rootView: AnyView(
                 ControlCenterContainerView(
                     state: state,
                     onOpenSettings: { [onOpenSettings] tab in
                         onOpenSettings(tab)
-                    }
+                    },
+                    sizingContext: context
                 )
             )
         )
-        controller.sizingOptions = .preferredContentSize
+        // 单一尺寸路径（SPEC §5）：禁用 preferredContentSize 自动追踪，
+        // 外壳几何只经 ControlCenterPopoverSizer 提交。
+        controller.sizingOptions = []
+        let hostingView = controller.view
+        hostingView.setFrameSize(
+            NSSize(width: ControlCenterContentMetrics.panelWidth, height: 2000)
+        )
+        hostingView.layoutSubtreeIfNeeded()
+        // 布局 pass A（测高模式）：fitting = chrome + 页面自然高度。
+        let naturalTotal = hostingView.fittingSize.height
+
+        // 布局 pass B（常规模式 viewport=580）：fitting = chrome + 580，
+        // 差分反解 chrome 与自然高度（同步 fittingSize 路线，不依赖
+        // 异步 onPreferenceChange）。
+        context.endInitialMeasurementLayout()
+        hostingView.needsLayout = true
+        hostingView.layoutSubtreeIfNeeded()
+        let chromeHeight = hostingView.fittingSize.height - ControlCenterContentMetrics.viewportHeight
+        context.reportNaturalHeight(max(naturalTotal - chromeHeight, 1), isEmptyState: false)
+        context.reportShellHeight(max(chromeHeight, 0))
+        let totalHeight = context.commitInitialMeasurement()
+        popover.contentSize = NSSize(
+            width: ControlCenterContentMetrics.panelWidth,
+            height: totalHeight
+        )
         popover.contentViewController = controller
     }
 
+    /// 当前锚点方向上 popover 可容纳的内容总高（含 chrome）：
+    /// 菜单栏锚点向下弹出 = 屏幕可见区顶部到锚点下沿（SPEC §3.1 Havailable）。
+    private func popoverAvailableHeight() -> CGFloat {
+        guard let screen = statusItem.button?.window?.screen ?? NSScreen.main else {
+            return NSScreen.main?.visibleFrame.height ?? 1055
+        }
+        guard
+            let button = statusItem.button,
+            let window = button.window
+        else { return screen.visibleFrame.height }
+        let anchor = window.convertToScreen(button.convert(button.bounds, to: nil))
+        return max(0, screen.visibleFrame.maxY - anchor.minY)
+    }
+
     func popoverDidClose(_ notification: Notification) {
+        // 关闭立即取消所有动画、准备与回调；重开使用新会话（SPEC §7.2.5）。
+        sizingContext?.endSession()
+        sizingContext = nil
+        popoverSizer = nil
         popover.contentViewController = nil
     }
 

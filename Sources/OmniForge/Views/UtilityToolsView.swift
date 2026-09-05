@@ -143,7 +143,12 @@ struct UtilityToolsView: View {
             semantics: { from, to in
                 from == .list ? .forward : (to == .list ? .backward : .peer)
             },
-            surface: { _ in .clear }
+            surface: { _ in .clear },
+            onRouteMountedBarrier: sizingContext.map { context in
+                { route, proceed in
+                    context.mountStarted(path: "utility/\(route)", proceed: proceed)
+                }
+            }
         ) { currentRoute in
             switch currentRoute {
             case .list:
@@ -199,6 +204,7 @@ struct UtilityToolsView: View {
     }
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.controlCenterSizing) private var sizingContext
 
     private func enterDetail(_ tool: UtilityTool) {
         storedTool = tool.rawValue

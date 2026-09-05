@@ -15,6 +15,8 @@ struct MonitorContainerView: View {
     )
     @ObservedObject private var featureRuntime = FeatureRuntime.shared
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.controlCenterSizing) private var sizingContext
+
     /// 监控运行时直连观察（SPEC §9.4.2）：快照/历史/进程/测速状态由本页面
     /// 自行订阅刷新，不再经 AppState 转发驱动控制中心根视图重算。
     @ObservedObject var monitor: SystemMonitorManager
@@ -40,7 +42,12 @@ struct MonitorContainerView: View {
         PageSwitchHost(
             requestedRoute: route,
             semantics: Self.semantics,
-            surface: pageSurface
+            surface: pageSurface,
+            onRouteMountedBarrier: sizingContext.map { context in
+                { route, proceed in
+                    context.mountStarted(path: "monitor/\(route)", proceed: proceed)
+                }
+            }
         ) { currentRoute in
             content(for: currentRoute)
         }

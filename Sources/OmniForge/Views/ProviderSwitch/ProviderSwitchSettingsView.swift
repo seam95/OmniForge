@@ -80,6 +80,7 @@ struct ProviderSwitchSettingsView: View {
     @State private var toastDismissTask: Task<Void, Never>?
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.controlCenterSizing) private var sizingContext
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -90,7 +91,12 @@ struct ProviderSwitchSettingsView: View {
             PageSwitchHost(
                 requestedRoute: selectedTool,
                 semantics: { _, _ in .peer },
-                surface: { _ in .clear }
+                surface: { _ in .clear },
+                onRouteMountedBarrier: sizingContext.map { context in
+                    { tool, proceed in
+                        context.mountStarted(path: "provider/\(tool)", proceed: proceed)
+                    }
+                }
             ) { tool in
                 // 内容与操作目标一律消费 Host 提供的 displayedTool（SPEC §6.3.1）：
                 // exiting 期间旧 tool 内容保持可见，交换点才换成新 tool；

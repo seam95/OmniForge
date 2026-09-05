@@ -1,12 +1,13 @@
 import ApplicationServices
 import SwiftUI
 
-/// 控制中心内容区尺寸契约（SPEC §8.1）：宽度固定 380pt，页面内容 viewport
-/// 固定 580pt；超出 viewport 的页面在各自内容区内部滚动，popover 打开期间
-/// 不再由页面内容测高驱动尺寸变化。
+/// 控制中心内容区尺寸契约（自适应高度 SPEC §3.1）：宽度固定 380pt；
+/// 内容 viewport 以自然高度为目标、580pt 为上限，超出部分在内容区内部
+/// 滚动。高度由尺寸协调器经适配器分阶段提交（见
+/// `ControlCenterSizingContext` / `ControlCenterPopoverSizer`）。
 enum ControlCenterContentMetrics {
     static let panelWidth: CGFloat = 380
-    /// 页面内容 viewport 固定高度。
+    /// 页面内容 viewport 上限（也是无尺寸上下文时的固定高度）。
     static let viewportHeight: CGFloat = 580
     /// 空状态 / 不可用页的最小内容高度，避免空态区域过扁。
     static let emptyContentMinHeight: CGFloat = 120
@@ -16,11 +17,16 @@ struct ControlCenterContainerView: View {
     @ObservedObject var state: AppState
     @ObservedObject private var runtime = FeatureRuntime.shared
     var onOpenSettings: (SettingsToolbarTab?) -> Void = { _ in }
+    /// 控制中心尺寸上下文（默认实例 = 无 popover 适配器的降级路径，
+    /// viewport 固定 580pt；生产由 StatusBarController 注入真实上下文）。
+    @ObservedObject var sizingContext: ControlCenterSizingContext = ControlCenterSizingContext()
     @AppStorage(UserDefaultsKeys.lastControlCenterPanel)
     private var selectedPanelRawValue = MenuPanel.systemMonitor.rawValue
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var keepAwakeConfigError: String?
+    @State private var topChromeHeight: CGFloat = 0
+    @State private var bottomChromeHeight: CGFloat = 0
     @Namespace private var navIndicator
     // 监控面板的有状态对象提升到容器层：切走面板不再销毁，保留磁盘推出进度与已展开的进程指标。
     @StateObject private var monitorCoordinator = ProcessBreakdownCoordinator()
@@ -41,23 +47,27 @@ struct ControlCenterContainerView: View {
         )
 
         VStack(spacing: 0) {
-            KeepAwakeRecoveryBanner(model: recoveryModel) {
-                Task { @MainActor in
-                    await state.clamshellRecoveryCoordinator?.retry()
+            VStack(spacing: 0) {
+                KeepAwakeRecoveryBanner(model: recoveryModel) {
+                    Task { @MainActor in
+                        await state.clamshellRecoveryCoordinator?.retry()
+                    }
+                }
+
+                if !visiblePanels.isEmpty {
+                    panelNavigation(visiblePanels: visiblePanels)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 12)
+                        .padding(.bottom, 6)
                 }
             }
-
-            if !visiblePanels.isEmpty {
-                panelNavigation(visiblePanels: visiblePanels)
-                    .padding(.horizontal, 12)
-                    .padding(.top, 12)
-                    .padding(.bottom, 6)
-            }
+            .background(chromeProbe(.top))
 
             panelContent(visiblePanels: visiblePanels)
                 .frame(maxWidth: .infinity, alignment: .top)
 
             footer
+                .background(chromeProbe(.bottom))
         }
         .frame(width: ControlCenterContentMetrics.panelWidth)
         .background(
@@ -73,12 +83,46 @@ struct ControlCenterContainerView: View {
         .onChange(of: runtime.revision) { _, _ in
             resolveSelection(in: MenuPanel.visibleCases(isAvailable: runtime.isAvailable))
         }
+        .onChange(of: reduceMotion) { _, enabled in
+            sizingContext.setReduceMotion(enabled)
+        }
+        .onPreferenceChange(ControlCenterNaturalHeightKey.self) { report in
+            guard let report else { return }
+            sizingContext.reportNaturalHeight(report.height, isEmptyState: report.isEmptyState)
+        }
+        .onPreferenceChange(ControlCenterTopChromeKey.self) { height in
+            topChromeHeight = height
+            syncChromeHeight()
+        }
+        .onPreferenceChange(ControlCenterBottomChromeKey.self) { height in
+            bottomChromeHeight = height
+            syncChromeHeight()
+        }
+        .environment(\.controlCenterSizing, sizingContext)
         // popover 关闭（宿主销毁）：面板级采样需求清零；进程采样状态由监控
         // 内容视图的 onDisappear 折叠。菜单栏/告警需求由 manager 内部继续维护。
         .onDisappear {
             state.monitor?.setPanelDemand(.none)
         }
         .omniNoFocusRing()
+    }
+
+    /// chrome（导航 + 恢复 Banner + footer）实测高度上报。
+    private func syncChromeHeight() {
+        sizingContext.reportShellHeight(topChromeHeight + bottomChromeHeight)
+    }
+
+    /// chrome 几何探针：测量导航/Banner 区与 footer 区的实际高度。
+    @ViewBuilder
+    private func chromeProbe(_ part: ControlCenterChromePart) -> some View {
+        GeometryReader { geo in
+            switch part {
+            case .top:
+                Color.clear.preference(key: ControlCenterTopChromeKey.self, value: geo.size.height)
+            case .bottom:
+                Color.clear.preference(key: ControlCenterBottomChromeKey.self, value: geo.size.height)
+            }
+        }
     }
 
     /// AppState 尚未注入 coordinator 时的安全默认。
@@ -127,6 +171,8 @@ struct ControlCenterContainerView: View {
 
     /// 页面内容统一 Host（SPEC §6）：单活动树、分阶段淡出后淡入；
     /// 表面样式（白底/灰底）由 Host 持有、只在交换点更新。
+    /// 自适应尺寸：Host 挂载屏障接入尺寸协调器（透明阶段完成测量与壳层
+    /// 改高后再淡入，SPEC §4.1 preparing/resizing）。
     private func panelContent(visiblePanels: [MenuPanel]) -> some View {
         PageSwitchHost(
             requestedRoute: MenuPanel.resolvedSelection(selectedPanel, in: visiblePanels)
@@ -136,17 +182,51 @@ struct ControlCenterContainerView: View {
             onDisplayedSurfaceChange: { panel, _ in
                 displayedPanel = panel
                 coordinateMonitorDemand(for: panel)
+            },
+            onRouteMountedBarrier: { panel, proceed in
+                sizingContext.mountStarted(path: "panel/\(panel.rawValue)", proceed: proceed)
             }
         ) { panel in
-            // 固定 viewport 内部滚动：页面内容不再向壳层上报高度（SPEC §8.1.3/§8.1.5）。
-            ScrollView(showsIndicators: false) {
+            if sizingContext.isMeasuringInitialSize {
+                // 首显测高模式：内容按自然高度布局（无 viewport 撑高），
+                // 供宿主在 show 前完成初始尺寸设置（SPEC §7.2.1）。
                 panelCase(panel)
                     .frame(maxWidth: .infinity, alignment: .top)
+                    .modifier(ControlCenterNaturalHeightReportModifier(isEmptyState: isUnavailablePanel(panel)))
+            } else {
+                sizedPanelContent(panel)
             }
-            .frame(maxHeight: .infinity)
         }
-        .frame(height: ControlCenterContentMetrics.viewportHeight)
+    }
+
+    /// 常规内容区：viewport 高度由协调器驱动（分步改高时逐帧同步），
+    /// 内容自然高度经 PreferenceKey 上报（测量内容而非 ScrollView 可视
+    /// 高度，SPEC §3.2.1）；稳定期结构变化的内容透明度由协调器管理。
+    private func sizedPanelContent(_ panel: MenuPanel) -> some View {
+        ScrollView(showsIndicators: false) {
+            panelCase(panel)
+                .frame(maxWidth: .infinity, alignment: .top)
+                .modifier(ControlCenterNaturalHeightReportModifier(isEmptyState: isUnavailablePanel(panel)))
+        }
+        .frame(height: sizingContext.viewportHeight)
+        .opacity(sizingContext.contentOpacity)
         .clipped()
+    }
+
+    /// 面板是否为不可用空态（应用 120pt 内容下限，SPEC §3.1）。
+    private func isUnavailablePanel(_ panel: MenuPanel) -> Bool {
+        switch panel {
+        case .systemMonitor:
+            return state.monitor == nil || state.monitorPreferences == nil
+                || !runtime.isAvailable(.systemMonitor)
+        case .tokenUsage:
+            return state.tokenUsageManager == nil || state.tokenUsagePreferences == nil
+                || !runtime.isAvailable(.tokenUsage)
+        case .providerSwitch:
+            return state.providerSwitchManager == nil || !runtime.isAvailable(.providerSwitch)
+        case .keepAwake, .clipboard:
+            return false
+        }
     }
 
     /// 监控采样需求由「popover 是否打开 + 当前展示 route」驱动（SPEC §9.1.1）：
