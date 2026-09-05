@@ -135,9 +135,10 @@ private final class StatusBarMetricSink: StatusItemSink {
 // MARK: - 状态栏控制器
 
 @MainActor
-final class StatusBarController: NSObject, NSPopoverDelegate {
+final class StatusBarController: NSObject, NSWindowDelegate {
     private let statusItem: NSStatusItem
-    private let popover: NSPopover
+    /// 控制中心自管面板窗口（替代 NSPopover：无锚定跟随，位置钉死）。
+    private let panel: ControlCenterPanelWindow
     private let state: AppState
     private let clipboardWindowController: ClipboardWindowController
     /// 打开设置；tab=nil 表示默认页，`.keepAwake` 由右键菜单使用。
@@ -163,6 +164,11 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     private var tokenMenuItem: NSStatusItem?
     private var tokenMenuBarCancellables = Set<AnyCancellable>()
     private var lastTokenMenuBarRender: TokenUsageMenuBarRender?
+    /// Escape 关闭监听（面板可见期间挂载，NSPopover transient 的自管等价物）。
+    private var escapeKeyMonitor: Any?
+    /// 失焦关闭时间戳：按钮点击的 mouseDown 先触发 resignKey 关闭面板，
+    /// mouseUp 的 action 若紧随其后应视为「关闭意图」而非「重开」。
+    private var panelDismissedByFocusLossAt: Date?
 
     static func menuBarIcon() -> NSImage? {
         if let image = NSImage(named: "MenuBarIcon") {
@@ -187,12 +193,19 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         self.onOpenSettings = onOpenSettings
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
-        let popover = NSPopover()
-        popover.behavior = .transient
-        self.popover = popover
+        let panel = ControlCenterPanelWindow(
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: ControlCenterContentMetrics.panelWidth,
+                height: 200
+            )
+        )
+        self.panel = panel
 
         super.init()
-        popover.delegate = self
+        panel.delegate = self
+        panel.onDismiss = { [weak self] in self?.closePanel() }
 
         if let button = statusItem.button {
             button.image = Self.menuBarIcon()
@@ -223,9 +236,15 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             .store(in: &featureCancellables)
     }
 
+    deinit {
+        if let escapeKeyMonitor {
+            NSEvent.removeMonitor(escapeKeyMonitor)
+        }
+    }
+
     @objc private func handleCleaningModeDidStart() {
-        if popover.isShown {
-            popover.performClose(nil)
+        if panel.isVisible {
+            closePanel()
         }
     }
 
@@ -686,8 +705,8 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     }
 
     func showClipboardPanel() {
-        if popover.isShown {
-            popover.performClose(nil)
+        if panel.isVisible {
+            closePanel()
         }
         clipboardWindowController.toggleVisibility()
     }
@@ -750,15 +769,82 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     }
 
     @objc private func togglePopover() {
-        if popover.isShown {
-            popover.performClose(nil)
-        } else {
-            guard let button = statusItem.button else { return }
-            installPopoverContentIfNeeded()
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            NSApp.activate(ignoringOtherApps: true)
-            popover.contentViewController?.view.window?.makeKey()
+        if panel.isVisible {
+            closePanel()
+            return
         }
+        // 竞态消解：点击状态栏按钮时 mouseDown 先令面板失焦关闭，紧随的
+        // mouseUp action 到达时意图是「关闭」而非「重开」——短窗内的
+        // 失焦关闭视为本次点击已消费（NSPopover transient 天然具备该语义）。
+        if let dismissedAt = panelDismissedByFocusLossAt,
+           Date().timeIntervalSince(dismissedAt) < 0.3 {
+            panelDismissedByFocusLossAt = nil
+            return
+        }
+        openPanel()
+    }
+
+    /// 打开面板：装配内容（首显测高）→ 一次性定位 → 显示并激活。
+    /// NSWindow 无锚定跟随机制，此后的数值宽度变化不会移动面板。
+    private func openPanel() {
+        let totalHeight = installPanelContentIfNeeded()
+        guard let button = statusItem.button, let window = button.window else { return }
+        let anchor = window.convertToScreen(button.convert(button.bounds, to: nil))
+        let visibleFrame = (window.screen ?? NSScreen.main)?.visibleFrame
+            ?? CGRect(x: 0, y: 0, width: 1512, height: 1384)
+        let frame = ControlCenterPanelWindow.panelFrame(
+            anchorScreenFrame: anchor,
+            panelSize: NSSize(width: ControlCenterContentMetrics.panelWidth, height: totalHeight),
+            visibleFrame: visibleFrame
+        )
+        panel.setFrame(frame, display: true)
+        panelSizer?.pinTopEdge(frame.maxY)
+        panel.orderFrontRegardless()
+        panel.makeKey()
+        NSApp.activate(ignoringOtherApps: true)
+        button.isHighlighted = true
+        startEscapeKeyMonitor()
+    }
+
+    /// 关闭面板并清空会话（幂等）：停监听、复位按钮态、释放内容视图。
+    func closePanel() {
+        guard panel.isVisible || panel.contentViewController != nil else { return }
+        stopEscapeKeyMonitor()
+        statusItem.button?.isHighlighted = false
+        panel.makeFirstResponder(nil)
+        panel.contentView?.discardCursorRects()
+        sizingContext?.endSession()
+        sizingContext = nil
+        panelSizer = nil
+        panel.contentViewController = nil
+        panel.contentView = nil
+        panel.orderOut(nil)
+    }
+
+    /// 点击面板外/切换应用等失焦路径关闭（NSPopover transient 的自管等价物）。
+    func windowDidResignKey(_ notification: Notification) {
+        guard panel.isVisible else { return }
+        panelDismissedByFocusLossAt = Date()
+        closePanel()
+    }
+
+    // MARK: - Escape 监听（面板可见期间）
+
+    private func startEscapeKeyMonitor() {
+        guard escapeKeyMonitor == nil else { return }
+        escapeKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            guard event.keyCode == 53 else { return event }
+            self.closePanel()
+            return nil
+        }
+    }
+
+    private func stopEscapeKeyMonitor() {
+        if let escapeKeyMonitor {
+            NSEvent.removeMonitor(escapeKeyMonitor)
+        }
+        escapeKeyMonitor = nil
     }
 
     // MARK: - Monitor Integration
@@ -969,8 +1055,8 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         monitor.setMenuBarMetrics(config.enabledMenuBarMetrics)
     }
 
-    var hasPopoverContent: Bool {
-        popover.contentViewController != nil
+    var hasPanelContent: Bool {
+        panel.contentViewController != nil
     }
 
     /// Screen frame of the main menu bar status item button.
@@ -980,27 +1066,32 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         return window.convertToScreen(button.convert(button.bounds, to: nil))
     }
 
-    /// 控制中心尺寸上下文与适配器：popover 打开期间存在；关闭即释放，
+    /// 控制中心尺寸上下文与适配器：面板打开期间存在；关闭即释放，
     /// 重新打开走全新会话（SPEC §7.2 关闭重开）。
     private var sizingContext: ControlCenterSizingContext?
-    private var popoverSizer: ControlCenterPopoverSizer?
+    private var panelSizer: ControlCenterPanelSizer?
 
-    func installPopoverContentIfNeeded() {
-        guard popover.contentViewController == nil else { return }
+    /// 装配面板内容（首显测高流程原样保留），返回首显总高。
+    /// 重复调用幂等：返回当前已装配内容高度。
+    @discardableResult
+    func installPanelContentIfNeeded() -> CGFloat {
+        if let existing = panel.contentViewController {
+            return existing.view.bounds.height
+        }
 
         let context = ControlCenterSizingContext()
         context.availableTotalHeightProvider = { [weak self] in
-            self?.popoverAvailableHeight() ?? 1055
+            self?.panelAvailableHeight() ?? 1055
         }
         context.backingScaleProvider = { [weak self] in
             self?.statusItem.button?.window?.screen?.backingScaleFactor ?? 2
         }
-        let sizer = ControlCenterPopoverSizer(popover: popover)
+        let sizer = ControlCenterPanelSizer(window: panel)
         context.beginSession(sizer: sizer)
         sizingContext = context
-        popoverSizer = sizer
+        panelSizer = sizer
 
-        // 首显测高（SPEC §7.2.1）：show 之前以自然高度布局完成有效测量，
+        // 首显测高（SPEC §7.2.1）：显示之前以自然高度布局完成有效测量，
         // 避免「先 580 再缩短」的显示后补跳。
         context.beginInitialMeasurement()
         let controller = NSHostingController(
@@ -1015,7 +1106,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             )
         )
         // 单一尺寸路径（SPEC §5）：禁用 preferredContentSize 自动追踪，
-        // 外壳几何只经 ControlCenterPopoverSizer 提交。
+        // 外壳几何只经 ControlCenterPanelSizer 提交。
         controller.sizingOptions = []
         let hostingView = controller.view
         hostingView.setFrameSize(
@@ -1036,33 +1127,35 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             "首显测高等待: \(context.hasInitialMeasurement ? "就绪" : "超时降级") pumps=\(pumps)"
         )
         let totalHeight = context.commitInitialMeasurement()
-        popover.contentSize = NSSize(
-            width: ControlCenterContentMetrics.panelWidth,
-            height: totalHeight
+        // 自管窗口无 chrome 差：内容高度即窗口高度；frame 由 openPanel 定位。
+        hostingView.setFrameSize(
+            NSSize(width: ControlCenterContentMetrics.panelWidth, height: totalHeight)
         )
-        popover.contentViewController = controller
+        panel.contentViewController = controller
+        panel.applyContentCornerRadius(hostingView)
+        return totalHeight
     }
 
-    /// 当前锚点方向上 popover 可容纳的内容总高（含 chrome）：
-    /// 菜单栏锚点向下弹出 = 屏幕可见区顶部到锚点下沿（SPEC §3.1 Havailable）。
-    private func popoverAvailableHeight() -> CGFloat {
-        guard let screen = statusItem.button?.window?.screen ?? NSScreen.main else {
-            return NSScreen.main?.visibleFrame.height ?? 1055
-        }
+    /// 当前锚点方向上面板可容纳的内容总高：
+    /// 菜单栏锚点向下弹出 = 锚点下沿到屏幕可见区底部（SPEC §3.1 Havailable）。
+    /// 锚点位于菜单栏内、在 visibleFrame 上方，方向不可写反（否则恒 ≤0
+    /// 触发全链路降级）。
+    private func panelAvailableHeight() -> CGFloat {
         guard
             let button = statusItem.button,
-            let window = button.window
-        else { return screen.visibleFrame.height }
+            let window = button.window,
+            let screen = window.screen ?? NSScreen.main
+        else {
+            return NSScreen.main?.visibleFrame.height ?? 1055
+        }
         let anchor = window.convertToScreen(button.convert(button.bounds, to: nil))
-        return max(0, screen.visibleFrame.maxY - anchor.minY)
+        return Self.availableHeight(anchorMinY: anchor.minY, visibleFrame: screen.visibleFrame)
     }
 
-    func popoverDidClose(_ notification: Notification) {
-        // 关闭立即取消所有动画、准备与回调；重开使用新会话（SPEC §7.2.5）。
-        sizingContext?.endSession()
-        sizingContext = nil
-        popoverSizer = nil
-        popover.contentViewController = nil
+    /// 可用高度纯计算（可测）：锚点下沿 → 可见区底部，扣除顶边间隙与
+    /// 阴影余量（自管窗口无箭头，仅 topGap 4 + 安全 4）。
+    nonisolated static func availableHeight(anchorMinY: CGFloat, visibleFrame: CGRect) -> CGFloat {
+        max(0, anchorMinY - visibleFrame.minY - 8)
     }
 
     /// 测试入口：直接触发设置回调，避免依赖 popover 内 SwiftUI 命中。

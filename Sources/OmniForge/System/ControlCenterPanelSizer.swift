@@ -1,38 +1,45 @@
 import AppKit
 import Foundation
 
-/// 控制中心 popover 尺寸适配器（SPEC §5：外壳几何唯一写入者）。
+/// 控制中心面板尺寸适配器（自管窗口版，SPEC §5：外壳几何唯一写入者）。
 ///
-/// 阶段 0 实验结论（docs/active/2026-09-05-控制中心自适应高度与稳定转场/
-/// VALIDATION.md）：
-/// - 公开 API 一次赋值（contentSize / preferredContentSize / 自动追踪 +
-///   SwiftUI 动画）在可见状态下全部瞬跳，无平台动画可用；
-/// - popover 几何写入必须发生在 run loop 事件上下文，Swift Task
-///   continuation 中直接写入会触发 WindowManagement 断言崩溃。
+/// 分步提交架构承袭 popover 时代（阶段 0 实验结论，docs/active/
+/// 2026-09-05-控制中心自适应高度与稳定转场/VALIDATION.md）：
+/// - 公开 API 一次赋值在可见状态下瞬跳，无平台动画可用；
+/// - 几何写入发生在 run loop 事件上下文（60Hz Timer 步进）。
 ///
-/// 因此本适配器以 run loop Timer 分步提交目标高度（stair-step），每步
-/// 均为公开 API 调用，整体呈现为连续单调改高（非弹簧、无过冲）。
+/// 窗口版差异：写入目标为 `window.setFrame`，且每步**顶边钉死**
+/// （origin.y = pinnedTopY - height）——改高时面板顶缘贴锚点不动、
+/// 仅下缘伸缩，与 popover 顶部锚定语义一致；borderless 无 chrome
+/// 差，frame.height 即内容总高。
 @MainActor
-final class ControlCenterPopoverSizer {
+final class ControlCenterPanelSizer {
     /// 分步节奏：对齐 60Hz 显示帧间隔。
     private static let stepInterval: TimeInterval = 1.0 / 60.0
     /// 完成确认：最后一步提交后 hostingView bounds 到达终值的确认预算。
     private static let settleBudget: TimeInterval = 0.2
 
-    private let popover: NSPopover
+    private let window: NSWindow
     private var stepTimer: Timer?
     private var settleTimer: Timer?
     /// 单调递增提交代次：取消后旧序列回调全部失效（latest-wins）。
     private var generation = 0
     private var pendingCompletion: ((Bool) -> Void)?
+    /// 顶边钉死 Y（屏幕坐标）；未设置时保持窗口当前顶缘。
+    private var pinnedTopY: CGFloat?
 
-    init(popover: NSPopover) {
-        self.popover = popover
+    init(window: NSWindow) {
+        self.window = window
     }
 
-    /// 当前已提交总高（= popover.contentSize.height）。
+    /// 面板每次 show 后设置：分步改高期间顶缘固定贴锚点下沿。
+    func pinTopEdge(_ y: CGFloat) {
+        pinnedTopY = y
+    }
+
+    /// 当前已提交总高（borderless 窗口 frame 高即内容总高）。
     var currentTotalHeight: CGFloat {
-        popover.contentSize.height
+        window.frame.height
     }
 
     /// 是否存在在途分步序列。
@@ -44,13 +51,11 @@ final class ControlCenterPopoverSizer {
     ///
     /// - 等高（≤1 物理像素）：单次提交立即完成。
     /// - 不等高：`animationDuration` 内按 60Hz 步进、easeInOut 非弹簧插值；
-    ///   每步在 run loop Timer 上下文写入 contentSize 并回调 `onStep`
+    ///   每步在 run loop Timer 上下文写入 frame 并回调 `onStep`
     ///   （SwiftUI viewport 需同步跟随防 footer 被压缩）。
     /// - 完成：最后一步提交且内容视图 bounds 到达终值后回调
-    ///   `completion(true)`（呈现状态确认，SPEC §4.2.4）；取消或确认超预算
-    ///   回调 `completion(false)`。
-    /// - 新提交隐含取消旧序列（旧 completion 收到 false，不反向追逐，
-    ///   SPEC §6.3：每个尺寸段内部连续单调）。
+    ///   `completion(true)`；取消或确认超预算回调 `completion(false)`。
+    /// - 新提交隐含取消旧序列（旧 completion 收到 false，不反向追逐）。
     func submit(
         targetTotalHeight: CGFloat,
         animationDuration: TimeInterval,
@@ -63,7 +68,7 @@ final class ControlCenterPopoverSizer {
         // 登记等待者：步进期间被取消也能收到 false（一次性）。
         pendingCompletion = completion
 
-        let from = popover.contentSize.height
+        let from = window.frame.height
         let to = targetTotalHeight
         guard to.isFinite, to > 0 else {
             pendingCompletion = nil
@@ -99,7 +104,7 @@ final class ControlCenterPopoverSizer {
                 if step >= stepCount {
                     timer.invalidate()
                     self.stepTimer = nil
-                    ControlCenterSizingLog.log("sizer 步进完成 step=\(step) end=\(self.popover.contentSize.height)")
+                    ControlCenterSizingLog.log("sizer 步进完成 step=\(step) end=\(self.window.frame.height)")
                     self.confirmSettled(gen, target: to, onStep: onStep, completion: completion)
                 }
             }
@@ -134,19 +139,25 @@ final class ControlCenterPopoverSizer {
 
     private func commitStep(_ height: CGFloat, onStep: (CGFloat) -> Void) {
         // Timer 回调即 run loop 事件上下文（阶段 0 E2 约束），可直接写入。
-        popover.contentSize = NSSize(width: popover.contentSize.width, height: height)
+        // 顶边钉死：每步重算 origin，仅下缘伸缩。
+        let frame = window.frame
+        let topY = pinnedTopY ?? frame.maxY
+        window.setFrame(
+            NSRect(x: frame.minX, y: topY - height, width: frame.width, height: height),
+            display: true
+        )
         onStep(height)
     }
 
     /// 最后一步提交后的呈现确认：内容视图 bounds 到达终值（+预算内静默）
-    /// 才算完成；popover 未显示（测试/预装配）时直接确认。
+    /// 才算完成；窗口不可见（测试/预装配）时直接确认。
     private func confirmSettled(
         _ gen: Int,
         target: CGFloat,
         onStep: @escaping (CGFloat) -> Void,
         completion: @escaping (Bool) -> Void
     ) {
-        guard popover.isShown else {
+        guard window.isVisible else {
             pendingCompletion = nil
             completion(true)
             return
@@ -163,7 +174,7 @@ final class ControlCenterPopoverSizer {
                     self.settleTimer = nil
                     return
                 }
-                let boundsHeight = self.popover.contentViewController?.view.bounds.height ?? target
+                let boundsHeight = self.window.contentView?.bounds.height ?? target
                 if abs(boundsHeight - target) <= self.pixelTolerance {
                     timer.invalidate()
                     self.settleTimer = nil

@@ -79,13 +79,13 @@ extension EnvironmentValues {
 // MARK: - 协调器
 
 /// 控制中心尺寸协调器（SPEC §4/§6/§7）：连接页面测量、转场屏障与
-/// popover 尺寸适配器。
+/// 面板尺寸适配器。
 ///
 /// 职责边界：
 /// - 页面只经 PreferenceKey 上报自然高度与壳层高度（测量）；
 /// - 本协调器决定何时采纳测量（latest-wins、防抖合并、超预算降级）；
-/// - `ControlCenterPopoverSizer` 负责唯一的外壳几何提交与完成通知；
-/// - SwiftUI viewport 状态（`viewportHeight`）在每次 contentSize 步进时
+/// - `ControlCenterPanelSizer` 负责唯一的外壳几何提交与完成通知；
+/// - SwiftUI viewport 状态（`viewportHeight`）在每次高度步进时
 /// 同步更新，防止改高中 footer 被固定高度内容顶出窗口。
 @MainActor
 final class ControlCenterSizingContext: ObservableObject {
@@ -111,7 +111,7 @@ final class ControlCenterSizingContext: ObservableObject {
     @Published private(set) var isMeasuringInitialSize = false
 
     let configuration: Configuration
-    weak var sizer: ControlCenterPopoverSizer?
+    weak var sizer: ControlCenterPanelSizer?
     /// 当前锚点方向上的可容纳总高（含 chrome）；nil 用保守默认。
     var availableTotalHeightProvider: (() -> CGFloat)?
     var backingScaleProvider: () -> CGFloat
@@ -141,7 +141,7 @@ final class ControlCenterSizingContext: ObservableObject {
     // MARK: - 会话
 
     /// popover 打开：绑定适配器并复位会话状态。
-    func beginSession(sizer: ControlCenterPopoverSizer) {
+    func beginSession(sizer: ControlCenterPanelSizer) {
         session += 1
         ControlCenterSizingLog.log("beginSession session=\(session)")
         self.sizer = sizer

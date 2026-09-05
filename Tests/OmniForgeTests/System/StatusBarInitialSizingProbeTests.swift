@@ -5,7 +5,7 @@ import XCTest
 
 /// 首显测高路径验证：离屏 hosting view + runloop 泵等待后，
 /// 自然高度与 chrome 必须就绪且 commit 出自适应总高（非固定 580）。
-/// 复刻 StatusBarController.installPopoverContentIfNeeded 的真实序列。
+/// 复刻 StatusBarController.installPanelContentIfNeeded 的真实序列。
 @MainActor
 final class StatusBarInitialSizingProbeTests: XCTestCase {
     func test_offscreenPump_initialMeasurementReadyAndAdaptive() {

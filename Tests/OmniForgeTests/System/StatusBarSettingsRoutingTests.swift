@@ -18,7 +18,7 @@ final class StatusBarSettingsRoutingTests: XCTestCase {
             }
         )
 
-        controller.installPopoverContentIfNeeded()
+        controller.installPanelContentIfNeeded()
         controller.invokeOpenSettingsForTesting()
 
         XCTAssertEqual(openSettingsCount, 1)

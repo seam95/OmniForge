@@ -4,7 +4,7 @@ import SwiftUI
 /// 控制中心内容区尺寸契约（自适应高度 SPEC §3.1）：宽度固定 380pt；
 /// 内容 viewport 以自然高度为目标、580pt 为上限，超出部分在内容区内部
 /// 滚动。高度由尺寸协调器经适配器分阶段提交（见
-/// `ControlCenterSizingContext` / `ControlCenterPopoverSizer`）。
+/// `ControlCenterSizingContext` / `ControlCenterPanelSizer`）。
 enum ControlCenterContentMetrics {
     static let panelWidth: CGFloat = 380
     /// 页面内容 viewport 上限（也是无尺寸上下文时的固定高度）。

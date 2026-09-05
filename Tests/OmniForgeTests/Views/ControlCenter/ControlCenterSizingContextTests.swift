@@ -12,7 +12,7 @@ final class ControlCenterSizingContextTests: XCTestCase {
     ) -> ControlCenterSizingContext {
         let context = ControlCenterSizingContext(backingScaleProvider: { scale })
         context.availableTotalHeightProvider = { available }
-        context.beginSession(sizer: ControlCenterPopoverSizer(popover: NSPopover().then { $0.contentSize = NSSize(width: 380, height: 690) }))
+        context.beginSession(sizer: ControlCenterPanelSizer(window: NSWindow(contentRect: NSRect(x: 0, y: 0, width: 380, height: 690), styleMask: [.borderless], backing: .buffered, defer: false)))
         return context
     }
 
@@ -47,7 +47,7 @@ final class ControlCenterSizingContextTests: XCTestCase {
             configuration: config,
             backingScaleProvider: { 2 }
         )
-        context.beginSession(sizer: ControlCenterPopoverSizer(popover: NSPopover()))
+        context.beginSession(sizer: ControlCenterPanelSizer(window: NSWindow(contentRect: NSRect(x: 0, y: 0, width: 380, height: 560), styleMask: [.borderless], backing: .buffered, defer: false)))
         context.reportShellHeight(110)
         var proceeded = false
         context.mountStarted(path: "panel/a") { proceeded = true }
@@ -83,7 +83,7 @@ final class ControlCenterSizingContextTests: XCTestCase {
         wait(for: [exp], timeout: 2)
         XCTAssertFalse(proceeded, "关闭后旧回调不得触发")
         // 新会话可正常工作。
-        context.beginSession(sizer: ControlCenterPopoverSizer(popover: NSPopover()))
+        context.beginSession(sizer: ControlCenterPanelSizer(window: NSWindow(contentRect: NSRect(x: 0, y: 0, width: 380, height: 560), styleMask: [.borderless], backing: .buffered, defer: false)))
         var newProceeded = false
         context.mountStarted(path: "panel/c") { newProceeded = true }
         context.reportNaturalHeight(580, isEmptyState: false)
@@ -101,7 +101,7 @@ final class ControlCenterSizingContextTests: XCTestCase {
             backingScaleProvider: { 2 }
         )
         context.availableTotalHeightProvider = { 1055 }
-        context.beginSession(sizer: ControlCenterPopoverSizer(popover: NSPopover()))
+        context.beginSession(sizer: ControlCenterPanelSizer(window: NSWindow(contentRect: NSRect(x: 0, y: 0, width: 380, height: 560), styleMask: [.borderless], backing: .buffered, defer: false)))
         context.reportShellHeight(110)
         // 初始稳定高度。
         context.reportNaturalHeight(580, isEmptyState: false)

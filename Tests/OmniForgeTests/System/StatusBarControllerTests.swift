@@ -4,7 +4,7 @@ import Combine
 
 @MainActor
 final class StatusBarControllerTests: XCTestCase {
-    func test_popoverContentIsCreatedOnDemandAndReleasedAfterClose() {
+    func test_panelContentIsCreatedOnDemandAndReleasedAfterClose() {
         let state = makeStatusBarState()
         let windowController = ClipboardWindowController(state: state)
         let controller = StatusBarController(
@@ -12,15 +12,16 @@ final class StatusBarControllerTests: XCTestCase {
             clipboardWindowController: windowController
         )
 
-        XCTAssertFalse(controller.hasPopoverContent)
+        XCTAssertFalse(controller.hasPanelContent)
 
-        controller.installPopoverContentIfNeeded()
+        let initialHeight = controller.installPanelContentIfNeeded()
+        XCTAssertGreaterThan(initialHeight, 0)
 
-        XCTAssertTrue(controller.hasPopoverContent)
+        XCTAssertTrue(controller.hasPanelContent)
 
-        controller.popoverDidClose(Notification(name: NSPopover.didCloseNotification))
+        controller.closePanel()
 
-        XCTAssertFalse(controller.hasPopoverContent)
+        XCTAssertFalse(controller.hasPanelContent)
     }
 
     func test_composeMainTitle_prefixesCountdownBeforeMetrics() {

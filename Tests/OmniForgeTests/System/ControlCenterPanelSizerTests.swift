@@ -4,17 +4,22 @@ import XCTest
 
 /// 尺寸适配器分步提交（阶段 0 实验 E3 的单元化覆盖 + SPEC §4.2/A2/A3）：
 /// 曲线单调无过冲、等高短路、取消失效、完成回调一次性。
-/// 测试使用未 show 的 NSPopover（contentSize 仅存储值，隔离 WindowServer）。
+/// 测试使用未显示的 NSWindow（setFrame 仅存储值，隔离 WindowServer）。
 @MainActor
-final class ControlCenterPopoverSizerTests: XCTestCase {
-    private var popover: NSPopover!
-    private var sizer: ControlCenterPopoverSizer!
+final class ControlCenterPanelSizerTests: XCTestCase {
+    private var window: NSWindow!
+    private var sizer: ControlCenterPanelSizer!
 
     override func setUp() {
         super.setUp()
-        popover = NSPopover()
-        popover.contentSize = NSSize(width: 380, height: 560)
-        sizer = ControlCenterPopoverSizer(popover: popover)
+        // 未 orderFront 的窗口：setFrame 仅写内存，不上屏。
+        window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 560),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        sizer = ControlCenterPanelSizer(window: window)
     }
 
     func test_interpolatedCurve_isMonotonicWithoutOvershoot() {
@@ -22,7 +27,7 @@ final class ControlCenterPopoverSizerTests: XCTestCase {
         let from: CGFloat = 560, to: CGFloat = 320
         var previous = from
         for step in 0...16 {
-            let h = ControlCenterPopoverSizer.interpolatedHeight(
+            let h = ControlCenterPanelSizer.interpolatedHeight(
                 from: from, to: to, progress: CGFloat(step) / 16
             )
             XCTAssertLessThanOrEqual(h, previous + 0.0001, "收缩方向不得反向")
@@ -31,14 +36,14 @@ final class ControlCenterPopoverSizerTests: XCTestCase {
             previous = h
         }
         XCTAssertEqual(
-            ControlCenterPopoverSizer.interpolatedHeight(from: from, to: to, progress: 1), to
+            ControlCenterPanelSizer.interpolatedHeight(from: from, to: to, progress: 1), to
         )
         XCTAssertEqual(
-            ControlCenterPopoverSizer.interpolatedHeight(from: from, to: to, progress: 0), from
+            ControlCenterPanelSizer.interpolatedHeight(from: from, to: to, progress: 0), from
         )
         // 进度钳制：越界进度不得越过端点。
-        XCTAssertEqual(ControlCenterPopoverSizer.interpolatedHeight(from: from, to: to, progress: 1.5), to)
-        XCTAssertEqual(ControlCenterPopoverSizer.interpolatedHeight(from: from, to: to, progress: -0.5), from)
+        XCTAssertEqual(ControlCenterPanelSizer.interpolatedHeight(from: from, to: to, progress: 1.5), to)
+        XCTAssertEqual(ControlCenterPanelSizer.interpolatedHeight(from: from, to: to, progress: -0.5), from)
     }
 
     func test_equalHeightSubmit_completesImmediately() throws {
@@ -48,7 +53,7 @@ final class ControlCenterPopoverSizerTests: XCTestCase {
             reached = done
             exp.fulfill()
         }
-        // 未 show 的 popover 走同步确认路径。
+        // 未显示的窗口走同步确认路径。
         wait(for: [exp], timeout: 2)
         XCTAssertEqual(reached, true)
         XCTAssertFalse(sizer.hasActiveSubmit)
@@ -64,7 +69,7 @@ final class ControlCenterPopoverSizerTests: XCTestCase {
         wait(for: [exp], timeout: 5)
         XCTAssertFalse(steps.isEmpty)
         XCTAssertEqual(steps.last ?? 0, 320, accuracy: 0.51, "最后一步精确到达终值")
-        XCTAssertEqual(popover.contentSize.height, 320, accuracy: 0.51)
+        XCTAssertEqual(window.frame.height, 320, accuracy: 0.51)
         for h in steps {
             XCTAssertLessThanOrEqual(h, 560.01)
             XCTAssertGreaterThanOrEqual(h, 319.49)
@@ -99,7 +104,7 @@ final class ControlCenterPopoverSizerTests: XCTestCase {
             second.fulfill()
         }
         wait(for: [first, second], timeout: 5, enforceOrder: true)
-        XCTAssertEqual(popover.contentSize.height, 320, accuracy: 0.51)
+        XCTAssertEqual(window.frame.height, 320, accuracy: 0.51)
     }
 
     func test_invalidTarget_reportsFailure() {
