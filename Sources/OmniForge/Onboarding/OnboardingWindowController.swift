@@ -77,6 +77,7 @@ final class OnboardingWindowController {
 
         let view = WhatsNewView(
             strings: l10n.s,
+            lastSeenVersion: coordinator.lastSeenVersion,
             onClose: { [weak coordinator] in coordinator?.skipWhatsNew() }
         )
         let hostingController = NSHostingController(rootView: view)

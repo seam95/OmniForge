@@ -41,3 +41,4 @@ final class StatusBarInitialSizingProbeTests: XCTestCase {
         XCTAssertGreaterThan(total, 300)
     }
 }
+
