@@ -355,6 +355,40 @@ final class MenuBarMetricRendererTests: XCTestCase {
         XCTAssertEqual(blocks[2].value, "↓-- ↑--")
     }
 
+    /// 预览位图必须按指定 backing scale 光栅化，且点尺寸与像素严格对应，
+    /// 否则设置页预览会被缩放采样放大导致文字发糊
+    func test_rasterize_pixelDensityMatchesBackingScale() throws {
+        var snapshot = SystemSnapshot()
+        snapshot.memoryUsed = 1_000_000_000
+        snapshot.memoryTotal = 4_000_000_000
+
+        let title = MenuBarMetricRenderer.attributedTitle(
+            for: snapshot,
+            metrics: [.memory],
+            configuration: MonitorConfiguration()
+        )
+
+        let rasterized = MenuBarMetricRenderer.rasterize(title, backingScale: 2)
+        let titleSize = title.size()
+        let expectedWidth = max(1, ceil(titleSize.width) + 4)
+        let expectedHeight = max(1, ceil(titleSize.height) + 4)
+
+        // 点尺寸保留 1:1，避免 SwiftUI 显示时缩放
+        XCTAssertEqual(rasterized.size.width, expectedWidth, accuracy: 0.5)
+        XCTAssertEqual(rasterized.size.height, expectedHeight, accuracy: 0.5)
+
+        // 位图实际像素 = 点尺寸 × backing scale
+        let rep = try XCTUnwrap(rasterized.representations.first)
+        XCTAssertEqual(rep.pixelsWide, Int(expectedWidth * 2))
+        XCTAssertEqual(rep.pixelsHigh, Int(expectedHeight * 2))
+
+        // 1x scale 也严格对应（外接屏场景）
+        let lowDPI = MenuBarMetricRenderer.rasterize(title, backingScale: 1)
+        let lowRep = try XCTUnwrap(lowDPI.representations.first)
+        XCTAssertEqual(lowRep.pixelsWide, Int(expectedWidth))
+        XCTAssertEqual(lowRep.pixelsHigh, Int(expectedHeight))
+    }
+
     // MARK: - Helpers
 
     private func firstBlock(

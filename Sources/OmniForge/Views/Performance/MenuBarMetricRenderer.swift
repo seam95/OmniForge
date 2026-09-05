@@ -368,6 +368,43 @@ enum MenuBarMetricRenderer {
         return image
     }
 
+    /// 以指定 backing scale 将 attributed title 光栅化为位图（设置页预览等非菜单栏场景）。
+    /// 显式像素密度而非 lockFocus：后者跟随当前屏幕 scale，1x 屏上会得到 1x 位图。
+    static func rasterize(_ title: NSAttributedString, backingScale: CGFloat) -> NSImage {
+        let size = title.size()
+        let width = max(1, ceil(size.width) + 4)
+        let height = max(1, ceil(size.height) + 4)
+        let pointSize = NSSize(width: width, height: height)
+
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: max(1, Int(width * backingScale)),
+            pixelsHigh: max(1, Int(height * backingScale)),
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else {
+            // 位图缓冲不可用时退回点尺寸图像，至少保证可显示
+            return NSImage(size: pointSize)
+        }
+        rep.size = pointSize
+
+        NSGraphicsContext.saveGraphicsState()
+        if let context = NSGraphicsContext(bitmapImageRep: rep) {
+            NSGraphicsContext.current = context
+            title.draw(at: NSPoint(x: 2, y: 2))
+        }
+        NSGraphicsContext.restoreGraphicsState()
+
+        let image = NSImage(size: pointSize)
+        image.addRepresentation(rep)
+        return image
+    }
+
     private static func spacerAttachment(width: CGFloat) -> NSAttributedString {
         let size = NSSize(width: max(1, width), height: 1)
         let image = NSImage(size: size, flipped: false) { rect in

@@ -160,26 +160,12 @@ struct MenuBarMetricsSettingsView: View {
                 metrics: metrics,
                 configuration: preferences.configuration
             )
-            Image(nsImage: renderPreviewImage(from: title))
-                .interpolation(.none)
-                .resizable()
-                .scaledToFit()
-                .frame(maxHeight: 28)
+            // 显式 2x 光栅化 + 固有点尺寸显示：resizable/scaledToFit 拉伸会破坏
+            // 像素对齐，最近邻采样放大后文字发糊（菜单栏本体从不缩放）
+            Image(nsImage: MenuBarMetricRenderer.rasterize(title, backingScale: 2))
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityHidden(true)
         }
-    }
-
-    private func renderPreviewImage(from title: NSAttributedString) -> NSImage {
-        let size = title.size()
-        let width = max(1, ceil(size.width) + 4)
-        let height = max(1, ceil(size.height) + 4)
-        let image = NSImage(size: NSSize(width: width, height: height))
-        image.lockFocus()
-        NSColor.clear.setFill()
-        NSRect(x: 0, y: 0, width: width, height: height).fill()
-        title.draw(at: NSPoint(x: 2, y: 2))
-        image.unlockFocus()
-        return image
     }
 
     private func move(_ metric: MenuBarMetric, delta: Int) {
