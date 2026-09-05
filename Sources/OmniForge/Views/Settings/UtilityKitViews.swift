@@ -11,45 +11,6 @@ enum UtilityKit {
     }
 }
 
-extension View {
-    /// 工具页主卡片底色：浅色用白卡，深色用半透明白。
-    @ViewBuilder
-    func utilityCardBackground(cornerRadius: CGFloat = Theme.Radius.card) -> some View {
-        background(UtilityCardFill(cornerRadius: cornerRadius))
-    }
-
-    /// 工具页次级（嵌入）底色：浅色用灰底，深色用半透明白。
-    @ViewBuilder
-    func utilityInsetBackground(cornerRadius: CGFloat = 10) -> some View {
-        background(UtilityInsetFill(cornerRadius: cornerRadius))
-    }
-}
-
-private struct UtilityCardFill: View {
-    let cornerRadius: CGFloat
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Theme.Stats.cardBackground)
-    }
-}
-
-private struct UtilityInsetFill: View {
-    let cornerRadius: CGFloat
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Theme.Stats.cardInset)
-            .overlay(
-                // 浅色下灰底与面板底色过于接近，补一根发丝描边让卡片边缘可读。
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(colorScheme == .dark ? Color.clear : Theme.Stats.separator, lineWidth: 1)
-            )
-    }
-}
-
 /// 品牌徽章：tint 低透明度圆角方块 + tint 色 SF Symbol，与实用工具列表行的图标语言一致。
 struct UtilityGlyphTile: View {
     let symbol: String
