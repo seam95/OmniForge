@@ -472,17 +472,11 @@ struct ClipboardHistoryView: View {
             case .image:
                 // 异步图片详情（SPEC §9.3）：先显示固定尺寸 placeholder，再后台
                 // 读取 blob 并降采样解码；旧请求经 generation 校验不会覆盖新选择。
-                let store = history.storeForBackgroundLoad
+                // 视图只持有按 entry ID 的只读加载闭包，不接触存储对象。
                 AsyncClipboardImageDetail(
                     entryID: entry.id,
                     displayScale: displayScale,
-                    loadPayload: {
-                        guard let store else { return nil }
-                        return ClipboardHistoryManager.loadImagePayload(
-                            for: entry.id,
-                            store: store
-                        )
-                    },
+                    loadPayload: history.imagePayloadLoader(),
                     unavailableText: l10n.s.clipboardDetailUnavailable
                 )
             case .rtf:
@@ -1106,7 +1100,8 @@ private extension ClipboardEntry {
 private struct AsyncClipboardImageDetail: View {
     let entryID: UUID
     let displayScale: CGFloat
-    let loadPayload: () -> ClipboardContent?
+    /// 按 entry ID 的只读负载加载闭包（manager 提供，视图不持存储对象）。
+    let loadPayload: (UUID) -> ClipboardContent?
     let unavailableText: String
 
     @StateObject private var loader = ClipboardDetailImageLoader()
@@ -1136,11 +1131,10 @@ private struct AsyncClipboardImageDetail: View {
         }
         .frame(maxHeight: 320)
         .task(id: entryID) {
-            let storeRef = loadPayload
             loader.request(
                 entryID: entryID,
                 maxPixelSize: Int(ceil(320 * effectiveScale)),
-                loadPayload: storeRef
+                loadPayload: { loadPayload(entryID) }
             )
         }
     }

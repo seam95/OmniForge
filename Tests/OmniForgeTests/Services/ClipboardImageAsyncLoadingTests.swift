@@ -48,17 +48,21 @@ final class ClipboardImageAsyncLoadingTests: XCTestCase {
         )
     }
 
-    /// 后台加载不在主线程执行 blob 读取：慢 store 下主线程不被阻塞。
+    /// 后台加载不在主线程执行 blob 读取：慢 store 下主线程不被阻塞；
+    /// 且视图侧只拿到只读加载闭包，不暴露存储对象（含写能力）。
     func test_imageLoad_runsBlobReadOffMainThread() async throws {
         let id = UUID()
         let store = PerKeyDelayBlobStore(
             contentByID: [id: .image(makeSolidPNG(color: .green, size: 400))],
             delayByID: [id: 0.3]
         )
+        let defaults = UserDefaults(suiteName: "ClipboardImageAsync.\(UUID().uuidString)")!
+        let manager = ClipboardHistoryManager(store: store, userDefaults: defaults)
+        let loadPayload = manager.imagePayloadLoader()
 
         let start = CFAbsoluteTimeGetCurrent()
         let content = await Task.detached(priority: .userInitiated) {
-            ClipboardHistoryManager.loadImagePayload(for: id, store: store)
+            loadPayload(id)
         }.value
         let elapsed = CFAbsoluteTimeGetCurrent() - start
 
