@@ -39,7 +39,7 @@ struct TokenUsagePanelView: View {
 
     private var summaryCardsBlock: some View {
         TokenUsageSummaryCardsView(
-            cards: dashboard?.summaryCards ?? manager.summaryCards(filteredBy: nil),
+            cards: manager.dashboardSnapshot?.summaryCards ?? manager.summaryCards(filteredBy: nil),
             strings: strings
         )
     }
@@ -277,25 +277,25 @@ struct TokenUsagePanelView: View {
         return .notConfigured(provider)
     }
 
-    /// 用量分区渲染数据（SPEC §9.2.1）：优先读后台预计算的 dashboard 快照；
-    /// snapshot 尚未完成首次构建时回退到既有内存聚合（不访问存储）。
-    private var dashboard: TokenUsageDashboardSnapshot? {
-        manager.dashboardSnapshot
+    /// 用量分区渲染数据（SPEC §9.2.1/§9.2.2）：趋势点与模型 Top 经
+    /// `TokenPanelUsageRenderData` 只读 dashboard 快照，渲染路径零存储访问；
+    /// 热力图/汇总卡可安全回退到内存聚合（只读 `usageDailyProviderAggregates`
+    /// 缓存，不触存储）。
+    private var renderData: TokenPanelUsageRenderData {
+        TokenPanelUsageRenderData(dashboard: manager.dashboardSnapshot, period: trendPeriod)
     }
 
     private var usageHeatmap: UsageActivityHeatmap? {
-        if let heatmap = dashboard?.heatmap { return heatmap }
+        if let heatmap = manager.dashboardSnapshot?.heatmap { return heatmap }
         return manager.activityHeatmap(filteredBy: nil)
     }
 
     private var trendPoints: [UsageTrendPoint] {
-        if let points = dashboard?.trendPoints[trendPeriod] { return points }
-        return manager.trendPoints(filteredBy: nil, period: trendPeriod)
+        renderData.trendPoints
     }
 
     private var topModels: [UsageTopModelEntry] {
-        if let models = dashboard?.topModels[trendPeriod], !models.isEmpty { return models }
-        return manager.topModels(filteredBy: nil, period: trendPeriod)
+        renderData.topModels
     }
 
     /// 趋势周期（读写 `configuration.trendPeriodDefault`，持久化）。
