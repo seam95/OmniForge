@@ -300,8 +300,11 @@ enum MenuBarMetricRenderer {
         return NSAttributedString(attachment: attachment)
     }
 
-    /// 绘制 label/value 双行块；宽度取 max(value, 预留候选) 避免位数/单位变化抖动。
-    /// 提供 secondaryValue 时切换为网速双行堆叠布局（无 label、小号字、逐行预留）。
+    /// 绘制 label/value 双行块。宽度按「会话内位数高水位」同形占位预留：
+    /// 只为见过的最宽形态预留（数字换 8），位数首次跨越时块宽跳变一次后稳定，
+    /// 不再为可能永不出现的最坏形态（如 "100%"）常态预留空白。
+    /// 自管 NSPanel 面板位置已钉死，跳变仅影响菜单栏内相邻图标瞬时挪动。
+    /// 提供 secondaryValue 时切换为网速双行堆叠布局（无 label、小号字、逐行水位）。
     static func metricBlockImage(
         label: String,
         value: String,
@@ -314,9 +317,9 @@ enum MenuBarMetricRenderer {
         if let secondaryValue {
             return stackedValueImage(
                 first: value,
-                minimumFirst: reservedValue,
+                firstWatermarkLabel: label + "↓",
                 second: secondaryValue,
-                minimumSecond: secondaryMinimumValue ?? reservedValue
+                secondWatermarkLabel: label + "↑"
             )
         }
 
@@ -325,17 +328,9 @@ enum MenuBarMetricRenderer {
         let sizingLabelAttrs: [NSAttributedString.Key: Any] = [.font: labelFont]
         let sizingValueAttrs: [NSAttributedString.Key: Any] = [.font: valueFont]
 
-        // compact：位数高水位 + 指标绝对 minimumValue 取较宽者；
-        // standard：仅用绝对 maximum。避免 compact 只看位数时 NET 单位切换仍抖动。
-        let reserveCandidates: [String]
-        if spacing == .compact {
-            reserveCandidates = [
-                MenuBarMetricLayout.compactReserve(label: label, value: value),
-                reservedValue,
-            ]
-        } else {
-            reserveCandidates = [reservedValue]
-        }
+        // 统一位数高水位占位（两种间距模式一致，仅 spacer 不同）；
+        // reservedValue 不再参与宽度，保留字段供内容测试断言
+        let reserveCandidates = [MenuBarMetricLayout.compactReserve(label: label, value: value)]
 
         let labelSize = (label as NSString).size(withAttributes: sizingLabelAttrs)
         let valueSize = (value as NSString).size(withAttributes: sizingValueAttrs)
@@ -426,13 +421,13 @@ enum MenuBarMetricRenderer {
     }
 
     /// 网速双行堆叠块：取消 NET 标签与单行超宽预留，上下行各带方向箭头。
-    /// 行宽按「当前值与绝对占位取 max」——绝对占位已覆盖单位切换，
-    /// 两种间距模式行为一致；块高保持 21 与其他指标对齐。
+    /// 行宽按「会话内位数高水位」同形占位（两行独立水位键），
+    /// 位数/单位首次跨越时行宽跳变一次后稳定；块高保持 21 与其他指标对齐。
     private static func stackedValueImage(
         first: String,
-        minimumFirst: String,
+        firstWatermarkLabel: String,
         second: String,
-        minimumSecond: String
+        secondWatermarkLabel: String
     ) -> NSImage {
         // 9.5pt：可读性优先（9pt 笔画过细视觉发虚）；↑↓ 箭头字形墨水上下
         // 超出常规行框，两行实墨总高略超 label/value 块内容高度，无法两端
@@ -443,15 +438,16 @@ enum MenuBarMetricRenderer {
             .foregroundColor: NSColor.labelColor
         ]
 
-        func lineWidth(_ text: String, _ minimum: String) -> CGFloat {
-            max(
+        func lineWidth(_ text: String, _ watermarkLabel: String) -> CGFloat {
+            let reserve = MenuBarMetricLayout.compactReserve(label: watermarkLabel, value: text)
+            return max(
                 (text as NSString).size(withAttributes: attrs).width,
-                (minimum as NSString).size(withAttributes: attrs).width
+                (reserve as NSString).size(withAttributes: attrs).width
             )
         }
 
-        let firstWidth = lineWidth(first, minimumFirst)
-        let secondWidth = lineWidth(second, minimumSecond)
+        let firstWidth = lineWidth(first, firstWatermarkLabel)
+        let secondWidth = lineWidth(second, secondWatermarkLabel)
         let width = ceil(max(firstWidth, secondWidth, MenuBarMetricLayout.minItemWidth) + 0.5)
         let height: CGFloat = 21
 

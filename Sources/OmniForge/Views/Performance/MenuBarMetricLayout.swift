@@ -22,8 +22,8 @@ enum MenuBarMetricLayout {
         return total + gaps
     }
 
-    /// compact 位数预留：当前 value 形状 + 至少 2 位 + 会话高水位。
-    /// 注意：最终块宽还须与指标 `minimumValue` 取 max（见 `metricBlockImage`）。
+    /// 位数高水位预留：当前 value 形状 + 至少 2 位 + 会话高水位。
+    /// 两种间距模式共用（仅 spacer 不同）；块宽只在位数首次跨越时变一次。
     static func compactReserve(label: String, value: String) -> String {
         let digits = value.filter(\.isNumber).count
         let floor = compactFloor(currentDigits: digits, highWater: digitHighWater[label])

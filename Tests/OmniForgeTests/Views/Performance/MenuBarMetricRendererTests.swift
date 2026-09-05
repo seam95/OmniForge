@@ -82,46 +82,43 @@ final class MenuBarMetricRendererTests: XCTestCase {
         XCTAssertEqual(blocks[1].secondaryValue, "↓1000 B/s")
     }
 
-    func test_metricBlockWidth_isStableForDigitChanges() {
-        // standard 间距：用绝对 maximum（"100%"）预留，9% 与 100% 宽度应一致
+    /// 占位机制：会话内位数高水位——同位数宽度稳定、位数首次跨越变宽一次后回落仍稳定
+    func test_metricBlockWidth_isStableWithinDigitWatermark() {
         MenuBarMetricLayout.resetCompactHighWaterForTesting()
 
-        var snapLow = SystemSnapshot()
-        snapLow.cpuUsage = CPUUsageReading(total: 0.09, user: 0.06, system: 0.03)
-        var snapHigh = SystemSnapshot()
-        snapHigh.cpuUsage = CPUUsageReading(total: 1.0, user: 0.6, system: 0.4)
-
-        var config = MonitorConfiguration()
-        config.menuBarSpacing = .standard
-        config.combineTemperatures = false
-
-        let a = MenuBarMetricRenderer.attributedTitle(
-            for: snapLow,
-            metrics: [.cpu],
-            configuration: config
-        )
-        let b = MenuBarMetricRenderer.attributedTitle(
-            for: snapHigh,
-            metrics: [.cpu],
-            configuration: config
-        )
-        XCTAssertEqual(a.size().width, b.size().width, accuracy: 1.0)
-
-        // 直接验证图像宽度预留
-        let lowImage = MenuBarMetricRenderer.metricBlockImage(
+        // 同位数（2 位）：9% 与 42% 宽度一致，秒级数值刷新不推挤相邻图标
+        let nine = MenuBarMetricRenderer.metricBlockImage(
             label: "CPU",
             value: "9%",
             minimumValue: "100%",
             spacing: .standard
         )
-        let highImage = MenuBarMetricRenderer.metricBlockImage(
+        let fortyTwo = MenuBarMetricRenderer.metricBlockImage(
+            label: "CPU",
+            value: "42%",
+            minimumValue: "100%",
+            spacing: .standard
+        )
+        XCTAssertEqual(nine.size.width, fortyTwo.size.width, accuracy: 1.0)
+        XCTAssertGreaterThanOrEqual(nine.size.width, MenuBarMetricLayout.minItemWidth)
+
+        // 跨位数（100% 首次出现 3 位）：块变宽一次
+        let hundred = MenuBarMetricRenderer.metricBlockImage(
             label: "CPU",
             value: "100%",
             minimumValue: "100%",
             spacing: .standard
         )
-        XCTAssertEqual(lowImage.size.width, highImage.size.width, accuracy: 1.0)
-        XCTAssertGreaterThanOrEqual(lowImage.size.width, MenuBarMetricLayout.minItemWidth)
+        XCTAssertGreaterThan(hundred.size.width, nine.size.width)
+
+        // 回落 2 位：保持 3 位峰宽（水位单调不减），此后不再跳变
+        let nineAgain = MenuBarMetricRenderer.metricBlockImage(
+            label: "CPU",
+            value: "9%",
+            minimumValue: "100%",
+            spacing: .standard
+        )
+        XCTAssertEqual(nineAgain.size.width, hundred.size.width, accuracy: 1.0)
     }
 
     func test_combineTemperatures_doesNotAppendTempUnlessTemperatureMetricEnabled() {
@@ -227,8 +224,8 @@ final class MenuBarMetricRendererTests: XCTestCase {
         XCTAssertEqual(afterSpike, "888%")
     }
 
-    func test_compactMetricBlockWidth_usesAbsoluteMinimumValue() {
-        // compact 也纳入 absolute minimumValue，避免只靠位数预留时单位/形态变化抖动
+    /// compact 与 standard 占位行为一致（位数高水位），仅 spacer 不同
+    func test_compactMetricBlockWidth_usesDigitWatermark() {
         MenuBarMetricLayout.resetCompactHighWaterForTesting()
         let low = MenuBarMetricRenderer.metricBlockImage(
             label: "CPU",
@@ -236,29 +233,32 @@ final class MenuBarMetricRendererTests: XCTestCase {
             minimumValue: "100%",
             spacing: .compact
         )
-        let high = MenuBarMetricRenderer.metricBlockImage(
+        let mid = MenuBarMetricRenderer.metricBlockImage(
             label: "CPU",
-            value: "100%",
+            value: "42%",
             minimumValue: "100%",
             spacing: .compact
         )
-        XCTAssertEqual(low.size.width, high.size.width, accuracy: 1.0)
+        XCTAssertEqual(low.size.width, mid.size.width, accuracy: 1.0)
 
+        // 网速堆叠行：同位数稳定、跨位变宽一次、回落保持峰宽
         MenuBarMetricLayout.resetCompactHighWaterForTesting()
         let netSlow = MenuBarMetricRenderer.metricBlockImage(
             label: "NET",
             value: "↓6.0 KB/s",
             minimumValue: "↓000.0 MB/s",
-            secondaryValue: "↑0 B/s",
+            secondaryValue: "↑0.5 KB/s",
             secondaryMinimumValue: "↑000.0 MB/s"
         )
-        let netFast = MenuBarMetricRenderer.metricBlockImage(
+        let netSameDigits = MenuBarMetricRenderer.metricBlockImage(
             label: "NET",
-            value: "↓212 KB/s",
+            value: "↓8.8 KB/s",
             minimumValue: "↓000.0 MB/s",
-            secondaryValue: "↑6.0 KB/s",
+            secondaryValue: "↑1.2 KB/s",
             secondaryMinimumValue: "↑000.0 MB/s"
         )
+        XCTAssertEqual(netSlow.size.width, netSameDigits.size.width, accuracy: 1.0)
+
         let netPeak = MenuBarMetricRenderer.metricBlockImage(
             label: "NET",
             value: "↓12.5 MB/s",
@@ -266,11 +266,21 @@ final class MenuBarMetricRendererTests: XCTestCase {
             secondaryValue: "↑3.2 MB/s",
             secondaryMinimumValue: "↑000.0 MB/s"
         )
-        XCTAssertEqual(netSlow.size.width, netFast.size.width, accuracy: 1.0)
-        XCTAssertEqual(netSlow.size.width, netPeak.size.width, accuracy: 1.0)
+        XCTAssertGreaterThan(netPeak.size.width, netSlow.size.width)
+
+        let netAfterPeak = MenuBarMetricRenderer.metricBlockImage(
+            label: "NET",
+            value: "↓6.0 KB/s",
+            minimumValue: "↓000.0 MB/s",
+            secondaryValue: "↑0.5 KB/s",
+            secondaryMinimumValue: "↑000.0 MB/s"
+        )
+        // 水位保位数不保单位字母宽度（mono 字体仅数字等宽，M 略宽于 K），
+        // 峰值后回落同位数允许 ≤3pt 的单位字母差
+        XCTAssertEqual(netAfterPeak.size.width, netPeak.size.width, accuracy: 3.0)
     }
 
-    /// 网速堆叠布局：双行小字无 label，块高不变，宽度被绝对占位压到紧凑量级
+    /// 网速堆叠布局：双行小字无 label，块高不变，常态宽度紧凑（高水位起步）
     func test_networkStacked_layoutIsCompactAndStable() {
         MenuBarMetricLayout.resetCompactHighWaterForTesting()
         let image = MenuBarMetricRenderer.metricBlockImage(
@@ -283,27 +293,19 @@ final class MenuBarMetricRendererTests: XCTestCase {
 
         // 块高与其他指标一致（21pt），保证菜单栏基线对齐
         XCTAssertEqual(image.size.height, 21)
-        // 单行 12pt 时代预留 "↓000.0 MB/s ↑000.0 MB/s" 约 150pt；堆叠后应显著收窄
-        XCTAssertLessThan(image.size.width, 80)
+        // 位数高水位起步（"↓88 KB/s" 量级），显著低于绝对占位（"↓000.0 MB/s" ≈60pt）
+        XCTAssertLessThan(image.size.width, 55)
         XCTAssertGreaterThanOrEqual(image.size.width, MenuBarMetricLayout.minItemWidth)
 
-        // 预留生效：慢速/快速/峰值同宽，网速波动不推挤相邻指标
-        let peak = MenuBarMetricRenderer.metricBlockImage(
+        // 同位数波动同宽：网速刷新不推挤相邻指标
+        let sameDigits = MenuBarMetricRenderer.metricBlockImage(
             label: "NET",
-            value: "↓999.9 MB/s",
+            value: "↓35 KB/s",
             minimumValue: "↓000.0 MB/s",
-            secondaryValue: "↑0.0 MB/s",
+            secondaryValue: "↑188 KB/s",
             secondaryMinimumValue: "↑000.0 MB/s"
         )
-        let slow = MenuBarMetricRenderer.metricBlockImage(
-            label: "NET",
-            value: "↓0 B/s",
-            minimumValue: "↓000.0 MB/s",
-            secondaryValue: "↑0 B/s",
-            secondaryMinimumValue: "↑000.0 MB/s"
-        )
-        XCTAssertEqual(slow.size.width, image.size.width, accuracy: 1.0)
-        XCTAssertEqual(slow.size.width, peak.size.width, accuracy: 1.0)
+        XCTAssertEqual(sameDigits.size.width, image.size.width, accuracy: 1.0)
     }
 
     /// 网速堆叠块与 label/value 块顶底对齐：渲染到 2x 位图扫描墨水行段，
@@ -357,24 +359,24 @@ final class MenuBarMetricRendererTests: XCTestCase {
         XCTAssertEqual(netSpan.bottom, cpuSpan.bottom, accuracy: 3)
     }
 
-    func test_compactAttributedTitle_cpuDigitChangeKeepsWidth() {
+    func test_compactAttributedTitle_cpuSameDigitWidthStable() {
         MenuBarMetricLayout.resetCompactHighWaterForTesting()
-        var snapLow = SystemSnapshot()
-        snapLow.cpuUsage = CPUUsageReading(total: 0.09, user: 0.06, system: 0.03)
-        var snapHigh = SystemSnapshot()
-        snapHigh.cpuUsage = CPUUsageReading(total: 1.0, user: 0.6, system: 0.4)
+        var snapA = SystemSnapshot()
+        snapA.cpuUsage = CPUUsageReading(total: 0.09, user: 0.06, system: 0.03)
+        var snapB = SystemSnapshot()
+        snapB.cpuUsage = CPUUsageReading(total: 0.42, user: 0.3, system: 0.12)
 
         var config = MonitorConfiguration()
         config.menuBarSpacing = .compact
         config.combineTemperatures = false
 
         let a = MenuBarMetricRenderer.attributedTitle(
-            for: snapLow,
+            for: snapA,
             metrics: [.cpu],
             configuration: config
         )
         let b = MenuBarMetricRenderer.attributedTitle(
-            for: snapHigh,
+            for: snapB,
             metrics: [.cpu],
             configuration: config
         )
