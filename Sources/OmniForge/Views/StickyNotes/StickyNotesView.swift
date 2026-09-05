@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// 桌面便签管理页（实用工具详情，compact 布局）：
-/// 进行中 / 已完成两区 + 设置区（新建快捷键 recorder + 通知授权状态）。
+/// 桌面便签管理页（实用工具详情，compact 布局，平面分区）：
+/// header（徽章 + 统计 + 新建 CTA）→ 进行中 / 已完成 → 设置，
+/// 分区之间发丝线分隔，行平铺白底（背景由转场层持有）。
 @MainActor
 struct StickyNotesView: View {
     let strings: Strings
@@ -18,8 +19,7 @@ struct StickyNotesView: View {
         if let manager {
             StickyNotesContent(strings: strings, manager: manager)
         } else {
-            ContentUnavailableView(strings.stickyNoteNoNotes, systemImage: "note.text")
-                .padding(.vertical, 24)
+            flatEmptyState(text: strings.stickyNoteNoNotes, icon: "note.text")
         }
     }
 }
@@ -35,6 +35,8 @@ private struct StickyNotesContent: View {
 
     private var l10n: L10n { L10n(userDefaults: .standard) }
 
+    private var tint: Color { UtilityTool.stickyNotes.tintColor }
+
     private var activeNotes: [StickyNote] {
         manager.notes
             .filter { !$0.completed }
@@ -47,32 +49,48 @@ private struct StickyNotesContent: View {
             .sorted { $0.completedAtForSorting > $1.completedAtForSorting }
     }
 
+    /// 列表行间分隔线（区别于分区发丝线）。
+    private var rowSeparator: some View {
+        Rectangle()
+            .fill(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
+            .frame(height: 1)
+    }
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                header
-                newNoteButton
-                if activeNotes.isEmpty && completedNotes.isEmpty {
-                    ContentUnavailableView(strings.stickyNoteNoNotes, systemImage: "note.text")
-                        .padding(.vertical, 20)
-                } else {
-                    section(title: strings.stickyNoteSectionActive) {
-                        ForEach(activeNotes) { note in
-                            activeRow(note: note)
-                        }
+        // 外层控制中心已提供 ScrollView；此处平面拼装，滚动由宿主承载。
+        VStack(spacing: 0) {
+            header
+
+            FlatHairline()
+
+            if activeNotes.isEmpty && completedNotes.isEmpty {
+                flatEmptyState(text: strings.stickyNoteNoNotes, icon: "note.text")
+            } else {
+                noteSection(title: strings.stickyNoteSectionActive) {
+                    ForEach(Array(activeNotes.enumerated()), id: \.element.id) { index, note in
+                        if index > 0 { rowSeparator }
+                        activeRow(note: note)
                     }
-                    if !completedNotes.isEmpty {
-                        section(title: strings.stickyNoteSectionCompleted, trailing: { clearCompletedButton }) {
-                            ForEach(completedNotes) { note in
-                                completedRow(note: note)
-                            }
+                }
+
+                if !completedNotes.isEmpty {
+                    FlatHairline()
+
+                    noteSection(
+                        title: strings.stickyNoteSectionCompleted,
+                        trailing: { clearCompletedButton }
+                    ) {
+                        ForEach(Array(completedNotes.enumerated()), id: \.element.id) { index, note in
+                            if index > 0 { rowSeparator }
+                            completedRow(note: note)
                         }
                     }
                 }
-                settingsSection
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+
+            FlatHairline()
+
+            settingsSection
         }
         .alert(
             strings.stickyNoteDeleteConfirmTitle,
@@ -106,28 +124,33 @@ private struct StickyNotesContent: View {
 
     // MARK: - 区块
 
-    /// 头部：图标徽章 + 标题 + 进行中/已完成统计（设计稿 03）。
+    /// 头部：图标徽章 + 标题 + 进行中/已完成统计 + 新建 CTA。
     private var header: some View {
-        HStack(spacing: 10) {
-            Image(systemName: UtilityTool.stickyNotes.symbolName())
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Theme.Stats.ram)
-                .frame(width: 34, height: 34)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(UtilityTool.stickyNotes.tintColor.opacity(0.16))
-                )
-            VStack(alignment: .leading, spacing: 1) {
-                Text(strings.featureHubNameStickyNotes)
-                    .font(Theme.Stats.font13SemiBold)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
-                Text(String(format: strings.stickyNoteCountsFormat, activeNotes.count, completedNotes.count))
-                    .font(Theme.Stats.font11Regular)
-                    .foregroundStyle(Color.secondary)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: UtilityTool.stickyNotes.symbolName())
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.Stats.ram)
+                    .frame(width: 34, height: 34)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(tint.opacity(0.16))
+                    )
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(strings.featureHubNameStickyNotes)
+                        .font(Theme.Stats.font13SemiBold)
+                        .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
+                    Text(String(format: strings.stickyNoteCountsFormat, activeNotes.count, completedNotes.count))
+                        .font(Theme.Stats.font11Regular)
+                        .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
+                }
+                Spacer()
             }
-            Spacer()
+
+            newNoteButton
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     private var newNoteButton: some View {
@@ -148,33 +171,20 @@ private struct StickyNotesContent: View {
         .buttonStyle(.borderedProminent)
     }
 
-    @ViewBuilder
-    private func section(title: String, @ViewBuilder rows: () -> some View) -> some View {
-        section(title: title, trailing: { EmptyView() }, rows: rows)
-    }
-
-    /// 分区标题行；`trailing` 为标题右侧的操作区（如已完成区「清空…」）。
-    private func section(
+    /// 便签分区：区头（tint 色块）+ 行平铺，行间 separator 分隔。
+    private func noteSection(
         title: String,
-        @ViewBuilder trailing: () -> some View,
+        @ViewBuilder trailing: @escaping () -> some View = { EmptyView() },
         @ViewBuilder rows: () -> some View
     ) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text(title)
-                    .font(Theme.Stats.font12Medium)
-                    .foregroundStyle(Color.secondary)
-                    .padding(.horizontal, 4)
-                Spacer()
-                trailing()
-            }
-            .padding(.bottom, 6)
+        VStack(alignment: .leading, spacing: 8) {
+            FlatSectionHeader(title: title, accent: tint, trailing: trailing)
             VStack(spacing: 0) {
                 rows()
             }
-            .background(StickyListCardBackground())
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     /// 已完成区头部「清空…」：一次确认（含条数）物理删除全部已完成便签。
@@ -203,8 +213,9 @@ private struct StickyNotesContent: View {
                 Text(note.summary.isEmpty ? strings.stickyNoteEmptyContent : note.summary)
                     .font(Theme.Stats.font11Regular)
                     .foregroundStyle(
-                        note.summary.isEmpty ? Color.secondary
-                            : (colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                        note.summary.isEmpty
+                            ? MonitorOverviewPalette.secondary(colorScheme)
+                            : MonitorOverviewPalette.primary(colorScheme)
                     )
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -234,7 +245,6 @@ private struct StickyNotesContent: View {
                     notePendingDeletion = note
                 }
             }
-            .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -249,7 +259,7 @@ private struct StickyNotesContent: View {
 
             Text(note.summary.isEmpty ? strings.stickyNoteEmptyContent : note.summary)
                 .font(Theme.Stats.font11Regular)
-                .foregroundStyle(Color.secondary)
+                .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
                 .strikethrough()
                 .lineLimit(1)
 
@@ -262,7 +272,6 @@ private struct StickyNotesContent: View {
                 notePendingDeletion = note
             }
         }
-        .padding(.horizontal, 10)
         .padding(.vertical, 8)
     }
 
@@ -288,32 +297,26 @@ private struct StickyNotesContent: View {
         isDestructive: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 11))
-                .foregroundStyle(isDestructive ? Color(red: 0.95, green: 0.35, blue: 0.32) : Color.secondary)
-                .frame(width: 22, height: 22)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(label)
+        IconButton(
+            systemImage: icon,
+            tint: isDestructive ? Color(red: 0.95, green: 0.35, blue: 0.32) : nil,
+            help: label,
+            action: action
+        )
     }
 
     // MARK: - 设置区
 
-    /// 设置卡片：新建快捷键（键帽 recorder）+ 系统通知权限状态（设计稿 03）。
+    /// 设置分区：新建快捷键（键帽 recorder）+ 系统通知权限状态。
     private var settingsSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(strings.stickyNoteSectionSettings)
-                .font(Theme.Stats.font12Medium)
-                .foregroundStyle(Color.secondary)
-                .padding(.horizontal, 4)
+        VStack(alignment: .leading, spacing: 8) {
+            FlatSectionHeader(title: strings.stickyNoteSectionSettings, accent: tint)
 
             VStack(spacing: 0) {
                 HStack {
                     Text(strings.stickyNoteHotkeyTitle)
                         .font(Theme.Stats.font11Regular)
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                        .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                     Spacer()
                     HotkeyRecorderView(
                         displayText: manager.hotkey.displayString,
@@ -324,25 +327,21 @@ private struct StickyNotesContent: View {
                         style: .keycaps
                     )
                 }
-                .padding(.horizontal, 10)
                 .padding(.vertical, 8)
 
-                Rectangle()
-                    .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Theme.Stats.separator)
-                    .frame(height: 0.5)
-                    .padding(.leading, 10)
+                rowSeparator
 
                 HStack {
                     Text(strings.stickyNoteNotificationPermission)
                         .font(Theme.Stats.font11Regular)
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                        .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                     Spacer()
                     if permissions.notifications {
                         notificationGrantedBadge
                     } else {
                         Text(strings.stickyNoteNotificationDenied)
                             .font(Theme.Stats.font11Regular)
-                            .foregroundStyle(Color.secondary)
+                            .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
                         Button(strings.permissionOpenSettings) {
                             Permissions.shared.requestNotifications()
                         }
@@ -350,12 +349,11 @@ private struct StickyNotesContent: View {
                         .buttonStyle(.link)
                     }
                 }
-                .padding(.horizontal, 10)
                 .padding(.vertical, 8)
             }
-            .background(StickyListCardBackground())
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     /// 已授权状态胶囊：绿点 + 绿字浅绿底。
@@ -374,22 +372,24 @@ private struct StickyNotesContent: View {
     }
 }
 
+/// 平面空态：辅助色图标 + 12 medium 说明，居中且不小于面板空态下限。
+@MainActor
+private func flatEmptyState(text: String, icon: String) -> some View {
+    VStack(spacing: 8) {
+        Image(systemName: icon)
+            .font(.system(size: 24))
+            .foregroundStyle(Color.secondary.opacity(0.5))
+
+        Text(text)
+            .font(Theme.Stats.font12Medium)
+            .foregroundStyle(Color.secondary.opacity(0.7))
+            .multilineTextAlignment(.center)
+    }
+    .padding(.vertical, 16)
+    .frame(maxWidth: .infinity, minHeight: ControlCenterContentMetrics.emptyContentMinHeight)
+}
+
 private extension StickyNote {
     /// 已完成区排序键：完成时刻近似取 updatedAt。
     var completedAtForSorting: Date { updatedAt }
-}
-
-/// 列表卡片背景（对齐实用工具页样式）。
-private struct StickyListCardBackground: View {
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        Group {
-            if colorScheme == .dark {
-                Color.white.opacity(0.08)
-            } else {
-                Theme.Stats.cardBackground
-            }
-        }
-    }
 }

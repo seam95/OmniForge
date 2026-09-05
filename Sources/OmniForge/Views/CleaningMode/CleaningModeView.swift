@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// 清洁模式详情页（实用工具 compact 布局，SPEC §4.2）：
-/// 并排双动作大卡 / 运行中状态 + 退出 / 设置（遮罩颜色色块选择、超时开关+档位）/ 权限引导。
+/// 清洁模式详情页（实用工具 compact 布局，平面分区）：
+/// 双动作平铺行 / 运行中状态 + 退出 / 设置（遮罩颜色胶囊、超时开关+档位）/ 权限引导横幅。
 @MainActor
 struct CleaningModeView: View {
     let strings: Strings
@@ -34,37 +34,42 @@ private struct CleaningModeContent: View {
     private var tint: Color { UtilityTool.cleaningMode.tintColor }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                if permissions.accessibility {
-                    if case .active(let mode) = manager.state {
-                        activeCard(mode: mode)
-                    } else {
-                        actionCards
-                    }
-                    settingsCard
+        // 外层控制中心已提供 ScrollView；平面拼装由宿主承载滚动。
+        VStack(spacing: 0) {
+            if !permissions.accessibility {
+                permissionSection
+            } else {
+                if case .active(let mode) = manager.state {
+                    activeSection(mode: mode)
                 } else {
-                    permissionCard
+                    actionRows
                 }
+
+                FlatHairline()
+
+                settingsSection
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
         }
     }
 
     // MARK: - 动作区（idle）
 
-    /// 页面唯一主动作：并排双大卡，图标徽章 + 标题 + 说明。
-    private var actionCards: some View {
-        HStack(spacing: 10) {
-            actionCard(
+    /// 页面唯一主动作：两个平铺行（徽章 + 标题 + 说明），整行 hover 可点。
+    private var actionRows: some View {
+        VStack(spacing: 0) {
+            actionRow(
                 title: strings.cleaningModeActionKeyboard,
                 hint: strings.cleaningModeActionKeyboardHint,
                 symbol: "keyboard"
             ) {
                 manager.start(.keyboard)
             }
-            actionCard(
+
+            Rectangle()
+                .fill(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
+                .frame(height: 1)
+
+            actionRow(
                 title: strings.cleaningModeActionScreen,
                 hint: strings.cleaningModeActionScreenHint,
                 symbol: "display"
@@ -74,9 +79,9 @@ private struct CleaningModeContent: View {
         }
     }
 
-    private func actionCard(title: String, hint: String, symbol: String, action: @escaping () -> Void) -> some View {
+    private func actionRow(title: String, hint: String, symbol: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(spacing: 8) {
+            HStack(spacing: 12) {
                 Image(systemName: symbol)
                     .font(.system(size: 19, weight: .semibold))
                     .foregroundStyle(tint)
@@ -85,48 +90,51 @@ private struct CleaningModeContent: View {
                         RoundedRectangle(cornerRadius: 11, style: .continuous)
                             .fill(tint.opacity(colorScheme == .dark ? 0.22 : 0.14))
                     )
-                Text(title)
-                    .font(Theme.Stats.font13SemiBold)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
-                Text(hint)
-                    .font(Theme.Stats.font11Regular)
-                    .foregroundStyle(Color.secondary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(Theme.Stats.font13SemiBold)
+                        .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
+                    Text(hint)
+                        .font(Theme.Stats.font11Regular)
+                        .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .padding(.horizontal, 10)
-            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .background(CleaningCardBackground())
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08), lineWidth: 1)
-        )
+        .buttonStyle(FlatHoverButtonStyle())
     }
 
     // MARK: - 运行中（active）
 
-    private func activeCard(mode: CleaningMode) -> some View {
-        VStack(spacing: 10) {
+    private func activeSection(mode: CleaningMode) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 Circle()
                     .fill(Theme.Stats.statusNormal)
                     .frame(width: 6, height: 6)
                 Text(mode == .keyboard ? strings.cleaningModeActiveKeyboard : strings.cleaningModeActiveScreen)
                     .font(Theme.Stats.font13SemiBold)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                    .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
             }
 
             if let since = manager.activeSince {
                 TimelineView(.periodic(from: .now, by: 1)) { _ in
+                    // 大数字语言：28 semibold 等宽数字
                     Text(Self.elapsedText(since: since))
-                        .font(Theme.Stats.font24Bold.monospacedDigit())
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                        .font(.system(size: 28, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                 }
             }
 
@@ -135,62 +143,49 @@ private struct CleaningModeContent: View {
             } label: {
                 Text(strings.cleaningModeExit)
                     .font(Theme.Stats.font13SemiBold)
-                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 34)
+                    .padding(.vertical, 6)
             }
-            .buttonStyle(.plain)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color(red: 0.95, green: 0.35, blue: 0.32))
-            )
+            .buttonStyle(.borderedProminent)
+            .tint(Theme.Stats.up)
         }
-        .padding(12)
-        .background(CleaningCardBackground())
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     // MARK: - 权限引导
 
-    /// 辅助功能未授权：给出引导而非静默失败（SPEC §4.2）。
-    private var permissionCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(strings.cleaningModePermissionTitle)
-                .font(Theme.Stats.font13SemiBold)
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
-                .fixedSize(horizontal: false, vertical: true)
-            Button {
+    /// 辅助功能未授权：tint 横幅引导而非静默失败（SPEC §4.2）。
+    private var permissionSection: some View {
+        PanelTintBanner(
+            icon: "lock.shield",
+            tint: tint,
+            title: strings.cleaningModePermissionTitle
+        ) {
+            Button(strings.cleaningModePermissionAction) {
                 Permissions.shared.openAccessibilitySettings()
-            } label: {
-                Text(strings.cleaningModePermissionAction)
-                    .font(Theme.Stats.font13SemiBold)
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 30)
             }
-            .buttonStyle(.plain)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.accentColor)
-            )
+            .controlSize(.small)
+            .buttonStyle(.borderedProminent)
         }
-        .padding(12)
-        .background(CleaningCardBackground())
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     // MARK: - 设置区
 
-    private var settingsCard: some View {
+    private var settingsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            settingsTitle(strings.cleaningModeOverlayStyle)
+            FlatSectionHeader(title: strings.cleaningModeOverlayStyle, accent: tint)
+
             HStack(spacing: 10) {
                 styleCapsule(style: .black, swatch: Color.black)
                 styleCapsule(style: .white, swatch: Color.white)
             }
 
-            Divider()
-                .padding(.vertical, 2)
+            Rectangle()
+                .fill(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
+                .frame(height: 1)
 
             Toggle(strings.cleaningModeTimeout, isOn: Binding(
                 get: { manager.timeout != .off },
@@ -201,7 +196,7 @@ private struct CleaningModeContent: View {
                 }
             ))
             .toggleStyle(.switch)
-            .font(Theme.Stats.font13SemiBold)
+            .font(Theme.Stats.font12Medium)
 
             if manager.timeout != .off {
                 Picker(strings.cleaningModeTimeout, selection: Binding(
@@ -216,9 +211,8 @@ private struct CleaningModeContent: View {
                 .labelsHidden()
             }
         }
-        .padding(12)
-        .background(CleaningCardBackground())
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     /// 遮罩颜色选择：色块示意 + 文字，选中态用主题色描边（比纯文字 segmented 直观）。
@@ -237,7 +231,7 @@ private struct CleaningModeContent: View {
                     )
                 Text(style == .black ? strings.cleaningModeOverlayBlack : strings.cleaningModeOverlayWhite)
                     .font(Theme.Stats.font12Medium)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                    .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
             }
             .frame(maxWidth: .infinity)
             .frame(height: 30)
@@ -252,12 +246,6 @@ private struct CleaningModeContent: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(isSelected ? tint : Color.clear, lineWidth: 1)
         )
-    }
-
-    private func settingsTitle(_ title: String) -> some View {
-        Text(title)
-            .font(Theme.Stats.font11Regular.weight(.semibold))
-            .foregroundStyle(Color.secondary)
     }
 
     private func choiceLabel(_ choice: CleaningTimeout) -> String {
@@ -275,17 +263,20 @@ private struct CleaningModeContent: View {
     }
 }
 
-/// 卡片底色：浅色用设计系统卡片白，深色用白色低透明度（对齐实用工具列表卡）。
-private struct CleaningCardBackground: View {
+/// 平铺行按钮：hover 浅灰圆角底（对齐 `MonitorTappableSection` 的 hoverFill 语言）。
+struct FlatHoverButtonStyle: ButtonStyle {
     @Environment(\.colorScheme) private var colorScheme
+    @State private var isHovered = false
 
-    var body: some View {
-        Group {
-            if colorScheme == .dark {
-                Color.white.opacity(0.08)
-            } else {
-                Theme.Stats.cardBackground
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                isHovered ? MonitorOverviewPalette.hoverFill(colorScheme) : Color.clear
+            )
+            .onHover { hovering in
+                withAnimation(Theme.Animation.hover) {
+                    isHovered = hovering
+                }
             }
-        }
     }
 }
