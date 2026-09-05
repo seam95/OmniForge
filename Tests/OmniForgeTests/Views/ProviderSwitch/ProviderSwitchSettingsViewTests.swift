@@ -41,6 +41,20 @@ final class ProviderSwitchSettingsViewTests: XCTestCase {
         XCTAssertEqual(ProviderBrandVisual.officialLogo(for: .codex), ProviderLogoAssets.openai)
     }
 
+    func test_providerCardVisual_constants() {
+        // 卡片化视觉常量（设计稿对齐）：圆角 14 / 间距 10 / logo 44 圆角 12。
+        XCTAssertEqual(ProviderCardVisual.cornerRadius, 14)
+        XCTAssertEqual(ProviderCardVisual.cardSpacing, 10)
+        XCTAssertEqual(ProviderCardVisual.logoSize, 44)
+        XCTAssertEqual(ProviderCardVisual.logoCornerRadius, 12)
+        XCTAssertEqual(ProviderCardVisual.background, .white)
+    }
+
+    func test_providerCardVisual_activeBorder_usesAccentTint() {
+        // 激活描边为 accent tint：必须与非激活发丝描边区分开。
+        XCTAssertNotEqual(ProviderCardVisual.activeBorder, ProviderCardVisual.border)
+    }
+
     func test_launchCommandCopyLocalization_isAvailable() {
         for strings in [Strings.zhHans, Strings.en] {
             XCTAssertFalse(strings.providerCopyLaunchCommand.isEmpty)

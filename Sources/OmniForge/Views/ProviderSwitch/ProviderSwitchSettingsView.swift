@@ -51,14 +51,14 @@ enum ProviderSwitchAddProviderRoute: Equatable {
     case providerSettings
 }
 
-/// 供应商切换设置页（平面分区风格对齐监控 overview / Token 面板）：
+/// 供应商切换设置页（卡片列表风格）：
 /// - 分段选择器：Claude Code / Codex 复用 `PanelSegmentedControl`
-/// - 平面列表：官方行 + Profile 行，行间 1pt 发丝线分隔；激活项带「使用中」绿色胶囊微章，
-///   Profile 行右侧均展示 `•••` 更多操作菜单
+/// - 卡片列表：官方行 + Profile 行各自成独立卡片（白底大圆角），激活卡片带 accent 描边
+///   并展示「使用中」绿色胶囊微章，Profile 卡片右侧均展示 `•••` 更多操作菜单
 /// - 设置窗口：展示全宽「+ 新增供应商」主按钮并打开新增表单
 /// - 菜单栏：将新增操作放入底部链接（「编辑配置文件」左侧）并路由到供应商设置页
 /// - 底部辅助：居中展示供应商相关文字链接
-/// - 异常状态：未托管 / 损坏警示横幅融入平面分区体系
+/// - 异常状态：未托管 / 损坏警示横幅以同款圆角卡片融入列表节奏
 struct ProviderSwitchSettingsView: View {
     @ObservedObject var manager: ProviderSwitchManager
     let strings: Strings
@@ -172,68 +172,59 @@ struct ProviderSwitchSettingsView: View {
         .padding(.bottom, 6)
     }
 
-    // MARK: - 平面列表
+    // MARK: - 卡片列表
 
-    /// 官方 + Profile 平面列表：行间 1pt 发丝线分隔（无卡片底/描边/阴影）。
+    /// 官方 + Profile 卡片列表：独立卡片，卡片间 10pt 间距（无发丝线体系）。
     private func providerList(for tool: ProviderTool) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            officialRow(for: tool)
+        VStack(alignment: .leading, spacing: ProviderCardVisual.cardSpacing) {
+            officialCard(for: tool)
 
             let profiles = manager.profiles(for: tool)
             ForEach(profiles) { profile in
-                hairline
-                profileRow(profile, tool: tool)
+                profileCard(profile, tool: tool)
             }
         }
+        .padding(.horizontal, 12)
     }
 
-    /// 分区分隔发丝线（与监控 overview 同款 1pt，浅色 #F0F0F0）。
-    private var hairline: some View {
-        Rectangle()
-            .fill(MonitorOverviewPalette.hairline(colorScheme))
-            .frame(height: 1)
-    }
+    // MARK: - 官方卡片
 
-    // MARK: - 官方行
-
-    private func officialRow(for tool: ProviderTool) -> some View {
+    private func officialCard(for tool: ProviderTool) -> some View {
         let isActive = isOfficialActive(tool: tool)
-        return Button {
-            if !isActive {
-                activateOfficial(tool: tool)
+        return providerCardContainer(isActive: isActive) {
+            Button {
+                if !isActive {
+                    activateOfficial(tool: tool)
+                }
+            } label: {
+                HStack(spacing: 12) {
+                    brandLogoBadge(
+                        color: ProviderBrandVisual.officialColor(for: tool),
+                        logo: ProviderBrandVisual.officialLogo(for: tool)
+                    )
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(strings.providerOfficial)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Color.primary)
+                        Text(officialCaption(for: tool))
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(Color.secondary)
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    if isActive {
+                        inUseBadge
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
             }
-        } label: {
-            HStack(spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(ProviderBrandVisual.officialColor(for: tool))
-                        .frame(width: 36, height: 36)
-                    // 显式约束尺寸：GlyphView 内部 GeometryReader 是贪婪布局，不约束会撑爆布局。
-                    ProviderLogoGlyphView(layers: ProviderBrandVisual.officialLogo(for: tool))
-                        .frame(width: 36, height: 36)
-                }
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(strings.providerOfficial)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Color.primary)
-                    Text(officialCaption(for: tool))
-                        .font(.system(size: 12.5))
-                        .foregroundStyle(Color.secondary)
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 0)
-
-                if isActive {
-                    inUseBadge
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
     }
 
     private func officialCaption(for tool: ProviderTool) -> String {
@@ -250,80 +241,112 @@ struct ProviderSwitchSettingsView: View {
         }
     }
 
-    // MARK: - Profile 行
+    // MARK: - Profile 卡片
 
-    private func profileRow(_ profile: ProviderProfile, tool: ProviderTool) -> some View {
+    private func profileCard(_ profile: ProviderProfile, tool: ProviderTool) -> some View {
         let active = isActive(profile, tool: tool)
         let visual = ProviderBrandVisual.resolve(for: profile)
         let hostSummary = ProviderURLFormatter.hostOrSummary(from: profile.baseURL)
 
-        return HStack(spacing: 12) {
-            Button {
-                if !active && profile.hasCompleteConnection {
-                    activate(profile)
-                }
-            } label: {
-                HStack(spacing: 12) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(visual.color)
-                            .frame(width: 36, height: 36)
-                        if let logo = visual.logo {
-                            ProviderLogoGlyphView(layers: logo)
-                                .frame(width: 36, height: 36)
-                        } else {
-                            Text(visual.letter)
-                                .font(.system(size: 17, weight: .bold, design: .rounded))
-                                .foregroundStyle(.white)
+        return providerCardContainer(isActive: active) {
+            HStack(spacing: 12) {
+                Button {
+                    if !active && profile.hasCompleteConnection {
+                        activate(profile)
+                    }
+                } label: {
+                    HStack(spacing: 12) {
+                        brandLogoBadge(color: visual.color, logo: visual.logo, letter: visual.letter)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(profile.name)
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(Color.primary)
+                            Text(hostSummary)
+                                .font(.system(size: 12.5))
+                                .foregroundStyle(Color.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
                         }
-                    }
 
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(profile.name)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Color.primary)
-                        Text(hostSummary)
-                            .font(.system(size: 12.5))
-                            .foregroundStyle(Color.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                        Spacer(minLength: 0)
                     }
-
-                    Spacer(minLength: 0)
+                    .contentShape(Rectangle())
                 }
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .disabled(!profile.hasCompleteConnection)
+
+                HStack(spacing: 8) {
+                    if active {
+                        inUseBadge
+                    }
+
+                    if presentation.showsProfileManagementMenu {
+                        Menu {
+                            Button(strings.providerEdit) { editingProfile = profile }
+                            Button(strings.providerCopyLaunchCommand) { copyLaunchCommand(for: profile) }
+                            Button(strings.providerDelete, role: .destructive) {
+                                deletingProfile = profile
+                                deletePromptPresented = true
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(Color.secondary.opacity(0.8))
+                                .frame(width: 28, height: 28)
+                                .contentShape(Rectangle())
+                        }
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .fixedSize()
+                    }
+                }
             }
-            .buttonStyle(.plain)
-            .disabled(!profile.hasCompleteConnection)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+        }
+    }
 
-            HStack(spacing: 8) {
-                if active {
-                    inUseBadge
-                }
+    // MARK: - 卡片容器与 logo 徽章
 
-                if presentation.showsProfileManagementMenu {
-                    Menu {
-                        Button(strings.providerEdit) { editingProfile = profile }
-                        Button(strings.providerCopyLaunchCommand) { copyLaunchCommand(for: profile) }
-                        Button(strings.providerDelete, role: .destructive) {
-                            deletingProfile = profile
-                            deletePromptPresented = true
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Color.secondary.opacity(0.8))
-                            .frame(width: 28, height: 28)
-                            .contentShape(Rectangle())
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
-                }
+    /// 供应商卡片容器：白底大圆角 + 发丝描边；激活卡片叠加 accent 描边。
+    private func providerCardContainer<Content: View>(
+        isActive: Bool,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        content()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: ProviderCardVisual.cornerRadius, style: .continuous)
+                    .fill(colorScheme == .dark ? Color(nsColor: .controlBackgroundColor) : ProviderCardVisual.background)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: ProviderCardVisual.cornerRadius, style: .continuous)
+                    .strokeBorder(
+                        isActive
+                            ? ProviderCardVisual.activeBorder
+                            : (colorScheme == .dark ? Color.white.opacity(0.12) : ProviderCardVisual.border),
+                        lineWidth: 1
+                    )
+            )
+    }
+
+    /// 品牌色 logo 徽章：圆角色块 + 真实厂商矢量 logo（无 logo 时回退首字母）。
+    /// GlyphView 内部 GeometryReader 是贪婪布局，必须显式约束尺寸。
+    private func brandLogoBadge(color: Color, logo: [ProviderLogoLayer]?, letter: String = "") -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: ProviderCardVisual.logoCornerRadius, style: .continuous)
+                .fill(color)
+                .frame(width: ProviderCardVisual.logoSize, height: ProviderCardVisual.logoSize)
+            if let logo {
+                ProviderLogoGlyphView(layers: logo)
+                    .frame(width: ProviderCardVisual.logoSize, height: ProviderCardVisual.logoSize)
+            } else {
+                Text(letter)
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
     }
 
     private func isActive(_ profile: ProviderProfile, tool: ProviderTool) -> Bool {
@@ -344,7 +367,7 @@ struct ProviderSwitchSettingsView: View {
             )
     }
 
-    /// 未托管 / 损坏警示横幅：浅警示 tint 底 + 发丝线顶分隔，异常态融入平面分区体系。
+    /// 未托管 / 损坏警示横幅：tint 底圆角卡片，融入卡片列表节奏。
     private func warningBanner(
         icon: String,
         iconColor: Color,
@@ -370,10 +393,18 @@ struct ProviderSwitchSettingsView: View {
                     .controlSize(.small)
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(iconColor.opacity(colorScheme == .dark ? 0.12 : 0.06))
+        .background(
+            RoundedRectangle(cornerRadius: ProviderCardVisual.cornerRadius, style: .continuous)
+                .fill(iconColor.opacity(colorScheme == .dark ? 0.12 : 0.06))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: ProviderCardVisual.cornerRadius, style: .continuous)
+                .strokeBorder(iconColor.opacity(colorScheme == .dark ? 0.25 : 0.15), lineWidth: 1)
+        )
+        .padding(.top, ProviderCardVisual.cardSpacing)
     }
 
     // MARK: - 「+ 新增供应商」主按钮
@@ -388,11 +419,11 @@ struct ProviderSwitchSettingsView: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 42)
                 .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: ProviderCardVisual.cornerRadius, style: .continuous)
                         .fill(colorScheme == .dark ? Color(nsColor: .controlBackgroundColor) : Color.white)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: ProviderCardVisual.cornerRadius, style: .continuous)
                         .strokeBorder(
                             colorScheme == .dark ? Color.white.opacity(0.12) : Color.primary.opacity(0.12),
                             lineWidth: 1
@@ -400,7 +431,7 @@ struct ProviderSwitchSettingsView: View {
                 )
         }
         .buttonStyle(ProviderAddButtonStyle())
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 12)
         .padding(.top, 12)
     }
 
@@ -442,7 +473,6 @@ struct ProviderSwitchSettingsView: View {
     @ViewBuilder
     private func unmanagedBanner(for tool: ProviderTool) -> some View {
         if case .unmanaged(let summary) = manager.active(tool: tool) {
-            hairline
             warningBanner(
                 icon: "exclamationmark.triangle.fill",
                 iconColor: .orange,
@@ -461,7 +491,6 @@ struct ProviderSwitchSettingsView: View {
     @ViewBuilder
     private func corruptedBanner(for tool: ProviderTool) -> some View {
         if case .unreadable = manager.active(tool: tool) {
-            hairline
             warningBanner(
                 icon: "xmark.octagon.fill",
                 iconColor: .red,
@@ -582,6 +611,28 @@ struct ProviderSwitchSettingsView: View {
 
 // MARK: - 辅助样式与视觉解析
 
+/// 供应商卡片视觉常量（对齐设计稿）：白底大圆角卡片 + 放大 logo 徽章 + 激活 accent 描边。
+enum ProviderCardVisual {
+    /// 卡片圆角。
+    static let cornerRadius: CGFloat = 14
+    /// 卡片间距（列表内相邻卡片、横幅与列表之间共用）。
+    static let cardSpacing: CGFloat = 10
+    /// logo 徽章边长与圆角（品牌色底 + 厂商矢量 logo）。
+    static let logoSize: CGFloat = 44
+    static let logoCornerRadius: CGFloat = 12
+
+    /// 浅色卡片底（深色场景由调用方使用 controlBackgroundColor）。
+    static let background = Color.white
+
+    /// 非激活描边：浅色极淡发丝，深色用白色低透明度（调用方分支）。
+    static let border = Color.primary.opacity(0.1)
+
+    /// 激活卡片描边（深浅色同源 accent，浅色下略收）。
+    static var activeBorder: Color {
+        Color.accentColor.opacity(0.55)
+    }
+}
+
 /// 新增供应商按钮样式（带 Hover 微反馈）
 private struct ProviderAddButtonStyle: ButtonStyle {
     @State private var isHovered = false
@@ -593,15 +644,15 @@ private struct ProviderAddButtonStyle: ButtonStyle {
     }
 }
 
-/// 底部副操作链接按钮样式（带 Hover 颜色过渡）
+/// 底部副操作链接按钮样式（accent 色，Hover 提亮反馈）
 private struct ProviderFooterLinkButtonStyle: ButtonStyle {
     @State private var isHovered = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 12.5, weight: .regular))
-            .foregroundStyle(isHovered ? Color.primary : Color.secondary)
-            .opacity(configuration.isPressed ? 0.7 : 1.0)
+            .foregroundStyle(Color.accentColor.opacity(isHovered ? 0.7 : 1.0))
+            .opacity(configuration.isPressed ? 0.6 : 1.0)
             .onHover { isHovered = $0 }
     }
 }
