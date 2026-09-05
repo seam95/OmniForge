@@ -88,15 +88,33 @@ final class PageSwitchHostTests: XCTestCase {
 
     // MARK: - 交互门控（SPEC §11.1）
 
-    func test_hitTestingDisabledDuringTransition() async throws {
+    /// 真实鼠标事件断言（SPEC §11.1）：向内容探针中心发送 mouseDown，
+    /// 转场窗口内探针不得收到（allowsHitTesting 门控生效），稳定后恢复接收；
+    /// 同一窗口内导航仍接受最新请求。
+    /// 注：离屏环境 AppKit hitTest 对 SwiftUI 内容两种状态均穿透，无区分度；
+    /// 事件派发路径（NSApp.sendEvent → SwiftUI 命中分发）是唯一可测通道。
+    func test_hitTesting_blocksContentHitsDuringTransition() async throws {
         let probe = try await mountHarness(initial: "a")
+
+        // sanity：稳定态探针可接收鼠标事件。
+        probe.sendMouseDownAtContentProbe()
+        XCTAssertEqual(probe.contentProbeHitCount, 1, "sanity：稳定态内容探针接收事件")
+
         probe.request("b")
         try await tick(0.02) // 退出窗口（60ms）内
-        let duringExit = probe.isTransitioning
-
+        probe.sendMouseDownAtContentProbe()
+        let blockedDuringExit = probe.contentProbeHitCount == 1
+        // 同一窗口内模拟导航点击新 route（导航区不受内容门控影响）。
+        probe.request("c")
         await waitForIdle(probe)
-        XCTAssertTrue(duringExit, "exiting 阶段内容区必须处于转生态（禁用 hit-testing）")
-        XCTAssertFalse(probe.isTransitioning, "idle 阶段恢复交互")
+
+        probe.sendMouseDownAtContentProbe()
+        XCTAssertTrue(
+            blockedDuringExit,
+            "exiting 阶段内容探针不得收到鼠标事件（删掉 allowsHitTesting 本断言变红）"
+        )
+        XCTAssertEqual(probe.contentProbeHitCount, 2, "idle 阶段内容探针恢复接收事件")
+        XCTAssertEqual(probe.displayedRoute, "c", "转场窗口内导航仍接受最新请求")
     }
 
     // MARK: - 背景表面（SPEC §8.2.2/§8.2.3）
@@ -135,6 +153,7 @@ final class PageSwitchHostTests: XCTestCase {
         )
         window.contentView = NSHostingView(rootView: harness)
         window.orderFrontRegardless()
+        probe.window = window
         try await tick(0.05)
         return probe
     }
@@ -152,7 +171,8 @@ final class PageSwitchHostTests: XCTestCase {
     }
 }
 
-/// Host 观测探针：请求 route、挂载计数、阶段事件、displayed route/surface。
+/// Host 观测探针：请求 route、挂载计数、阶段事件、displayed route/surface、
+/// 内容区 hitTest（真实交互门控断言）。
 @MainActor
 final class HostProbe: ObservableObject {
     @Published private(set) var route: String
@@ -160,6 +180,35 @@ final class HostProbe: ObservableObject {
     private(set) var displayedSurface: Color?
     private(set) var mounts = MountTally()
     private(set) var events: [PageSwitchPhaseEvent] = []
+    weak var window: NSWindow?
+
+    /// 记录型内容探针的 mouseDown 计数。
+    private(set) var contentProbeHitCount = 0
+
+    fileprivate func recordContentProbeHit() {
+        contentProbeHitCount += 1
+    }
+
+    /// 向内容探针中心发送一次真实 mouseDown 事件（经 NSApp 派发，
+    /// 走 SwiftUI 命中分发路径——allowsHitTesting 在该路径生效）。
+    func sendMouseDownAtContentProbe() {
+        guard let window,
+              let hosting = window.contentView,
+              let frame = hosting.frame(for: .hitProbe) else { return }
+        let point = NSPoint(x: frame.midX, y: frame.midY)
+        guard let event = NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: hosting.convert(point, to: nil),
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
+        ) else { return }
+        NSApp.sendEvent(event)
+    }
 
     init(initialRoute: String) {
         self.route = initialRoute
@@ -222,8 +271,55 @@ private struct ProbeHarness: View {
                 probe.displayDidSwap(route: route, surface: surface.background)
             }
         ) { route in
-            Text("content-\(route)")
-                .padding(20)
+            VStack(spacing: 0) {
+                HitProbeRepresentable { probe.recordContentProbeHit() }
+                    .frame(height: 40)
+                Text("content-\(route)")
+                    .padding(20)
+            }
         }
+    }
+}
+
+/// 内容区命中探针：记录 mouseDown 次数（identifier 供事件定位）。
+final class HitRecordingProbeView: NSView {
+    var onReceived: (() -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        onReceived?()
+    }
+}
+
+private struct HitProbeRepresentable: NSViewRepresentable {
+    let onReceived: () -> Void
+
+    func makeNSView(context: Context) -> HitRecordingProbeView {
+        let view = HitRecordingProbeView()
+        view.identifier = .hitProbe
+        view.onReceived = onReceived
+        return view
+    }
+
+    func updateNSView(_ nsView: HitRecordingProbeView, context: Context) {
+        nsView.onReceived = onReceived
+    }
+}
+
+private extension NSUserInterfaceItemIdentifier {
+    static let hitProbe = NSUserInterfaceItemIdentifier("PageSwitchHostTests.hitProbe")
+}
+
+private extension NSView {
+    /// 深度优先查找 identifier 后代，返回其位于本视图坐标系的 frame。
+    func frame(for identifier: NSUserInterfaceItemIdentifier) -> NSRect? {
+        for subview in subviews {
+            if subview.identifier == identifier {
+                return convert(subview.bounds, from: subview)
+            }
+            if let found = subview.frame(for: identifier) {
+                return found
+            }
+        }
+        return nil
     }
 }

@@ -12,37 +12,37 @@ final class PageSwitchBaselineProbeTests: XCTestCase {
     // MARK: - S3：真实 MonitorContainerView 单活动树（阶段 7 迁移后）
 
     /// 监控层级切换（overview ↔ diskDetail）期间任意时刻最多一棵完整页面树。
+    /// 计数挂在真实内容分支（pageMountObserver），以「转场各阶段稳态采样」断言：
+    /// exiting 中点（旧页独占）与 entering 中点（新页独占）在途树数必须为 1；
+    /// 若恢复双树转场（ZStack 叠放），exiting 中点两树并存 → 采样为 2 → 变红。
+    ///
+    /// 框架行为记录：SwiftUI 同位置树交换时新页 onAppear 可先于旧页
+    /// onDisappear 触发，裸峰值计数会出现瞬时 2（替换瞬态，旧树已标记移除且
+    /// opacity 0，不参与渲染）——单树保证以结构与稳态采样为准，不断言裸峰值。
     func test_probeA_monitorHierarchySwitch_keepsSingleActiveTree() async throws {
-        let counter = MountCounter()
-        let box = RouteBox(route: .overview)
-        let monitor = makeFakeMonitor()
-        let harness = MonitorHostHarness(
-            route: box.binding,
-            monitor: monitor,
-            counter: counter
-        )
+        let mounts = PageMounts()
+        _ = try mountMonitor(mounts: mounts)
 
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 380, height: 580),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        window.contentView = NSHostingView(rootView: harness)
-        window.orderFrontRegardless()
         try await tick(0.05)
-        XCTAssertEqual(counter.current, 1, "sanity：初始仅 overview 挂载")
+        XCTAssertEqual(mounts.current, 1, "sanity：初始仅 overview 挂载")
+        XCTAssertEqual(mounts.lastMountedPage, .overview)
 
-        box.route = .diskDetail
-        try await tick(0.05)
-        try await waitFor { counter.current == 1 }
-        XCTAssertEqual(counter.peak, 1, "真实监控层级切换期间最多一棵页面树")
+        mounts.route = .diskDetail
+        try await tick(0.03) // exiting 中点（exit 70ms 内）：旧页独占
+        let duringExit = mounts.current
+        try await waitFor { mounts.lastMountedPage == .diskDetail }
+        try await tick(0.06) // entering 中点：新页独占
+        let duringEnter = mounts.current
 
-        box.route = .overview
-        try await tick(0.05)
-        try await waitFor { counter.current == 1 }
-        XCTAssertEqual(counter.peak, 1)
-        baselineRecord("S3 真实监控层级往返切换单活动树峰值：\(counter.peak)")
+        XCTAssertEqual(duringExit, 1, "退出阶段在途页面树必须唯一")
+        XCTAssertEqual(duringEnter, 1, "进入阶段在途页面树必须唯一")
+
+        mounts.route = .overview
+        try await tick(0.03)
+        let duringBackExit = mounts.current
+        try await waitFor { mounts.lastMountedPage == .overview }
+        XCTAssertEqual(duringBackExit, 1)
+        baselineRecord("S3 真实监控层级切换稳态在途树数：exit=\(duringExit) enter=\(duringEnter)")
     }
 
     // MARK: - 探针 B：离开监控页主线程阻塞（阶段 3 已修复）
@@ -73,29 +73,23 @@ final class PageSwitchBaselineProbeTests: XCTestCase {
     // MARK: - 探针 C：20 次往返基线（与 BASELINE.md 阶段 0 对比）
 
     func test_probeC_twentyRoundTrips_wallTimeBaseline() async throws {
-        let counter = MountCounter()
-        let box = RouteBox(route: .overview)
-        let monitor = makeFakeMonitor()
-        let harness = MonitorHostHarness(route: box.binding, monitor: monitor, counter: counter)
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 380, height: 580),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        window.contentView = NSHostingView(rootView: harness)
-        window.orderFrontRegardless()
+        let mounts = PageMounts()
+        _ = try mountMonitor(mounts: mounts)
         try await tick(0.05)
 
         let start = CFAbsoluteTimeGetCurrent()
         for index in 0..<20 {
-            box.route = index.isMultiple(of: 2) ? .diskDetail : .overview
+            mounts.route = index.isMultiple(of: 2) ? .diskDetail : .overview
             try await tick(0.02)
         }
         let elapsed = CFAbsoluteTimeGetCurrent() - start
+        // 等最后一轮转场收敛：以「实际展示页面」断言结果（不只验证请求值）；
+        // 稳态在途树数恒 1（裸峰值含 SwiftUI 替换瞬态，见 probeA 框架行为记录）。
+        try await waitFor {
+            mounts.current == 1 && mounts.lastMountedPage == .overview
+        }
         baselineRecord(String(format: "20 次往返切换总耗时（debug 构建）：%.3fs", elapsed))
-        baselineRecord("20 次往返峰值同时挂载页面树数：\(counter.peak)")
-        XCTAssertEqual(box.route, .overview, "sanity：最终 route 正确")
+        XCTAssertEqual(mounts.route, .overview, "sanity：最终请求 route 正确")
     }
 
     // MARK: - 基础设施
@@ -121,11 +115,25 @@ final class PageSwitchBaselineProbeTests: XCTestCase {
     }
 }
 
-/// 真实 MonitorContainerView harness：挂载数经内容视图 onAppear/onDisappear 计数。
+/// 挂载真实 MonitorContainerView 并返回宿主窗口；页面挂载经
+/// `pageMountObserver` 在真实内容分支上计数（SPEC §6.3.5）。
+@MainActor
+private func mountMonitor(mounts: PageMounts) throws -> NSWindow {
+    let harness = MonitorHostHarness(mounts: mounts)
+    let window = NSWindow(
+        contentRect: NSRect(x: 0, y: 0, width: 380, height: 580),
+        styleMask: [.borderless],
+        backing: .buffered,
+        defer: false
+    )
+    window.contentView = NSHostingView(rootView: harness)
+    window.orderFrontRegardless()
+    return window
+}
+
 private struct MonitorHostHarness: View {
-    @Binding var route: MonitorPanelRoute
-    @ObservedObject var monitor: SystemMonitorManager
-    let counter: MountCounter
+    @ObservedObject var mounts: PageMounts
+    @ObservedObject private var monitor = makeFakeMonitor()
     @StateObject private var coordinator = ProcessBreakdownCoordinator()
     @StateObject private var diskProtection = DiskProtectionService()
 
@@ -133,42 +141,31 @@ private struct MonitorHostHarness: View {
         MonitorContainerView(
             coordinator: coordinator,
             diskProtection: diskProtection,
-            route: $route,
+            route: $mounts.route,
             monitor: monitor,
             configuration: MonitorConfiguration(),
             strings: .en,
             onDemandChange: { _ in },
             onExpandedMetric: { _ in },
-            onStartSpeedTest: {}
+            onStartSpeedTest: {},
+            pageMountObserver: { page, delta in mounts.bump(page, delta) }
         )
-        .onAppear { counter.bump(+1) }
-        .onDisappear { counter.bump(-1) }
     }
 }
 
-/// 页面树挂载计数器。
+/// 真实页面分支挂载计数：峰值（单活动树断言）+ 最后挂载的页面身份
+/// （对 SwiftUI 转场期 onAppear 可能的重复触发免疫，收敛语义看终值）。
 @MainActor
-final class MountCounter {
+final class PageMounts: ObservableObject {
+    @Published var route: MonitorPanelRoute = .overview
     private(set) var current = 0
     private(set) var peak = 0
+    private(set) var lastMountedPage: MonitorPanelRoute?
 
-    func bump(_ delta: Int) {
+    func bump(_ page: MonitorPanelRoute, _ delta: Int) {
         current += delta
         peak = max(peak, current)
-    }
-}
-
-/// 外部持有的 route 状态盒。
-@MainActor
-final class RouteBox: ObservableObject {
-    @Published var route: MonitorPanelRoute
-
-    init(route: MonitorPanelRoute) {
-        self.route = route
-    }
-
-    var binding: Binding<MonitorPanelRoute> {
-        Binding(get: { self.route }, set: { self.route = $0 })
+        if delta > 0 { lastMountedPage = page }
     }
 }
 

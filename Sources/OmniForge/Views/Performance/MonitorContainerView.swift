@@ -30,6 +30,9 @@ struct MonitorContainerView: View {
     /// Refresh callback; `forceProcess` is true on ranking so process Top re-samples past the 4s throttle.
     var onRefresh: (_ forceProcess: Bool) -> Void = { _ in }
     var deviceSummaryProvider: DeviceSummaryProvider = DeviceSummaryProvider()
+    /// 页面树挂载计数观测（测试配置用；+1 onAppear / -1 onDisappear，携带页面 route）。
+    /// 用于在真实监控层级切换上断言单活动树不变量（SPEC §6.3.5）。
+    var pageMountObserver: (@MainActor (MonitorPanelRoute, Int) -> Void)? = nil
 
     var body: some View {
         // 层级页面统一 Host（SPEC §5/§6）：overview → 排名/磁盘详情为前进，
@@ -100,6 +103,7 @@ struct MonitorContainerView: View {
                 },
                 onRefresh: { onRefresh(false) }
             )
+            .pageMountReporting(.overview, observer: pageMountObserver)
         case .diskDetail:
             MonitorDiskDetailView(
                 snapshot: monitor.snapshot,
@@ -111,6 +115,7 @@ struct MonitorContainerView: View {
                 showsSettingsAction: showsSettingsAction,
                 onRefresh: { onRefresh(false) }
             )
+            .pageMountReporting(.diskDetail, observer: pageMountObserver)
         case .ranking(let kind):
             MonitorRankingView(
                 kind: kind,
@@ -124,6 +129,7 @@ struct MonitorContainerView: View {
                 showsSettingsAction: showsSettingsAction,
                 onRefresh: { onRefresh(true) }
             )
+            .pageMountReporting(page, observer: pageMountObserver)
         }
     }
 
@@ -157,5 +163,22 @@ struct MonitorContainerView: View {
             demand.power = true
         }
         return demand
+    }
+}
+
+/// 页面挂载上报：挂在类型不同的真实页面分支上（身份天然区分），
+/// 供测试在真实监控层级切换上断言单活动树（SPEC §6.3.5）。
+private extension View {
+    @ViewBuilder
+    func pageMountReporting(
+        _ page: MonitorPanelRoute,
+        observer: (@MainActor (MonitorPanelRoute, Int) -> Void)?
+    ) -> some View {
+        if let observer {
+            onAppear { observer(page, 1) }
+                .onDisappear { observer(page, -1) }
+        } else {
+            self
+        }
     }
 }
