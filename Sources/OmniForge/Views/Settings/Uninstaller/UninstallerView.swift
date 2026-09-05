@@ -64,15 +64,15 @@ struct UninstallerContentView: View {
                 .frame(width: layout.dropTargetWidth, height: layout.dropTargetHeight)
                 .overlay(
                     VStack(spacing: 10) {
-                        UtilityGlyphTile(symbol: "trash", tint: dropTargeted ? tint : (colorScheme == .light ? Theme.Stats.text3 : Color.secondary),
+                        UtilityGlyphTile(symbol: "trash", tint: dropTargeted ? tint : (MonitorOverviewPalette.auxiliary(colorScheme)),
                                          size: layout == .compact ? 44 : 52)
                         VStack(spacing: 3) {
                             Text(strings.uninstallerDropTitle)
                                 .font(Theme.Stats.font13SemiBold)
-                                .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                                .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                             Text(strings.uninstallerDropSubtitle)
                                 .font(Theme.Stats.font11Regular)
-                                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                                .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                         }
                     }
                 )
@@ -84,7 +84,7 @@ struct UninstallerContentView: View {
 
             Text(strings.uninstallerEmptyNote)
                 .font(Theme.Stats.font10Regular)
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
 
             if !permissions.fullDiskAccess { fullDiskAccessNote }
             Spacer()
@@ -106,21 +106,14 @@ struct UninstallerContentView: View {
         } isTargeted: { dropTargeted = $0 }
     }
 
+    /// 完全磁盘访问提示：tint 横幅（共享 PanelTintBanner）。
     private var fullDiskAccessNote: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "info.circle")
-                    .font(.system(size: 12))
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
-                Text(strings.uninstallerFDANote)
-                    .font(Theme.Stats.font11Regular)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Text(strings.uninstallerFDAHint)
-                .font(Theme.Stats.font10Regular)
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+        PanelTintBanner(
+            icon: "info.circle",
+            tint: Theme.Stats.cpu,
+            title: strings.uninstallerFDANote,
+            message: strings.uninstallerFDAHint
+        ) {
             HStack(spacing: 8) {
                 Button(strings.uninstallerFDAGrant) { permissions.requestFullDiskAccess() }
                 // 与授权并列显示，因为访问仅在重新打开后生效。
@@ -130,9 +123,7 @@ struct UninstallerContentView: View {
             }
             .controlSize(.small)
         }
-        .padding(12)
         .frame(maxWidth: layout.dropTargetWidth)
-        .utilityInsetBackground()
     }
 
     // MARK: Busy
@@ -143,17 +134,21 @@ struct UninstallerContentView: View {
             ProgressView().controlSize(.large)
             Text(message)
                 .font(Theme.Stats.font13SemiBold)
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
             if let target = uninstaller.target {
                 HStack(spacing: 8) {
                     Image(nsImage: target.icon).resizable().frame(width: 18, height: 18)
                     Text(target.name)
                         .font(Theme.Stats.font12Medium)
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                        .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .utilityInsetBackground(cornerRadius: Theme.Radius.row)
+                .background(
+                    // inset 数据行语言：浅灰底圆角块
+                    RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                        .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Theme.Stats.cardInset)
+                )
             }
             Spacer()
         }
@@ -164,11 +159,7 @@ struct UninstallerContentView: View {
     private var resultsState: some View {
         VStack(spacing: 0) {
             targetHero
-                .padding(.horizontal, layout == .compact ? 12 : 16)
-                .padding(.top, layout == .compact ? 12 : 16)
-                .padding(.bottom, 10)
-            Divider()
-                .overlay(Theme.Stats.separator)
+            FlatHairline()
             List {
                 ForEach(AppUninstaller.Category.allCases, id: \.self) { category in
                     let group = uninstaller.items.filter { $0.category == category }
@@ -181,15 +172,15 @@ struct UninstallerContentView: View {
                     }
                 }
             }
-            .listStyle(.inset)
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
             .utilityResultsListHeight(layout)
-            Divider()
-                .overlay(Theme.Stats.separator)
+            FlatHairline()
             footer
         }
     }
 
-    /// 结果页主角：app 徽章 + 总量大数字 + 类别比例条。
+    /// 结果页主角：app 徽章 + 总量大数字 + 类别比例条（平铺白底）。
     private var targetHero: some View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
@@ -198,10 +189,10 @@ struct UninstallerContentView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(target.name)
                             .font(Theme.Stats.font13SemiBold)
-                            .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                            .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                         Text(target.bundleID ?? target.url.path)
                             .font(Theme.Stats.font10Regular)
-                            .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                            .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                             .lineLimit(1).truncationMode(.middle)
                     }
                 }
@@ -209,23 +200,23 @@ struct UninstallerContentView: View {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(UtilityKit.byteString(uninstaller.totalSize))
                         .font(.system(size: 20, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                        .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                     Text(String(format: strings.uninstallerFoundItemsFormat, uninstaller.items.count))
                         .font(Theme.Stats.font10Regular)
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                        .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                 }
                 Button { uninstaller.reset() } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 16))
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                        .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                 }
                 .buttonStyle(.plain)
             }
 
             UtilityProportionBar(segments: categorySegments)
         }
-        .padding(12)
-        .utilityCardBackground()
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     /// 按类别聚合的比例条分段；类别色与下方明细 section 的色点呼应。
@@ -251,14 +242,12 @@ struct UninstallerContentView: View {
     }
 
     private func categoryHeader(_ category: AppUninstaller.Category, items group: [AppUninstaller.Leftover]) -> some View {
-        HStack(spacing: 6) {
-            Circle().fill(color(for: category)).frame(width: 7, height: 7)
-            Text(label(for: category))
-            Spacer()
+        FlatSectionHeader(title: label(for: category), accent: color(for: category)) {
             Text(UtilityKit.byteString(group.reduce(0) { $0 + $1.size }))
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
+                .font(Theme.Stats.font10Regular.monospacedDigit())
+                .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
         }
+        .textCase(nil)
     }
 
     private func row(_ item: AppUninstaller.Leftover) -> some View {
@@ -269,19 +258,22 @@ struct UninstallerContentView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.name)
                     .font(Theme.Stats.font12Medium)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                    .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                     .lineLimit(1).truncationMode(.middle)
                 Text(prettyPath(item.url))
                     .font(Theme.Stats.font10Regular)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                    .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                     .lineLimit(1).truncationMode(.head)
             }
             Spacer()
             Text(UtilityKit.byteString(item.size))
                 .font(Theme.Stats.font10Regular.monospacedDigit())
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
         }
-        .padding(.vertical, 2)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 4)
+        .listRowInsets(EdgeInsets())
+        .listRowBackground(Color.clear)
         .contextMenu {
             Button(strings.cleanerRevealInFinder) {
                 NSWorkspace.shared.activateFileViewerSelecting([item.url])
@@ -295,10 +287,10 @@ struct UninstallerContentView: View {
                 Text(String(format: strings.uninstallerSelectedFormat,
                             uninstaller.items.filter(\.include).count, uninstaller.items.count))
                     .font(Theme.Stats.font12Medium)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                    .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                 Text(UtilityKit.byteString(uninstaller.selectedSize))
                     .font(Theme.Stats.font10Regular)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                    .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
             }
             Spacer()
             Button(strings.uninstallerCancel) { uninstaller.reset() }

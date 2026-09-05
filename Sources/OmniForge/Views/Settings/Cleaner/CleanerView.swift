@@ -205,10 +205,10 @@ struct CleanerContentView: View {
             VStack(spacing: 6) {
                 Text(strings.cleanerIntroTitle)
                     .font(Theme.Stats.font13SemiBold)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                    .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                 Text(strings.cleanerIntroCaption)
                     .font(Theme.Stats.font11Regular)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                    .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: 380)
@@ -292,28 +292,22 @@ struct CleanerContentView: View {
         .fixedSize()
     }
 
-    /// 调度在一张小卡片里：一个频率，开启后是工作日和时间（纯菜单）、一行实时"下次清理"证明
-    /// 调度已武装，以及带着权限状态开放的通知选项。
+    /// 调度分区（平面）：区头（时钟 tint 色块）+ 频率；开启后是工作日和时间（纯菜单）、
+    /// 一行实时"下次清理"证明调度已武装，以及带着权限状态开放的通知选项。
     @ViewBuilder
     private var fullScheduleCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                UtilityGlyphTile(symbol: "clock", tint: tint, size: 26, symbolSize: 12)
-                Text(strings.cleanerScheduleTitle)
-                    .font(Theme.Stats.font12Medium)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
-                Spacer()
+            FlatSectionHeader(title: strings.cleanerScheduleTitle, accent: tint) {
                 frequencyPicker
             }
             scheduleDetails
             Text(strings.cleanerScheduleCaption)
                 .font(Theme.Stats.font10Regular)
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(12)
         .frame(maxWidth: layout.dropTargetWidth)
-        .utilityCardBackground()
+        .frame(maxWidth: .infinity)
         .modifier(ScheduleChangeSync(notify: $scheduleNotify,
                                      frequency: $scheduleFrequencyRaw,
                                      refresh: refreshNotificationStatus,
@@ -445,15 +439,13 @@ struct CleanerContentView: View {
         }
     }
 
+    /// 完全磁盘访问提示：tint 横幅（共享 PanelTintBanner，与卸载器同款）。
     private var fdaNote: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "info.circle").foregroundStyle(.secondary)
-                Text(strings.uninstallerFDANote)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+        PanelTintBanner(
+            icon: "info.circle",
+            tint: Theme.Stats.cpu,
+            title: strings.uninstallerFDANote
+        ) {
             HStack(spacing: 8) {
                 Button(strings.uninstallerFDAGrant) { permissions.requestFullDiskAccess() }
                 Button(strings.uninstallerFDARelaunch) {
@@ -462,9 +454,7 @@ struct CleanerContentView: View {
             }
             .controlSize(.small)
         }
-        .padding(12)
         .frame(maxWidth: layout.dropTargetWidth)
-        .utilityInsetBackground()
     }
 
     // MARK: Busy
@@ -475,20 +465,20 @@ struct CleanerContentView: View {
             SparkleGlyph(animating: true, size: 54, tint: tint)
             Text(message)
                 .font(Theme.Stats.font13SemiBold)
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
             if let detail {
                 Text(detail)
                     .font(Theme.Stats.font11Regular)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                    .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
             }
             if canCancel, let progressText = scanningProgressText {
                 Text(progressText)
                     .font(Theme.Stats.font10Regular.monospacedDigit())
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
+                    .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
                 if let currentName = cleaner.scanProgress?.currentName {
                     Text(currentName)
                         .font(Theme.Stats.font10Regular)
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                        .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .frame(maxWidth: 420)
@@ -518,11 +508,7 @@ struct CleanerContentView: View {
     private var resultsState: some View {
         VStack(spacing: 0) {
             resultsHero
-                .padding(.horizontal, layout == .compact ? 12 : 16)
-                .padding(.top, layout == .compact ? 12 : 16)
-                .padding(.bottom, 10)
-            Divider()
-                .overlay(Theme.Stats.separator)
+            FlatHairline()
             if cleaner.items.isEmpty, cleaner.scanFailures.isEmpty {
                 VStack(spacing: 10) {
                     Spacer(minLength: 24)
@@ -531,32 +517,37 @@ struct CleanerContentView: View {
                         .foregroundStyle(Theme.Stats.statusNormal)
                     Text(strings.cleanerNothingFound)
                         .font(Theme.Stats.font13SemiBold)
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
+                        .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
                     Spacer(minLength: 24)
                 }
                 .frame(maxWidth: .infinity)
             } else {
                 List {
                     if !cleaner.scanFailures.isEmpty {
-                        Section(strings.toolFailed) {
+                        Section {
                             ForEach(cleaner.scanFailures) { failure in
                                 scanFailureRow(failure)
                             }
+                        } header: {
+                            FlatSectionHeader(title: strings.toolFailed, accent: Theme.Stats.ram)
+                                .textCase(nil)
                         }
                     }
-                    section(strings.cleanerSafeSection, groups: DisplayGroup.allCases.filter(\.isSafe))
-                    section(strings.cleanerOptionalSection, groups: DisplayGroup.allCases.filter { !$0.isSafe })
+                    section(strings.cleanerSafeSection, accent: Theme.Stats.statusNormal,
+                            groups: DisplayGroup.allCases.filter(\.isSafe))
+                    section(strings.cleanerOptionalSection, accent: Theme.Stats.ram,
+                            groups: DisplayGroup.allCases.filter { !$0.isSafe })
                 }
-                .listStyle(.inset)
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
                 .utilityResultsListHeight(layout)
-                Divider()
-                    .overlay(Theme.Stats.separator)
+                FlatHairline()
                 resultsFooter
             }
         }
     }
 
-    /// 结果页主角：徽章 + 总量大数字 + 安全/可选比例条与图例。
+    /// 结果页主角：徽章 + 总量大数字 + 安全/可选比例条与图例（平铺白底）。
     private var resultsHero: some View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
@@ -564,19 +555,19 @@ struct CleanerContentView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(strings.cleanerName)
                         .font(Theme.Stats.font13SemiBold)
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                        .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                     Text(String(format: strings.uninstallerFoundItemsFormat, cleaner.items.count))
                         .font(Theme.Stats.font11Regular)
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                        .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                 }
                 Spacer()
                 Text(UtilityKit.byteString(cleaner.totalSize))
                     .font(.system(size: 20, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                    .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                 Button { cleaner.reset() } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 16))
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                        .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                 }
                 .buttonStyle(.plain)
             }
@@ -595,8 +586,8 @@ struct CleanerContentView: View {
                 }
             }
         }
-        .padding(12)
-        .utilityCardBackground()
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     private func legendDot(color: Color, title: String, size: Int64) -> some View {
@@ -604,19 +595,22 @@ struct CleanerContentView: View {
             Circle().fill(color).frame(width: 6, height: 6)
             Text(title)
                 .font(Theme.Stats.font10Regular)
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
+                .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
             Text(UtilityKit.byteString(size))
                 .font(Theme.Stats.font10Regular.monospacedDigit())
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
         }
     }
 
     @ViewBuilder
-    private func section(_ header: String, groups: [DisplayGroup]) -> some View {
+    private func section(_ header: String, accent: Color, groups: [DisplayGroup]) -> some View {
         let visible = groups.filter { !items(for: $0).isEmpty }
         if !visible.isEmpty {
-            Section(header) {
+            Section {
                 ForEach(visible) { group in groupRow(group) }
+            } header: {
+                FlatSectionHeader(title: header, accent: accent)
+                    .textCase(nil)
             }
         }
     }
@@ -632,7 +626,7 @@ struct CleanerContentView: View {
             if group == .loginItems {
                 Text(strings.cleanerLoginItemsNote)
                     .font(Theme.Stats.font10Regular)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                    .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
             }
             ForEach(groupItems) { item in itemRow(item) }
         } label: {
@@ -650,20 +644,23 @@ struct CleanerContentView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title(for: group))
                         .font(Theme.Stats.font12Medium)
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                        .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                     Text(caption(for: group))
                         .font(Theme.Stats.font10Regular)
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                        .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
                 Text(UtilityKit.byteString(groupItems.reduce(0) { $0 + $1.size }))
                     .font(Theme.Stats.font11Regular.monospacedDigit())
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
+                    .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
                     .padding(.top, 1)
             }
-            .padding(.vertical, 3)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 5)
         }
+        .listRowInsets(EdgeInsets())
+        .listRowBackground(Color.clear)
     }
 
     private func itemRow(_ item: JunkCleaner.Item) -> some View {
@@ -676,21 +673,22 @@ struct CleanerContentView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.name)
                     .font(Theme.Stats.font12Medium)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                    .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                     .lineLimit(1).truncationMode(.middle)
                 Text(prettyPath(item.url))
                     .font(Theme.Stats.font10Regular)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                    .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                     .lineLimit(1).truncationMode(.head)
             }
             Spacer(minLength: 8)
             Text(UtilityKit.byteString(item.size))
                 .font(Theme.Stats.font10Regular.monospacedDigit())
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                 .padding(.top, 1)
         }
-        .padding(.leading, 8)
-        .padding(.vertical, 1)
+        .padding(.leading, 24)
+        .padding(.trailing, 16)
+        .padding(.vertical, 3)
         .contextMenu {
             Button(strings.cleanerRevealInFinder) {
                 NSWorkspace.shared.activateFileViewerSelecting([item.url])
@@ -703,7 +701,7 @@ struct CleanerContentView: View {
             Text(String(format: strings.uninstallerSelectedFormat,
                         cleaner.selectedCount, cleaner.items.count))
                 .font(Theme.Stats.font11Regular)
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
             Spacer()
             Button(strings.uninstallerCancel) { cleaner.reset() }
                 .font(Theme.Stats.font12Medium)
@@ -745,6 +743,11 @@ struct CleanerContentView: View {
             .font(.caption)
             .foregroundStyle(.orange)
             .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 4)
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
     }
 
     // MARK: Helpers

@@ -143,7 +143,7 @@ struct UtilityDoneView<Buttons: View>: View {
 
                 Text(strings.toolFreedLabel)
                     .font(Theme.Stats.font11Regular)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                    .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                     .padding(.top, -8)
 
                 if failedCount > 0, let warning {
@@ -157,7 +157,7 @@ struct UtilityDoneView<Buttons: View>: View {
                 if let note {
                     Text(note)
                         .font(Theme.Stats.font10Regular)
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                        .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 340)
                 }
@@ -191,7 +191,11 @@ struct UtilityDoneView<Buttons: View>: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .utilityInsetBackground()
+            .background(
+                // inset 数据行语言：浅灰底圆角块（原 utilityInsetBackground 内联）
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(colorScheme == .dark ? Color.white.opacity(0.08) : Theme.Stats.cardInset)
+            )
         }
     }
 
@@ -204,7 +208,7 @@ struct UtilityDoneView<Buttons: View>: View {
                     Circle().fill(Theme.Stats.statusNormal).frame(width: 7, height: 7)
                     Text(String(format: strings.toolSucceededSummaryFormat, succeeded.count))
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                        .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                     Spacer()
                     Text(detailsExpanded ? strings.toolHideDetails : strings.toolShowDetails)
                         .font(.caption2)
@@ -212,7 +216,7 @@ struct UtilityDoneView<Buttons: View>: View {
                         .font(.system(size: 9, weight: .semibold))
                         .rotationEffect(.degrees(detailsExpanded ? 90 : 0))
                 }
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
+                .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
