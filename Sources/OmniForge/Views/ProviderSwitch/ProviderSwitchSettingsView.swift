@@ -71,6 +71,8 @@ struct ProviderSwitchSettingsView: View {
     @State private var editingProfile: ProviderProfile?
     @State private var deletingProfile: ProviderProfile?
     @State private var adoptingName = ""
+    /// 发起收编的展示中工具（Host displayedTool，收编确认时使用发起时目标）。
+    @State private var adoptingTool: ProviderTool = .claudeCode
     @State private var confirmingRebuildTool: ProviderTool?
     @State private var editorTool: ProviderTool?
     @State private var backupTool: ProviderTool?
@@ -90,17 +92,20 @@ struct ProviderSwitchSettingsView: View {
                 semantics: { _, _ in .peer },
                 surface: { _ in .clear }
             ) { tool in
+                // 内容与操作目标一律消费 Host 提供的 displayedTool（SPEC §6.3.1）：
+                // exiting 期间旧 tool 内容保持可见，交换点才换成新 tool；
+                // selectedTool 只承担导航请求职责。
                 VStack(alignment: .leading, spacing: 0) {
-                    providerList
+                    providerList(for: tool)
 
-                    unmanagedBanner
-                    corruptedBanner
+                    unmanagedBanner(for: tool)
+                    corruptedBanner(for: tool)
 
                     if presentation.showsInlineAddProviderButton {
-                        addProviderButton
+                        addProviderButton(for: tool)
                     }
 
-                    footerLinks
+                    footerLinks(for: tool)
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
@@ -170,14 +175,14 @@ struct ProviderSwitchSettingsView: View {
     // MARK: - 平面列表
 
     /// 官方 + Profile 平面列表：行间 1pt 发丝线分隔（无卡片底/描边/阴影）。
-    private var providerList: some View {
+    private func providerList(for tool: ProviderTool) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            officialRow
+            officialRow(for: tool)
 
-            let profiles = manager.profiles(for: selectedTool)
+            let profiles = manager.profiles(for: tool)
             ForEach(profiles) { profile in
                 hairline
-                profileRow(profile)
+                profileRow(profile, tool: tool)
             }
         }
     }
@@ -191,20 +196,20 @@ struct ProviderSwitchSettingsView: View {
 
     // MARK: - 官方行
 
-    private var officialRow: some View {
-        let isActive = isOfficialActive
+    private func officialRow(for tool: ProviderTool) -> some View {
+        let isActive = isOfficialActive(tool: tool)
         return Button {
             if !isActive {
-                activateOfficial()
+                activateOfficial(tool: tool)
             }
         } label: {
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(ProviderBrandVisual.officialColor(for: selectedTool))
+                        .fill(ProviderBrandVisual.officialColor(for: tool))
                         .frame(width: 36, height: 36)
                     // 显式约束尺寸：GlyphView 内部 GeometryReader 是贪婪布局，不约束会撑爆布局。
-                    ProviderLogoGlyphView(layers: ProviderBrandVisual.officialLogo(for: selectedTool))
+                    ProviderLogoGlyphView(layers: ProviderBrandVisual.officialLogo(for: tool))
                         .frame(width: 36, height: 36)
                 }
 
@@ -212,7 +217,7 @@ struct ProviderSwitchSettingsView: View {
                     Text(strings.providerOfficial)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Color.primary)
-                    Text(officialCaption)
+                    Text(officialCaption(for: tool))
                         .font(.system(size: 12.5))
                         .foregroundStyle(Color.secondary)
                         .lineLimit(1)
@@ -231,15 +236,15 @@ struct ProviderSwitchSettingsView: View {
         .buttonStyle(.plain)
     }
 
-    private var officialCaption: String {
-        switch selectedTool {
+    private func officialCaption(for tool: ProviderTool) -> String {
+        switch tool {
         case .claudeCode: return strings.providerOfficialClaudeCaption
         case .codex: return strings.providerOfficialCodexCaption
         }
     }
 
-    private var isOfficialActive: Bool {
-        switch manager.active(tool: selectedTool) {
+    private func isOfficialActive(tool: ProviderTool) -> Bool {
+        switch manager.active(tool: tool) {
         case .official: return true
         case .profile, .unmanaged, .unreadable: return false
         }
@@ -247,8 +252,8 @@ struct ProviderSwitchSettingsView: View {
 
     // MARK: - Profile 行
 
-    private func profileRow(_ profile: ProviderProfile) -> some View {
-        let active = isActive(profile)
+    private func profileRow(_ profile: ProviderProfile, tool: ProviderTool) -> some View {
+        let active = isActive(profile, tool: tool)
         let visual = ProviderBrandVisual.resolve(for: profile)
         let hostSummary = ProviderURLFormatter.hostOrSummary(from: profile.baseURL)
 
@@ -321,8 +326,8 @@ struct ProviderSwitchSettingsView: View {
         .padding(.vertical, 12)
     }
 
-    private func isActive(_ profile: ProviderProfile) -> Bool {
-        manager.active(tool: selectedTool) == .profile(profileID: profile.id)
+    private func isActive(_ profile: ProviderProfile, tool: ProviderTool) -> Bool {
+        manager.active(tool: tool) == .profile(profileID: profile.id)
     }
 
     // MARK: - 徽章与警示横幅
@@ -373,9 +378,9 @@ struct ProviderSwitchSettingsView: View {
 
     // MARK: - 「+ 新增供应商」主按钮
 
-    private var addProviderButton: some View {
+    private func addProviderButton(for tool: ProviderTool) -> some View {
         Button {
-            addProvider()
+            addProvider(tool: tool)
         } label: {
             Text(strings.providerAddProvider)
                 .font(.system(size: 13.5, weight: .medium))
@@ -401,11 +406,11 @@ struct ProviderSwitchSettingsView: View {
 
     // MARK: - 居中辅助链接
 
-    private var footerLinks: some View {
+    private func footerLinks(for tool: ProviderTool) -> some View {
         HStack(spacing: 8) {
             if presentation.showsFooterAddProviderLink {
                 Button(strings.providerAddProvider) {
-                    addProvider()
+                    addProvider(tool: tool)
                 }
                 .buttonStyle(ProviderFooterLinkButtonStyle())
 
@@ -415,7 +420,7 @@ struct ProviderSwitchSettingsView: View {
             }
 
             Button(strings.providerEditConfigFile) {
-                editorTool = selectedTool
+                editorTool = tool
             }
             .buttonStyle(ProviderFooterLinkButtonStyle())
 
@@ -424,7 +429,7 @@ struct ProviderSwitchSettingsView: View {
                 .foregroundStyle(Color.secondary.opacity(0.5))
 
             Button(strings.providerRestoreBackup) {
-                backupTool = selectedTool
+                backupTool = tool
             }
             .buttonStyle(ProviderFooterLinkButtonStyle())
         }
@@ -435,8 +440,8 @@ struct ProviderSwitchSettingsView: View {
     // MARK: - 未托管 / 损坏警示
 
     @ViewBuilder
-    private var unmanagedBanner: some View {
-        if case .unmanaged(let summary) = manager.active(tool: selectedTool) {
+    private func unmanagedBanner(for tool: ProviderTool) -> some View {
+        if case .unmanaged(let summary) = manager.active(tool: tool) {
             hairline
             warningBanner(
                 icon: "exclamationmark.triangle.fill",
@@ -445,15 +450,17 @@ struct ProviderSwitchSettingsView: View {
                 message: String(format: strings.providerActiveUnmanagedSummaryFormat, summary),
                 actionTitle: strings.providerUnmanagedAdopt
             ) {
+                // 记录发起时目标：确认动作作用于该 displayed tool（SPEC §6.3.1 操作目标）。
                 adoptingName = summary
+                adoptingTool = tool
                 adoptPromptPresented = true
             }
         }
     }
 
     @ViewBuilder
-    private var corruptedBanner: some View {
-        if case .unreadable = manager.active(tool: selectedTool) {
+    private func corruptedBanner(for tool: ProviderTool) -> some View {
+        if case .unreadable = manager.active(tool: tool) {
             hairline
             warningBanner(
                 icon: "xmark.octagon.fill",
@@ -462,7 +469,7 @@ struct ProviderSwitchSettingsView: View {
                 message: strings.providerActiveUnreadableCaption,
                 actionTitle: strings.providerCorruptedBackupAndRebuild
             ) {
-                confirmingRebuildTool = selectedTool
+                confirmingRebuildTool = tool
                 rebuildPromptPresented = true
             }
         }
@@ -470,17 +477,18 @@ struct ProviderSwitchSettingsView: View {
 
     // MARK: - 动作
 
-    private func addProvider() {
+    private func addProvider(tool: ProviderTool) {
         switch presentation.addProviderRoute {
         case .profileEditor:
-            addingProfileForTool = selectedTool
+            addingProfileForTool = tool
         case .providerSettings:
             onOpenSettings(.providerSwitch)
         }
     }
 
+    /// 收编确认弹层文案：按发起时捕获的 tool 取未托管摘要。
     private var unmanagedSummary: String {
-        guard case .unmanaged(let summary) = manager.active(tool: selectedTool) else { return "" }
+        guard case .unmanaged(let summary) = manager.active(tool: adoptingTool) else { return "" }
         return summary
     }
 
@@ -492,9 +500,9 @@ struct ProviderSwitchSettingsView: View {
         }
     }
 
-    private func activateOfficial() {
+    private func activateOfficial(tool: ProviderTool) {
         do {
-            present(outcome: try manager.switchToOfficial(tool: selectedTool))
+            present(outcome: try manager.switchToOfficial(tool: tool))
         } catch {
             showToast(String(format: strings.providerSwitchFailedFormat, error.localizedDescription))
         }
@@ -525,7 +533,7 @@ struct ProviderSwitchSettingsView: View {
         let name = adoptingName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
         do {
-            _ = try manager.adoptUnmanaged(tool: selectedTool, name: name)
+            _ = try manager.adoptUnmanaged(tool: adoptingTool, name: name)
             showToast(String(format: strings.providerSwitchDoneFormat, name))
         } catch ProviderSwitchManagerError.missingUnmanagedValues {
             showToast(strings.providerUnmanagedAdoptError)
