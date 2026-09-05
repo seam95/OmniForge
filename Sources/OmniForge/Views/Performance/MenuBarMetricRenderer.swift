@@ -8,6 +8,10 @@ enum MenuBarMetricRenderer {
         let value: String
         let minimumValue: String
         var pressure: MemoryPressure? = nil
+        /// 第二行值与预留（网速堆叠布局专用）：非 nil 时整块按双行小字渲染、不绘制 label，
+        /// label 仅作为 compact 水位键与测试标识保留
+        var secondaryValue: String? = nil
+        var secondaryMinimumValue: String? = nil
     }
 
     /// 根据快照和启用的指标渲染多栏 attributed string 分组（每组为 attachment 图像）
@@ -231,14 +235,16 @@ enum MenuBarMetricRenderer {
     private static func networkBlock(for snapshot: SystemSnapshot, uploadFirst: Bool) -> MetricBlock {
         let down = MetricFormat.bytesPerSec(snapshot.netDownBytesPerSec) ?? "--"
         let up = MetricFormat.bytesPerSec(snapshot.netUpBytesPerSec) ?? "--"
-        let value: String
-        if uploadFirst {
-            value = "↑\(up) ↓\(down)"
-        } else {
-            value = "↓\(down) ↑\(up)"
-        }
-        // 网速位数变化大，用较宽占位降低抖动
-        return MetricBlock(label: "NET", value: value, minimumValue: "↓000.0 MB/s ↑000.0 MB/s")
+        // 双行堆叠：箭头承担原 NET 标签的方向语义；每行独立用绝对占位防单位切换抖动
+        let first = uploadFirst ? ("↑", up) : ("↓", down)
+        let second = uploadFirst ? ("↓", down) : ("↑", up)
+        return MetricBlock(
+            label: "NET",
+            value: "\(first.0)\(first.1)",
+            minimumValue: "\(first.0)000.0 MB/s",
+            secondaryValue: "\(second.0)\(second.1)",
+            secondaryMinimumValue: "\(second.0)000.0 MB/s"
+        )
     }
 
     private static func pressureLabel(_ pressure: MemoryPressure) -> String {
@@ -283,7 +289,9 @@ enum MenuBarMetricRenderer {
             value: block.value,
             minimumValue: block.minimumValue,
             spacing: spacing,
-            pressure: block.pressure
+            pressure: block.pressure,
+            secondaryValue: block.secondaryValue,
+            secondaryMinimumValue: block.secondaryMinimumValue
         )
         let attachment = NSTextAttachment()
         attachment.image = image
@@ -292,14 +300,26 @@ enum MenuBarMetricRenderer {
         return NSAttributedString(attachment: attachment)
     }
 
-    /// 绘制 label/value 双行块；宽度取 max(value, 预留候选) 避免位数/单位变化抖动
+    /// 绘制 label/value 双行块；宽度取 max(value, 预留候选) 避免位数/单位变化抖动。
+    /// 提供 secondaryValue 时切换为网速双行堆叠布局（无 label、小号字、逐行预留）。
     static func metricBlockImage(
         label: String,
         value: String,
         minimumValue reservedValue: String,
         spacing: MenuBarMetricSpacing = .standard,
-        pressure: MemoryPressure? = nil
+        pressure: MemoryPressure? = nil,
+        secondaryValue: String? = nil,
+        secondaryMinimumValue: String? = nil
     ) -> NSImage {
+        if let secondaryValue {
+            return stackedValueImage(
+                first: value,
+                minimumFirst: reservedValue,
+                second: secondaryValue,
+                minimumSecond: secondaryMinimumValue ?? reservedValue
+            )
+        }
+
         let labelFont = NSFont.systemFont(ofSize: 6.6, weight: .medium)
         let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 12.0, weight: .semibold)
         let sizingLabelAttrs: [NSAttributedString.Key: Any] = [.font: labelFont]
@@ -402,6 +422,51 @@ enum MenuBarMetricRenderer {
 
         let image = NSImage(size: pointSize)
         image.addRepresentation(rep)
+        return image
+    }
+
+    /// 网速双行堆叠块：取消 NET 标签与单行超宽预留，上下行各带方向箭头。
+    /// 行宽按「当前值与绝对占位取 max」——绝对占位已覆盖单位切换，
+    /// 两种间距模式行为一致；块高保持 21 与其他指标对齐。
+    private static func stackedValueImage(
+        first: String,
+        minimumFirst: String,
+        second: String,
+        minimumSecond: String
+    ) -> NSImage {
+        let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 9.5, weight: .semibold)
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: valueFont,
+            .foregroundColor: NSColor.labelColor
+        ]
+
+        func lineWidth(_ text: String, _ minimum: String) -> CGFloat {
+            max(
+                (text as NSString).size(withAttributes: attrs).width,
+                (minimum as NSString).size(withAttributes: attrs).width
+            )
+        }
+
+        let firstWidth = lineWidth(first, minimumFirst)
+        let secondWidth = lineWidth(second, minimumSecond)
+        let width = ceil(max(firstWidth, secondWidth, MenuBarMetricLayout.minItemWidth) + 0.5)
+        let height: CGFloat = 21
+
+        let image = NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in
+            NSColor.clear.setFill()
+            NSRect(x: 0, y: 0, width: width, height: height).fill()
+
+            (first as NSString).draw(
+                at: NSPoint(x: (width - firstWidth) / 2, y: 11.6),
+                withAttributes: attrs
+            )
+            (second as NSString).draw(
+                at: NSPoint(x: (width - secondWidth) / 2, y: 1.4),
+                withAttributes: attrs
+            )
+            return true
+        }
+        image.isTemplate = false
         return image
     }
 

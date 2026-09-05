@@ -39,11 +39,13 @@ final class MenuBarMetricRendererTests: XCTestCase {
         var config = MonitorConfiguration()
         config.networkUploadFirst = false
         let downloadFirst = firstBlock(for: snapshot, metrics: [.network], configuration: config)
-        XCTAssertEqual(downloadFirst.value, "↓1.4 MB/s ↑488 KB/s")
+        XCTAssertEqual(downloadFirst.value, "↓1.4 MB/s")
+        XCTAssertEqual(downloadFirst.secondaryValue, "↑488 KB/s")
 
         config.networkUploadFirst = true
         let uploadFirst = firstBlock(for: snapshot, metrics: [.network], configuration: config)
-        XCTAssertEqual(uploadFirst.value, "↑488 KB/s ↓1.4 MB/s")
+        XCTAssertEqual(uploadFirst.value, "↑488 KB/s")
+        XCTAssertEqual(uploadFirst.secondaryValue, "↓1.4 MB/s")
     }
 
     func test_attributedTitle_joinsConfiguredGroups() {
@@ -76,7 +78,8 @@ final class MenuBarMetricRendererTests: XCTestCase {
         XCTAssertEqual(blocks[0].label, "RAM")
         XCTAssertEqual(blocks[0].value, "25%")
         XCTAssertEqual(blocks[1].label, "NET")
-        XCTAssertEqual(blocks[1].value, "↑2.0 KB/s ↓1000 B/s")
+        XCTAssertEqual(blocks[1].value, "↑2.0 KB/s")
+        XCTAssertEqual(blocks[1].secondaryValue, "↓1000 B/s")
     }
 
     func test_metricBlockWidth_isStableForDigitChanges() {
@@ -244,24 +247,63 @@ final class MenuBarMetricRendererTests: XCTestCase {
         MenuBarMetricLayout.resetCompactHighWaterForTesting()
         let netSlow = MenuBarMetricRenderer.metricBlockImage(
             label: "NET",
-            value: "↓6.0 KB/s ↑0 B/s",
-            minimumValue: "↓000.0 MB/s ↑000.0 MB/s",
-            spacing: .compact
+            value: "↓6.0 KB/s",
+            minimumValue: "↓000.0 MB/s",
+            secondaryValue: "↑0 B/s",
+            secondaryMinimumValue: "↑000.0 MB/s"
         )
         let netFast = MenuBarMetricRenderer.metricBlockImage(
             label: "NET",
-            value: "↓212 KB/s ↑6.0 KB/s",
-            minimumValue: "↓000.0 MB/s ↑000.0 MB/s",
-            spacing: .compact
+            value: "↓212 KB/s",
+            minimumValue: "↓000.0 MB/s",
+            secondaryValue: "↑6.0 KB/s",
+            secondaryMinimumValue: "↑000.0 MB/s"
         )
         let netPeak = MenuBarMetricRenderer.metricBlockImage(
             label: "NET",
-            value: "↓12.5 MB/s ↑3.2 MB/s",
-            minimumValue: "↓000.0 MB/s ↑000.0 MB/s",
-            spacing: .compact
+            value: "↓12.5 MB/s",
+            minimumValue: "↓000.0 MB/s",
+            secondaryValue: "↑3.2 MB/s",
+            secondaryMinimumValue: "↑000.0 MB/s"
         )
         XCTAssertEqual(netSlow.size.width, netFast.size.width, accuracy: 1.0)
         XCTAssertEqual(netSlow.size.width, netPeak.size.width, accuracy: 1.0)
+    }
+
+    /// 网速堆叠布局：双行小字无 label，块高不变，宽度被绝对占位压到紧凑量级
+    func test_networkStacked_layoutIsCompactAndStable() {
+        MenuBarMetricLayout.resetCompactHighWaterForTesting()
+        let image = MenuBarMetricRenderer.metricBlockImage(
+            label: "NET",
+            value: "↓21 KB/s",
+            minimumValue: "↓000.0 MB/s",
+            secondaryValue: "↑290 KB/s",
+            secondaryMinimumValue: "↑000.0 MB/s"
+        )
+
+        // 块高与其他指标一致（21pt），保证菜单栏基线对齐
+        XCTAssertEqual(image.size.height, 21)
+        // 单行 12pt 时代预留 "↓000.0 MB/s ↑000.0 MB/s" 约 150pt；堆叠后应显著收窄
+        XCTAssertLessThan(image.size.width, 80)
+        XCTAssertGreaterThanOrEqual(image.size.width, MenuBarMetricLayout.minItemWidth)
+
+        // 预留生效：慢速/快速/峰值同宽，网速波动不推挤相邻指标
+        let peak = MenuBarMetricRenderer.metricBlockImage(
+            label: "NET",
+            value: "↓999.9 MB/s",
+            minimumValue: "↓000.0 MB/s",
+            secondaryValue: "↑0.0 MB/s",
+            secondaryMinimumValue: "↑000.0 MB/s"
+        )
+        let slow = MenuBarMetricRenderer.metricBlockImage(
+            label: "NET",
+            value: "↓0 B/s",
+            minimumValue: "↓000.0 MB/s",
+            secondaryValue: "↑0 B/s",
+            secondaryMinimumValue: "↑000.0 MB/s"
+        )
+        XCTAssertEqual(slow.size.width, image.size.width, accuracy: 1.0)
+        XCTAssertEqual(slow.size.width, peak.size.width, accuracy: 1.0)
     }
 
     func test_compactAttributedTitle_cpuDigitChangeKeepsWidth() {
@@ -352,7 +394,8 @@ final class MenuBarMetricRendererTests: XCTestCase {
         XCTAssertEqual(blocks.map(\.label), ["CPU", "GPU", "NET"])
         XCTAssertEqual(blocks[0].value, "--")
         XCTAssertEqual(blocks[1].value, "--")
-        XCTAssertEqual(blocks[2].value, "↓-- ↑--")
+        XCTAssertEqual(blocks[2].value, "↓--")
+        XCTAssertEqual(blocks[2].secondaryValue, "↑--")
     }
 
     /// 预览位图必须按指定 backing scale 光栅化，且点尺寸与像素严格对应，
