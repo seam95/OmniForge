@@ -187,8 +187,8 @@ final class MenuBarMetricRendererTests: XCTestCase {
     }
 
     func test_layoutSpacingConstants_matchExpected() {
-        XCTAssertEqual(MenuBarMetricLayout.compactSpacing, 4)
-        XCTAssertEqual(MenuBarMetricLayout.standardSpacing, 8)
+        XCTAssertEqual(MenuBarMetricLayout.compactSpacing, 3)
+        XCTAssertEqual(MenuBarMetricLayout.standardSpacing, 5)
         XCTAssertEqual(MenuBarMetricLayout.minItemWidth, 28)
     }
 
