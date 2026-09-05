@@ -95,13 +95,8 @@ final class StatusBarMetricCoordinator {
             if let mainButton {
                 // 合并模式：主图标 + attributedTitle（metrics attachment）
                 mainButton.image = hideMainIcon ? nil : mainIcon
-                // 图标与指标之间留 1 个空格（有图标时）
-                let title = NSMutableAttributedString()
-                if !hideMainIcon {
-                    title.append(NSAttributedString(string: " "))
-                }
-                title.append(mergedTitle)
-                mainButton.attributedTitle = title
+                // imageLeading 自带图标与标题间距，不再追加空格字符
+                mainButton.attributedTitle = mergedTitle
                 mainButton.imagePosition = hideMainIcon ? .noImage : .imageLeading
                 mainButton.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
                 mainButton.alignment = .left

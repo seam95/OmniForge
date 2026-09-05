@@ -420,56 +420,69 @@ enum MenuBarMetricRenderer {
         return image
     }
 
-    /// 网速双行堆叠块：取消 NET 标签与单行超宽预留，上下行各带方向箭头。
-    /// 行宽按「会话内位数高水位」同形占位（两行独立水位键），
-    /// 位数/单位首次跨越时行宽跳变一次后稳定；块高保持 21 与其他指标对齐。
+    /// 网速双行堆叠块（Stats 风格布局）：箭头固定左列 + 数值定宽列右对齐。
+    /// - 箭头两行同 x 对齐，承担方向语义：下载 ↓ 蓝、上传 ↑ 红（uploadFirst 决定行序）
+    /// - 数值画在恒定宽度的列内右对齐（个位对齐），数值/单位变化不改变块宽，
+    ///   左侧图标不再随网速波动移动
+    /// - 低于 1 KB/s（近无流量）时箭头与数值淡化，复刻参考实现的弱化语义
+    /// - 块高保持 21 与其他指标对齐
     private static func stackedValueImage(
         first: String,
         firstWatermarkLabel: String,
         second: String,
         secondWatermarkLabel: String
     ) -> NSImage {
-        // 9.5pt：可读性优先（9pt 笔画过细视觉发虚）；↑↓ 箭头字形墨水上下
-        // 超出常规行框，两行实墨总高略超 label/value 块内容高度，无法两端
-        // 像素精确对齐，取垂直居中（顶高 1px、底低 2px @2x，视觉不感知）
-        let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 9.5, weight: .semibold)
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: valueFont,
-            .foregroundColor: NSColor.labelColor
-        ]
+        _ = firstWatermarkLabel
+        _ = secondWatermarkLabel
 
-        func lineWidth(_ text: String, _ watermarkLabel: String) -> CGFloat {
-            let reserve = MenuBarMetricLayout.compactReserve(label: watermarkLabel, value: text)
-            return max(
-                (text as NSString).size(withAttributes: attrs).width,
-                (reserve as NSString).size(withAttributes: attrs).width
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 9.5, weight: .semibold)
+
+        // 箭头 = 行首字符；数值 = 其余部分（"↓1.4 MB/s" → "1.4 MB/s"）
+        func split(_ row: String) -> (arrow: String, value: String, isIdle: Bool) {
+            let arrow = String(row.prefix(1))
+            let value = String(row.dropFirst())
+            return (arrow, value, value.contains(" B/s"))
+        }
+        let firstRow = split(first)
+        let secondRow = split(second)
+
+        // 定宽布局：箭头列 8 + 间隙 2 + 数值列 45（MetricFormat ≥10 无小数，
+        // 全段最宽形态 "888 KB/s" ≈ 43.7pt）
+        let arrowColumn: CGFloat = 8
+        let valueColumn: CGFloat = 45
+        let width = ceil(arrowColumn + 2 + valueColumn)
+        let height: CGFloat = 21
+
+        func drawRow(_ row: (arrow: String, value: String, isIdle: Bool), baselineY: CGFloat) {
+            let arrowColor: NSColor = row.isIdle ? .secondaryLabelColor : arrowTint(row.arrow)
+            let valueColor: NSColor = row.isIdle ? .secondaryLabelColor : .labelColor
+
+            (row.arrow as NSString).draw(
+                at: NSPoint(x: 0, y: baselineY),
+                withAttributes: [.font: font, .foregroundColor: arrowColor]
+            )
+            let valueWidth = (row.value as NSString).size(withAttributes: [.font: font]).width
+            (row.value as NSString).draw(
+                at: NSPoint(x: width - valueWidth, y: baselineY),
+                withAttributes: [.font: font, .foregroundColor: valueColor]
             )
         }
-
-        let firstWidth = lineWidth(first, firstWatermarkLabel)
-        let secondWidth = lineWidth(second, secondWatermarkLabel)
-        let width = ceil(max(firstWidth, secondWidth, MenuBarMetricLayout.minItemWidth) + 0.5)
-        let height: CGFloat = 21
 
         let image = NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in
             NSColor.clear.setFill()
             NSRect(x: 0, y: 0, width: width, height: height).fill()
-
-            // 基线经 2x 位图像素校准：两行内容垂直中心与 label/value 块
-            // 内容中心一致（顶高 1px、底低 2px，均在 ±3px 对齐容差内）。
-            // 详见 test_networkStacked_verticalAlignmentMatchesLabelValueBlocks
-            (first as NSString).draw(
-                at: NSPoint(x: (width - firstWidth) / 2, y: 9.5),
-                withAttributes: attrs
-            )
-            (second as NSString).draw(
-                at: NSPoint(x: (width - secondWidth) / 2, y: 0.4),
-                withAttributes: attrs
-            )
+            // 基线经 2x 位图像素校准：两行内容垂直中心与 label/value 块内容中心一致
+            drawRow(firstRow, baselineY: 9.5)
+            drawRow(secondRow, baselineY: 0.4)
             return true
         }
         image.isTemplate = false
         return image
+    }
+
+    /// 方向箭头着色：下载蓝、上传红（对齐参考实现的 input/output 语义）
+    private static func arrowTint(_ arrow: String) -> NSColor {
+        arrow == "↓" ? .systemBlue : .systemRed
     }
 
     private static func spacerAttachment(width: CGFloat) -> NSAttributedString {

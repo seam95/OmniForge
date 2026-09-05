@@ -4,10 +4,9 @@ import AppKit
 /// 菜单栏指标布局配置
 enum MenuBarMetricLayout {
     static let minItemWidth: CGFloat = 28
-    // 块间 spacer：防抖占位已使每块自带 ~5.5pt 单侧空白，
-    // 视觉间隙 = spacer + 两侧块内空白，spacer 过大会让菜单栏显得松散
-    static let compactSpacing: CGFloat = 3
-    static let standardSpacing: CGFloat = 5
+    // 块间 spacer：对齐参考实现（Stats）的 widget 间距 2pt
+    static let compactSpacing: CGFloat = 2
+    static let standardSpacing: CGFloat = 2
 
     /// compact 模式至少预留的数字位数（覆盖 0–99，避免 9%↔10% 抖动）
     static let compactMinimumDigits = 2

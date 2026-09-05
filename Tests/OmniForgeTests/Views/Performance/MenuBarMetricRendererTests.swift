@@ -184,8 +184,8 @@ final class MenuBarMetricRendererTests: XCTestCase {
     }
 
     func test_layoutSpacingConstants_matchExpected() {
-        XCTAssertEqual(MenuBarMetricLayout.compactSpacing, 3)
-        XCTAssertEqual(MenuBarMetricLayout.standardSpacing, 5)
+        XCTAssertEqual(MenuBarMetricLayout.compactSpacing, 2)
+        XCTAssertEqual(MenuBarMetricLayout.standardSpacing, 2)
         XCTAssertEqual(MenuBarMetricLayout.minItemWidth, 28)
     }
 
@@ -224,7 +224,7 @@ final class MenuBarMetricRendererTests: XCTestCase {
         XCTAssertEqual(afterSpike, "888%")
     }
 
-    /// compact 与 standard 占位行为一致（位数高水位），仅 spacer 不同
+    /// compact 与 standard 占位行为一致（位数高水位）；网速堆叠块走定宽布局不参与水位
     func test_compactMetricBlockWidth_usesDigitWatermark() {
         MenuBarMetricLayout.resetCompactHighWaterForTesting()
         let low = MenuBarMetricRenderer.metricBlockImage(
@@ -241,7 +241,7 @@ final class MenuBarMetricRendererTests: XCTestCase {
         )
         XCTAssertEqual(low.size.width, mid.size.width, accuracy: 1.0)
 
-        // 网速堆叠行：同位数稳定、跨位变宽一次、回落保持峰宽
+        // 网速堆叠块：定宽布局，任何形态宽度恒等
         MenuBarMetricLayout.resetCompactHighWaterForTesting()
         let netSlow = MenuBarMetricRenderer.metricBlockImage(
             label: "NET",
@@ -250,15 +250,6 @@ final class MenuBarMetricRendererTests: XCTestCase {
             secondaryValue: "↑0.5 KB/s",
             secondaryMinimumValue: "↑000.0 MB/s"
         )
-        let netSameDigits = MenuBarMetricRenderer.metricBlockImage(
-            label: "NET",
-            value: "↓8.8 KB/s",
-            minimumValue: "↓000.0 MB/s",
-            secondaryValue: "↑1.2 KB/s",
-            secondaryMinimumValue: "↑000.0 MB/s"
-        )
-        XCTAssertEqual(netSlow.size.width, netSameDigits.size.width, accuracy: 1.0)
-
         let netPeak = MenuBarMetricRenderer.metricBlockImage(
             label: "NET",
             value: "↓12.5 MB/s",
@@ -266,46 +257,81 @@ final class MenuBarMetricRendererTests: XCTestCase {
             secondaryValue: "↑3.2 MB/s",
             secondaryMinimumValue: "↑000.0 MB/s"
         )
-        XCTAssertGreaterThan(netPeak.size.width, netSlow.size.width)
-
-        let netAfterPeak = MenuBarMetricRenderer.metricBlockImage(
+        let netIdle = MenuBarMetricRenderer.metricBlockImage(
             label: "NET",
-            value: "↓6.0 KB/s",
+            value: "↓1023 B/s",
             minimumValue: "↓000.0 MB/s",
-            secondaryValue: "↑0.5 KB/s",
+            secondaryValue: "↑0 B/s",
             secondaryMinimumValue: "↑000.0 MB/s"
         )
-        // 水位保位数不保单位字母宽度（mono 字体仅数字等宽，M 略宽于 K），
-        // 峰值后回落同位数允许 ≤3pt 的单位字母差
-        XCTAssertEqual(netAfterPeak.size.width, netPeak.size.width, accuracy: 3.0)
+        XCTAssertEqual(netSlow.size.width, netPeak.size.width, accuracy: 0.5)
+        XCTAssertEqual(netSlow.size.width, netIdle.size.width, accuracy: 0.5)
     }
 
-    /// 网速堆叠布局：双行小字无 label，块高不变，常态宽度紧凑（高水位起步）
-    func test_networkStacked_layoutIsCompactAndStable() {
-        MenuBarMetricLayout.resetCompactHighWaterForTesting()
-        let image = MenuBarMetricRenderer.metricBlockImage(
+    /// 网速堆叠布局（Stats 风格）：箭头固定左列、数值定宽右对齐、块宽恒定
+    func test_networkStacked_layoutIsCompactAndStable() throws {
+        let image = try XCTUnwrap(MenuBarMetricRenderer.metricBlockImage(
             label: "NET",
             value: "↓21 KB/s",
             minimumValue: "↓000.0 MB/s",
             secondaryValue: "↑290 KB/s",
             secondaryMinimumValue: "↑000.0 MB/s"
-        )
+        ))
 
         // 块高与其他指标一致（21pt），保证菜单栏基线对齐
         XCTAssertEqual(image.size.height, 21)
-        // 位数高水位起步（"↓88 KB/s" 量级），显著低于绝对占位（"↓000.0 MB/s" ≈60pt）
-        XCTAssertLessThan(image.size.width, 55)
-        XCTAssertGreaterThanOrEqual(image.size.width, MenuBarMetricLayout.minItemWidth)
 
-        // 同位数波动同宽：网速刷新不推挤相邻指标
-        let sameDigits = MenuBarMetricRenderer.metricBlockImage(
-            label: "NET",
-            value: "↓35 KB/s",
-            minimumValue: "↓000.0 MB/s",
-            secondaryValue: "↑188 KB/s",
-            secondaryMinimumValue: "↑000.0 MB/s"
-        )
-        XCTAssertEqual(sameDigits.size.width, image.size.width, accuracy: 1.0)
+        // 块宽恒定：数值/单位任意变化（B/KB/MB 跨段、位数跨越）宽度不变，
+        // 左侧图标不再随网速波动移动
+        let variants: [(String, String)] = [
+            ("↓1023 B/s", "↑0 B/s"),
+            ("↓9.9 KB/s", "↑888 KB/s"),
+            ("↓12.5 MB/s", "↑3.2 MB/s"),
+            ("↓8.8 GB/s", "↑0.9 GB/s"),
+            ("↓--", "↑--"),
+        ]
+        for (down, up) in variants {
+            let variant = MenuBarMetricRenderer.metricBlockImage(
+                label: "NET",
+                value: down,
+                minimumValue: "↓000.0 MB/s",
+                secondaryValue: up,
+                secondaryMinimumValue: "↑000.0 MB/s"
+            )
+            XCTAssertEqual(variant.size.width, image.size.width, accuracy: 0.5, "\(down) / \(up)")
+        }
+
+        // 箭头列对齐：两行箭头起始 x 相同（渲染 2x 位图扫描首墨水列）
+        XCTAssertEqual(try arrowColumnX(of: image, row: 0), try arrowColumnX(of: image, row: 1), accuracy: 1.5)
+    }
+
+    /// 渲染 2x 位图，扫描指定行（0=上行）的首个墨水列位置
+    private func arrowColumnX(of image: NSImage, row: Int) throws -> CGFloat {
+        let scale: CGFloat = 2
+        let w = Int(image.size.width * scale), h = Int(image.size.height * scale)
+        let rep = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ))
+        rep.size = image.size
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        image.draw(in: NSRect(origin: .zero, size: image.size))
+        NSGraphicsContext.restoreGraphicsState()
+
+        // row 0 = 上半（colorAt y 0..h/2），row 1 = 下半
+        let yRange = row == 0 ? 0..<(h/2) : (h/2)..<h
+        for x in 0..<w {
+            for y in yRange {
+                guard let c = rep.colorAt(x: x, y: y) else { continue }
+                if c.alphaComponent > 0.3 {
+                    return CGFloat(x)
+                }
+            }
+        }
+        struct ScanError: Error {}
+        throw ScanError()
     }
 
     /// 网速堆叠块与 label/value 块顶底对齐：渲染到 2x 位图扫描墨水行段，
