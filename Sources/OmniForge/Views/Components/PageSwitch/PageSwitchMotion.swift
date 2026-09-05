@@ -19,6 +19,9 @@ enum PageSwitchMotionToken {
     /// 过滤器选中态（SPEC §5.2：过滤器只动局部，不做页面转场）。
     static let filterSelectionDuration: TimeInterval = 0.12
 
+    /// 平级内容过渡时长（Onboarding 步骤等非 Host 编排切换复用）。
+    static let peerContentDuration: TimeInterval = 0.12
+
     static var filterSelection: Animation {
         .easeOut(duration: filterSelectionDuration)
     }
@@ -31,6 +34,14 @@ enum PageSwitchMotionToken {
                 response: indicatorSpringResponse,
                 dampingFraction: indicatorSpringDamping
             )
+    }
+
+    /// 平级内容过渡（Onboarding 步骤等未经 Host 编排的页面级切换复用，
+    /// SPEC §5.1）；Reduce Motion 下降级为 80ms 淡切。
+    static func peerContent(reduceMotion: Bool) -> Animation {
+        reduceMotion
+            ? .easeOut(duration: PageSwitchMotion.reduceMotionMaxDuration)
+            : .easeOut(duration: peerContentDuration)
     }
 }
 

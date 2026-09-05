@@ -31,6 +31,7 @@ struct TabPanelView: View {
                     indicatorAnimation: PageSwitchMotionToken.selectionIndicator(
                         reduceMotion: reduceMotion
                     ),
+                    reducesIndicatorMotion: reduceMotion,
                     action: {
                         tabState.selectedTab = tab
                     }
@@ -85,6 +86,8 @@ private struct TabButton: View {
     let indicatorNamespace: Namespace.ID
     /// 选中底块滑移动画（Reduce Motion 下降级为透明度过渡）。
     var indicatorAnimation: Animation = PageSwitchMotionToken.selectionIndicator(reduceMotion: false)
+    /// Reduce Motion：取消 matchedGeometry 位置插值，底块就地淡切（SPEC §7.4.3）。
+    var reducesIndicatorMotion = false
     let action: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
@@ -98,11 +101,19 @@ private struct TabButton: View {
                 .padding(.vertical, 6)
                 .background(
                     ZStack {
+                        // Reduce Motion 下底块就地渲染 + 透明度过渡，无位置插值（SPEC §7.4.3）。
                         if isSelected {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(selectedBackground)
-                                .shadow(color: Color.black.opacity(0.1), radius: 2, y: 1)
-                                .matchedGeometryEffect(id: Self.activeIndicatorID, in: indicatorNamespace)
+                            if reducesIndicatorMotion {
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(selectedBackground)
+                                    .shadow(color: Color.black.opacity(0.1), radius: 2, y: 1)
+                                    .transition(.opacity)
+                            } else {
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(selectedBackground)
+                                    .shadow(color: Color.black.opacity(0.1), radius: 2, y: 1)
+                                    .matchedGeometryEffect(id: Self.activeIndicatorID, in: indicatorNamespace)
+                            }
                         }
                     }
                 )

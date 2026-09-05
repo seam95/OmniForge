@@ -5,6 +5,7 @@ import SwiftUI
 struct OnboardingView: View {
     @ObservedObject var coordinator: OnboardingCoordinator
     @ObservedObject var l10n: L10n
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
@@ -19,8 +20,12 @@ struct OnboardingView: View {
                     .tag(3)
             }
             .tabViewStyle(.automatic)
-            // 步骤切换与全应用页面级转场同曲线（统一节奏，无过冲）。
-            .animation(Theme.Animation.pageTransition, value: coordinator.currentStep)
+            // 步骤切换复用统一 Motion Policy（SPEC §5.1）：平级内容过渡，
+            // Reduce Motion 下降级为 80ms 淡切。
+            .animation(
+                PageSwitchMotionToken.peerContent(reduceMotion: reduceMotion),
+                value: coordinator.currentStep
+            )
 
             Divider()
 

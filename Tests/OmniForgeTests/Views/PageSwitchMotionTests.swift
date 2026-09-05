@@ -47,6 +47,15 @@ final class PageSwitchMotionTests: XCTestCase {
         }
     }
 
+    func test_peerContentToken_matchesPeerEnterPace() {
+        XCTAssertEqual(PageSwitchMotionToken.peerContentDuration, 0.12, accuracy: 0.001)
+        XCTAssertLessThanOrEqual(
+            PageSwitchMotion.reduceMotionMaxDuration,
+            PageSwitchMotionToken.peerContentDuration,
+            "Reduce Motion 分支时长不得超过常规分支"
+        )
+    }
+
     func test_selectionIndicatorToken_matchesSpecSpring() {
         XCTAssertEqual(PageSwitchMotionToken.indicatorSpringResponse, 0.22, accuracy: 0.001)
         XCTAssertEqual(PageSwitchMotionToken.indicatorSpringDamping, 1, accuracy: 0.001)

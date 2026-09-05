@@ -101,7 +101,8 @@ struct ControlCenterContainerView: View {
                     indicatorNamespace: navIndicator,
                     indicatorAnimation: PageSwitchMotionToken.selectionIndicator(
                         reduceMotion: reduceMotion
-                    )
+                    ),
+                    reducesIndicatorMotion: reduceMotion
                 ) {
                     // 动画统一由 value 驱动（对齐主浮窗 tab 模式）：
                     // 点击、resolveSelection 等任意赋值路径下底块与内容同享一套转场。
@@ -467,6 +468,8 @@ private struct ControlCenterNavButton: View {
     let indicatorNamespace: Namespace.ID
     /// 选中底块滑移动画（Reduce Motion 下降级为透明度过渡）。
     var indicatorAnimation: Animation = PageSwitchMotionToken.selectionIndicator(reduceMotion: false)
+    /// Reduce Motion：取消 matchedGeometry 位置插值，底块就地淡切（SPEC §7.4.3）。
+    var reducesIndicatorMotion = false
     let action: () -> Void
 
     @State private var isHovered = false
@@ -495,12 +498,20 @@ private struct ControlCenterNavButton: View {
         .foregroundStyle(isActive ? (colorScheme == .light ? Theme.Stats.text1 : Color.white) : (isHovered ? (colorScheme == .light ? Theme.Stats.text1 : Color.primary) : (colorScheme == .light ? Theme.Stats.text2 : Color.secondary)))
         .background(
             ZStack {
-                // 选中底块：matchedGeometry 让矩形从上一个按钮滑移过来，而非就地出现。
+                // 选中底块：matchedGeometry 让矩形从上一个按钮滑移过来，而非就地出现；
+                // Reduce Motion 下就地渲染 + 透明度过渡，无位置插值（SPEC §7.4.3）。
                 if isActive {
-                    RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous)
-                        .fill(activeFill)
-                        .shadow(color: Color.black.opacity(colorScheme == .light ? 0.06 : 0.0), radius: 2, x: 0, y: 1)
-                        .matchedGeometryEffect(id: Self.activeIndicatorID, in: indicatorNamespace)
+                    if reducesIndicatorMotion {
+                        RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous)
+                            .fill(activeFill)
+                            .shadow(color: Color.black.opacity(colorScheme == .light ? 0.06 : 0.0), radius: 2, x: 0, y: 1)
+                            .transition(.opacity)
+                    } else {
+                        RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous)
+                            .fill(activeFill)
+                            .shadow(color: Color.black.opacity(colorScheme == .light ? 0.06 : 0.0), radius: 2, x: 0, y: 1)
+                            .matchedGeometryEffect(id: Self.activeIndicatorID, in: indicatorNamespace)
+                    }
                 } else if isHovered {
                     RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous)
                         .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04))
