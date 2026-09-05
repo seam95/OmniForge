@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 @testable import OmniForge
 
 final class ProviderSwitchSettingsViewTests: XCTestCase {
@@ -42,17 +43,33 @@ final class ProviderSwitchSettingsViewTests: XCTestCase {
     }
 
     func test_providerCardVisual_constants() {
-        // 卡片化视觉常量（设计稿对齐）：圆角 14 / 间距 10 / logo 44 圆角 12。
+        // 卡片化视觉常量（设计稿对齐）：圆角 14 / 间距 10 / logo 40 圆角 12。
         XCTAssertEqual(ProviderCardVisual.cornerRadius, 14)
         XCTAssertEqual(ProviderCardVisual.cardSpacing, 10)
-        XCTAssertEqual(ProviderCardVisual.logoSize, 44)
+        XCTAssertEqual(ProviderCardVisual.logoSize, 40)
         XCTAssertEqual(ProviderCardVisual.logoCornerRadius, 12)
-        XCTAssertEqual(ProviderCardVisual.background, .white)
+        XCTAssertEqual(ProviderCardVisual.normalCardFill, .white)
     }
 
     func test_providerCardVisual_activeBorder_usesAccentTint() {
-        // 激活描边为 accent tint：必须与非激活发丝描边区分开。
-        XCTAssertNotEqual(ProviderCardVisual.activeBorder, ProviderCardVisual.border)
+        // 激活描边为强调蓝 35% 透明度（设计稿关键值）：必须与非激活发丝描边区分开。
+        for scheme in [ColorScheme.light, .dark] {
+            XCTAssertNotEqual(ProviderCardVisual.activeBorder(scheme), ProviderCardVisual.border)
+        }
+    }
+
+    func test_providerBrandVisual_designContainerOverrides() {
+        // 设计稿 logo 容器：DeepSeek 浅蓝底 #E8F1FB + 蓝标，Kimi 墨黑底 #1D1D1F + 白标。
+        let deepseek = ProviderBrandVisual.visual(name: "DeepSeek", baseURL: "https://api.deepseek.com")
+        XCTAssertEqual(deepseek.containerColor, Color(red: 0xE8 / 255.0, green: 0xF1 / 255.0, blue: 0xFB / 255.0))
+        XCTAssertEqual(deepseek.logoTint, Color(red: 0x00 / 255.0, green: 0x66 / 255.0, blue: 0xCC / 255.0))
+
+        let kimi = ProviderBrandVisual.visual(name: "Kimi 月之暗面", baseURL: "https://api.moonshot.cn")
+        XCTAssertEqual(kimi.containerColor, Color(red: 0x1D / 255.0, green: 0x1D / 255.0, blue: 0x1F / 255.0))
+        XCTAssertNil(kimi.logoTint)
+
+        // 未覆盖品牌保持 nil（走品牌色底 + 白标兜底）。
+        XCTAssertNil(ProviderBrandVisual.visual(name: "MyCustomProvider", baseURL: "https://example.com").containerColor)
     }
 
     func test_launchCommandCopyLocalization_isAvailable() {
