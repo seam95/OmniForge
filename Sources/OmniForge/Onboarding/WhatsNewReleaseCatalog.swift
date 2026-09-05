@@ -11,6 +11,19 @@ enum WhatsNewReleaseCatalog {
     /// 历次版本的更新内容，新版本在前
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            version: "3.5",
+            entries: [
+                WhatsNewEntry(type: .added, text: "监控面板全新平面分区设计，折线图悬浮可查看各时间点具体数值"),
+                WhatsNewEntry(type: .added, text: "Token 面板平面化改版，新增「余额 / 用量」双分区切换"),
+                WhatsNewEntry(type: .added, text: "供应商列表升级为卡片式设计，品牌标识更醒目"),
+                WhatsNewEntry(type: .added, text: "实用工具各页统一平面分区风格：便签、DSH、网络诊断、卸载器与清理"),
+                WhatsNewEntry(type: .added, text: "菜单栏网速块改为双行堆叠布局，上下行速度同屏可见"),
+                WhatsNewEntry(type: .added, text: "控制中心面板高度自适应内容，打开后位置保持稳定"),
+                WhatsNewEntry(type: .changed, text: "页面切换动画全局统一，转场更流畅"),
+                WhatsNewEntry(type: .fixed, text: "剪贴板粘贴不再抢占输入焦点；修复监控页底部灰带等多项细节"),
+            ]
+        ),
+        WhatsNewRelease(
             version: "3.4",
             entries: [
                 WhatsNewEntry(type: .added, text: "桌面便签新增字号档位调节，工具栏 Aa 按钮即时切换小 / 中 / 大三档"),

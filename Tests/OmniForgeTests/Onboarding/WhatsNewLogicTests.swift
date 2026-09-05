@@ -35,7 +35,7 @@ final class WhatsNewLogicTests: XCTestCase {
     func test_catalog_releases_areDescending() {
         let releases = WhatsNewReleaseCatalog.releases
         guard releases.count >= 2 else { return }
-        for (older, newer) in zip(releases, releases.dropFirst()) {
+        for (newer, older) in zip(releases, releases.dropFirst()) {
             XCTAssertTrue(
                 WhatsNewReleaseCatalog.compareVersions(newer.version, older.version) > 0,
                 "目录必须新版本在前（\(newer.version) 应晚于 \(older.version)）"
