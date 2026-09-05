@@ -3,7 +3,9 @@ import XCTest
 
 /// SPEC §7 Motion Token 与 §7.4 Reduce Motion 策略。
 final class PageSwitchMotionTests: XCTestCase {
-    private let allSemantics: [PageSwitchSemantics] = [.peer, .forward, .backward]
+    private let allSemantics: [PageSwitchSemantics] = [
+        .peer, .lateralForward, .lateralBackward, .forward, .backward,
+    ]
 
     func test_peerMotion_matchesSpecTokens() {
         let motion = PageSwitchMotion.resolved(semantics: .peer, reduceMotion: false)
@@ -27,6 +29,47 @@ final class PageSwitchMotionTests: XCTestCase {
         XCTAssertEqual(motion.enterStartOffsetX, -12)
         XCTAssertEqual(motion.exitDuration, 0.07, accuracy: 0.001)
         XCTAssertEqual(motion.enterDuration, 0.13, accuracy: 0.001)
+    }
+
+    func test_lateralSemantics_shareDirectionalMotionWithHierarchy() {
+        // 平级滑移与层级 push 有意共享位移语言（SPEC 三期），仅语义来源不同。
+        let forward = PageSwitchMotion.resolved(semantics: .forward, reduceMotion: false)
+        let lateralForward = PageSwitchMotion.resolved(semantics: .lateralForward, reduceMotion: false)
+        XCTAssertEqual(lateralForward.exitDuration, forward.exitDuration, accuracy: 0.001)
+        XCTAssertEqual(lateralForward.enterDuration, forward.enterDuration, accuracy: 0.001)
+        XCTAssertEqual(lateralForward.exitOffsetX, forward.exitOffsetX)
+        XCTAssertEqual(lateralForward.enterStartOffsetX, forward.enterStartOffsetX)
+
+        let backward = PageSwitchMotion.resolved(semantics: .backward, reduceMotion: false)
+        let lateralBackward = PageSwitchMotion.resolved(semantics: .lateralBackward, reduceMotion: false)
+        XCTAssertEqual(lateralBackward.exitDuration, backward.exitDuration, accuracy: 0.001)
+        XCTAssertEqual(lateralBackward.enterDuration, backward.enterDuration, accuracy: 0.001)
+        XCTAssertEqual(lateralBackward.exitOffsetX, backward.exitOffsetX)
+        XCTAssertEqual(lateralBackward.enterStartOffsetX, backward.enterStartOffsetX)
+    }
+
+    func test_lateralResolution_byNavigationOrder() {
+        let order = ["monitor", "token", "tools"]
+        XCTAssertEqual(
+            PageSwitchSemantics.lateral(from: "monitor", to: "token", order: order),
+            .lateralForward,
+            "目标在源右侧 → lateralForward"
+        )
+        XCTAssertEqual(
+            PageSwitchSemantics.lateral(from: "tools", to: "token", order: order),
+            .lateralBackward,
+            "目标在源左侧 → lateralBackward"
+        )
+        XCTAssertEqual(
+            PageSwitchSemantics.lateral(from: "monitor", to: "monitor", order: order),
+            .peer,
+            "相同 route 回退纯淡切"
+        )
+        XCTAssertEqual(
+            PageSwitchSemantics.lateral(from: "monitor", to: "unknown", order: order),
+            .peer,
+            "order 外 route 回退纯淡切，不猜测"
+        )
     }
 
     func test_reduceMotion_zeroesAllOffsetsAndCapsDurations() {

@@ -130,11 +130,13 @@ struct TokenUsagePanelView: View {
                 sectionSwitcherRow
                     .padding(.horizontal, 12)
                     .padding(.bottom, 6)
-                // 余额/用量平级切换：单活动树分阶段淡出后淡入（SPEC §6）。
+                // 余额/用量平级切换：按分段顺序方向化滑移（SPEC 三期）。
                 // 分区行（分段 + 齿轮）位于 Host 外，不随内容重建。
                 PageSwitchHost(
                     requestedRoute: selectedSection,
-                    semantics: { _, _ in .peer },
+                    semantics: { from, to in
+                        .lateral(from: from, to: to, order: TokenPanelSection.allCases)
+                    },
                     surface: { _ in .clear },
                     onRouteMountedBarrier: sizingContext.map { context in
                         { section, proceed in

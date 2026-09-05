@@ -5,7 +5,7 @@ import SwiftUI
 // 顶部分段（网络｜端口）持久化到 UserDefaults；进入详情 onAppear 各自动采一次，
 // 切换分段不重采，手动刷新由各分段工具条触发。
 
-private enum NetworkDiagnosticsSegment: String {
+private enum NetworkDiagnosticsSegment: String, CaseIterable {
     case network
     case ports
 }
@@ -38,10 +38,12 @@ struct NetworkDiagnosticsView: View {
             .padding(.top, 2)
             .padding(.bottom, 6)
 
-            // 网络/端口平级切换：单活动树分阶段淡出后淡入（SPEC §6）。
+            // 网络/端口平级切换：按分段顺序方向化滑移（SPEC 三期）。
             PageSwitchHost(
                 requestedRoute: segment,
-                semantics: { _, _ in .peer },
+                semantics: { from, to in
+                    .lateral(from: from, to: to, order: NetworkDiagnosticsSegment.allCases)
+                },
                 surface: { _ in .clear },
                 onRouteMountedBarrier: sizingContext.map { context in
                     { segment, proceed in

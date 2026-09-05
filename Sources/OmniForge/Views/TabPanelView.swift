@@ -50,10 +50,12 @@ struct TabPanelView: View {
 
     @ViewBuilder
     private var contentView: some View {
-        // 剪贴板历史/快捷短语平级切换：单活动树分阶段淡出后淡入（SPEC §6）。
+        // 剪贴板历史/快捷短语平级切换：按 tab 顺序方向化滑移（SPEC 三期）。
         PageSwitchHost(
             requestedRoute: tabState.selectedTab,
-            semantics: { _, _ in .peer },
+            semantics: { from, to in
+                .lateral(from: from, to: to, order: TabPanel.allCases)
+            },
             surface: { _ in .clear }
         ) { tab in
             switch tab {

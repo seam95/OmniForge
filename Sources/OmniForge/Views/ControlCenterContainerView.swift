@@ -177,7 +177,10 @@ struct ControlCenterContainerView: View {
         PageSwitchHost(
             requestedRoute: MenuPanel.resolvedSelection(selectedPanel, in: visiblePanels)
                 ?? .systemMonitor,
-            semantics: { _, _ in .peer },
+            // 面板平级滑移：方向按实际可见面板序（可用性变化时以当前序为准）。
+            semantics: { from, to in
+                .lateral(from: from, to: to, order: visiblePanels)
+            },
             surface: panelSurface,
             onDisplayedSurfaceChange: { panel, _ in
                 displayedPanel = panel

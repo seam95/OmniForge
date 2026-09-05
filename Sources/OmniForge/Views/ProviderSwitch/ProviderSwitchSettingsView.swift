@@ -86,11 +86,13 @@ struct ProviderSwitchSettingsView: View {
         VStack(alignment: .leading, spacing: 0) {
             sectionSwitcherRow
 
-            // Claude Code / Codex 平级切换：单活动树分阶段淡出后淡入（SPEC §6），
+            // Claude Code / Codex 平级切换：按工具分段顺序方向化滑移（SPEC 三期），
             // 不再整树交叉淡化；Provider 状态（展开/编辑 sheet 目标）不随切换重建。
             PageSwitchHost(
                 requestedRoute: selectedTool,
-                semantics: { _, _ in .peer },
+                semantics: { from, to in
+                    .lateral(from: from, to: to, order: ProviderTool.allCases)
+                },
                 surface: { _ in .clear },
                 onRouteMountedBarrier: sizingContext.map { context in
                     { tool, proceed in

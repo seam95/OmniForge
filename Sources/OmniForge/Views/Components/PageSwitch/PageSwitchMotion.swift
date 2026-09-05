@@ -4,10 +4,23 @@ import SwiftUI
 enum PageSwitchSemantics {
     /// 平级页面：淡出后淡入，无位移。
     case peer
+    /// 平级横向滑移：tab 有左右顺序，目标在源右侧（内容左移、新页自右进）。
+    case lateralForward
+    /// 平级横向滑移：目标在源左侧。
+    case lateralBackward
     /// 层级前进：进入下一层。
     case forward
     /// 层级返回：回到上一层。
     case backward
+
+    /// 按导航顺序解析平级滑移方向（目标在源右侧 = lateralForward）；
+    /// 任一 route 不在 order 或二者相同 → 回退纯淡切（.peer），不猜测。
+    static func lateral<Value: Equatable>(from: Value, to: Value, order: [Value]) -> PageSwitchSemantics {
+        guard let fromIndex = order.firstIndex(of: from),
+              let toIndex = order.firstIndex(of: to),
+              fromIndex != toIndex else { return .peer }
+        return fromIndex < toIndex ? .lateralForward : .lateralBackward
+    }
 }
 
 /// SPEC §7.1 Motion Token 常量：数值暴露以便确定性断言。
@@ -89,15 +102,17 @@ struct PageSwitchMotion {
                 exitOffsetX: 0,
                 enterStartOffsetX: 0
             )
-        case .forward:
+        case .forward, .lateralForward:
             // 前进：旧页向退出方向轻移，新页自前进方向 12pt 处进入。
+            // lateral 平级滑移有意共享层级 push 位移：单一「方向化滑移」
+            // 视觉语言，语义差异仅体现在 case 来源（tab 顺序 vs 层级）。
             base = .init(
                 exitDuration: 0.07,
                 enterDuration: 0.13,
                 exitOffsetX: -4,
                 enterStartOffsetX: 12
             )
-        case .backward:
+        case .backward, .lateralBackward:
             base = .init(
                 exitDuration: 0.07,
                 enterDuration: 0.13,
