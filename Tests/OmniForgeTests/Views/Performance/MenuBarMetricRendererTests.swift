@@ -306,6 +306,57 @@ final class MenuBarMetricRendererTests: XCTestCase {
         XCTAssertEqual(slow.size.width, peak.size.width, accuracy: 1.0)
     }
 
+    /// 网速堆叠块与 label/value 块顶底对齐：渲染到 2x 位图扫描墨水行段，
+    /// NET 首行顶 ≈ label 顶、末行底 ≈ value 底（容差 ±3px @2x，吸收字体微调差异）
+    func test_networkStacked_verticalAlignmentMatchesLabelValueBlocks() throws {
+        let cpu = MenuBarMetricRenderer.metricBlockImage(
+            label: "CPU",
+            value: "42%",
+            minimumValue: "100%"
+        )
+        let net = MenuBarMetricRenderer.metricBlockImage(
+            label: "NET",
+            value: "↓1.4 MB/s",
+            minimumValue: "↓000.0 MB/s",
+            secondaryValue: "↑488 KB/s",
+            secondaryMinimumValue: "↑000.0 MB/s"
+        )
+
+        func inkRows(_ image: NSImage) -> (top: Int, bottom: Int)? {
+            let scale: CGFloat = 2
+            let w = Int(image.size.width * scale), h = Int(image.size.height * scale)
+            guard let rep = NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h,
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+            ) else { return nil }
+            rep.size = image.size
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+            image.draw(in: NSRect(origin: .zero, size: image.size))
+            NSGraphicsContext.restoreGraphicsState()
+
+            var top: Int?, bottom: Int?
+            for y in 0..<h {
+                for x in 0..<w {
+                    guard let c = rep.colorAt(x: x, y: y) else { continue }
+                    if c.alphaComponent > 0.3 {
+                        top = top ?? y
+                        bottom = y
+                        break
+                    }
+                }
+            }
+            guard let t = top, let b = bottom else { return nil }
+            return (t, b)
+        }
+
+        let cpuSpan = try XCTUnwrap(inkRows(cpu))
+        let netSpan = try XCTUnwrap(inkRows(net))
+        XCTAssertEqual(netSpan.top, cpuSpan.top, accuracy: 3)
+        XCTAssertEqual(netSpan.bottom, cpuSpan.bottom, accuracy: 3)
+    }
+
     func test_compactAttributedTitle_cpuDigitChangeKeepsWidth() {
         MenuBarMetricLayout.resetCompactHighWaterForTesting()
         var snapLow = SystemSnapshot()

@@ -434,7 +434,9 @@ enum MenuBarMetricRenderer {
         second: String,
         minimumSecond: String
     ) -> NSImage {
-        let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 9.5, weight: .semibold)
+        // 9.0pt：↑↓ 箭头字形墨水上下超出常规行框，9.5pt 两行实墨总高超出
+        // label/value 块内容高度，无法两端同时对齐；9pt 为像素实测最优解
+        let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 9.0, weight: .semibold)
         let attrs: [NSAttributedString.Key: Any] = [
             .font: valueFont,
             .foregroundColor: NSColor.labelColor
@@ -456,12 +458,15 @@ enum MenuBarMetricRenderer {
             NSColor.clear.setFill()
             NSRect(x: 0, y: 0, width: width, height: height).fill()
 
+            // 基线经像素校准（2x 位图扫描）：行1 顶与 label 顶精确对齐（4px），
+            // 行2 底与 value 底差 1px（0.5pt，视觉不可辨）；行间 1pt。
+            // 详见 test_networkStacked_verticalAlignmentMatchesLabelValueBlocks
             (first as NSString).draw(
-                at: NSPoint(x: (width - firstWidth) / 2, y: 11.6),
+                at: NSPoint(x: (width - firstWidth) / 2, y: 10.0),
                 withAttributes: attrs
             )
             (second as NSString).draw(
-                at: NSPoint(x: (width - secondWidth) / 2, y: 1.4),
+                at: NSPoint(x: (width - secondWidth) / 2, y: 1.0),
                 withAttributes: attrs
             )
             return true
