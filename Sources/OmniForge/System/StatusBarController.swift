@@ -1044,17 +1044,25 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     }
 
     /// 当前锚点方向上 popover 可容纳的内容总高（含 chrome）：
-    /// 菜单栏锚点向下弹出 = 屏幕可见区顶部到锚点下沿（SPEC §3.1 Havailable）。
+    /// 菜单栏锚点向下弹出 = 锚点下沿到屏幕可见区底部（含 Dock 让位与
+    /// popover 装饰留量，SPEC §3.1 Havailable）。锚点位于菜单栏内、在
+    /// visibleFrame 上方，方向不可写反（否则恒 ≤0 触发全链路降级）。
     private func popoverAvailableHeight() -> CGFloat {
-        guard let screen = statusItem.button?.window?.screen ?? NSScreen.main else {
-            return NSScreen.main?.visibleFrame.height ?? 1055
-        }
         guard
             let button = statusItem.button,
-            let window = button.window
-        else { return screen.visibleFrame.height }
+            let window = button.window,
+            let screen = window.screen ?? NSScreen.main
+        else {
+            return NSScreen.main?.visibleFrame.height ?? 1055
+        }
         let anchor = window.convertToScreen(button.convert(button.bounds, to: nil))
-        return max(0, screen.visibleFrame.maxY - anchor.minY)
+        return Self.availableHeight(anchorMinY: anchor.minY, visibleFrame: screen.visibleFrame)
+    }
+
+    /// 可用高度纯计算（可测）：锚点下沿 → 可见区底部，扣除 popover
+    /// 箭头/边框装饰（阶段 0 实测 window ≈ contentSize + 26pt）。
+    nonisolated static func availableHeight(anchorMinY: CGFloat, visibleFrame: CGRect) -> CGFloat {
+        max(0, anchorMinY - visibleFrame.minY - 30)
     }
 
     func popoverDidClose(_ notification: Notification) {
