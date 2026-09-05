@@ -184,6 +184,7 @@ struct UtilityToolsView: View {
             )
             .padding(.vertical, 24)
         } else {
+            // 平面分区：行直接平铺白底（背景由转场层持有），行间 separator 分隔。
             VStack(spacing: 0) {
                 ForEach(Array(visibleTools.enumerated()), id: \.element.id) { index, tool in
                     if index > 0 {
@@ -196,10 +197,6 @@ struct UtilityToolsView: View {
                     }
                 }
             }
-            .background(UtilityListChrome.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
         }
     }
 
@@ -292,10 +289,10 @@ private struct UtilityToolRow: View {
                         .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 16)
             .padding(.vertical, 10)
             .background(
-                isHovered ? Color.primary.opacity(colorScheme == .dark ? 0.06 : 0.03) : Color.clear
+                isHovered ? MonitorOverviewPalette.hoverFill(colorScheme) : Color.clear
             )
             .contentShape(Rectangle())
         }
@@ -428,30 +425,7 @@ private struct UtilityToolDetailBar: View {
         .padding(.vertical, 8)
         .background(Color.clear)
         .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.06))
-                .frame(height: 1)
-        }
-    }
-}
-
-private enum UtilityListChrome {
-    @ViewBuilder
-    static var cardBackground: some View {
-        UtilityListCardBackground()
-    }
-}
-
-private struct UtilityListCardBackground: View {
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        Group {
-            if colorScheme == .dark {
-                Color.white.opacity(0.08)
-            } else {
-                Theme.Stats.cardBackground
-            }
+            FlatHairline()
         }
     }
 }
