@@ -388,15 +388,10 @@ struct ControlCenterContainerView: View {
         let flat = displayedPanel == .systemMonitor || displayedPanel == .tokenUsage || displayedPanel == .providerSwitch
         let tint = flat ? MonitorOverviewPalette.primary(colorScheme) : nil
 
-        return VStack(spacing: 0) {
-            if flat {
-                Rectangle()
-                    .fill(MonitorOverviewPalette.hairline(colorScheme))
-                    .frame(height: 1)
-            }
-
-            HStack {
-                FooterButton(
+        // footer 几何跨面板恒定（SPEC §3.1.3/§8.1）：flat 发丝线经 overlay 叠加，
+        // 不占布局高度——非 flat 面板不再因少 1pt 分隔线改变 popover 总高。
+        return HStack {
+            FooterButton(
                     label: state.l10n.s.settingsTitle,
                     systemImage: "gearshape",
                     tint: tint
@@ -423,12 +418,18 @@ struct ControlCenterContainerView: View {
                     }
                 }
             }
-            .frame(height: 36)
-            .padding(.horizontal, 12)
-        }
+        .frame(height: 36)
+        .padding(.horizontal, 12)
         .padding(.bottom, 6)
         .frame(maxWidth: .infinity)
         .background(flat && colorScheme == .light ? Color.white : Color.clear)
+        .overlay(alignment: .top) {
+            if flat {
+                Rectangle()
+                    .fill(MonitorOverviewPalette.hairline(colorScheme))
+                    .frame(height: 1)
+            }
+        }
     }
 
     private func resolveSelection(in visiblePanels: [MenuPanel]) {

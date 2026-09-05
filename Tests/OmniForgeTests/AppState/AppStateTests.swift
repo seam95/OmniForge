@@ -306,7 +306,7 @@ final class AppStateTests: XCTestCase {
 }
 
 @MainActor
-private func makeStateForObservation() -> AppState {
+func makeStateForObservation() -> AppState {
     let defaults = UserDefaults(suiteName: "AppStateTests_observation")!
     defaults.removePersistentDomain(forName: "AppStateTests_observation")
     return AppState(

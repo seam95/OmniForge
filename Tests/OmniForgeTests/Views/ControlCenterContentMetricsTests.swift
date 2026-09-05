@@ -135,3 +135,79 @@ private extension NSView {
         return nil
     }
 }
+
+/// 真实容器总尺寸稳定性（SPEC §3.1.3/§8.1）：挂载真实 ControlCenterContainerView，
+/// 五个主页面切换全程 popover 内容的固有总高恒定（≤0.5pt 偏差），
+/// 防止 footer 条件样式等回归引入按 route 变化的窗口几何。
+@MainActor
+final class ControlCenterShellSizeStabilityTests: XCTestCase {
+    func test_shellIntrinsicSize_stableAcrossAllPanels() async throws {
+        // 五个功能全部置为可用，保证五个主页面都渲染真实内容分支。
+        let availabilityKeys = AppFeature.allCases.map(\.availabilityKey)
+        var originals: [String: Any?] = [:]
+        for key in availabilityKeys where UserDefaults.standard.object(forKey: key) != nil {
+            originals[key] = UserDefaults.standard.object(forKey: key)
+        }
+        let panelKey = UserDefaultsKeys.lastControlCenterPanel
+        let originalPanel = UserDefaults.standard.object(forKey: panelKey)
+        for feature in AppFeature.allCases {
+            UserDefaults.standard.set(true, forKey: feature.availabilityKey)
+        }
+        defer {
+            for (key, value) in originals {
+                UserDefaults.standard.set(value, forKey: key)
+            }
+            for feature in AppFeature.allCases where originals[feature.availabilityKey] == nil {
+                UserDefaults.standard.removeObject(forKey: feature.availabilityKey)
+            }
+            if let originalPanel {
+                UserDefaults.standard.set(originalPanel, forKey: panelKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: panelKey)
+            }
+        }
+
+        let state = makeStateForObservation()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 720),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        let hosting = NSHostingView(rootView: ControlCenterContainerView(state: state))
+        window.contentView = hosting
+        window.orderFrontRegardless()
+
+        var heights: [CGFloat] = []
+        func sample(_ context: String) {
+            hosting.layoutSubtreeIfNeeded()
+            let size = hosting.fittingSize
+            heights.append(size.height)
+            print("[shell-size] \(context): \(size.height)")
+        }
+
+        try await tick(0.05)
+        sample("initial")
+
+        let panels: [MenuPanel] = [.tokenUsage, .keepAwake, .providerSwitch, .clipboard, .systemMonitor]
+        for panel in panels {
+            UserDefaults.standard.set(panel.rawValue, forKey: panelKey)
+            hosting.needsLayout = true
+            try await tick(0.08) // 转场窗口内采样（footer/displayed 已或未交换的中间态）
+            sample(panel.rawValue)
+            try await tick(0.25) // 转场完成后采样
+            sample("\(panel.rawValue)-settled")
+        }
+
+        XCTAssertGreaterThan(heights.count, 10, "sanity：采样覆盖全部切换")
+        let peakDelta = (heights.max() ?? 0) - (heights.min() ?? 0)
+        XCTAssertLessThanOrEqual(
+            peakDelta, 0.5,
+            "五个主页面切换全程 popover 固有总高偏差 ≤ 0.5pt（SPEC §3.1.3），实测 \(heights)"
+        )
+    }
+
+    private func tick(_ duration: TimeInterval) async throws {
+        try await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
+    }
+}
