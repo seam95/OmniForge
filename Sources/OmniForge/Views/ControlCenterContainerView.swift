@@ -250,10 +250,11 @@ struct ControlCenterContainerView: View {
         )
     }
 
-    /// 页面表面样式（SPEC §8.2）：token/供应商页浅色白底（平面白底风格）；
+    /// 页面表面样式（SPEC §8.2）：token/供应商/实用工具页浅色白底（平面白底风格）；
     /// 其余透明——监控 overview 白底由监控内层 route 持有（层级迁移见阶段 7）。
     private func panelSurface(_ panel: MenuPanel) -> PageSurface {
-        if (panel == .tokenUsage || panel == .providerSwitch) && colorScheme == .light {
+        if (panel == .tokenUsage || panel == .providerSwitch || panel == .clipboard)
+            && colorScheme == .light {
             return PageSurface(background: .white)
         }
         return .clear
@@ -463,10 +464,13 @@ struct ControlCenterContainerView: View {
             )
     }
 
-    /// 监控、token、供应商页为平面白底风格（对齐设计稿）：footer 与内容区同底、顶部发丝线分隔、
-    /// 按钮用主色；其余面板维持面板灰底默认样式。
+    /// 监控、token、供应商、实用工具页为平面白底风格（对齐设计稿）：footer 与内容区同底、
+    /// 顶部发丝线分隔、按钮用主色；其余面板维持面板灰底默认样式。
     private var footer: some View {
-        let flat = displayedPanel == .systemMonitor || displayedPanel == .tokenUsage || displayedPanel == .providerSwitch
+        let flat = displayedPanel == .systemMonitor
+            || displayedPanel == .tokenUsage
+            || displayedPanel == .providerSwitch
+            || displayedPanel == .clipboard
         let tint = flat ? MonitorOverviewPalette.primary(colorScheme) : nil
 
         // footer 几何跨面板恒定（SPEC §3.1.3/§8.1）：flat 发丝线经 overlay 叠加，

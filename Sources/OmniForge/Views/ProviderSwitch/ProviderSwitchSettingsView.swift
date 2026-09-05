@@ -402,7 +402,8 @@ struct ProviderSwitchSettingsView: View {
             )
     }
 
-    /// 未托管 / 损坏警示横幅：tint 底圆角卡片，融入卡片列表节奏。
+    /// 未托管 / 损坏警示横幅：tint 底圆角卡片，融入卡片列表节奏（视觉不变，
+    /// 结构下沉到共享 `PanelTintBanner`，描边与圆角对齐卡片令牌）。
     private func warningBanner(
         icon: String,
         iconColor: Color,
@@ -411,34 +412,18 @@ struct ProviderSwitchSettingsView: View {
         actionTitle: String,
         action: @escaping () -> Void
     ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: icon)
-                    .foregroundStyle(iconColor)
-                Text(title)
-                    .font(.system(size: 13.5, weight: .semibold))
-            }
-            Text(message)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-            HStack {
-                Spacer()
-                Button(actionTitle, action: action)
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-            }
+        PanelTintBanner(
+            icon: icon,
+            tint: iconColor,
+            title: title,
+            message: message,
+            cornerRadius: ProviderCardVisual.cornerRadius,
+            bordered: true
+        ) {
+            Button(actionTitle, action: action)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: ProviderCardVisual.cornerRadius, style: .continuous)
-                .fill(iconColor.opacity(colorScheme == .dark ? 0.12 : 0.06))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: ProviderCardVisual.cornerRadius, style: .continuous)
-                .strokeBorder(iconColor.opacity(colorScheme == .dark ? 0.25 : 0.15), lineWidth: 1)
-        )
         .padding(.top, ProviderCardVisual.cardSpacing)
     }
 
