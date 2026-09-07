@@ -1494,3 +1494,21 @@ struct Strings: Equatable {
     let cleaningModePermissionTitle: String
     let cleaningModePermissionAction: String
 }
+
+// MARK: - 派生文案
+
+extension Strings {
+    /// 热区 → 展示名（风扇详情页分组标题与监控页温度摘要卡 caption 共用）
+    func fanZoneName(_ zone: ThermalZone) -> String {
+        switch zone {
+        case .cpu: return fanZoneCpu
+        case .gpu: return fanZoneGpu
+        case .memory: return fanZoneMemory
+        case .ssd: return fanZoneSsd
+        case .powerDelivery: return fanZonePowerDelivery
+        case .battery: return fanZoneBattery
+        case .ambient: return fanZoneAmbient
+        case .unknown: return fanZoneUnknown
+        }
+    }
+}

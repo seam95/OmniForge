@@ -298,7 +298,7 @@ enum MonitorCardModelBuilder {
     }
 
     /// 风扇卡：有风扇时标题行右侧最高转速、caption 逐风扇 RPM；
-    /// 无风扇但有传感器时标题改「温度传感器」、主值取最高温度（传感器仍可监控）。
+    /// 无风扇但有传感器时标题改「温度传感器」、主值取最高温、caption 为前两热点组（传感器仍可监控）。
     private static func fanModel(
         snapshot: SystemSnapshot,
         strings: Strings,
@@ -306,16 +306,28 @@ enum MonitorCardModelBuilder {
     ) -> MonitorCardModel {
         let fans = snapshot.fans
         if fans.isEmpty {
-            // 无风扇机型：退化为温度传感器摘要卡
-            let peak = snapshot.sensors.map(\.temperatureCelsius).max()
+            // 无风扇机型：退化为温度传感器摘要卡。
+            // 主值 = 过滤 unknown 后的最高温（与详情页 FanSensorGroupSummary 同源口径），
+            // caption = 前两热点组「组名 组内最高温」，回答「哪里最热」。
+            let summaries = FanSensorGroupSummary.summaries(from: snapshot.sensors)
+            let peak = summaries.compactMap(\.hottest?.temperatureCelsius).max()
             let peakText = peak.flatMap { MetricFormat.temperature($0, unit: temperatureUnit) }
+            let hotspotParts = summaries.prefix(2).compactMap { summary -> String? in
+                guard let hottest = summary.hottest,
+                      let text = MetricFormat.temperature(hottest.temperatureCelsius, unit: temperatureUnit)
+                else { return nil }
+                return "\(strings.fanZoneName(summary.zone)) \(text)"
+            }
+            let hotspotCaption = hotspotParts.isEmpty
+                ? nil
+                : hotspotParts.joined(separator: " \(strings.monitorSubtitleSeparator) ")
             let count = snapshot.sensors.count
             return MonitorCardModel(
                 id: .fan,
                 title: strings.fanSensorSectionTitle,
                 systemImage: "thermometer.medium",
                 primaryText: peakText ?? "--",
-                secondaryText: count > 0 ? "\(count) sensors" : nil,
+                secondaryText: hotspotCaption,
                 progress: nil,
                 badgeText: nil,
                 showsLiveDot: false,

@@ -299,16 +299,7 @@ struct MonitorFanDetailView: View {
     }
 
     private func zoneName(_ zone: ThermalZone) -> String {
-        switch zone {
-        case .cpu: return strings.fanZoneCpu
-        case .gpu: return strings.fanZoneGpu
-        case .memory: return strings.fanZoneMemory
-        case .ssd: return strings.fanZoneSsd
-        case .powerDelivery: return strings.fanZonePowerDelivery
-        case .battery: return strings.fanZoneBattery
-        case .ambient: return strings.fanZoneAmbient
-        case .unknown: return strings.fanZoneUnknown
-        }
+        strings.fanZoneName(zone)
     }
 
     private func sensorCell(_ sensor: FanSensorReading, isHottest: Bool) -> some View {
