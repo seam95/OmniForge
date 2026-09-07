@@ -77,6 +77,8 @@ public enum Theme {
         public static let battery = Color(red: 0x33/255.0, green: 0xC7/255.0, blue: 0x59/255.0)
         public static let up = Color(red: 0xFF/255.0, green: 0x45/255.0, blue: 0x3A/255.0)
         public static let statusNormal = Color(red: 0x1F/255.0, green: 0xA9/255.0, blue: 0x4A/255.0)
+        /// 风扇分区强调色（teal 系，与 CPU 蓝/网络绿区分）
+        public static let fan = Color(red: 0x00/255.0, green: 0x8F/255.0, blue: 0xA8/255.0)
 
         // 5 级字体
         public static let font24Bold = Font.system(size: 24, weight: .bold)

@@ -108,9 +108,21 @@ struct MonitorContainerView: View {
                 onSelectDiskDetail: {
                     route = .diskDetail
                 },
+                onSelectFanDetail: {
+                    route = .fanDetail
+                },
                 onRefresh: { onRefresh(false) }
             )
             .pageMountReporting(.overview, observer: pageMountObserver)
+        case .fanDetail:
+            MonitorFanDetailView(
+                snapshot: monitor.snapshot,
+                strings: strings,
+                temperatureUnit: configuration.temperatureUnit,
+                onBack: { route = .overview },
+                onRefresh: { onRefresh(false) }
+            )
+            .pageMountReporting(.fanDetail, observer: pageMountObserver)
         case .diskDetail:
             MonitorDiskDetailView(
                 snapshot: monitor.snapshot,
@@ -168,6 +180,9 @@ struct MonitorContainerView: View {
         }
         if visible.contains(.power) {
             demand.power = true
+        }
+        if visible.contains(.fan) {
+            demand.fan = true
         }
         return demand
     }

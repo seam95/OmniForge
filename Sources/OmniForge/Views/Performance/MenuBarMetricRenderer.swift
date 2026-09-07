@@ -186,6 +186,14 @@ enum MenuBarMetricRenderer {
             let value = levels.isEmpty ? "--" : levels
             return MetricBlock(label: "BT", value: value, minimumValue: "100%")
 
+        case .fan:
+            if snapshot.issues[.fan] != nil {
+                return MetricBlock(label: "FAN", value: "--", minimumValue: "8800/8800")
+            }
+            // 全部风扇单行拼接（与外设电池块同构）；宽度受位数高水位约束
+            let joined = MetricFormat.rpmJoined(snapshot.fans.map(\.currentRPM)) ?? "--"
+            return MetricBlock(label: "FAN", value: joined, minimumValue: "8800/8800")
+
         case .date:
             let formatter = DateFormatter()
             formatter.dateFormat = "MM/dd HH:mm"

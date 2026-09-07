@@ -24,7 +24,7 @@ enum MonitorMetric: String, CaseIterable, Hashable, Codable {
 
 /// 监控面板分区
 enum MonitorSection: String, CaseIterable, Hashable, Codable {
-    case system, network, disk, power
+    case system, network, disk, power, fan
 }
 
 /// 进程排行指标类型 — 一次只能展开一种
@@ -299,12 +299,12 @@ struct PeripheralBatteryDevice: Equatable, Identifiable {
 enum MenuBarMetric: String, CaseIterable, Hashable, Codable {
     case cpu, gpu, memory, network, disk, power, battery
     case cpuTemperature, gpuTemperature, batteryTemperature
-    case peripheralBattery, date
+    case peripheralBattery, date, fan
 
     static let defaultOrder: [MenuBarMetric] = [
         .cpu, .gpu, .memory, .network, .disk, .power,
         .battery, .cpuTemperature, .gpuTemperature,
-        .batteryTemperature, .peripheralBattery, .date
+        .batteryTemperature, .peripheralBattery, .fan, .date
     ]
 
     /// 设置页/菜单栏指标展示名。CPU/GPU 保留术语，其余走本地化。
@@ -321,6 +321,7 @@ enum MenuBarMetric: String, CaseIterable, Hashable, Codable {
         case .gpuTemperature: return strings.menubarMetricGPUTemperature
         case .batteryTemperature: return strings.menubarMetricBatteryTemperature
         case .peripheralBattery: return strings.menubarMetricPeripheralBattery
+        case .fan: return strings.menubarMetricFan
         case .date: return strings.menubarMetricDate
         }
     }

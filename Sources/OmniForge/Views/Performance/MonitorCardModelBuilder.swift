@@ -22,6 +22,8 @@ struct MonitorCardModel: Equatable, Identifiable {
     var chipTexts: [String] = []
     /// 大数字旁的次要文本（标签行右侧）：CPU/GPU 为温度，内存为已用量
     var accessoryText: String? = nil
+    /// 风扇卡专用：快照是否有风扇读数（无风扇机器/未采样轮不出分区）
+    var hasFanData = true
 }
 
 /// Pure mapping from snapshot + history + configuration into overview card models.
@@ -81,6 +83,8 @@ enum MonitorCardModelBuilder {
         case .energy:
             // 保留（排行代码沿用），overview 无入口
             return energyModel(snapshot: snapshot, strings: strings)
+        case .fan:
+            return fanModel(snapshot: snapshot, strings: strings)
         }
     }
 
@@ -284,6 +288,49 @@ enum MonitorCardModelBuilder {
             processMetricKind: .gpu,
             trend: history.gpu,
             accessoryText: MetricFormat.temperature(snapshot.gpuTemperature, unit: temperatureUnit)
+        )
+    }
+
+    /// 风扇卡：标题行右侧最高转速；caption 逐风扇 RPM；progress 为最高转速占硬件区间比。
+    /// 无风扇读数时 hasFanData=false（Planner 不出分区）。
+    private static func fanModel(
+        snapshot: SystemSnapshot,
+        strings: Strings
+    ) -> MonitorCardModel {
+        let fans = snapshot.fans
+        guard !fans.isEmpty else {
+            return MonitorCardModel(
+                id: .fan,
+                title: strings.monitorCardFan,
+                systemImage: "fanblades",
+                primaryText: "--",
+                secondaryText: nil,
+                progress: nil,
+                badgeText: nil,
+                showsLiveDot: false,
+                issueText: issueText(for: snapshot.issues[.fan], strings: strings),
+                processMetricKind: nil,
+                hasFanData: false
+            )
+        }
+        let peak = fans.map(\.currentRPM).max() ?? 0
+        let peakFraction = fans.map(\.speedFraction).max() ?? 0
+        let anyManual = fans.contains { $0.isManualMode }
+        // caption：`3200 RPM · 3400 RPM`（或单风扇 `3200 RPM`）
+        let caption = fans
+            .compactMap { MetricFormat.rpm($0.currentRPM).map { "\($0) RPM" } }
+            .joined(separator: " \(strings.monitorSubtitleSeparator) ")
+        return MonitorCardModel(
+            id: .fan,
+            title: strings.monitorCardFan,
+            systemImage: "fanblades",
+            primaryText: (MetricFormat.rpm(peak).map { "\($0) RPM" }) ?? "--",
+            secondaryText: caption.isEmpty ? nil : caption,
+            progress: peakFraction,
+            badgeText: anyManual ? strings.fanModeManualBadge : nil,
+            showsLiveDot: false,
+            issueText: issueText(for: snapshot.issues[.fan], strings: strings),
+            processMetricKind: nil
         )
     }
 

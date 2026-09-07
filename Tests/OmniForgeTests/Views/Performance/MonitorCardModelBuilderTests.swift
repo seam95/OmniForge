@@ -264,6 +264,33 @@ final class MonitorCardModelBuilderTests: XCTestCase {
 
     func test_models_fixedSixCardOrderAndNoEnergy() {
         let models = build(SystemSnapshot())
-        XCTAssertEqual(models.map(\.id), [.cpu, .gpu, .memory, .network, .disk, .battery])
+        XCTAssertEqual(models.map(\.id), [.cpu, .gpu, .memory, .network, .fan, .disk, .battery])
+    }
+
+    // MARK: - 风扇卡
+
+    func test_fanModel_dualFans_showsPeakRPMCaptionAndManualBadge() {
+        var snapshot = SystemSnapshot()
+        snapshot.fans = [
+            FanReading(id: 0, currentRPM: 3200, minRPM: 1200, maxRPM: 5800, targetRPM: 3200, isManualMode: false),
+            FanReading(id: 1, currentRPM: 3400, minRPM: 1200, maxRPM: 5900, targetRPM: 3500, isManualMode: true)
+        ]
+        let models = build(snapshot)
+        guard let fan = models.first(where: { $0.id == .fan }) else {
+            return XCTFail("缺少风扇卡")
+        }
+        XCTAssertEqual(fan.primaryText, "3400 RPM", "主值取最高转速")
+        XCTAssertEqual(fan.secondaryText, "3200 RPM • 3400 RPM")
+        XCTAssertEqual(fan.badgeText, Strings.en.fanModeManualBadge, "任一风扇手动即出徽章")
+        XCTAssertTrue(fan.hasFanData)
+        // 最高转速占比 = (3400-1200)/(5900-1200)
+        XCTAssertEqual(fan.progress ?? 0, (3400 - 1200) / (5900 - 1200), accuracy: 0.001)
+    }
+
+    func test_fanModel_noFans_marksNoFanData() {
+        let models = build(SystemSnapshot())
+        let fan = models.first { $0.id == .fan }
+        XCTAssertEqual(fan?.hasFanData, false, "无风扇读数时 Planner 据此不出分区")
+        XCTAssertEqual(fan?.primaryText, "--")
     }
 }

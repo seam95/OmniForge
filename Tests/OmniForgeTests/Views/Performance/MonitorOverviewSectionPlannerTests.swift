@@ -88,3 +88,35 @@ final class MonitorOverviewSectionPlannerTests: XCTestCase {
         XCTAssertEqual(sections.first?.accentCardID, .cpu, "三列分区主色取首列（CPU）")
     }
 }
+
+// MARK: - 风扇分区
+
+final class MonitorOverviewSectionFanTests: XCTestCase {
+    private func fanModels(hasFans: Bool) -> [MonitorCardModel] {
+        var snapshot = SystemSnapshot()
+        if hasFans {
+            snapshot.fans = [
+                FanReading(id: 0, currentRPM: 3200, minRPM: 1200, maxRPM: 5800, targetRPM: 3200, isManualMode: false)
+            ]
+        }
+        return MonitorCardModelBuilder.models(
+            snapshot: snapshot,
+            configuration: MonitorConfiguration(),
+            strings: .en,
+            temperatureUnit: .celsius,
+            history: MetricHistory()
+        )
+    }
+
+    func test_fanSection_appearsBetweenNetworkAndDisk_whenFanDataPresent() {
+        let sections = MonitorOverviewSectionPlanner.sections(from: fanModels(hasFans: true))
+        XCTAssertEqual(sections.map(\.id), [
+            "section.metrics", "section.network", "section.fan", "section.disk", "section.battery",
+        ])
+    }
+
+    func test_fanSection_omitted_whenNoFanData() {
+        let sections = MonitorOverviewSectionPlanner.sections(from: fanModels(hasFans: false))
+        XCTAssertFalse(sections.contains { $0.id == "section.fan" }, "无风扇读数不出空分区")
+    }
+}

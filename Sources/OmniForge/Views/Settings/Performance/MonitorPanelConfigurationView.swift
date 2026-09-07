@@ -28,6 +28,7 @@ enum MonitorPanelConfigurationState {
         case .network: return strings.monitorSectionNetwork
         case .disk: return strings.monitorSectionDisk
         case .power: return strings.monitorSectionPower
+        case .fan: return strings.monitorSectionFan
         }
     }
 }

@@ -125,6 +125,27 @@ struct Strings: Equatable {
     let monitorSectionNetwork: String
     let monitorSectionDisk: String
     let monitorSectionPower: String
+    let monitorSectionFan: String
+    // 风扇监控与详情页
+    let monitorCardFan: String
+    let menubarMetricFan: String
+    let fanDetailTitle: String
+    let fanNameSingle: String
+    let fanNameLeft: String
+    let fanNameRight: String
+    let fanNameIndexed: String
+    let fanModeManualBadge: String
+    let fanTargetRPM: String
+    let fanSensorSectionTitle: String
+    let fanZoneCpu: String
+    let fanZoneGpu: String
+    let fanZoneMemory: String
+    let fanZoneSsd: String
+    let fanZonePowerDelivery: String
+    let fanZoneBattery: String
+    let fanZoneAmbient: String
+    let fanZoneUnknown: String
+    let fanNoFans: String
     /// 分区配置上移/下移
     let settingsMoveUp: String
     let settingsMoveDown: String

@@ -261,6 +261,7 @@ final class SystemMonitorManager: ObservableObject {
             case .gpuTemperature: metrics.insert(.gpuTemperature)
             case .batteryTemperature: metrics.insert(.batteryTemperature)
             case .peripheralBattery: metrics.insert(.peripheralBattery)
+            case .fan: metrics.insert(.fan)
             case .date: break
             }
         }

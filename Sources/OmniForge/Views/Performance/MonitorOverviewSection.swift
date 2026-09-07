@@ -6,6 +6,7 @@ enum MonitorOverviewSection: Equatable, Identifiable {
     /// 三列指标区（CPU/GPU/内存共用列结构：标签+当前值 → 大数字 → 迷你折线）
     case metrics([MonitorCardModel])
     case network(MonitorCardModel)
+    case fan(MonitorCardModel)
     case disk(MonitorCardModel)
     case battery(MonitorCardModel)
 
@@ -13,6 +14,7 @@ enum MonitorOverviewSection: Equatable, Identifiable {
         switch self {
         case .metrics: return "section.metrics"
         case .network: return "section.network"
+        case .fan: return "section.fan"
         case .disk: return "section.disk"
         case .battery: return "section.battery"
         }
@@ -21,7 +23,7 @@ enum MonitorOverviewSection: Equatable, Identifiable {
     /// 单模型分区的模型；三列分区无单一模型返回 nil。
     var model: MonitorCardModel? {
         switch self {
-        case let .network(model), let .disk(model), let .battery(model):
+        case let .network(model), let .fan(model), let .disk(model), let .battery(model):
             return model
         case .metrics:
             return nil
@@ -33,7 +35,7 @@ enum MonitorOverviewSection: Equatable, Identifiable {
         switch self {
         case let .metrics(models):
             return models.first?.id
-        case let .network(model), let .disk(model), let .battery(model):
+        case let .network(model), let .fan(model), let .disk(model), let .battery(model):
             return model.id
         }
     }
@@ -54,6 +56,10 @@ enum MonitorOverviewSectionPlanner {
         }
         if let network = byID[.network] {
             result.append(.network(network))
+        }
+        // 无风扇读数（无风扇机器/读取失败）不出分区，避免空行
+        if let fan = byID[.fan], fan.hasFanData {
+            result.append(.fan(fan))
         }
         if let disk = byID[.disk] {
             result.append(.disk(disk))

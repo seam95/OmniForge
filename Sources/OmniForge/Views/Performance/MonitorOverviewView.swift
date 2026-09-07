@@ -40,6 +40,7 @@ struct MonitorOverviewView: View {
     let deviceSummary: DeviceSummary
     let onSelectRankable: (ProcessMetricKind) -> Void
     let onSelectDiskDetail: () -> Void
+    var onSelectFanDetail: () -> Void = {}
     let onRefresh: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
@@ -181,6 +182,9 @@ struct MonitorOverviewView: View {
                 strings: strings,
                 action: { onSelectRankable(.network) }
             )
+
+        case let .fan(model):
+            MonitorFanSection(model: model, action: onSelectFanDetail)
 
         case let .disk(model):
             MonitorDiskSection(
@@ -508,6 +512,79 @@ private struct MonitorDiskSection: View {
                 .foregroundStyle(color)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
+        }
+    }
+}
+
+/// 风扇区（全宽）：标题行（色标 + 名称 → 右侧最高转速 + 手动徽章）→ 4pt 进度条 → 逐风扇 caption。可点进详情。
+private struct MonitorFanSection: View {
+    let model: MonitorCardModel
+    let action: () -> Void
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        MonitorTappableSection(action: action) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .center, spacing: 6) {
+                    MonitorSectionStyle.accentMark(MonitorCardAccent.color(for: .fan))
+                    Text(model.title)
+                        .font(MonitorSectionStyle.labelFont)
+                        .tracking(MonitorSectionStyle.labelTracking)
+                        .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
+                        .lineLimit(1)
+
+                    if let badge = model.badgeText {
+                        Text(badge)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(MonitorOverviewPalette.pillBackground(colorScheme))
+                            )
+                    }
+
+                    Spacer(minLength: 8)
+
+                    Text(model.primaryText)
+                        .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
+                        .lineLimit(1)
+                }
+
+                if let issue = model.issueText {
+                    Text(issue)
+                        .font(Theme.Stats.font11Regular)
+                        .foregroundStyle(Theme.Stats.up)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                } else {
+                    if let progress = model.progress {
+                        GeometryReader { proxy in
+                            ZStack(alignment: .leading) {
+                                Capsule(style: .continuous)
+                                    .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.12))
+                                Capsule(style: .continuous)
+                                    .fill(MonitorCardAccent.color(for: .fan))
+                                    .frame(width: proxy.size.width * min(max(progress, 0), 1))
+                            }
+                        }
+                        .frame(height: 4)
+                    }
+
+                    if let caption = model.secondaryText {
+                        Text(caption)
+                            .font(.system(size: 12, weight: .regular).monospacedDigit())
+                            .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
     }
 }

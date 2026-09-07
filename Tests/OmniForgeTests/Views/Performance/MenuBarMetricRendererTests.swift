@@ -527,3 +527,54 @@ final class MenuBarMetricRendererTests: XCTestCase {
         return blocks[0]
     }
 }
+
+// MARK: - 风扇块
+
+final class MenuBarMetricFanBlockTests: XCTestCase {
+    func test_fanBlock_joinsAllFanRPMs() {
+        var snapshot = SystemSnapshot()
+        snapshot.fans = [
+            FanReading(id: 0, currentRPM: 3200, minRPM: 1200, maxRPM: 5800, targetRPM: 3200, isManualMode: false),
+            FanReading(id: 1, currentRPM: 3400, minRPM: 1200, maxRPM: 5900, targetRPM: 3400, isManualMode: false)
+        ]
+        let blocks = MenuBarMetricRenderer.blocks(
+            for: snapshot,
+            metrics: [.fan],
+            configuration: MonitorConfiguration()
+        )
+        XCTAssertEqual(blocks.count, 1)
+        XCTAssertEqual(blocks[0].label, "FAN")
+        XCTAssertEqual(blocks[0].value, "3200/3400", "全部风扇单行拼接")
+    }
+
+    func test_fanBlock_singleFan_showsPlainRPM() {
+        var snapshot = SystemSnapshot()
+        snapshot.fans = [
+            FanReading(id: 0, currentRPM: 3200, minRPM: 1200, maxRPM: 5800, targetRPM: 3200, isManualMode: false)
+        ]
+        let blocks = MenuBarMetricRenderer.blocks(
+            for: snapshot,
+            metrics: [.fan],
+            configuration: MonitorConfiguration()
+        )
+        XCTAssertEqual(blocks[0].value, "3200")
+    }
+
+    func test_fanBlock_noDataOrIssue_showsPlaceholder() {
+        let empty = MenuBarMetricRenderer.blocks(
+            for: SystemSnapshot(),
+            metrics: [.fan],
+            configuration: MonitorConfiguration()
+        )
+        XCTAssertEqual(empty[0].value, "--")
+
+        var failed = SystemSnapshot()
+        failed.issues[.fan] = .failed("FNum unreadable")
+        let issue = MenuBarMetricRenderer.blocks(
+            for: failed,
+            metrics: [.fan],
+            configuration: MonitorConfiguration()
+        )
+        XCTAssertEqual(issue[0].value, "--", "读取失败显示占位而非 0")
+    }
+}
