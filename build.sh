@@ -61,10 +61,16 @@ BUILD_DIR=".build/release"
 # Step 2: 组装 .app bundle（在临时目录中，避免 xattr 污染）
 STAGE_PARENT="$(mktemp -d)"
 STAGE="$STAGE_PARENT/$APP_NAME.app"
-mkdir -p "$STAGE/Contents/MacOS" "$STAGE/Contents/Resources"
+mkdir -p "$STAGE/Contents/MacOS" "$STAGE/Contents/Resources" \
+    "$STAGE/Contents/Library/LaunchServices" "$STAGE/Contents/Library/LaunchDaemons"
 
 # 复制可执行文件
 cp "$BUILD_DIR/$EXECUTABLE" "$STAGE/Contents/MacOS/$EXECUTABLE"
+
+# 特权风扇 Helper：二进制进 LaunchServices，SMAppService 读取的 plist 进 LaunchDaemons
+FAN_HELPER_BUNDLE_PATH="app.omniforge.fan-helper"
+cp "$BUILD_DIR/FanControlHelper" "$STAGE/Contents/Library/LaunchServices/$FAN_HELPER_BUNDLE_PATH"
+cp Resources/FanHelperLaunchDaemon.plist "$STAGE/Contents/Library/LaunchDaemons/$FAN_HELPER_BUNDLE_PATH.plist"
 
 # 复制 Info.plist
 cp Resources/Info.plist "$STAGE/Contents/Info.plist"
@@ -111,12 +117,20 @@ fi
 xattr -c -r "$STAGE" 2>/dev/null || true
 
 # Step 6: 签名（优先 Developer ID，其次 Apple Development；仅 stage 可 ad-hoc）
+# 顺序：先签 Helper 二进制（bundle 内嵌可执行文件），再签 app 外层——
+# 外层签名会为内嵌内容建立完整性封条，反序会让 Helper 签名失效。
 if [[ -n "$SIGNING_IDENTITY" ]]; then
+    echo "▸ Signing fan helper with stable identity: $SIGNING_IDENTITY"
+    codesign --force --strip-disallowed-xattrs --options runtime --timestamp \
+        --sign "$SIGNING_IDENTITY" "$STAGE/Contents/Library/LaunchServices/$FAN_HELPER_BUNDLE_PATH"
     echo "▸ Signing with stable identity (hardened runtime): $SIGNING_IDENTITY"
     codesign --force --strip-disallowed-xattrs --options runtime --timestamp \
         --entitlements "$ENTITLEMENTS" --sign "$SIGNING_IDENTITY" "$STAGE"
 else
     echo "⚠ 未找到稳定签名身份，仅为 stage 执行 ad-hoc 签名；重新签名后系统权限可能失效" >&2
+    echo "⚠ ad-hoc 签名下 SMAppService 注册风扇 Helper 大概率失败（身份漂移被 launchd 拒绝）" >&2
+    codesign --force --strip-disallowed-xattrs \
+        --sign - "$STAGE/Contents/Library/LaunchServices/$FAN_HELPER_BUNDLE_PATH"
     codesign --force --strip-disallowed-xattrs \
         --entitlements "$ENTITLEMENTS" --sign - "$STAGE"
 fi

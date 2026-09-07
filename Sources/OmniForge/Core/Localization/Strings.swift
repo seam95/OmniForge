@@ -146,6 +146,17 @@ struct Strings: Equatable {
     let fanZoneAmbient: String
     let fanZoneUnknown: String
     let fanNoFans: String
+    // 风扇设置页
+    let settingsTabFan: String
+    let fanSettingsHelperSection: String
+    let fanSettingsHelperStatusTitle: String
+    let fanSettingsHelperStatusReady: String
+    let fanSettingsHelperStatusNotInstalled: String
+    let fanSettingsHelperStatusVersionMismatch: String
+    let fanSettingsHelperStatusRegisterFailed: String
+    let fanSettingsHelperInstall: String
+    let fanSettingsHelperUninstall: String
+    let fanSettingsHelperFooter: String
     /// 分区配置上移/下移
     let settingsMoveUp: String
     let settingsMoveDown: String

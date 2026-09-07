@@ -42,7 +42,7 @@ public final class FanSMCWriter {
         return raw != 0
     }
 
-    /// 将风扇设为手动并写入目标转速
+    /// 将风扇设为手动并写入目标转速。转速做防御性钳制（特权写入边界的最后防线）。
     public func setFanSpeed(index: Int, rpm: Double) throws {
         #if arch(arm64)
         try enableTestModeIfNeeded()
@@ -50,7 +50,7 @@ public final class FanSMCWriter {
         #else
         try setForceModeBit(index: index, forced: true)
         #endif
-        try writeTargetSpeed(index: index, rpm: rpm)
+        try writeTargetSpeed(index: index, rpm: min(max(rpm, 100), 20000))
     }
 
     /// 单风扇归还自动；确认再无手动风扇后关闭测试模式

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  SMAppService daemon 定义。构建时复制进 app bundle：
+  Contents/Library/LaunchDaemons/app.omniforge.fan-helper.plist
+  SMAppService.daemon(plistName:) 只从该位置读取。
+  BundleProgram 是相对 app bundle 的路径（helper 二进制随 app 分发，
+  不放 /Library/PrivilegedHelperTools）。
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>app.omniforge.fan-helper</string>
+    <key>BundleProgram</key>
+    <string>Contents/Library/LaunchServices/app.omniforge.fan-helper</string>
+    <key>MachServices</key>
+    <dict>
+        <key>app.omniforge.fan-helper</key>
+        <true/>
+    </dict>
+    <!-- 让 macOS 在「登录项与扩展」中把 daemon 归属到主应用 -->
+    <key>AssociatedBundleIdentifiers</key>
+    <array>
+        <string>app.omniforge</string>
+    </array>
+</dict>
+</plist>
