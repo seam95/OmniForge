@@ -80,18 +80,39 @@ final class PowerSamplerTests: XCTestCase {
         XCTAssertEqual(reading.adapterWatts, 50.0)
     }
 
-    func test_sample_healthUsesMaxCapacityProbeOverride() throws {
+    func test_healthPercent_prefersNominalChargeOverDesignCapacity() {
+        // 锚点取自实测机型：NominalChargeCapacity 3666 / DesignCapacity 4382，
+        // 与系统信息「最大容量 83%」口径一致。
+        let props: [String: Any] = ["DesignCapacity": 4382, "NominalChargeCapacity": 3666]
+        XCTAssertEqual(PowerSampler.healthPercent(fromBatteryProperties: props) ?? 0, 83.66, accuracy: 0.01)
+    }
+
+    func test_healthPercent_fallsThroughFullChargeCandidates() {
+        let design = 4382
+        let onlyRaw: [String: Any] = ["DesignCapacity": design, "AppleRawMaxCapacity": 3536]
+        XCTAssertEqual(PowerSampler.healthPercent(fromBatteryProperties: onlyRaw) ?? 0, 80.69, accuracy: 0.01)
+
+        let fullChargeWins: [String: Any] = ["DesignCapacity": design,
+                                             "FullChargeCapacity": 4000,
+                                             "AppleRawMaxCapacity": 3536]
+        XCTAssertEqual(PowerSampler.healthPercent(fromBatteryProperties: fullChargeWins) ?? 0, 91.28, accuracy: 0.01)
+    }
+
+    func test_healthPercent_capsAt100AndReturnsNilWhenIncomplete() {
+        XCTAssertEqual(PowerSampler.healthPercent(fromBatteryProperties: [
+            "DesignCapacity": 4000, "NominalChargeCapacity": 4100
+        ]), 100)
+        XCTAssertNil(PowerSampler.healthPercent(fromBatteryProperties: ["NominalChargeCapacity": 3666]))
+        XCTAssertNil(PowerSampler.healthPercent(fromBatteryProperties: [:]))
+    }
+
+    func test_sample_healthDoesNotConsultProbeWhenRegistryRatioAvailable() throws {
         let probe = MockMaxCapacityProbe(percent: 87)
         let sampler = PowerSampler(smc: MockSMCReading([:]), maxCapacityProbe: probe)
         let reading = try sampler.sample()
-        // Probe only overrides when battery properties exist. Without a battery,
-        // health stays nil and probe is not consulted on the battery path.
-        // This asserts the probe API remains injectable for machines with batteries.
-        XCTAssertEqual(probe.percent, 87)
-        // If this machine has a battery, health should match the probe override.
-        if reading.hasBattery {
-            XCTAssertEqual(reading.healthPercent, 87)
-            XCTAssertGreaterThanOrEqual(probe.refreshCallCount, 1)
+        // IORegistry 比值可用时不再咨询 probe，避免部分机型 IOPS 恒报 100 覆盖真实健康度。
+        if reading.hasBattery, reading.healthPercent != nil {
+            XCTAssertEqual(probe.refreshCallCount, 0)
         }
     }
 }

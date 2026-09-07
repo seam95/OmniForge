@@ -59,20 +59,15 @@ final class PowerSampler: PowerSampling {
                 reading.adapterMaxWatts = Double(rated)
             }
 
-            if let design = batteryInt("DesignCapacity", in: props), design > 0 {
-                // Fallback ratio from IORegistry until MaxCapacityProbe lands.
-                let fullCharge = batteryInt("NominalChargeCapacity", in: props)
-                    ?? batteryInt("FullChargeCapacity", in: props)
-                    ?? batteryInt("AppleRawMaxCapacity", in: props)
-                if let fullCharge, fullCharge > 0 {
-                    reading.healthPercent = min(100, Double(fullCharge) / Double(design) * 100)
+            // 主口径：满充容量 / 设计容量，与系统信息「最大容量」一致。
+            reading.healthPercent = Self.healthPercent(fromBatteryProperties: props)
+            if reading.healthPercent == nil {
+                // 兜底：IOPS 的 "Max Capacity" 在部分机型恒报 100，仅在
+                // IORegistry 容量属性缺失时采用。
+                maxCapacityProbe.refreshIfStale()
+                if let exact = maxCapacityProbe.percent {
+                    reading.healthPercent = Double(exact)
                 }
-            }
-
-            // Prefer the exact "Maximum Capacity" macOS shows in System Information.
-            maxCapacityProbe.refreshIfStale()
-            if let exact = maxCapacityProbe.percent {
-                reading.healthPercent = Double(exact)
             }
 
             reading.timeRemaining = BatteryTimeSupport.remainingSeconds(
@@ -110,6 +105,20 @@ final class PowerSampler: PowerSampling {
         return watts
     }
 
+    // MARK: - Health
+
+    /// 由 AppleSmartBattery 属性推电池健康百分比（0...100）。
+    /// 满充容量按 NominalChargeCapacity → FullChargeCapacity → AppleRawMaxCapacity
+    /// 顺序取值，除以 DesignCapacity，封顶 100。
+    static func healthPercent(fromBatteryProperties props: [String: Any]) -> Double? {
+        guard let design = batteryInt("DesignCapacity", in: props), design > 0 else { return nil }
+        let fullCharge = batteryInt("NominalChargeCapacity", in: props)
+            ?? batteryInt("FullChargeCapacity", in: props)
+            ?? batteryInt("AppleRawMaxCapacity", in: props)
+        guard let fullCharge, fullCharge > 0 else { return nil }
+        return min(100, Double(fullCharge) / Double(design) * 100)
+    }
+
     // MARK: - Battery IORegistry
 
     private func batteryProperties() -> [String: Any]? {
@@ -135,19 +144,19 @@ final class PowerSampler: PowerSampling {
             guard let description = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue()
                     as? [String: Any],
                   description[kIOPSPowerSourceStateKey] as? String == kIOPSBatteryPowerValue,
-                  let minutes = intValue(description[kIOPSTimeToEmptyKey]) else { continue }
+                  let minutes = Self.intValue(description[kIOPSTimeToEmptyKey]) else { continue }
             return minutes
         }
         return nil
     }
 
-    private func batteryInt(_ key: String, in props: [String: Any]) -> Int? {
+    private static func batteryInt(_ key: String, in props: [String: Any]) -> Int? {
         if let value = intValue(props[key]) { return value }
         if let batteryData = props["BatteryData"] as? [String: Any] { return intValue(batteryData[key]) }
         return nil
     }
 
-    private func intValue(_ value: Any?) -> Int? {
+    private static func intValue(_ value: Any?) -> Int? {
         switch value {
         case let v as Int: return v
         case let v as NSNumber:

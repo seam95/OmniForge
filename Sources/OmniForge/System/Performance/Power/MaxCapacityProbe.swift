@@ -1,8 +1,10 @@
 import Foundation
 import IOKit.ps
 
-/// Reads the smoothed "Maximum Capacity" value System Information shows for the
-/// internal battery. Refreshed off the hot path (cached for 5 minutes).
+/// Reads the IOPS "Max Capacity" value for the internal battery, cached for
+/// 5 minutes. Note: on some machines this key always reports 100 and diverges
+/// from the Maximum Capacity shown in System Information, so it is only used
+/// as a fallback when the IORegistry capacity ratio is unavailable.
 final class MaxCapacityProbe: MaxCapacityProbing {
     static let shared = MaxCapacityProbe()
 
