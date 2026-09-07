@@ -7,6 +7,7 @@ extension Strings {
         actionUnlock: "Unlock",
         actionLock: "Lock",
         actionQuit: "Quit",
+        commonBack: "Back",
         panelSelectSource: "Select input source to lock:",
         settingsLanguage: "Language",
         settingsSystem: "System Default",

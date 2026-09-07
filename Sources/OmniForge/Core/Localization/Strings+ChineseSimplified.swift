@@ -7,6 +7,7 @@ extension Strings {
         actionUnlock: "解锁",
         actionLock: "锁定",
         actionQuit: "退出",
+        commonBack: "返回",
         panelSelectSource: "选择要锁定的输入法：",
         settingsLanguage: "语言",
         settingsSystem: "跟随系统",

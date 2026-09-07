@@ -9,6 +9,7 @@ struct Strings: Equatable {
     let actionUnlock: String
     let actionLock: String
     let actionQuit: String
+    let commonBack: String
     let panelSelectSource: String
     // MARK: - Settings
     let settingsLanguage: String

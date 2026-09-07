@@ -47,60 +47,48 @@ struct MonitorFanDetailView: View {
     // MARK: - Empty
 
     private var emptyView: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 0) {
             header
-            Spacer()
-            Image(systemName: "fanblades")
-                .font(.system(size: 28))
-                .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
-            Text(strings.fanNoFans)
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
-                .font(Theme.Stats.font13SemiBold)
-            Spacer()
-        }
-        .padding(12)
-    }
-
-    // MARK: - Content
-
-    private var contentView: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 10) {
-                header
-                Divider()
-                    .overlay(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
-                fansSection
-                if !groupedSensors.isEmpty {
-                    Divider()
-                        .overlay(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
-                    sensorsSection
-                }
-                if fanControl?.hasFans == true, fanPreferences != nil {
-                    Divider()
-                        .overlay(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
-                    controlSection
-                }
+            VStack(spacing: 12) {
+                Spacer()
+                Image(systemName: "fanblades")
+                    .font(.system(size: 28))
+                    .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
+                Text(strings.fanNoFans)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                    .font(Theme.Stats.font13SemiBold)
+                Spacer()
             }
             .padding(12)
         }
     }
 
-    private var header: some View {
-        HStack(spacing: 8) {
-            Button(action: onBack) {
-                HStack(spacing: 4) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text(strings.fanDetailTitle)
-                        .font(Theme.Stats.font13SemiBold)
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
-                        .lineLimit(1)
+    // MARK: - Content
+
+    private var contentView: some View {
+        VStack(spacing: 0) {
+            header
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 10) {
+                    fansSection
+                    if !groupedSensors.isEmpty {
+                        Divider()
+                            .overlay(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
+                        sensorsSection
+                    }
+                    if fanControl?.hasFans == true, fanPreferences != nil {
+                        Divider()
+                            .overlay(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
+                        controlSection
+                    }
                 }
+                .padding(12)
             }
-            .buttonStyle(.plain)
+        }
+    }
 
-            Spacer()
-
+    private var header: some View {
+        FlatBackBar(title: strings.fanDetailTitle, backLabel: strings.commonBack, onBack: onBack) {
             IconButton(systemImage: "arrow.clockwise", help: strings.monitorRefreshAll) {
                 onRefresh()
             }

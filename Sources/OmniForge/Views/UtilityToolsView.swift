@@ -211,7 +211,7 @@ struct UtilityToolsView: View {
     @ViewBuilder
     private func toolDetailView(_ tool: UtilityTool) -> some View {
         VStack(spacing: 0) {
-            UtilityToolDetailBar(title: tool.hubName(in: strings), strings: strings) {
+            FlatBackBar(title: tool.hubName(in: strings), backLabel: strings.commonBack) {
                 route = .list
             }
             utilityContent(tool)
@@ -390,42 +390,5 @@ private struct UtilityDSHWebStatusBadge: View {
     }
 }
 
-/// 详情页顶部返回栏：返回按钮 + 工具标题。
-private struct UtilityToolDetailBar: View {
-    let title: String
-    let strings: Strings
-    let onBack: () -> Void
-    @Environment(\.colorScheme) private var colorScheme
-    @State private var isBackHovered = false
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Button(action: onBack) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 11, weight: .semibold))
-                    .frame(width: 24, height: 24)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(isBackHovered ? Color.primary.opacity(colorScheme == .dark ? 0.10 : 0.05) : Color.clear)
-                    )
-                    .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .onHover { isBackHovered = $0 }
-            .accessibilityLabel(strings.controlcenterTabUtilities)
-
-            Text(title)
-                .font(Theme.Stats.font13SemiBold)
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
-                .lineLimit(1)
-
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color.clear)
-        .overlay(alignment: .bottom) {
-            FlatHairline()
-        }
-    }
-}
+/// 详情页顶部返回栏已统一到共享组件 `FlatBackBar`（箭头+标题整体热区、
+/// hover 反馈与发丝线容器，与监控详情页一致）。

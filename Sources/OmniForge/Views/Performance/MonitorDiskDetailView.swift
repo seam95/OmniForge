@@ -43,59 +43,47 @@ struct MonitorDiskDetailView: View {
     // MARK: - Empty
 
     private var emptyView: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 0) {
             header
-            Spacer()
-            Text(strings.diskNoDisks)
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
-                .font(Theme.Stats.font13SemiBold)
-            Spacer()
-            footer
-        }
-        .padding(12)
-    }
-
-    // MARK: - Content
-
-    private var contentView: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 10) {
-                header
-                Divider()
-                    .overlay(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
-                diskSelector
-                if let sel = selected {
-                    usageSection(sel)
-                    activitySection(sel)
-                    smartSection(sel)
-                    protectionAndToolsSection(sel)
-                }
-                Divider()
-                    .overlay(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
+            VStack(spacing: 12) {
+                Spacer()
+                Text(strings.diskNoDisks)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                    .font(Theme.Stats.font13SemiBold)
+                Spacer()
                 footer
             }
             .padding(12)
         }
     }
 
+    // MARK: - Content
+
+    private var contentView: some View {
+        VStack(spacing: 0) {
+            header
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 10) {
+                    diskSelector
+                    if let sel = selected {
+                        usageSection(sel)
+                        activitySection(sel)
+                        smartSection(sel)
+                        protectionAndToolsSection(sel)
+                    }
+                    Divider()
+                        .overlay(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
+                    footer
+                }
+                .padding(12)
+            }
+        }
+    }
+
     // MARK: - Header
 
     private var header: some View {
-        HStack(spacing: 8) {
-            Button(action: onBack) {
-                HStack(spacing: 4) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text(strings.diskSectionTitle)
-                        .font(Theme.Stats.font13SemiBold)
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
-                        .lineLimit(1)
-                }
-            }
-            .buttonStyle(.plain)
-
-            Spacer()
-
+        FlatBackBar(title: strings.diskSectionTitle, backLabel: strings.commonBack, onBack: onBack) {
             IconButton(systemImage: "arrow.clockwise", help: strings.monitorRefreshAll) {
                 onRefresh()
             }

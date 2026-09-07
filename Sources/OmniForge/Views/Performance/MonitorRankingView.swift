@@ -24,12 +24,14 @@ struct MonitorRankingView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(spacing: 0) {
             header
-            content
-            footer
+            VStack(alignment: .leading, spacing: 10) {
+                content
+                footer
+            }
+            .padding(12)
         }
-        .padding(12)
         // 高度由 MonitorContainerView 固定外壳决定（避免 loading/loaded 之间跳变）。
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         // armed 态超过窗口期未确认则自动复位，避免误留可终止状态。
@@ -43,21 +45,7 @@ struct MonitorRankingView: View {
     // MARK: - Header
 
     private var header: some View {
-        HStack(spacing: 8) {
-            Button(action: onBack) {
-                HStack(spacing: 4) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text(title)
-                        .font(Theme.Stats.font13SemiBold)
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
-                        .lineLimit(1)
-                }
-            }
-            .buttonStyle(.plain)
-
-            Spacer(minLength: 0)
-
+        FlatBackBar(title: title, backLabel: strings.commonBack, onBack: onBack) {
             IconButton(systemImage: "arrow.clockwise", help: strings.monitorRefreshAll) {
                 onRefresh()
             }
