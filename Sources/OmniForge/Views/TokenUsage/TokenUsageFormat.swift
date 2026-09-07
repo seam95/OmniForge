@@ -16,20 +16,6 @@ enum TokenUsageFormat {
         return "\(count)"
     }
 
-    /// 菜单栏口径计数缩写（SPEC 4.4「如 128k」）：128_400 → "128k"。
-    /// 与面板口径 `tokens` 不同：缩到整数 k/m（去掉小数），保证整数口径最长 4 字符。
-    static func menubarTokens(_ count: Int) -> String {
-        let absCount = abs(Double(count))
-        let sign = count < 0 ? "-" : ""
-        if absCount >= 1_000_000 {
-            return sign + "\(Int(absCount / 1_000_000))m"
-        }
-        if absCount >= 1_000 {
-            return sign + "\(Int(absCount / 1_000))k"
-        }
-        return "\(count)"
-    }
-
     private static func scaled(_ value: Double) -> String {
         let rounded = (value * 10).rounded() / 10
         if rounded == rounded.rounded() {

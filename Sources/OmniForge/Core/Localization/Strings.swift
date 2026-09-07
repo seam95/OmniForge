@@ -1148,11 +1148,6 @@ struct Strings: Equatable {
     let tokenSettingsGenericSection: String
     let tokenSettingsProvidersSection: String
     let tokenSettingsAlertsSection: String
-    let tokenSettingsMenuBarMode: String
-    let tokenSettingsMenuBarToday: String
-    let tokenSettingsMenuBarSession: String
-    let tokenSettingsMenuBarOff: String
-    let tokenMenuBarTodayLabel: String
     let tokenSettingsRefreshInterval: String
     let tokenSettingsRefreshMinuteFormat: String
     let tokenSettingsLimitsDisplay: String
@@ -1185,7 +1180,6 @@ struct Strings: Equatable {
     let tokenSettingsConfigureHintCursor: String
     let tokenSettingsConfigureHintAntigravity: String
     let tokenSettingsConfigureHintTraeCn: String
-    let tokenMenuBarSessionLabel: String
     let tokenAlertSessionTitle: String
     let tokenAlertSessionBodyFormat: String
     let tokenAlertPaceTitle: String

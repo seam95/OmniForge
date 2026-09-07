@@ -87,18 +87,6 @@ struct TokenUsageGeneralSettingsView: View {
 
     var body: some View {
         Form {
-            Section(strings.tokenSettingsMenuBarMode) {
-                Picker(strings.tokenSettingsMenuBarMode, selection: Binding(
-                    get: { preferences.configuration.menuBarMode },
-                    set: { mode in preferences.update { $0.menuBarMode = mode } }
-                )) {
-                    Text(strings.tokenSettingsMenuBarToday).tag(TokenUsageMenuBarMode.todayTokens)
-                    Text(strings.tokenSettingsMenuBarSession).tag(TokenUsageMenuBarMode.sessionPercent)
-                    Text(strings.tokenSettingsMenuBarOff).tag(TokenUsageMenuBarMode.hidden)
-                }
-                .accessibilityIdentifier(SettingsAccessibilityID.tokenUsageMenuBarMode.rawValue)
-            }
-
             Section(strings.tokenSettingsRefreshInterval) {
                 Picker(strings.tokenSettingsRefreshInterval, selection: Binding(
                     get: { preferences.configuration.limitRefreshMinutes },

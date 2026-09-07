@@ -4,7 +4,6 @@ import XCTest
 final class TokenUsagePreferencesTests: XCTestCase {
     func test_defaults() {
         let config = TokenUsageConfiguration()
-        XCTAssertEqual(config.menuBarMode, .todayTokens)
         XCTAssertEqual(config.limitRefreshMinutes, 5)
         XCTAssertEqual(config.limitsDisplayMode, .used)
         XCTAssertEqual(config.trendPeriodDefault, .month)
@@ -19,7 +18,6 @@ final class TokenUsagePreferencesTests: XCTestCase {
 
         let preferences = TokenUsagePreferences(userDefaults: defaults)
         preferences.update {
-            $0.menuBarMode = .sessionPercent
             $0.limitRefreshMinutes = 15
             $0.limitsDisplayMode = .remaining
             $0.trendPeriodDefault = .total
@@ -27,7 +25,6 @@ final class TokenUsagePreferencesTests: XCTestCase {
         }
 
         let reloaded = TokenUsagePreferences(userDefaults: defaults)
-        XCTAssertEqual(reloaded.configuration.menuBarMode, .sessionPercent)
         XCTAssertEqual(reloaded.configuration.limitRefreshMinutes, 15)
         XCTAssertEqual(reloaded.configuration.limitsDisplayMode, .remaining)
         XCTAssertEqual(reloaded.configuration.trendPeriodDefault, .total)

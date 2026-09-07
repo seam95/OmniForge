@@ -3,15 +3,6 @@ import Foundation
 
 // MARK: - 展示模式
 
-/// 菜单栏显示模式。
-enum TokenUsageMenuBarMode: String, Codable, CaseIterable, Identifiable {
-    case todayTokens
-    case sessionPercent
-    case hidden
-
-    var id: String { rawValue }
-}
-
 /// 限额数值显示口径（已用 / 剩余）。
 enum TokenUsageLimitsDisplay: String, Codable, CaseIterable, Identifiable {
     case used
@@ -25,7 +16,6 @@ enum TokenUsageLimitsDisplay: String, Codable, CaseIterable, Identifiable {
 // MARK: - 配置
 
 struct TokenUsageConfiguration: Equatable, Codable {
-    var menuBarMode: TokenUsageMenuBarMode = .todayTokens
     var limitRefreshMinutes = 5
     var limitsDisplayMode: TokenUsageLimitsDisplay = .used
     var sessionLimitAlertEnabled = true
