@@ -253,10 +253,10 @@ struct ControlCenterContainerView: View {
         )
     }
 
-    /// 页面表面样式（SPEC §8.2）：token/供应商/实用工具页浅色白底（平面白底风格）；
+    /// 页面表面样式（SPEC §8.2）：token/供应商/实用工具/唤醒页浅色白底（平面白底风格）；
     /// 其余透明——监控 overview 白底由监控内层 route 持有（层级迁移见阶段 7）。
     private func panelSurface(_ panel: MenuPanel) -> PageSurface {
-        if (panel == .tokenUsage || panel == .providerSwitch || panel == .clipboard)
+        if (panel == .tokenUsage || panel == .providerSwitch || panel == .clipboard || panel == .keepAwake)
             && colorScheme == .light {
             return PageSurface(background: .white)
         }

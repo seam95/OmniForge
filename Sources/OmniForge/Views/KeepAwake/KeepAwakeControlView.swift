@@ -405,6 +405,8 @@ struct KeepAwakeControlConfigBindings {
 
 // MARK: - View
 
+/// 控制中心唤醒 tab（平面分区布局）：会话区（头部 + 状态区）→ 发丝线 → 合盖区 → 错误横幅。
+/// 无卡片：浅色白底由宿主转场层持有，分区边距 16/12。
 struct KeepAwakeControlView: View {
     let presentation: KeepAwakeControlPresentation
     var config: KeepAwakeControlConfigBindings = .previewDisabled
@@ -432,37 +434,37 @@ struct KeepAwakeControlView: View {
     ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // 主卡：开关 + 状态区（时长选择 / 倒计时 / 无限期 / 重试清理）
-            mainCard
+        // 平面分区：会话区 → 发丝线 → 合盖区 → 错误横幅，行平铺白底（背景由转场层持有）。
+        VStack(spacing: 0) {
+            sessionSection
 
-            // 合盖时保持唤醒卡片
-            clamshellCard
+            FlatHairline()
+
+            clamshellSection
 
             // 错误横幅（配置写入失败或运行期错误摘要）
             if let errorText = config.configError ?? presentation.secondaryStatusLine {
                 errorBanner(errorText)
             }
         }
-        .padding(12)
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
-    // MARK: - 主卡
-    private var mainCard: some View {
+    // MARK: - 会话分区（原主卡拆卡）
+    private var sessionSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // 头部：图标 + 标题/状态 + 开关
+            // 头部：图标徽章 + 标题/状态 + 开关
             HStack(alignment: .center, spacing: 12) {
                 statusIconBlock
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(presentation.title)
                         .font(Theme.Stats.font13SemiBold)
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                        .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                         .lineLimit(1)
                     Text(presentation.statusLine)
                         .font(Theme.Stats.font11Regular)
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                        .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                         .lineLimit(1)
                 }
 
@@ -475,21 +477,21 @@ struct KeepAwakeControlView: View {
                     .disabled(!presentation.isSessionToggleEnabled)
                     .accessibilityLabel(presentation.title)
             }
-            .padding(12)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
 
             // 状态区
             if presentation.showsDurationPicker {
-                cardDivider
+                rowSeparator
                 durationPickerSection
             } else if presentation.countdownEndDate != nil {
-                cardDivider
+                rowSeparator
                 activeTimedSection
             } else if presentation.showsRetryCleanupButton {
-                cardDivider
+                rowSeparator
                 retryCleanupSection
             }
         }
-        .background(cardBackground)
     }
 
     /// 唤醒中视觉态：开关拨向开（含开启中）即点亮图标。
@@ -497,30 +499,26 @@ struct KeepAwakeControlView: View {
         presentation.isSessionToggleOn
     }
 
+    /// 图标徽章（便签页同款配方）：点亮为 down 蓝前景 + 0.16 底，未点亮为 primary + 浅灰底。
     private var statusIconBlock: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(iconBackground)
-            Image(systemName: isAwakeVisual ? "moon.zzz.fill" : "moon")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(isAwakeVisual ? Theme.Stats.down : (colorScheme == .light ? Theme.Stats.text1 : Color.primary))
-        }
-        .frame(width: 38, height: 38)
-        .animation(Theme.Animation.hover, value: isAwakeVisual)
+        Image(systemName: isAwakeVisual ? "moon.zzz.fill" : "moon")
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(isAwakeVisual ? Theme.Stats.down : MonitorOverviewPalette.primary(colorScheme))
+            .frame(width: 34, height: 34)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isAwakeVisual
+                          ? Theme.Stats.down.opacity(0.16)
+                          : MonitorOverviewPalette.pillBackground(colorScheme))
+            )
+            .animation(Theme.Animation.hover, value: isAwakeVisual)
     }
 
-    private var iconBackground: Color {
-        if isAwakeVisual {
-            return Theme.Stats.down.opacity(colorScheme == .light ? 0.12 : 0.22)
-        }
-        return colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.08)
-    }
-
-    private var cardDivider: some View {
+    /// 分区内行分隔线（区别于分区发丝线 FlatHairline）。
+    private var rowSeparator: some View {
         Rectangle()
-            .fill(colorScheme == .light ? Theme.Stats.separator : Color.white.opacity(0.08))
+            .fill(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
             .frame(height: 1)
-            .padding(.horizontal, 12)
     }
 
     // MARK: - 状态区：时长选择（未开启）
@@ -528,7 +526,7 @@ struct KeepAwakeControlView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(strings.keepAwakeDurationLabel)
                 .font(Theme.Stats.font11Regular)
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
 
             HStack(spacing: 8) {
                 ForEach(presets) { preset in
@@ -539,12 +537,12 @@ struct KeepAwakeControlView: View {
                     } label: {
                         Text(preset.labelKey(strings))
                             .font(Theme.Stats.font12Medium)
-                            .foregroundStyle(isSelected ? Color.white : (colorScheme == .light ? Theme.Stats.text2 : Color.primary))
+                            .foregroundStyle(isSelected ? Color.white : MonitorOverviewPalette.secondary(colorScheme))
                             .frame(maxWidth: .infinity)
                             .frame(height: 30)
                             .background(
                                 RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous)
-                                    .fill(isSelected ? Color.accentColor : (colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.08)))
+                                    .fill(isSelected ? Color.accentColor : MonitorOverviewPalette.pillBackground(colorScheme))
                             )
                     }
                     .buttonStyle(.plain)
@@ -552,7 +550,8 @@ struct KeepAwakeControlView: View {
                 }
             }
         }
-        .padding(12)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     // MARK: - 状态区：定时会话倒计时
@@ -562,12 +561,12 @@ struct KeepAwakeControlView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(strings.keepAwakeRemainingLabel)
                         .font(Theme.Stats.font10Regular)
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                        .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                     if let endDate = presentation.countdownEndDate {
                         TimelineView(.periodic(from: .now, by: 1)) { context in
                             Text(KeepAwakeControlCountdownFormatter.text(endDate: endDate, now: context.date, strings: strings))
                                 .font(Theme.Stats.font24Bold.monospacedDigit())
-                                .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                                .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                                 .contentTransition(.numericText())
                         }
                     }
@@ -578,11 +577,11 @@ struct KeepAwakeControlView: View {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(strings.keepAwakeEndsAtLabel)
                         .font(Theme.Stats.font10Regular)
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                        .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                     if let endDate = presentation.countdownEndDate {
                         Text(KeepAwakeControlCountdownFormatter.endTimeText(endDate: endDate))
                             .font(Theme.Stats.font13SemiBold)
-                            .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.primary)
+                            .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
                     }
                 }
             }
@@ -595,7 +594,8 @@ struct KeepAwakeControlView: View {
                 }
             }
         }
-        .padding(12)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     private func extendChip(minutes: Int, label: String) -> some View {
@@ -634,37 +634,38 @@ struct KeepAwakeControlView: View {
         }
         .buttonStyle(.plain)
         .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous))
-        .padding(12)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
-    // MARK: - 合盖时保持唤醒卡片
-    private var clamshellCard: some View {
+    // MARK: - 合盖时保持唤醒分区（原合盖卡拆卡）
+    private var clamshellSection: some View {
         HStack(alignment: .center, spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(config.clamshellPreferred.wrappedValue
-                        ? Theme.Stats.down.opacity(colorScheme == .light ? 0.12 : 0.22)
-                        : (colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.08)))
-                Image(systemName: "laptopcomputer")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(config.clamshellPreferred.wrappedValue
-                        ? Theme.Stats.down
-                        : (colorScheme == .light ? Theme.Stats.text1 : Color.primary))
-            }
-            .frame(width: 38, height: 38)
-            .animation(Theme.Animation.hover, value: config.clamshellPreferred.wrappedValue)
+            Image(systemName: "laptopcomputer")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(config.clamshellPreferred.wrappedValue
+                    ? Theme.Stats.down
+                    : MonitorOverviewPalette.primary(colorScheme))
+                .frame(width: 34, height: 34)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(config.clamshellPreferred.wrappedValue
+                              ? Theme.Stats.down.opacity(0.16)
+                              : MonitorOverviewPalette.pillBackground(colorScheme))
+                )
+                .animation(Theme.Animation.hover, value: config.clamshellPreferred.wrappedValue)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(strings.keepAwakeClamshellTitle)
                     .font(Theme.Stats.font13SemiBold)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                    .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                 Text(strings.keepAwakeClamshellSubtitle)
                     .font(Theme.Stats.font11Regular)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                    .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                 if config.clamshellPreferred.wrappedValue {
                     Text(presentation.clamshellStatusLine ?? strings.keepAwakeClamshellFootnote)
                         .font(Theme.Stats.font10Regular)
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                        .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                 }
             }
 
@@ -677,11 +678,11 @@ struct KeepAwakeControlView: View {
                 .disabled(!presentation.clamshellToggleEnabled)
                 .accessibilityLabel(strings.keepAwakeClamshellTitle)
         }
-        .padding(12)
-        .background(cardBackground)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
-    // MARK: - 错误横幅
+    // MARK: - 错误横幅（tint 横幅保留，外包分区边距）
     private func errorBanner(_ text: String) -> some View {
         HStack(alignment: .center, spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
@@ -699,18 +700,8 @@ struct KeepAwakeControlView: View {
             RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
                 .fill(Theme.Stats.up.opacity(colorScheme == .light ? 0.08 : 0.16))
         )
-    }
-
-    // MARK: - 卡片背景样式
-    private var cardBackground: some View {
-        Group {
-            if colorScheme == .dark {
-                Color.white.opacity(0.08)
-            } else {
-                Theme.Stats.cardBackground
-            }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     private var toggleBinding: Binding<Bool> {
