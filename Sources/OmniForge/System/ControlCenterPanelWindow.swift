@@ -22,6 +22,12 @@ final class ControlCenterPanelWindow: NSPanel {
     /// Escape / 失焦等关闭入口由宿主接线（宿主负责会话清理与按钮态复位）。
     var onDismiss: (() -> Void)?
 
+    /// 失焦时是否应关闭会话。SwiftUI `.sheet` 呈现会以附属窗口接管 key
+    /// 状态，面板收到的 resignKey 属于「内部失焦」而非点击面板外——此时
+    /// 关闭会连带收回 sheet（选择器弹不出且面板一起消失），须豁免。
+    /// sheet 关闭后 key 自动回归面板，无需干预。
+    var shouldCloseOnFocusLoss: Bool { attachedSheet == nil }
+
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 

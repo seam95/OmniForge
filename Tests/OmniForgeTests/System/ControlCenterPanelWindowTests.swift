@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 @testable import OmniForge
 
 /// 自管面板窗口定位纯函数（SPEC：水平居中锚点 + 屏缘 clamp + 顶贴锚点）。
@@ -68,6 +69,70 @@ final class ControlCenterPanelWindowTests: XCTestCase {
             visibleFrame: visibleFrame
         )
         XCTAssertGreaterThanOrEqual(frame.minY, visibleFrame.minY)
+    }
+}
+
+/// sheet 呈现期失焦豁免：SwiftUI `.sheet` 以附属窗口挂载并接管 key 状态，
+/// 面板 resignKey 属「内部失焦」。回归背景（2026-09-07 诊断）：卸载器点
+/// 「选择 APP」后 sheet 抢 key → 面板失焦关闭 → sheet 被连带收回，弹窗与
+/// 面板一起消失。豁免信号必须与真实 sheet 挂载联动（attachedSheet）。
+@MainActor
+final class ControlCenterPanelSheetExemptionTests: XCTestCase {
+
+    private final class SheetProbe: ObservableObject {
+        @Published var showSheet = false
+    }
+
+    private struct ProbeHost: View {
+        @ObservedObject var probe: SheetProbe
+
+        var body: some View {
+            Text("HOST")
+                .frame(width: 380, height: 400)
+                .sheet(isPresented: $probe.showSheet) {
+                    Text("SHEET").frame(width: 200, height: 120)
+                }
+        }
+    }
+
+    /// 真实链路：sheet 挂载后豁免信号必须翻转为 false（失焦不关闭）。
+    func test_realSheetPresentation_blocksFocusLossClose() {
+        let panel = ControlCenterPanelWindow(
+            contentRect: NSRect(x: 100, y: 500, width: 380, height: 400)
+        )
+        let probe = SheetProbe()
+        let controller = NSHostingController(rootView: AnyView(ProbeHost(probe: probe)))
+        controller.sizingOptions = []
+        panel.contentViewController = controller
+        panel.orderFrontRegardless()
+
+        XCTAssertTrue(panel.shouldCloseOnFocusLoss, "前置：无 sheet 时允许失焦关闭")
+
+        probe.showSheet = true
+        let attached = waitUntil(timeout: 1.5) { panel.attachedSheet != nil }
+
+        XCTAssertTrue(attached, "sheet 应以附属窗口挂载（非激活环境亦可呈现）")
+        XCTAssertFalse(panel.shouldCloseOnFocusLoss, "sheet 呈现期必须豁免失焦关闭")
+
+        panel.orderOut(nil)
+    }
+
+    /// 无 sheet 的面板保持失焦关闭语义（点击面板外仍关闭）。
+    func test_noSheet_closeOnFocusLossStaysAllowed() {
+        let panel = ControlCenterPanelWindow(
+            contentRect: NSRect(x: 100, y: 500, width: 380, height: 400)
+        )
+        XCTAssertNil(panel.attachedSheet)
+        XCTAssertTrue(panel.shouldCloseOnFocusLoss)
+    }
+
+    private func waitUntil(timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        return condition()
     }
 }
 

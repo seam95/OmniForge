@@ -817,8 +817,11 @@ final class StatusBarController: NSObject, NSWindowDelegate {
     }
 
     /// 点击面板外/切换应用等失焦路径关闭（NSPopover transient 的自管等价物）。
+    /// sheet 呈现期的失焦是「内部失焦」，豁免（且不记录 dismiss 时间戳，
+    /// 避免污染 0.3s 竞态窗判断）。
     func windowDidResignKey(_ notification: Notification) {
         guard panel.isVisible else { return }
+        guard panel.shouldCloseOnFocusLoss else { return }
         panelDismissedByFocusLossAt = Date()
         closePanel()
     }
@@ -830,6 +833,9 @@ final class StatusBarController: NSObject, NSWindowDelegate {
         escapeKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             guard event.keyCode == 53 else { return event }
+            // sheet 呈现期间 Escape 交给 sheet 自身（取消/收起），不放行会
+            // 把整个面板连同 sheet 一起关掉。
+            guard self.panel.shouldCloseOnFocusLoss else { return event }
             self.closePanel()
             return nil
         }
