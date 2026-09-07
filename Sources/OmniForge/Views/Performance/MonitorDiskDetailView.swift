@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// 磁盘详情页：选盘 → 使用 → 活动 → SMART → 保护 → 工具。
+/// 磁盘详情页（平面分区布局）：选盘 → 使用 → 实时活动 → SMART → 保护 → 工具。
 /// 对齐 SPEC §3.3–3.9，无编辑排序（区别于 vorssaint）。
+/// 风格对齐监控平面语言：无卡片，FlatSectionHeader + 发丝线分区。
 struct MonitorDiskDetailView: View {
     let snapshot: SystemSnapshot
     let strings: Strings
@@ -21,6 +22,11 @@ struct MonitorDiskDetailView: View {
     private var selected: PhysicalDiskReading? {
         guard let id = selectedDiskID else { return disks.first }
         return disks.first(where: { $0.id == id }) ?? disks.first
+    }
+
+    /// 磁盘分区统一强调色（与监控 overview 磁盘卡同源）
+    private var diskAccent: Color {
+        MonitorCardAccent.color(for: .disk)
     }
 
     @Environment(\.colorScheme) private var colorScheme
@@ -47,8 +53,11 @@ struct MonitorDiskDetailView: View {
             header
             VStack(spacing: 12) {
                 Spacer()
+                Image(systemName: "internaldrive")
+                    .font(.system(size: 28))
+                    .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                 Text(strings.diskNoDisks)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                    .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
                     .font(Theme.Stats.font13SemiBold)
                 Spacer()
                 footer
@@ -63,21 +72,30 @@ struct MonitorDiskDetailView: View {
         VStack(spacing: 0) {
             header
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 12) {
                     diskSelector
+                    hairline
                     if let sel = selected {
                         usageSection(sel)
+                        hairline
                         activitySection(sel)
+                        hairline
                         smartSection(sel)
-                        protectionAndToolsSection(sel)
+                        hairline
+                        protectionSection
+                        hairline
+                        toolsSection(sel)
+                        hairline
+                        footer
                     }
-                    Divider()
-                        .overlay(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
-                    footer
                 }
                 .padding(12)
             }
         }
+    }
+
+    private var hairline: some View {
+        FlatHairline()
     }
 
     // MARK: - Header
@@ -93,7 +111,8 @@ struct MonitorDiskDetailView: View {
     // MARK: - Disk Selector
 
     private var diskSelector: some View {
-        sectionBlock(title: strings.diskSelect) {
+        VStack(alignment: .leading, spacing: 8) {
+            FlatSectionHeader(title: strings.diskSelect, accent: diskAccent)
             let columns = [GridItem(.adaptive(minimum: 120), spacing: 8)]
             LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
                 ForEach(disks) { disk in
@@ -111,24 +130,26 @@ struct MonitorDiskDetailView: View {
             HStack(spacing: 6) {
                 Image(systemName: disk.isInternal ? "internaldrive" : "externaldrive")
                     .font(.system(size: 11))
+                    .foregroundStyle(isSelected ? diskAccent : MonitorOverviewPalette.secondary(colorScheme))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(disk.name)
                         .font(Theme.Stats.font11Regular)
+                        .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                         .lineLimit(1)
                     Text(String(format: "%.0f%%", disk.usedFraction * 100))
                         .font(Theme.Stats.font10Regular)
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                        .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                 }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? Color.accentColor.opacity(0.15) : (colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.08)))
+                    .fill(isSelected ? diskAccent.opacity(0.12) : MonitorOverviewPalette.pillBackground(colorScheme))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 1.2)
+                    .stroke(isSelected ? diskAccent.opacity(0.6) : Color.clear, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -137,7 +158,9 @@ struct MonitorDiskDetailView: View {
     // MARK: - Usage
 
     private func usageSection(_ disk: PhysicalDiskReading) -> some View {
-        sectionBlock(title: strings.diskUsage) {
+        VStack(alignment: .leading, spacing: 8) {
+            FlatSectionHeader(title: strings.diskUsage, accent: diskAccent)
+
             VStack(alignment: .leading, spacing: 8) {
                 // Title row
                 HStack(spacing: 6) {
@@ -145,6 +168,7 @@ struct MonitorDiskDetailView: View {
                         .font(.system(size: 13, weight: .semibold))
                     Text(disk.name)
                         .font(Theme.Stats.font13SemiBold)
+                        .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                         .lineLimit(1)
 
                     labelCapsule(
@@ -155,7 +179,7 @@ struct MonitorDiskDetailView: View {
                     if let fs = disk.fileSystem {
                         labelCapsule(fs, color: Theme.Stats.cpu)
                     } else {
-                        labelCapsule(strings.diskFileSystemUnsupported, color: colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                        labelCapsule(strings.diskFileSystemUnsupported, color: MonitorOverviewPalette.auxiliary(colorScheme))
                     }
                 }
 
@@ -166,82 +190,84 @@ struct MonitorDiskDetailView: View {
                     critical: 90,
                     tint: MonitorCardAccent.barTint(for: .disk, progress: disk.usedFraction)
                 )
-                .frame(height: 6)
+                .frame(height: 4)
 
                 // Stats
                 HStack {
                     Text("\(Int(disk.usedFraction * 100))% \(strings.diskUsed)")
                         .font(Theme.Stats.font11Regular)
+                        .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
 
                     Spacer()
 
                     Text("\(MetricFormat.diskBytes(disk.freeBytes)) \(strings.diskFree)")
                         .font(Theme.Stats.font11Regular)
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                        .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
                 }
 
                 HStack {
                     Text("\(MetricFormat.diskBytes(disk.usedBytes)) / \(MetricFormat.diskBytes(disk.totalBytes))")
-                        .font(Theme.Stats.font10Regular)
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                        .font(Theme.Stats.font10Regular.monospacedDigit())
+                        .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                     Spacer()
                 }
             }
+            .padding(.horizontal, 4)
         }
     }
 
     // MARK: - Activity
 
     private func activitySection(_ disk: PhysicalDiskReading) -> some View {
-        sectionBlock(title: strings.diskActivity) {
+        VStack(alignment: .leading, spacing: 8) {
+            FlatSectionHeader(title: strings.diskActivity, accent: diskAccent)
+
             HStack(alignment: .top, spacing: 20) {
-                // Read
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.down.circle")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Theme.Stats.down)
-                        Text(strings.diskRead)
-                            .font(Theme.Stats.font11Regular)
-                    }
-                    let rate = MetricFormat.bytesPerSec(disk.readBytesPerSec) ?? strings.diskMeasuring
-                    Text(rate)
-                        .font(Theme.Stats.font13SemiBold)
-                        .lineLimit(1)
-                    HStack(spacing: 4) {
-                        Text(strings.diskThisSession)
-                            .font(Theme.Stats.font10Regular)
-                            .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
-                        Text(disk.totalReadBytes.map { MetricFormat.diskBytes($0) } ?? strings.diskMeasuring)
-                            .font(Theme.Stats.font10Regular)
-                            .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
-                    }
-                }
+                activityColumn(
+                    icon: "arrow.down.circle",
+                    tint: Theme.Stats.down,
+                    label: strings.diskRead,
+                    rate: MetricFormat.bytesPerSec(disk.readBytesPerSec),
+                    total: disk.totalReadBytes
+                )
 
                 Spacer()
 
-                // Write
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.up.circle")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Theme.Stats.ram)
-                        Text(strings.diskWrite)
-                            .font(Theme.Stats.font11Regular)
-                    }
-                    let rate = MetricFormat.bytesPerSec(disk.writeBytesPerSec) ?? strings.diskMeasuring
-                    Text(rate)
-                        .font(Theme.Stats.font13SemiBold)
-                        .lineLimit(1)
-                    HStack(spacing: 4) {
-                        Text(strings.diskThisSession)
-                            .font(Theme.Stats.font10Regular)
-                            .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
-                        Text(disk.totalWrittenBytes.map { MetricFormat.diskBytes($0) } ?? strings.diskMeasuring)
-                            .font(Theme.Stats.font10Regular)
-                            .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
-                    }
-                }
+                activityColumn(
+                    icon: "arrow.up.circle",
+                    tint: Theme.Stats.up,
+                    label: strings.diskWrite,
+                    rate: MetricFormat.bytesPerSec(disk.writeBytesPerSec),
+                    total: disk.totalWrittenBytes
+                )
+            }
+            .padding(.horizontal, 4)
+        }
+    }
+
+    /// 读/写列：标签行 → 速率大数字（与风扇 RPM 同层级）→ 会话累计小字。
+    /// 「测量中」暂态与数值同字号，避免采样落定后行高跳变。
+    private func activityColumn(icon: String, tint: Color, label: String, rate: String?, total: UInt64?) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 11))
+                    .foregroundStyle(tint)
+                Text(label)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
+            }
+            Text(rate ?? strings.diskMeasuring)
+                .font(.system(size: 22, weight: .semibold).monospacedDigit())
+                .foregroundStyle(rate == nil ? MonitorOverviewPalette.secondary(colorScheme) : MonitorOverviewPalette.primary(colorScheme))
+                .lineLimit(1)
+            HStack(spacing: 4) {
+                Text(strings.diskThisSession)
+                    .font(Theme.Stats.font10Regular)
+                    .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
+                Text(total.map { MetricFormat.diskBytes($0) } ?? strings.diskMeasuring)
+                    .font(Theme.Stats.font10Regular.monospacedDigit())
+                    .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
             }
         }
     }
@@ -249,7 +275,9 @@ struct MonitorDiskDetailView: View {
     // MARK: - SMART
 
     private func smartSection(_ disk: PhysicalDiskReading) -> some View {
-        sectionBlock(title: strings.diskSMART) {
+        VStack(alignment: .leading, spacing: 8) {
+            FlatSectionHeader(title: strings.diskSMART, accent: diskAccent)
+
             if let smart = disk.smart, smart.hasDetails {
                 smartDetailRow(label: strings.diskSMARTStatus, value: smart.status)
                 smartDetailRow(label: strings.diskTotalRead, value: smart.totalReadBytes.map { MetricFormat.diskBytes($0) })
@@ -264,7 +292,7 @@ struct MonitorDiskDetailView: View {
             } else {
                 Text(strings.diskSMARTUnavailable)
                     .font(Theme.Stats.font11Regular)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                    .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
             }
         }
     }
@@ -273,38 +301,22 @@ struct MonitorDiskDetailView: View {
         HStack(spacing: 8) {
             Text(label)
                 .font(Theme.Stats.font11Regular)
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
                 .frame(width: 80, alignment: .leading)
             Text(value ?? strings.diskUnsupported)
-                .font(Theme.Stats.font11Regular)
-                .foregroundStyle(value == nil ? (colorScheme == .light ? Theme.Stats.text3 : Color.secondary) : (colorScheme == .light ? Theme.Stats.text1 : Color.primary))
+                .font(Theme.Stats.font11Regular.monospacedDigit())
+                .foregroundStyle(value == nil ? MonitorOverviewPalette.auxiliary(colorScheme) : MonitorOverviewPalette.primary(colorScheme))
             Spacer()
         }
     }
 
-    // MARK: - Protection & Tools
+    // MARK: - Protection
 
-    private func protectionAndToolsSection(_ disk: PhysicalDiskReading) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            protectionCard
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-            toolsCard(disk)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-        }
-    }
-
-    private var protectionCard: some View {
-        sectionBlock(title: strings.diskProtection) {
+    private var protectionSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            FlatSectionHeader(title: strings.diskProtection, accent: diskAccent)
             protectionContent
         }
-        .frame(maxHeight: .infinity, alignment: .topLeading)
-    }
-
-    private func toolsCard(_ disk: PhysicalDiskReading) -> some View {
-        sectionBlock(title: strings.diskTools) {
-            toolsContent(disk)
-        }
-        .frame(maxHeight: .infinity, alignment: .topLeading)
     }
 
     @ViewBuilder
@@ -314,7 +326,7 @@ struct MonitorDiskDetailView: View {
         if ejectables.isEmpty {
             Text(strings.diskNoExternal)
                 .font(Theme.Stats.font11Regular)
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
@@ -339,7 +351,7 @@ struct MonitorDiskDetailView: View {
                 } else {
                     Text(strings.diskProtectionCaption)
                         .font(Theme.Stats.font10Regular)
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                        .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                 }
             }
         }
@@ -363,20 +375,26 @@ struct MonitorDiskDetailView: View {
         }
     }
 
-    private func toolsContent(_ disk: PhysicalDiskReading) -> some View {
-        HStack(spacing: 8) {
-            Button(strings.diskOpenInFinder) {
-                NSWorkspace.shared.open(URL(fileURLWithPath: disk.primaryMountPath))
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
+    // MARK: - Tools
 
-            Button(strings.diskStorageSettings) {
-                let url = URL(fileURLWithPath: "/System/Library/PreferencePanes/Storage.prefPane")
-                NSWorkspace.shared.open(url)
+    private func toolsSection(_ disk: PhysicalDiskReading) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            FlatSectionHeader(title: strings.diskTools, accent: diskAccent)
+
+            HStack(spacing: 8) {
+                Button(strings.diskOpenInFinder) {
+                    NSWorkspace.shared.open(URL(fileURLWithPath: disk.primaryMountPath))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button(strings.diskStorageSettings) {
+                    let url = URL(fileURLWithPath: "/System/Library/PreferencePanes/Storage.prefPane")
+                    NSWorkspace.shared.open(url)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
         }
     }
 
@@ -394,20 +412,6 @@ struct MonitorDiskDetailView: View {
     }
 
     // MARK: - Helpers
-
-    private func sectionBlock<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(Theme.Stats.font13SemiBold)
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
-            content()
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(colorScheme == .light ? Theme.Stats.cardBackground : Color.white.opacity(0.08))
-        )
-    }
 
     private func labelCapsule(_ text: String, color: Color) -> some View {
         Text(text)
