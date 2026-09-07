@@ -82,4 +82,14 @@ enum MenuPanel: String, CaseIterable, Identifiable {
         case .clipboard: return strings.controlcenterNavUtilities
         }
     }
+
+    /// 控制中心平面白底风格面板（footer flat、按钮主色等统一样式判定）。
+    /// 全部主 tab 均为平面风格；监控 overview 的浅色白底由其内层 route 持有，
+    /// 宿主转场层 surface 不重复给白底（见 ControlCenterContainerView.panelSurface）。
+    var usesFlatChrome: Bool {
+        switch self {
+        case .systemMonitor, .tokenUsage, .keepAwake, .providerSwitch, .clipboard:
+            return true
+        }
+    }
 }
