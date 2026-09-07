@@ -183,30 +183,68 @@ final class MenuBarMetricRendererTests: XCTestCase {
         XCTAssertEqual(blocks[1].value, "55°")
     }
 
+    /// 电池温度与 CPU/GPU 同构：合并开启且电池温度勾选时并入 BAT 电量行
+    func test_combineTemperatures_batteryAppendsTempWhenBatteryTemperatureEnabled() {
+        var snapshot = SystemSnapshot()
+        snapshot.power = PowerReading(batteryLevel: 0.85, hasBattery: true)
+        snapshot.batteryTemperature = 35
+
+        var config = MonitorConfiguration()
+        config.combineTemperatures = true
+
+        let blocks = MenuBarMetricRenderer.blocks(
+            for: snapshot,
+            metrics: [.battery, .batteryTemperature],
+            configuration: config
+        )
+
+        XCTAssertEqual(blocks.map(\.label), ["BAT"])
+        XCTAssertEqual(blocks[0].value, "85% 35°")
+    }
+
+    /// 电池温度未勾选时合并不隐式拼入（与 CPU 分支行为一致）
+    func test_combineTemperatures_batteryDoesNotAppendTempUnlessTemperatureMetricEnabled() {
+        var snapshot = SystemSnapshot()
+        snapshot.power = PowerReading(batteryLevel: 0.85, hasBattery: true)
+        snapshot.batteryTemperature = 35
+
+        var config = MonitorConfiguration()
+        config.combineTemperatures = true
+
+        let blocks = MenuBarMetricRenderer.blocks(
+            for: snapshot,
+            metrics: [.battery],
+            configuration: config
+        )
+
+        XCTAssertEqual(blocks.map(\.label), ["BAT"])
+        XCTAssertEqual(blocks[0].value, "85%")
+    }
+
+    /// 合并关闭时电池温度保持独立 BAT° 块
+    func test_combineTemperatures_off_keepsSeparateBatteryTemperatureBlock() {
+        var snapshot = SystemSnapshot()
+        snapshot.power = PowerReading(batteryLevel: 0.85, hasBattery: true)
+        snapshot.batteryTemperature = 35
+
+        var config = MonitorConfiguration()
+        config.combineTemperatures = false
+
+        let blocks = MenuBarMetricRenderer.blocks(
+            for: snapshot,
+            metrics: [.battery, .batteryTemperature],
+            configuration: config
+        )
+
+        XCTAssertEqual(blocks.map(\.label), ["BAT", "BAT°"])
+        XCTAssertEqual(blocks[0].value, "85%")
+        XCTAssertEqual(blocks[1].value, "35°")
+    }
+
     func test_layoutSpacingConstants_matchExpected() {
         XCTAssertEqual(MenuBarMetricLayout.compactSpacing, 2)
         XCTAssertEqual(MenuBarMetricLayout.standardSpacing, 2)
         XCTAssertEqual(MenuBarMetricLayout.minItemWidth, 28)
-    }
-
-    func test_disk_usesAggregateFreeSpaceWithDiskBytes() {
-        var snapshot = SystemSnapshot()
-        snapshot.disk = DiskReading(
-            devices: [
-                DiskDeviceReading(
-                    id: "/", name: "Macintosh HD", mountPath: "/",
-                    totalBytes: 1_000_000_000_000, freeBytes: 250_000_000_000, usedBytes: 750_000_000_000,
-                    isInternal: true, readBytesPerSec: 0, writeBytesPerSec: 0,
-                    totalReadBytes: 0, totalWrittenBytes: 0
-                )
-            ],
-            readBytesPerSec: 0, writeBytesPerSec: 0,
-            totalRead: 0, totalWritten: 0,
-            freeSpace: 250_000_000_000, totalSpace: 1_000_000_000_000
-        )
-        let block = firstBlock(for: snapshot, metrics: [.disk], configuration: MonitorConfiguration())
-        XCTAssertEqual(block.label, "DSK")
-        XCTAssertEqual(block.value, MetricFormat.diskBytes(250_000_000_000))
     }
 
     func test_compactReserve_padsToAtLeastTwoDigits() {

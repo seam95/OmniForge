@@ -189,4 +189,36 @@ final class MonitorPreferencesTests: XCTestCase {
         XCTAssertNotNil(defaults.data(forKey: "OmniForge.monitorConfiguration"))
         XCTAssertNil(defaults.data(forKey: "InputLock.monitorConfiguration"))
     }
+
+    /// 存量 JSON 含已下线菜单栏指标（磁盘/电源/日期）时按 rawValue 剔除，
+    /// 不抛错、不丢其余偏好
+    func test_legacyJSONWithRemovedMenuBarMetrics_dropsUnknownCasesAndKeepsRest() throws {
+        let suite = "MonitorPreferences.removedMenuBarMetrics"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+
+        let legacyJSON = """
+        {
+          "refreshInterval": 5,
+          "temperatureUnit": "fahrenheit",
+          "enabledMenuBarMetrics": ["cpu", "battery", "disk", "power", "date"],
+          "menuBarMetricOrder": ["date", "cpu", "disk", "battery", "power", "fan"]
+        }
+        """.data(using: .utf8)!
+        defaults.set(legacyJSON, forKey: "OmniForge.monitorConfiguration")
+
+        let preferences = MonitorPreferences(userDefaults: defaults)
+        XCTAssertEqual(
+            preferences.configuration.enabledMenuBarMetrics,
+            [.cpu, .battery],
+            "已下线指标被剔除，保留仍存在的勾选"
+        )
+        XCTAssertEqual(
+            preferences.configuration.menuBarMetricOrder,
+            [.cpu, .battery, .fan],
+            "排序中已下线指标被剔除，其余保持相对顺序"
+        )
+        XCTAssertEqual(preferences.configuration.refreshInterval, 5)
+        XCTAssertEqual(preferences.configuration.temperatureUnit, .fahrenheit)
+    }
 }

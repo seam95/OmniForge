@@ -67,12 +67,15 @@ enum MenuBarMetricRenderer {
     ) -> [MetricBlock] {
         let enabled = Set(metrics)
         return metrics.compactMap { metric in
-            // 合并温度开启且对应占用指标也启用时，温度并入 CPU/GPU，不再单独出块
+            // 合并温度开启且对应占用指标也启用时，温度并入 CPU/GPU/电池，不再单独出块
             if configuration.combineTemperatures {
                 if metric == .cpuTemperature, enabled.contains(.cpu) {
                     return nil
                 }
                 if metric == .gpuTemperature, enabled.contains(.gpu) {
+                    return nil
+                }
+                if metric == .batteryTemperature, enabled.contains(.battery) {
                     return nil
                 }
             }
@@ -141,23 +144,6 @@ enum MenuBarMetricRenderer {
         case .network:
             return networkBlock(for: snapshot, uploadFirst: configuration.networkUploadFirst)
 
-        case .disk:
-            if let free = snapshot.disk?.freeSpace {
-                let freeStr = MetricFormat.diskBytes(free)
-                return MetricBlock(label: "DSK", value: freeStr, minimumValue: "00.00 GB")
-            }
-            return MetricBlock(label: "DSK", value: "--", minimumValue: "00.00 GB")
-
-        case .power:
-            if let level = snapshot.power?.batteryLevel {
-                return MetricBlock(
-                    label: "PWR",
-                    value: MetricFormat.batteryLevel(level) ?? "--",
-                    minimumValue: "100%"
-                )
-            }
-            return MetricBlock(label: "PWR", value: "--", minimumValue: "100%")
-
         case .batteryTemperature:
             return temperatureBlock(
                 label: "BAT°",
@@ -194,22 +180,23 @@ enum MenuBarMetricRenderer {
             let joined = MetricFormat.rpmJoined(snapshot.fans.map(\.currentRPM)) ?? "--"
             return MetricBlock(label: "FAN", value: joined, minimumValue: "8800/8800")
 
-        case .date:
-            let formatter = DateFormatter()
-            formatter.dateFormat = "MM/dd HH:mm"
-            guard let sampledAt = snapshot.sampledAt else { return nil }
-            let text = formatter.string(from: sampledAt)
-            return MetricBlock(label: " ", value: text, minimumValue: "00/00 00:00")
-
         case .battery:
-            if let power = snapshot.power {
+            guard let power = snapshot.power else {
+                return MetricBlock(label: "BAT", value: "--", minimumValue: "100%")
+            }
+            let level = MetricFormat.batteryLevel(power.batteryLevel) ?? "--"
+            // 与 CPU/GPU 同构：仅当用户勾选了电池温度且合并开启时拼入电量行
+            if configuration.combineTemperatures,
+               enabledMetrics.contains(.batteryTemperature),
+               let temp = snapshot.batteryTemperature,
+               let tempStr = MetricFormat.temperature(temp, unit: configuration.temperatureUnit) {
                 return MetricBlock(
                     label: "BAT",
-                    value: MetricFormat.batteryLevel(power.batteryLevel) ?? "--",
-                    minimumValue: "100%"
+                    value: "\(level) \(tempStr)",
+                    minimumValue: Self.percentTempMinimum(unit: configuration.temperatureUnit)
                 )
             }
-            return MetricBlock(label: "BAT", value: "--", minimumValue: "100%")
+            return MetricBlock(label: "BAT", value: level, minimumValue: "100%")
         }
     }
 

@@ -275,11 +275,11 @@ final class SystemMonitorManagerTests: XCTestCase {
         try await waitForSnapshot(manager) { _ in disk.callCount >= 1 }
         XCTAssertEqual(disk.lastRefreshMetadata, true)
 
-        // 仅菜单栏（无面板 demand）：disk 后台 stride=5，需推进 tick 才会采样
+        // 仅后台需求（无面板 demand，磁盘告警驱动）：disk 后台 stride=5，需推进 tick 才会采样
         manager.setPanelDemand(.none)
         disk.callCount = 0
         disk.lastRefreshMetadata = nil
-        manager.setMenuBarMetrics([.disk])
+        manager.setAlertRequirements([.disk])
         // startSampling 的即时 sampleAll 在 tick=1 时通常不采样 disk；再 fire 到 stride 倍数
         for _ in 0..<8 {
             if disk.callCount >= 1 { break }

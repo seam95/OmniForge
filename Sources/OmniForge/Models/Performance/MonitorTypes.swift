@@ -297,14 +297,14 @@ struct PeripheralBatteryDevice: Equatable, Identifiable {
 
 /// 菜单栏可显示的指标
 enum MenuBarMetric: String, CaseIterable, Hashable, Codable {
-    case cpu, gpu, memory, network, disk, power, battery
+    case cpu, gpu, memory, network, battery
     case cpuTemperature, gpuTemperature, batteryTemperature
-    case peripheralBattery, date, fan
+    case peripheralBattery, fan
 
     static let defaultOrder: [MenuBarMetric] = [
-        .cpu, .gpu, .memory, .network, .disk, .power,
+        .cpu, .gpu, .memory, .network,
         .battery, .cpuTemperature, .gpuTemperature,
-        .batteryTemperature, .peripheralBattery, .fan, .date
+        .batteryTemperature, .peripheralBattery, .fan
     ]
 
     /// 设置页/菜单栏指标展示名。CPU/GPU 保留术语，其余走本地化。
@@ -314,15 +314,12 @@ enum MenuBarMetric: String, CaseIterable, Hashable, Codable {
         case .gpu: return strings.menubarMetricGPU
         case .memory: return strings.menubarMetricMemory
         case .network: return strings.menubarMetricNetwork
-        case .disk: return strings.menubarMetricDisk
-        case .power: return strings.menubarMetricPower
         case .battery: return strings.menubarMetricBattery
         case .cpuTemperature: return strings.menubarMetricCPUTemperature
         case .gpuTemperature: return strings.menubarMetricGPUTemperature
         case .batteryTemperature: return strings.menubarMetricBatteryTemperature
         case .peripheralBattery: return strings.menubarMetricPeripheralBattery
         case .fan: return strings.menubarMetricFan
-        case .date: return strings.menubarMetricDate
         }
     }
 }

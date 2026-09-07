@@ -84,10 +84,13 @@ struct MonitorConfiguration: Equatable, Codable {
             ?? Array(MonitorSection.allCases)
         visiblePanelMetrics = try container.decodeIfPresent(Set<MonitorMetric>.self, forKey: .visiblePanelMetrics)
             ?? Set(MonitorMetric.allCases)
-        enabledMenuBarMetrics = try container.decodeIfPresent(Set<MenuBarMetric>.self, forKey: .enabledMenuBarMetrics)
-            ?? []
-        menuBarMetricOrder = try container.decodeIfPresent([MenuBarMetric].self, forKey: .menuBarMetricOrder)
-            ?? MenuBarMetric.defaultOrder
+        // 按 rawValue 过滤而非直接解码枚举集合：存量 JSON 中已下线的指标
+        // （磁盘/电源/日期）会让 Set/数组整体解码失败，导致全部监控偏好回退默认
+        let enabledRaw = try container.decodeIfPresent([String].self, forKey: .enabledMenuBarMetrics) ?? []
+        enabledMenuBarMetrics = Set(enabledRaw.compactMap { MenuBarMetric(rawValue: $0) })
+        let orderRaw = try container.decodeIfPresent([String].self, forKey: .menuBarMetricOrder) ?? []
+        let order = orderRaw.compactMap { MenuBarMetric(rawValue: $0) }
+        menuBarMetricOrder = order.isEmpty ? MenuBarMetric.defaultOrder : order
         menuBarPreset = try container.decodeIfPresent(MenuBarPreset.self, forKey: .menuBarPreset) ?? .dense
         menuBarSpacing = try container.decodeIfPresent(MenuBarMetricSpacing.self, forKey: .menuBarSpacing) ?? .compact
         menuBarMemoryStyle = try container.decodeIfPresent(MemoryMenuBarStyle.self, forKey: .menuBarMemoryStyle) ?? .percent

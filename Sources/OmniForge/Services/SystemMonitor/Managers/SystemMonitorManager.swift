@@ -255,14 +255,12 @@ final class SystemMonitorManager: ObservableObject {
             case .gpu: metrics.insert(.gpu)
             case .memory: metrics.insert(.memory)
             case .network: metrics.insert(.network)
-            case .disk: metrics.insert(.disk)
-            case .power, .battery: metrics.insert(.power)
+            case .battery: metrics.insert(.power)
             case .cpuTemperature: metrics.insert(.cpuTemperature)
             case .gpuTemperature: metrics.insert(.gpuTemperature)
             case .batteryTemperature: metrics.insert(.batteryTemperature)
             case .peripheralBattery: metrics.insert(.peripheralBattery)
             case .fan: metrics.insert(.fan)
-            case .date: break
             }
         }
 

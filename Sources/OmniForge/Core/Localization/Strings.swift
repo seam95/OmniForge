@@ -305,14 +305,11 @@ struct Strings: Equatable {
     let menubarMetricGPU: String
     let menubarMetricMemory: String
     let menubarMetricNetwork: String
-    let menubarMetricDisk: String
-    let menubarMetricPower: String
     let menubarMetricBattery: String
     let menubarMetricCPUTemperature: String
     let menubarMetricGPUTemperature: String
     let menubarMetricBatteryTemperature: String
     let menubarMetricPeripheralBattery: String
-    let menubarMetricDate: String
     let settingsInputMethodSection: String
     // MARK: - Alerts
     let alertsSettingsTitle: String
