@@ -165,6 +165,8 @@ extension Strings {
         fanSettingsBatterySaverThreshold: "Battery threshold",
         fanSettingsForceOnBattery: "Keep performance mode on battery",
         fanSettingsKeepOnScreenSleep: "Keep fan control when locked",
+        fanControlUnavailableOnFanless: "This Mac has no fans — control is unavailable",
+        fanMonitoringStillWorks: "Temperature sensor monitoring remains available from the fan panel in the monitor tab.",
         settingsMoveUp: "↑",
         settingsMoveDown: "↓",
         monitorMetricCpu: "CPU",

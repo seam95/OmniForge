@@ -120,3 +120,27 @@ final class MonitorOverviewSectionFanTests: XCTestCase {
         XCTAssertFalse(sections.contains { $0.id == "section.fan" }, "无风扇读数不出空分区")
     }
 }
+
+/// 无风扇机型：传感器摘要分区仍可进详情页查看温度列表
+final class MonitorOverviewSectionFanlessTests: XCTestCase {
+    func test_fanSection_showsSensorSummary_onFanlessMachineWithSensors() {
+        var snapshot = SystemSnapshot()
+        snapshot.sensors = [
+            FanSensorReading(id: "Tp01", label: "CPU", zone: .cpu, temperatureCelsius: 45)
+        ]
+        let models = MonitorCardModelBuilder.models(
+            snapshot: snapshot,
+            configuration: MonitorConfiguration(),
+            strings: .en,
+            temperatureUnit: .celsius,
+            history: MetricHistory()
+        )
+        let sections = MonitorOverviewSectionPlanner.sections(from: models)
+        XCTAssertTrue(sections.contains { $0.id == "section.fan" },
+                      "无风扇机型有传感器时仍出分区（温度摘要）")
+        let fan = models.first { $0.id == .fan }
+        XCTAssertEqual(fan?.primaryText, "45°")
+        XCTAssertEqual(fan?.hasFanData, false)
+        XCTAssertEqual(fan?.hasSensorData, true)
+    }
+}

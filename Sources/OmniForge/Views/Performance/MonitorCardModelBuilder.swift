@@ -24,6 +24,8 @@ struct MonitorCardModel: Equatable, Identifiable {
     var accessoryText: String? = nil
     /// 风扇卡专用：快照是否有风扇读数（无风扇机器/未采样轮不出分区）
     var hasFanData = true
+    /// 风扇卡专用：无风扇但有传感器读数时仍出分区（展示温度传感器摘要）
+    var hasSensorData = false
 }
 
 /// Pure mapping from snapshot + history + configuration into overview card models.
@@ -84,7 +86,11 @@ enum MonitorCardModelBuilder {
             // 保留（排行代码沿用），overview 无入口
             return energyModel(snapshot: snapshot, strings: strings)
         case .fan:
-            return fanModel(snapshot: snapshot, strings: strings)
+            return fanModel(
+                snapshot: snapshot,
+                strings: strings,
+                temperatureUnit: temperatureUnit
+            )
         }
     }
 
@@ -291,32 +297,38 @@ enum MonitorCardModelBuilder {
         )
     }
 
-    /// 风扇卡：标题行右侧最高转速；caption 逐风扇 RPM；progress 为最高转速占硬件区间比。
-    /// 无风扇读数时 hasFanData=false（Planner 不出分区）。
+    /// 风扇卡：有风扇时标题行右侧最高转速、caption 逐风扇 RPM；
+    /// 无风扇但有传感器时标题改「温度传感器」、主值取最高温度（传感器仍可监控）。
     private static func fanModel(
         snapshot: SystemSnapshot,
-        strings: Strings
+        strings: Strings,
+        temperatureUnit: TemperatureUnit
     ) -> MonitorCardModel {
         let fans = snapshot.fans
-        guard !fans.isEmpty else {
+        if fans.isEmpty {
+            // 无风扇机型：退化为温度传感器摘要卡
+            let peak = snapshot.sensors.map(\.temperatureCelsius).max()
+            let peakText = peak.flatMap { MetricFormat.temperature($0, unit: temperatureUnit) }
+            let count = snapshot.sensors.count
             return MonitorCardModel(
                 id: .fan,
-                title: strings.monitorCardFan,
-                systemImage: "fanblades",
-                primaryText: "--",
-                secondaryText: nil,
+                title: strings.fanSensorSectionTitle,
+                systemImage: "thermometer.medium",
+                primaryText: peakText ?? "--",
+                secondaryText: count > 0 ? "\(count) sensors" : nil,
                 progress: nil,
                 badgeText: nil,
                 showsLiveDot: false,
                 issueText: issueText(for: snapshot.issues[.fan], strings: strings),
                 processMetricKind: nil,
-                hasFanData: false
+                hasFanData: false,
+                hasSensorData: count > 0
             )
         }
         let peak = fans.map(\.currentRPM).max() ?? 0
         let peakFraction = fans.map(\.speedFraction).max() ?? 0
         let anyManual = fans.contains { $0.isManualMode }
-        // caption：`3200 RPM · 3400 RPM`（或单风扇 `3200 RPM`）
+        // caption：`3200 RPM • 3400 RPM`（或单风扇 `3200 RPM`）
         let caption = fans
             .compactMap { MetricFormat.rpm($0.currentRPM).map { "\($0) RPM" } }
             .joined(separator: " \(strings.monitorSubtitleSeparator) ")

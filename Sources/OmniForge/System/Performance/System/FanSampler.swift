@@ -4,17 +4,23 @@ import OmniForgeSMC
 /// 风扇采样器 — FNum 发现 + 每风扇五 key 读取（当前/目标/最小/最大/模式）。
 /// min/max 为硬件常量，首读缓存；所有读取失败以 valid 标志溯源，不与 0 值混同。
 final class FanSampler: FanSampling {
-    private let smc: FanSMCCommanding
+    /// 写入边界 + key 枚举（无风扇判定用 #KEY 探测）
+    private let smc: FanSMCCommanding & SMCKeyEnumerating
     private var cachedMinRPM: [Int: Double] = [:]
     private var cachedMaxRPM: [Int: Double] = [:]
 
-    init(smc: FanSMCCommanding) {
+    init(smc: FanSMCCommanding & SMCKeyEnumerating) {
         self.smc = smc
     }
 
     func sampleFans() throws -> [FanReading] {
         guard let count = smc.readUInt8(forKey: SMCFanKey.fanCount) else {
-            throw MetricSamplingError.systemCall("FNum unreadable")
+            // FNum 读不到有两种含义：无风扇机型（key 本不存在，SMC 整体正常）
+            // 与 SMC 异常。用必然存在的 #KEY 区分 —— 后者才记为采样失败。
+            if smc.totalKeyCount() != nil {
+                return []
+            }
+            throw MetricSamplingError.systemCall("SMC unavailable")
         }
         guard count > 0 else { return [] }
 

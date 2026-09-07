@@ -175,6 +175,9 @@ struct Strings: Equatable {
     let fanSettingsBatterySaverThreshold: String
     let fanSettingsForceOnBattery: String
     let fanSettingsKeepOnScreenSleep: String
+    // 无风扇机型
+    let fanControlUnavailableOnFanless: String
+    let fanMonitoringStillWorks: String
     /// 分区配置上移/下移
     let settingsMoveUp: String
     let settingsMoveDown: String

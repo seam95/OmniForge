@@ -88,8 +88,20 @@ final class FanSamplerTests: XCTestCase {
     func test_sampleFans_fanCountUnreadable_throws() {
         let mock = makeDualFanMock()
         mock.uint8Values["FNum"] = nil
+        mock.keyNames = ["TB0T"]  // SMC 枚举仍正常
 
-        XCTAssertThrowsError(try FanSampler(smc: mock).sampleFans())
+        // #KEY 可读但 FNum 读不到 → 无风扇机型，返回空态而非错误
+        let fans = try? FanSampler(smc: mock).sampleFans()
+        XCTAssertEqual(fans, Optional<[FanReading]>.some([]))
+    }
+
+    func test_sampleFans_smcFullyUnavailable_throws() {
+        let mock = makeDualFanMock()
+        mock.uint8Values["FNum"] = nil
+        mock.suppressKeyEnumeration = true  // #KEY 也读不到 → SMC 整体异常
+
+        XCTAssertThrowsError(try FanSampler(smc: mock).sampleFans(),
+                             "SMC 不可用应报采样失败而非误判无风扇")
     }
 
     func test_sampleFans_outOfRangeRPM_clamped() throws {

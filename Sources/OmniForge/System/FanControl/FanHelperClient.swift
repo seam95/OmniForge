@@ -65,16 +65,24 @@ final class FanHelperClient {
         helper.resetAllFans(reply: completion)
     }
 
-    /// 读取已安装 Helper 版本；连不上或超时返回 nil
+    /// 读取已安装 Helper 版本；连不上、连接中断或 3s 内无响应均回调 nil
+    /// （无超时会让版本协商永久悬挂，设置页表现为转圈不停）
     func fetchVersion(completion: @escaping (String?) -> Void) {
         guard let helper = proxy() else {
             completion(nil)
             return
         }
-        // 版本协商不设系统级超时：XPC 连接失败会经 invalidation 断链回调，
-        // 长时间无响应的极端场景由调用方 UI 状态兜底
-        helper.getVersion { version in
+        var replied = false
+        let finish: (String?) -> Void = { version in
+            guard !replied else { return }
+            replied = true
             completion(version)
+        }
+        helper.getVersion { version in
+            finish(version)
+        }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 3.0) {
+            finish(nil)
         }
     }
 

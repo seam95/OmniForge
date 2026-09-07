@@ -31,7 +31,8 @@ struct MonitorFanDetailView: View {
 
     var body: some View {
         Group {
-            if fans.isEmpty && snapshot.issues[.fan] == nil {
+            if fans.isEmpty && snapshot.issues[.fan] == nil && snapshot.sensors.isEmpty {
+                // 真空态：无风扇也无传感器读数（未采样或异常）
                 emptyView
             } else {
                 contentView
@@ -74,7 +75,7 @@ struct MonitorFanDetailView: View {
                         .overlay(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
                     sensorsSection
                 }
-                if fanControl != nil, fanPreferences != nil {
+                if fanControl?.hasFans == true, fanPreferences != nil {
                     Divider()
                         .overlay(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
                     controlSection
@@ -114,6 +115,12 @@ struct MonitorFanDetailView: View {
                 Text(issueText(issue))
                     .font(Theme.Stats.font11Regular)
                     .foregroundStyle(Theme.Stats.up)
+            } else if fans.isEmpty, !snapshot.sensors.isEmpty {
+                // 无风扇机型：读数区让位给一句说明，传感器区仍完整展示
+                Label(strings.fanNoFans, systemImage: "fanblades.slash")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
+                    .padding(.vertical, 4)
             }
             ForEach(fans) { fan in
                 fanRow(fan)

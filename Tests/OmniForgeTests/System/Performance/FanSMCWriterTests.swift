@@ -8,6 +8,8 @@ final class MockFanSMCCommanding: FanSMCCommanding, SMCKeyEnumerating {
     var doubleValues: [String: Double] = [:]
     var dataSizes: [String: UInt32] = [:]
     var keyNames: [String] = []
+    /// 置真时 totalKeyCount 返回 nil，模拟 SMC 枚举不可用
+    var suppressKeyEnumeration = false
     /// 每次 readDouble 调用的 key 记录，供断言「锁定后只读活跃集」
     var readDoubleKeys: [String] = []
     private(set) var writes: [(key: String, bytes: [UInt8])] = []
@@ -32,7 +34,7 @@ final class MockFanSMCCommanding: FanSMCCommanding, SMCKeyEnumerating {
         }
     }
 
-    func totalKeyCount() -> Int? { keyNames.count }
+    func totalKeyCount() -> Int? { suppressKeyEnumeration ? nil : keyNames.count }
 
     func keyName(at index: Int) -> String? {
         index >= 0 && index < keyNames.count ? keyNames[index] : nil

@@ -25,6 +25,8 @@ final class FanControlCoordinator: ObservableObject {
     @Published private(set) var batterySaverSuppressed = false
     /// 上次命令错误（下发失败提示）
     @Published private(set) var lastError: String?
+    /// 机器是否有风扇 — nil=尚无快照；false=无风扇机型（设置页隐藏控制入口）
+    @Published private(set) var hasFans: Bool?
 
     private let helper: FanHelperCommanding
     private let powerSupply: PowerSupplyChecking
@@ -121,6 +123,14 @@ final class FanControlCoordinator: ObservableObject {
     func evaluate(snapshot: SystemSnapshot) {
         guard !systemAsleep, !performanceSuspended else { return }
         guard let preferences else { return }
+
+        // 机型判定：fans 非空即有风扇；风扇轮成功执行（无 issue 且传感器有读数，
+        // 证明采样确实跑过）而 fans 为空 = 无风扇机型。未采样轮保持已判定值。
+        if !snapshot.fans.isEmpty {
+            hasFans = true
+        } else if snapshot.issues[.fan] == nil, !snapshot.sensors.isEmpty {
+            hasFans = false
+        }
 
         let config = preferences.configuration
         // Helper 未注册时不下发（监控照常，控制不可用）

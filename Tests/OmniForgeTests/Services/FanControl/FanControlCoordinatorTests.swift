@@ -179,6 +179,31 @@ final class FanControlCoordinatorTests: XCTestCase {
         XCTAssertTrue(helper.commands.contains { $0.hasPrefix("speed(") })
     }
 
+    // MARK: - 机型判定
+
+    func test_hasFans_trueWhenFansPresent() {
+        let coordinator = makeCoordinator()
+        coordinator.evaluate(snapshot: makeSnapshot())
+        XCTAssertEqual(coordinator.hasFans, true)
+    }
+
+    func test_hasFans_falseOnFanlessMachine() {
+        // 无风扇机型：风扇轮成功（无 issue + 传感器有读数）而 fans 为空
+        var snapshot = makeSnapshot()
+        snapshot.fans = []
+        let coordinator = makeCoordinator()
+        coordinator.evaluate(snapshot: snapshot)
+        XCTAssertEqual(coordinator.hasFans, false)
+    }
+
+    func test_hasFans_keepsUnknownWhenNotSampled() {
+        // 传感器也空 = 无法区分「未采样」，保持 nil
+        var snapshot = SystemSnapshot()
+        let coordinator = makeCoordinator()
+        coordinator.evaluate(snapshot: snapshot)
+        XCTAssertNil(coordinator.hasFans)
+    }
+
     // MARK: - 手动覆盖
 
     func test_manualTarget_overridesCurveForThatFan() {

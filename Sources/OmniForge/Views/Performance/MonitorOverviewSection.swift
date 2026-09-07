@@ -57,8 +57,8 @@ enum MonitorOverviewSectionPlanner {
         if let network = byID[.network] {
             result.append(.network(network))
         }
-        // 无风扇读数（无风扇机器/读取失败）不出分区，避免空行
-        if let fan = byID[.fan], fan.hasFanData {
+        // 无风扇读数但传感器有数据（无风扇机型）仍出分区 — 退化为温度传感器摘要
+        if let fan = byID[.fan], fan.hasFanData || fan.hasSensorData {
             result.append(.fan(fan))
         }
         if let disk = byID[.disk] {

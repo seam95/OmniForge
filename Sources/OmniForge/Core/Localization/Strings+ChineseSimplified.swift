@@ -165,6 +165,8 @@ extension Strings {
         fanSettingsBatterySaverThreshold: "电量阈值",
         fanSettingsForceOnBattery: "电池供电时仍保持性能模式",
         fanSettingsKeepOnScreenSleep: "锁定屏幕时保持风扇控制",
+        fanControlUnavailableOnFanless: "此 Mac 无风扇，控制功能不可用",
+        fanMonitoringStillWorks: "温度传感器监控仍可使用：在监控页的风扇分区查看。",
         settingsMoveUp: "↑",
         settingsMoveDown: "↓",
         monitorMetricCpu: "CPU",
