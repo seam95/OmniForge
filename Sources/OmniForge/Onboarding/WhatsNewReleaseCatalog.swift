@@ -11,6 +11,15 @@ enum WhatsNewReleaseCatalog {
     /// 历次版本的更新内容，新版本在前
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            version: "3.6",
+            entries: [
+                WhatsNewEntry(type: .changed, text: "唤醒页迁移平面分区风格，与全应用视觉统一"),
+                WhatsNewEntry(type: .changed, text: "平级 tab 切换改为方向化横向滑移，层级关系更直观"),
+                WhatsNewEntry(type: .fixed, text: "控制中心稳定期内容变化只平滑调整高度，不再整页闪烁"),
+                WhatsNewEntry(type: .fixed, text: "修复卸载器选择 APP 弹窗随面板一起消失的问题"),
+            ]
+        ),
+        WhatsNewRelease(
             version: "3.5",
             entries: [
                 WhatsNewEntry(type: .added, text: "监控面板全新平面分区设计，折线图悬浮可查看各时间点具体数值"),
