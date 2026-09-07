@@ -90,8 +90,9 @@ final class ControlCenterSizingContextTests: XCTestCase {
         XCTAssertTrue(newProceeded)
     }
 
-    func test_stableChange_debouncesAndResizes() {
-        // 稳定期结构变化：先合并 100ms，再淡出→改高→淡入。
+    func test_stableChange_debouncesThenResizesWithoutFade() {
+        // 稳定期结构变化：先合并 100ms，再直接分步改高——全程不做内容
+        // 淡出/淡入（整页淡变会被感知为"页面自己刷新一下"）。
         let config = ControlCenterSizingContext.Configuration(
             stableChangeDebounce: 0.05,
             stableChangeMaxDebounce: 0.1
@@ -113,10 +114,18 @@ final class ControlCenterSizingContextTests: XCTestCase {
         // 结构变化：内容变矮。
         context.reportNaturalHeight(320, isEmptyState: false)
         XCTAssertEqual(context.contentOpacity, 1, "防抖期内不立即动作")
+        // 防抖（50ms）已到期、改高流程进行中：内容必须保持可见（旧实现
+        // 此刻已淡出为 0）。
+        let midFlight = expectation(description: "mid-resize opacity stays 1")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+            XCTAssertEqual(context.contentOpacity, 1, "稳定期改高不得淡出内容")
+            midFlight.fulfill()
+        }
+        wait(for: [midFlight], timeout: 2)
         let done = expectation(description: "stable resize done")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { done.fulfill() }
         wait(for: [done], timeout: 3)
-        XCTAssertEqual(context.contentOpacity, 1, "流程结束后恢复可见")
+        XCTAssertEqual(context.contentOpacity, 1, "流程结束后保持可见")
         XCTAssertEqual(context.viewportHeight, 320, accuracy: 0.51)
     }
 

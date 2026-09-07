@@ -103,8 +103,9 @@ final class ControlCenterSizingContext: ObservableObject {
     }
 
     @Published private(set) var viewportHeight: CGFloat = ControlCenterContentMetrics.viewportHeight
-    /// 稳定期结构变化的同页内容透明度（四阶段流程的内容淡出/淡入，
-    /// SPEC §7.1；转场期透明度由 PageSwitchHost 管理）。
+    /// 同页内容透明度：转场期由 PageSwitchHost 管理，本协调器不再驱动
+    ///（稳定期淡变被用户感知为"整页刷新"，已改为只改高不淡变，恒为 1；
+    /// 保留发布属性以维持容器接线与既有测试契约）。
     @Published private(set) var contentOpacity = 1.0
     /// 首显测高模式：容器内容以自然高度布局（无 viewport 撑高），供宿主
     /// 在 show 前完成初始尺寸设置（SPEC §7.2.1）。
@@ -323,30 +324,15 @@ final class ControlCenterSizingContext: ObservableObject {
         let scale = backingScaleProvider()
         guard !ControlCenterSizingPolicy.isEffectivelyEqual(
             currentTotalHeight, target.totalHeight, scale: scale
-        ) else { return } // 测量相等不触发整页淡变（SPEC §7.1.5）
-        ControlCenterSizingLog.log("stable 改高 current=\(currentTotalHeight) → target=\(target.totalHeight)（淡出→改高→淡入）")
+        ) else { return } // 测量相等不触发改高（SPEC §7.1.5）
+        ControlCenterSizingLog.log("stable 改高 current=\(currentTotalHeight) → target=\(target.totalHeight)（直接改高，无淡变）")
 
+        // 稳定期结构变化只做平滑改高，不做内容淡出/淡入：停留期的数据驱动
+        // 高度变化（issue 出现/消失、明细行增删等）若整页淡变会被感知为
+        // "页面自己刷新一下"。转场与首显测量仍走挂载屏障协议。
         isRunningStableResize = true
-        let exitDuration: TimeInterval = reduceMotion ? 0.06 : 0.06
-        withAnimation(.easeOut(duration: exitDuration)) {
-            contentOpacity = 0
-        }
-        let gen = mountGeneration
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(exitDuration * 1_000_000_000))
-            guard let self else { return }
-            guard gen == self.mountGeneration else {
-                self.isRunningStableResize = false
-                self.contentOpacity = 1
-                return
-            }
-            self.applyTarget(target) { [weak self] _ in
-                guard let self else { return }
-                self.isRunningStableResize = false
-                withAnimation(.easeOut(duration: 0.12)) {
-                    self.contentOpacity = 1
-                }
-            }
+        applyTarget(target) { [weak self] _ in
+            self?.isRunningStableResize = false
         }
     }
 
