@@ -221,4 +221,32 @@ final class MonitorPreferencesTests: XCTestCase {
         XCTAssertEqual(preferences.configuration.refreshInterval, 5)
         XCTAssertEqual(preferences.configuration.temperatureUnit, .fahrenheit)
     }
+
+    /// 存量配置的面板指标集合不含后续新增的风扇指标，且该集合无设置界面
+    /// 入口 — 解码时必须自动并入，否则风扇卡对老用户永远不可见
+    func test_legacyJSONWithoutFanMetrics_autoEnablesFanMetrics() throws {
+        let suite = "MonitorPreferences.autoFanMetrics"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+
+        let legacyJSON = """
+        {
+          "refreshInterval": 2,
+          "visiblePanelMetrics": ["cpu", "gpu", "memory", "network", "disk", "power"],
+          "visibleSections": ["system", "network", "disk", "power", "fan"]
+        }
+        """.data(using: .utf8)!
+        defaults.set(legacyJSON, forKey: "OmniForge.monitorConfiguration")
+
+        let preferences = MonitorPreferences(userDefaults: defaults)
+        XCTAssertTrue(
+            preferences.configuration.visiblePanelMetrics.contains(.fan)
+                && preferences.configuration.visiblePanelMetrics.contains(.fanSensor),
+            "新增指标解码时自动并入存量集合"
+        )
+        XCTAssertFalse(
+            preferences.configuration.visiblePanelMetrics.contains(.cpuTemperature),
+            "autoEnabledMetrics 只并入风扇系新指标，不扩到其他指标"
+        )
+    }
 }

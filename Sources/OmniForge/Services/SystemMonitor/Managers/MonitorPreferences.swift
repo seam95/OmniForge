@@ -32,6 +32,11 @@ struct MonitorAlertConfiguration: Equatable, Codable {
 // MARK: - 完整监控配置
 
 struct MonitorConfiguration: Equatable, Codable {
+    /// 解码时强制并入的指标：功能迭代新增、早于其上线的存量配置无法包含，
+    /// 且面板指标集合（visiblePanelMetrics）无设置界面入口，不并入则新指标卡
+    /// 对老用户永远不可见。仅并入"上线时不存在"的指标，不触碰既有指标显隐。
+    static let autoEnabledMetrics: Set<MonitorMetric> = [.fan, .fanSensor]
+
     var isEnabled = true
     var refreshInterval = 2
     var temperatureUnit = TemperatureUnit.celsius
@@ -84,6 +89,7 @@ struct MonitorConfiguration: Equatable, Codable {
             ?? Array(MonitorSection.allCases)
         visiblePanelMetrics = try container.decodeIfPresent(Set<MonitorMetric>.self, forKey: .visiblePanelMetrics)
             ?? Set(MonitorMetric.allCases)
+        visiblePanelMetrics.formUnion(Self.autoEnabledMetrics)
         // 按 rawValue 过滤而非直接解码枚举集合：存量 JSON 中已下线的指标
         // （磁盘/电源/日期）会让 Set/数组整体解码失败，导致全部监控偏好回退默认
         let enabledRaw = try container.decodeIfPresent([String].self, forKey: .enabledMenuBarMetrics) ?? []
