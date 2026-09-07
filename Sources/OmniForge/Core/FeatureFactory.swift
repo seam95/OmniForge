@@ -74,6 +74,22 @@ struct FeatureFactory {
                     )
                 )
             }
+            if runtime.manager(for: .systemMonitor, as: FanPreferences.self) == nil {
+                runtime.register(
+                    .systemMonitor,
+                    manager: FanPreferences(userDefaults: userDefaults)
+                )
+            }
+            if runtime.manager(for: .systemMonitor, as: FanControlCoordinator.self) == nil,
+               let monitor = runtime.manager(for: .systemMonitor, as: SystemMonitorManager.self),
+               let fanPreferences = runtime.manager(for: .systemMonitor, as: FanPreferences.self) {
+                let coordinator = FanControlCoordinator(
+                    helper: FanHelperClient(),
+                    powerSupply: PowerSupplyChecker()
+                )
+                coordinator.start(monitor: monitor, preferences: fanPreferences)
+                runtime.register(.systemMonitor, manager: coordinator)
+            }
         case .tokenUsage:
             if runtime.manager(for: .tokenUsage, as: TokenUsagePreferences.self) == nil {
                 runtime.register(

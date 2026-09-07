@@ -157,6 +157,24 @@ struct Strings: Equatable {
     let fanSettingsHelperInstall: String
     let fanSettingsHelperUninstall: String
     let fanSettingsHelperFooter: String
+    // 风扇控制区
+    let fanControlSectionTitle: String
+    let fanPerformanceMode: String
+    let fanLevelLabel: String
+    let fanLevelLow: String
+    let fanLevelMedium: String
+    let fanLevelHigh: String
+    let fanLevelMax: String
+    let fanBatterySaverNotice: String
+    let fanAutoButton: String
+    let fanResetAllButton: String
+    let fanInstallHelperBanner: String
+    // 风扇设置偏好区
+    let fanSettingsPreferencesSection: String
+    let fanSettingsBatterySaver: String
+    let fanSettingsBatterySaverThreshold: String
+    let fanSettingsForceOnBattery: String
+    let fanSettingsKeepOnScreenSleep: String
     /// 分区配置上移/下移
     let settingsMoveUp: String
     let settingsMoveDown: String

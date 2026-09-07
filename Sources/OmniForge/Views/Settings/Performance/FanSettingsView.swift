@@ -1,8 +1,10 @@
 import SwiftUI
 
-/// 风扇设置页：特权 Helper 安装管理。
-/// 性能模式与手动调速偏好随协调器（后续阶段）并入本页。
+/// 风扇设置页：特权 Helper 安装管理 + 性能模式偏好。
 struct FanSettingsView: View {
+    /// 性能偏好注入 — nil（功能未接线）时只显示 Helper 管理区
+    var preferences: FanPreferences? = nil
+    var fanControl: FanControlCoordinator? = nil
     let strings: Strings
 
     private enum HelperState: Equatable {
@@ -50,6 +52,62 @@ struct FanSettingsView: View {
             } footer: {
                 Text(strings.fanSettingsHelperFooter)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let preferences {
+                Section {
+                    Picker(strings.fanLevelLabel, selection: Binding(
+                        get: { preferences.configuration.performanceLevel },
+                        set: { level in
+                            preferences.update { $0.performanceLevel = level }
+                        }
+                    )) {
+                        Text(strings.fanLevelLow).tag(FanCurve.Level.low)
+                        Text(strings.fanLevelMedium).tag(FanCurve.Level.medium)
+                        Text(strings.fanLevelHigh).tag(FanCurve.Level.high)
+                        Text(strings.fanLevelMax).tag(FanCurve.Level.max)
+                    }
+
+                    Toggle(strings.fanSettingsBatterySaver, isOn: Binding(
+                        get: { preferences.configuration.batterySaverEnabled },
+                        set: { enabled in
+                            preferences.update { $0.batterySaverEnabled = enabled }
+                        }
+                    ))
+                    if preferences.configuration.batterySaverEnabled {
+                        Stepper(
+                            "\(strings.fanSettingsBatterySaverThreshold): \(preferences.configuration.batterySaverThreshold)%",
+                            value: Binding(
+                                get: { preferences.configuration.batterySaverThreshold },
+                                set: { value in
+                                    preferences.update { $0.batterySaverThreshold = value }
+                                }
+                            ),
+                            in: 5...50,
+                            step: 5
+                        )
+                        Toggle(strings.fanSettingsForceOnBattery, isOn: Binding(
+                            get: { preferences.configuration.forcePerformanceOnBattery },
+                            set: { enabled in
+                                preferences.update { $0.forcePerformanceOnBattery = enabled }
+                            }
+                        ))
+                    }
+
+                    Toggle(strings.fanSettingsKeepOnScreenSleep, isOn: Binding(
+                        get: { preferences.configuration.keepFansOnScreenSleep },
+                        set: { enabled in
+                            preferences.update { $0.keepFansOnScreenSleep = enabled }
+                        }
+                    ))
+
+                    if let fanControl, fanControl.batterySaverSuppressed {
+                        Label(strings.fanBatterySaverNotice, systemImage: "battery.25")
+                            .foregroundStyle(.orange)
+                    }
+                } header: {
+                    Text(strings.fanSettingsPreferencesSection)
+                }
             }
         }
         .settingsPageStyle()

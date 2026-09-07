@@ -292,7 +292,9 @@ struct ControlCenterContainerView: View {
                             showsSettingsAction: false,
                             onRefresh: { forceProcess in
                                 monitor.refreshNow(forceProcess: forceProcess)
-                            }
+                            },
+                            fanControl: state.fanControl,
+                            fanPreferences: state.fanPreferences
                         )
                 } else {
                     unavailablePanel

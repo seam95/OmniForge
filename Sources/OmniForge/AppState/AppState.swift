@@ -18,6 +18,8 @@ final class AppState: ObservableObject {
     private(set) var monitor: SystemMonitorManager?
     private(set) var monitorPreferences: MonitorPreferences?
     private(set) var monitorAlerts: MonitorAlertManager?
+    private(set) var fanPreferences: FanPreferences?
+    private(set) var fanControl: FanControlCoordinator?
     private(set) var tokenUsageManager: TokenUsageManager?
     private(set) var tokenUsagePreferences: TokenUsagePreferences?
     private(set) var deepSeekBalanceManager: DeepSeekBalanceManager?
@@ -173,6 +175,8 @@ final class AppState: ObservableObject {
         monitor = runtime.manager(for: .systemMonitor, as: SystemMonitorManager.self)
         monitorPreferences = runtime.manager(for: .systemMonitor, as: MonitorPreferences.self)
         monitorAlerts = runtime.manager(for: .systemMonitor, as: MonitorAlertManager.self)
+        fanPreferences = runtime.manager(for: .systemMonitor, as: FanPreferences.self)
+        fanControl = runtime.manager(for: .systemMonitor, as: FanControlCoordinator.self)
         tokenUsageManager = runtime.manager(for: .tokenUsage, as: TokenUsageManager.self)
         tokenUsagePreferences = runtime.manager(for: .tokenUsage, as: TokenUsagePreferences.self)
         deepSeekBalanceManager = runtime.manager(for: .tokenUsage, as: DeepSeekBalanceManager.self)
@@ -205,6 +209,11 @@ final class AppState: ObservableObject {
         }
         if let keepAwakeManager {
             forwardObjectWillChange(from: keepAwakeManager, storeIn: &featureCancellables)
+        }
+        // 风扇控制的低频状态（抑制/曲线百分比）转发供设置窗回显；
+        // 快照驱动的下发循环不产生 objectWillChange，不影响高频路径
+        if let fanControl {
+            forwardObjectWillChange(from: fanControl, storeIn: &featureCancellables)
         }
 
         refreshInputSources()
