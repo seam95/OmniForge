@@ -1,4 +1,5 @@
 import Foundation
+import OmniForgeSMC
 import IOKit
 import IOKit.ps
 

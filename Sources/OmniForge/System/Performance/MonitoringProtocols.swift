@@ -76,7 +76,3 @@ protocol MaxCapacityProbing: AnyObject {
     var percent: Int? { get }
     func refreshIfStale()
 }
-
-protocol SMCReading: AnyObject {
-    func value(forKey key: String) -> Double?
-}

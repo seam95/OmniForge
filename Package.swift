@@ -14,9 +14,17 @@ let package = Package(
         .package(url: "https://github.com/zats/Vortex", revision: "ef5392088d4aeb255c4eee83157dbdafcd31bf07"),
     ],
     targets: [
+        .target(
+            name: "OmniForgeSMC",
+            path: "Sources/OmniForgeSMC",
+            swiftSettings: [
+                .swiftLanguageMode(.v5),
+            ]
+        ),
         .executableTarget(
             name: "OmniForge",
             dependencies: [
+                "OmniForgeSMC",
                 .product(name: "KeyboardShortcuts", package: "KeyboardShortcuts"),
                 .product(name: "GRDB", package: "GRDB.swift"),
                 .product(name: "Vortex", package: "Vortex"),
@@ -30,6 +38,7 @@ let package = Package(
             name: "OmniForgeTests",
             dependencies: [
                 "OmniForge",
+                "OmniForgeSMC",
                 .product(name: "GRDB", package: "GRDB.swift"),
                 .product(name: "Vortex", package: "Vortex"),
             ],

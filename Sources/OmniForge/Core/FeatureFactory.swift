@@ -1,4 +1,5 @@
 import ApplicationServices
+import OmniForgeSMC
 import CoreGraphics
 import Foundation
 

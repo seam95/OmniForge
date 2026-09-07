@@ -1,12 +1,12 @@
 import Foundation
 import IOKit
 
-final class SMCClient: SMCReading {
-    struct Key {
-        let code: UInt32
-        let name: String
-        let dataSize: UInt32
-        let dataType: String
+public final class SMCClient: SMCReading {
+    public struct Key {
+        public let code: UInt32
+        public let name: String
+        public let dataSize: UInt32
+        public let dataType: String
     }
 
     private var connection: io_connect_t = 0
@@ -14,7 +14,7 @@ final class SMCClient: SMCReading {
     private static let cmdReadKey: UInt8 = 5
     private static let cmdKeyInfo: UInt8 = 9
 
-    init() {
+    public init() {
         let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"))
         guard service != 0 else { return }
         defer { IOObjectRelease(service) }
@@ -23,12 +23,12 @@ final class SMCClient: SMCReading {
 
     deinit { if connection != 0 { IOServiceClose(connection) } }
 
-    func value(forKey keyName: String) -> Double? {
+    public func value(forKey keyName: String) -> Double? {
         guard let smcKey = key(named: keyName) else { return nil }
         return self.readValue(smcKey)
     }
 
-    func key(named name: String) -> Key? {
+    public func key(named name: String) -> Key? {
         var probe = SMCParamStruct()
         probe.key = Self.fourCC(name)
         probe.data8 = Self.cmdKeyInfo
@@ -38,7 +38,7 @@ final class SMCClient: SMCReading {
                    dataType: Self.fourCCString(out.keyInfo.dataType))
     }
 
-    func readValue(_ key: Key) -> Double? {
+    public func readValue(_ key: Key) -> Double? {
         var input = SMCParamStruct()
         input.key = key.code
         input.keyInfo.dataSize = key.dataSize

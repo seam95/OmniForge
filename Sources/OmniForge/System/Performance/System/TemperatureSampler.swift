@@ -1,4 +1,5 @@
 import Foundation
+import OmniForgeSMC
 
 final class TemperatureSampler: TemperatureSampling {
     private let smc: SMCReading

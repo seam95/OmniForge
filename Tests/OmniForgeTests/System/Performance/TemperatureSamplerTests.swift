@@ -1,4 +1,5 @@
 import XCTest
+import OmniForgeSMC
 @testable import OmniForge
 
 final class TemperatureSamplerTests: XCTestCase {

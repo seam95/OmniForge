@@ -1,4 +1,5 @@
 import Darwin
+import OmniForgeSMC
 import Foundation
 
 enum CPUTemperaturePlatform: Equatable {
