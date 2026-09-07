@@ -408,7 +408,9 @@ struct FeatureFactory {
     }
 
     private static func makeProductionMonitor() -> SystemMonitorManager {
-        SystemMonitorManager(
+        // 温度/电源/风扇各自独享一条 SMC 连接 — 与现有接线一致，避免跨队列共享实例
+        let fanSMC = SMCClient()
+        return SystemMonitorManager(
             scheduler: TimerRepeatingScheduler(),
             cpuSampler: CPUUsageSampler(),
             gpuSampler: GPUUsageSampler(),
@@ -418,7 +420,9 @@ struct FeatureFactory {
             diskSampler: DiskSampler(),
             powerSampler: PowerSampler(smc: SMCClient()),
             peripheralBatterySampler: PeripheralBatterySampler(),
-            processSampler: ProcessUsageSampler()
+            processSampler: ProcessUsageSampler(),
+            fanSampler: FanSampler(smc: fanSMC),
+            sensorScanner: TemperatureSensorCatalog(smc: fanSMC)
         )
     }
 

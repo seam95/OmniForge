@@ -26,6 +26,11 @@ struct SystemSnapshot {
     // 外设电量
     var peripheralBatteries: [PeripheralBatteryDevice] = []
 
+    // 风扇 — 空数组表示无风扇或本轮未采样；读取失败见 issues[.fan]
+    var fans: [FanReading] = []
+    // 温度传感器（运行时发现）— 空数组同上，见 issues[.fanSensor]
+    var sensors: [FanSensorReading] = []
+
     // 磁盘
     var disk: DiskReading?
 

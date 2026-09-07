@@ -37,6 +37,16 @@ protocol PeripheralBatterySampling: AnyObject {
     func sample(now: TimeInterval) throws -> [PeripheralBatteryDevice]
 }
 
+/// 风扇转速采样 — 每风扇当前/目标/区间/模式，读取失败以 valid 标志溯源
+protocol FanSampling: AnyObject {
+    func sampleFans() throws -> [FanReading]
+}
+
+/// 温度传感器采样 — 首轮发现活跃 key 集后仅轮询活跃集
+protocol TemperatureSensorScanning: AnyObject {
+    func sampleSensors() throws -> [FanSensorReading]
+}
+
 protocol ProcessUsageSampling: AnyObject {
     func sample(_ kind: ProcessMetricKind, limit: Int) throws -> [ProcessUsage]
     func stop(_ kind: ProcessMetricKind)

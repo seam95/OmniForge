@@ -19,6 +19,7 @@ enum MetricIssue: Equatable {
 enum MonitorMetric: String, CaseIterable, Hashable, Codable {
     case cpu, gpu, memory, network, disk, power, peripheralBattery
     case cpuTemperature, gpuTemperature, batteryTemperature
+    case fan, fanSensor
 }
 
 /// 监控面板分区
@@ -47,6 +48,63 @@ enum SpeedTestState: Equatable {
 /// 温度单位
 enum TemperatureUnit: String, CaseIterable, Equatable, Codable {
     case celsius, fahrenheit
+}
+
+/// 传感器热区分区 — 性能模式曲线的输入维度，也是详情页传感器列表的分组方式
+enum ThermalZone: String, CaseIterable, Hashable, Codable {
+    case cpu, gpu, memory, ssd, powerDelivery, battery, ambient, unknown
+
+    /// 传感器 key → 热区。不落前缀规则的例外先匹配，其余按 key 第二字符推断
+    /// （Tp/Te/Tf/Tc/TC 为 CPU 核心与封装，TP 大写为 GPU 节点，TB 电池，TH 固态盘，
+    /// TD 供电，TM/TR 内存，TA/Ts 环境）。
+    static func zone(forSensorKey key: String) -> ThermalZone {
+        switch key {
+        case "TDEL", "TDER", "TDeL", "TDeR": return .ambient
+        default: break
+        }
+        guard key.count >= 2 else { return .unknown }
+        let second = key[key.index(after: key.startIndex)]
+        switch second {
+        case "B", "b": return .battery
+        case "G", "g", "P": return .gpu
+        case "p", "C", "c", "E", "e", "F", "f": return .cpu
+        case "H", "h": return .ssd
+        case "D", "d": return .powerDelivery
+        case "M", "m", "R", "r": return .memory
+        case "A", "a", "S", "s": return .ambient
+        default: return .unknown
+        }
+    }
+}
+
+/// 单风扇读数 — valid 标志区分「读取失败」与「真实值」（读不到 ≠ 停转 0 RPM）
+struct FanReading: Equatable, Identifiable {
+    /// 风扇序号（SMC 风扇索引）
+    let id: Int
+    var currentRPM: Double
+    var minRPM: Double
+    var maxRPM: Double
+    var targetRPM: Double
+    var isManualMode: Bool
+    var currentRPMValid: Bool = true
+    var targetRPMValid: Bool = true
+    var isManualModeValid: Bool = true
+
+    /// 当前转速相对硬件区间的占比（0...1），供进度条与曲线计算
+    var speedFraction: Double {
+        guard maxRPM > minRPM else { return 0 }
+        return min(1, max(0, (currentRPM - minRPM) / (maxRPM - minRPM)))
+    }
+}
+
+/// 温度传感器读数 — 运行时发现的 SMC 温度 key
+struct FanSensorReading: Equatable, Identifiable {
+    /// SMC key 原码
+    let id: String
+    /// 展示名（未映射友好名时为 key 原码）
+    var label: String
+    var zone: ThermalZone
+    var temperatureCelsius: Double
 }
 
 /// 内存压力等级
@@ -284,6 +342,7 @@ struct MonitorDemand: Equatable {
     var cpuTemperature = false
     var gpuTemperature = false
     var batteryTemperature = false
+    var fan = false
 
     static let none = MonitorDemand()
 }

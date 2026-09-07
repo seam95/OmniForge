@@ -138,6 +138,21 @@ enum MetricFormat {
         return "\(Int((value * 100).rounded()))%"
     }
 
+    // MARK: Fan
+
+    /// 风扇转速 — 取整不加分隔符（菜单栏等宽字体下位数即宽度，无千分位最稳）
+    static func rpm(_ value: Double?) -> String? {
+        guard let value, value.isFinite else { return nil }
+        return "\(Int(value.rounded()))"
+    }
+
+    /// 多风扇单行拼接（如 "3200/3400"）；与外设电池块同构，宽度受位数高水位约束
+    static func rpmJoined(_ values: [Double]) -> String? {
+        let parts = values.compactMap { rpm($0) }
+        guard !parts.isEmpty else { return nil }
+        return parts.joined(separator: "/")
+    }
+
     static func memory(_ used: UInt64?, total: UInt64?) -> String? {
         guard let used, let total else { return nil }
         let pct = Double(used) / Double(total) * 100

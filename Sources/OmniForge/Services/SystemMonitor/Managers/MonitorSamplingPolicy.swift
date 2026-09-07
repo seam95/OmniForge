@@ -22,6 +22,10 @@ struct MonitorSamplingPolicy {
             return 15.0
         case .peripheralBattery:
             return 60.0
+        case .fan:
+            return 15.0
+        case .fanSensor:
+            return 15.0
         }
     }
 
