@@ -16,17 +16,19 @@ struct MonitorFanDetailView: View {
     @Environment(\.colorScheme) private var colorScheme
     /// Helper 注册状态镜像 — 安装成功后翻转触发控制区重绘
     @State private var helperRegistered = false
+    /// 已展开的热区（默认全部收起，摘要形态优先）
+    @State private var expandedZones: Set<ThermalZone> = []
 
     private var fans: [FanReading] {
         snapshot.fans
     }
 
-    private var groupedSensors: [(zone: ThermalZone, sensors: [FanSensorReading])] {
-        let grouped = Dictionary(grouping: snapshot.sensors, by: \.zone)
-        return ThermalZone.allCases.compactMap { zone in
-            guard let items = grouped[zone], !items.isEmpty else { return nil }
-            return (zone, items)
-        }
+    private var sensorSummaries: [FanSensorGroupSummary] {
+        FanSensorGroupSummary.summaries(from: snapshot.sensors)
+    }
+
+    private var hiddenUnknownCount: Int {
+        FanSensorGroupSummary.hiddenUnknownCount(from: snapshot.sensors)
     }
 
     var body: some View {
@@ -71,7 +73,8 @@ struct MonitorFanDetailView: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 10) {
                     fansSection
-                    if !groupedSensors.isEmpty {
+                    // 全 unknown 时摘要为空，但仍需展示区标题与隐藏计数保持信息透明
+                    if !sensorSummaries.isEmpty || hiddenUnknownCount > 0 {
                         Divider()
                             .overlay(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
                         sensorsSection
@@ -194,28 +197,105 @@ struct MonitorFanDetailView: View {
     // MARK: - 传感器区
 
     private var sensorsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(strings.fanSensorSectionTitle)
                 .font(.system(size: 12, weight: .semibold))
                 .tracking(1)
                 .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
 
-            ForEach(groupedSensors, id: \.zone) { group in
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(zoneName(group.zone))
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
+            ForEach(sensorSummaries, id: \.zone) { summary in
+                sensorGroup(summary)
+            }
 
-                    let columns = [GridItem(.adaptive(minimum: 150), spacing: 6)]
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
-                        ForEach(group.sensors) { sensor in
-                            sensorCell(sensor)
+            if hiddenUnknownCount > 0 {
+                Text(String(format: strings.fanSensorHiddenCountFormat, hiddenUnknownCount))
+                    .font(Theme.Stats.font10Regular)
+                    .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    /// 热区分组：摘要行（组名 + 热点 + 最高温）点击展开单列明细；单传感器组直显不折叠
+    @ViewBuilder
+    private func sensorGroup(_ summary: FanSensorGroupSummary) -> some View {
+        let expandable = summary.sensors.count > 1
+        let isExpanded = expandedZones.contains(summary.zone)
+
+        VStack(alignment: .leading, spacing: 6) {
+            if expandable {
+                Button {
+                    withAnimation(Theme.Animation.pageTransition) {
+                        if isExpanded {
+                            expandedZones.remove(summary.zone)
+                        } else {
+                            expandedZones.insert(summary.zone)
                         }
+                    }
+                } label: {
+                    summaryRow(summary, chevronVisible: true, isExpanded: isExpanded)
+                }
+                .buttonStyle(.plain)
+            } else {
+                summaryRow(summary, chevronVisible: false, isExpanded: false)
+            }
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(summary.sensors) { sensor in
+                        sensorCell(sensor, isHottest: sensor.id == summary.hottest?.id)
                     }
                 }
             }
         }
-        .padding(.vertical, 4)
+    }
+
+    /// 摘要行：组名 + 热点传感器名（单传感器组直接显示该读数名）+ 组内最高温
+    private func summaryRow(
+        _ summary: FanSensorGroupSummary,
+        chevronVisible: Bool,
+        isExpanded: Bool
+    ) -> some View {
+        HStack(alignment: .center, spacing: 6) {
+            if chevronVisible {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+            }
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(zoneName(summary.zone))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
+                if let hottest = summary.hottest {
+                    Text(summary.sensors.count > 1
+                        ? String(format: strings.fanSensorHottestFormat, hottest.label)
+                        : hottest.label
+                    )
+                    .font(Theme.Stats.font10Regular)
+                    .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            if let hottest = summary.hottest {
+                Text(MetricFormat.temperature(hottest.temperatureCelsius, unit: temperatureUnit) ?? "--")
+                    .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.06))
+        )
+        .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
     }
 
     private func zoneName(_ zone: ThermalZone) -> String {
@@ -231,7 +311,7 @@ struct MonitorFanDetailView: View {
         }
     }
 
-    private func sensorCell(_ sensor: FanSensorReading) -> some View {
+    private func sensorCell(_ sensor: FanSensorReading, isHottest: Bool) -> some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(sensor.label)
@@ -245,9 +325,24 @@ struct MonitorFanDetailView: View {
                 }
             }
             Spacer(minLength: 4)
-            Text(MetricFormat.temperature(sensor.temperatureCelsius, unit: temperatureUnit) ?? "--")
-                .font(.system(size: 12, weight: .semibold).monospacedDigit())
-                .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
+            HStack(alignment: .center, spacing: 6) {
+                if isHottest {
+                    Text(strings.fanSensorHottestBadge)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(MonitorCardAccent.color(for: .fan))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(MonitorOverviewPalette.pillBackground(colorScheme))
+                        )
+                }
+                Text(MetricFormat.temperature(sensor.temperatureCelsius, unit: temperatureUnit) ?? "--")
+                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(isHottest
+                        ? MonitorCardAccent.color(for: .fan)
+                        : MonitorOverviewPalette.primary(colorScheme))
+            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)

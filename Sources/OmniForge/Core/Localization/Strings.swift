@@ -146,6 +146,9 @@ struct Strings: Equatable {
     let fanZoneBattery: String
     let fanZoneAmbient: String
     let fanZoneUnknown: String
+    let fanSensorHottestFormat: String
+    let fanSensorHottestBadge: String
+    let fanSensorHiddenCountFormat: String
     let fanNoFans: String
     // 风扇设置页
     let settingsTabFan: String
