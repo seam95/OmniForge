@@ -32,6 +32,9 @@ final class ScrollCaptureHUDView: NSView {
         infoLabel.drawsBackground = false
         infoLabel.lineBreakMode = .byTruncatingTail
         infoLabel.stringValue = title
+        // labelWithString 后必须 sizeToFit 才能得到真实文本宽度，
+        // 否则初始布局按零宽排布、后续 update 增宽会溢出窗口。
+        infoLabel.sizeToFit()
         addSubview(infoLabel)
 
         autoScrollButton.title = autoTitle
@@ -132,9 +135,12 @@ final class ScrollCaptureHUDView: NSView {
 }
 
 /// 承载长截图 HUD 的独立面板。高于编辑器遮罩与预览面板；不可成为 key
-/// （点击按钮不夺走底层页面的焦点）。
+/// （点击按钮不夺走底层页面的焦点）。窗口尺寸始终跟随 HUD 内容，
+/// 每次进度更新后相对选区重摆（内容变宽不会溢出裁切按钮）。
 final class ScrollCaptureHUDWindow: NSPanel {
     let hudView: ScrollCaptureHUDView
+    private var selectionScreenRect: NSRect?
+    private var targetScreen: NSScreen?
 
     init(
         title: String,
@@ -154,7 +160,7 @@ final class ScrollCaptureHUDWindow: NSPanel {
         hudView.onToggleAutoScroll = onToggleAutoScroll
 
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 300, height: 36),
+            contentRect: NSRect(x: 0, y: 0, width: 10, height: 10),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: true
@@ -177,32 +183,45 @@ final class ScrollCaptureHUDWindow: NSPanel {
 
     /// 摆到选区下方居中；下方放不下移到选区上方；水平方向夹在屏内。
     func position(relativeTo selectionScreenRect: NSRect, on screen: NSScreen) {
-        hudView.layoutSubviews()
-        let hudSize = hudView.frame.size
-        let totalWidth = max(hudSize.width, frame.width)
-
-        var barX = selectionScreenRect.midX - totalWidth / 2
-        var barY = selectionScreenRect.minY - hudSize.height - 6
-
-        let visible = screen.visibleFrame
-        if barY < visible.minY + 4 {
-            barY = selectionScreenRect.maxY + 6
-        }
-        barX = max(visible.minX + 4, min(barX, visible.maxX - totalWidth - 4))
-
-        setFrame(NSRect(x: barX, y: barY, width: totalWidth, height: hudSize.height), display: true)
-        hudView.frame.origin = NSPoint(x: (totalWidth - hudSize.width) / 2, y: 0)
-        contentView?.frame = NSRect(origin: .zero, size: NSSize(width: totalWidth, height: hudSize.height))
-
+        self.selectionScreenRect = selectionScreenRect
+        targetScreen = screen
+        layoutAroundSelection()
         orderFrontRegardless()
     }
 
+    /// 按当前 HUD 内容尺寸重设窗口并相对选区重摆。
+    private func layoutAroundSelection() {
+        guard let selectionScreenRect, let targetScreen else { return }
+
+        hudView.layoutSubviews()
+        let hudSize = hudView.frame.size
+        let visible = targetScreen.visibleFrame
+
+        var barX = selectionScreenRect.midX - hudSize.width / 2
+        var barY = selectionScreenRect.minY - hudSize.height - 6
+        if barY < visible.minY + 4 {
+            barY = selectionScreenRect.maxY + 6
+        }
+        barX = max(visible.minX + 4, min(barX, visible.maxX - hudSize.width - 4))
+
+        setFrame(
+            NSRect(x: barX, y: barY, width: hudSize.width, height: hudSize.height),
+            display: true
+        )
+        hudView.frame.origin = .zero
+        contentView?.frame = NSRect(origin: .zero, size: hudSize)
+    }
+
+    /// 进度更新：内容尺寸变化后窗口必须跟随，否则右侧按钮会被 contentRect 裁掉。
     func update(pixelSize: CGSize, backingScale: CGFloat, autoScrolling: Bool) {
         hudView.update(pixelSize: pixelSize, backingScale: backingScale, autoScrolling: autoScrolling)
+        layoutAroundSelection()
     }
 
     func dismiss() {
         orderOut(nil)
+        selectionScreenRect = nil
+        targetScreen = nil
         contentView = nil
     }
 }

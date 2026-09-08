@@ -265,6 +265,41 @@ final class ScrollCaptureCoreTests: XCTestCase {
         XCTAssertEqual(hud.frame.height, 36, accuracy: 0.5)
     }
 
+    /// 回归：进度更新使 HUD 内容变宽后，窗口宽度必须跟随重摆，
+    /// 否则最右侧的停止按钮会被窗口 bounds 裁掉（真机截断 bug）。
+    func test_hudWindow_resizesWithContentAfterUpdates() throws {
+        guard let screen = NSScreen.main else {
+            throw XCTSkip("无屏环境无法定位 HUD 窗口")
+        }
+
+        let window = ScrollCaptureHUDWindow(
+            title: "长截图",
+            autoTitle: "自动滚动",
+            scrollingTitle: "滚动中…",
+            stopTitle: "停止",
+            onStop: {},
+            onToggleAutoScroll: {}
+        )
+        let selection = NSRect(x: screen.visibleFrame.midX - 200, y: screen.visibleFrame.midY, width: 400, height: 300)
+        window.position(relativeTo: selection, on: screen)
+
+        // 初始：窗口宽度 == 内容宽度（标题已 sizeToFit，不再是零宽排布）。
+        XCTAssertEqual(window.frame.width, window.hudView.frame.width, accuracy: 1.0)
+        XCTAssertGreaterThan(window.hudView.frame.width, 170, "标题宽度应计入初始布局")
+
+        // 首帧进度 + 更长尺寸文本 + 自动滚动激活态（更宽的按钮文案）。
+        window.update(pixelSize: CGSize(width: 1600, height: 2400), backingScale: 2, autoScrolling: false)
+        window.update(pixelSize: CGSize(width: 1600, height: 9600), backingScale: 2, autoScrolling: true)
+
+        // 视图右边缘不得超出窗口（截断回归断言），窗口仍水平夹在屏内。
+        XCTAssertEqual(window.frame.width, window.hudView.frame.width, accuracy: 1.0)
+        XCTAssertLessThanOrEqual(window.hudView.frame.maxX, window.frame.width + 0.5)
+        XCTAssertGreaterThanOrEqual(window.frame.minX, screen.visibleFrame.minX - 0.5)
+        XCTAssertLessThanOrEqual(window.frame.maxX, screen.visibleFrame.maxX + 0.5)
+
+        window.dismiss()
+    }
+
     // MARK: - Helpers
 
     /// 线程安全的自增计数（@Sendable 采集闭包内使用）。
