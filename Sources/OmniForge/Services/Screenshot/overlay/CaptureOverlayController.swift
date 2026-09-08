@@ -246,16 +246,24 @@ final class CaptureOverlayController {
         self.onComplete = completion
 
         if !suppressesWindowDisplay {
-            // 为每块屏幕创建遮罩面板
-            for screen in NSScreen.screens {
-                let panel = createOverlayPanel(for: screen)
-                overlayPanels.append(panel)
+            // 先建齐所有屏的遮罩面板：吸附排除集要收齐全部面板窗口 ID，
+            // 逐屏边建边注入会漏掉后续屏的面板。
+            let screens = NSScreen.screens
+            let panels = screens.map { createOverlayPanel(for: $0) }
+            overlayPanels.append(contentsOf: panels)
 
+            // 吸附排除粒度 = 遮罩面板窗口 ID（不是整进程）：
+            // 自家控制中心/剪贴板/钉图等窗口仍是合法吸附目标。
+            let snapProvider = makeSnapProvider(
+                excludingWindowIDs: Set(panels.map { CGWindowID($0.windowNumber) })
+            )
+
+            for (screen, panel) in zip(screens, panels) {
                 let selectionView = SelectionView(frame: screen.frame)
                 selectionView.delegate = self
 
                 // 注入窗口吸附 provider（按权限选 AX 或 SC 降级）。
-                selectionView.snapProvider = makeSnapProvider()
+                selectionView.snapProvider = snapProvider
                 // 屏 frame 来源：用 SelectionView 所在 panel 的 screen。
                 selectionView.screenFrameProvider = { [weak panel] in panel?.screen?.frame }
                 // visibleFrame 来源（已扣除菜单栏/Dock，用于边缘条带吸附）。
@@ -540,11 +548,11 @@ final class CaptureOverlayController {
     // MARK: - 窗口吸附
 
     /// 按权限选择窗口吸附 provider。
-    /// - AX 已授权 → AXWindowSnapProvider（窗口 + 元素级）
+    /// - AX 已授权 → AXWindowSnapProvider（窗口 + 元素级，自有窗口整窗直选）
     /// - AX 未授权 → SCWindowSnapProvider（仅整窗，降级）
-    private func makeSnapProvider() -> WindowSnapProvider {
+    private func makeSnapProvider(excludingWindowIDs: Set<CGWindowID>) -> WindowSnapProvider {
         if Permissions.shared.accessibility {
-            return AXWindowSnapProvider()
+            return AXWindowSnapProvider(excludedWindowIDs: excludingWindowIDs)
         }
         Self.logger.info("[ScreenshotOverlay] AX 未授权，窗口吸附降级为整窗模式")
         return SCWindowSnapProvider()

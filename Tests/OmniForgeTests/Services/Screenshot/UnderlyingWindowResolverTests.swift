@@ -2,6 +2,8 @@ import CoreGraphics
 import XCTest
 @testable import OmniForge
 
+/// 列表语义：传入的窗口列表已在解析时剔除遮罩面板（窗口 ID 粒度），
+/// 自有进程的业务窗口保留，参与命中与遮挡。
 final class UnderlyingWindowResolverTests: XCTestCase {
     func test_topmost_returnsFirstContainingPoint_frontToBack() {
         let windows = [
@@ -10,24 +12,25 @@ final class UnderlyingWindowResolverTests: XCTestCase {
         ]
         let hit = UnderlyingWindowResolver.topmost(
             at: CGPoint(x: 50, y: 50),
-            in: windows,
-            excludingOwnerPID: 1
+            in: windows
         )
         XCTAssertEqual(hit?.windowID, 1)
         XCTAssertEqual(hit?.ownerPID, 10)
     }
 
-    func test_topmost_skipsExcludedOwnerEvenIfFront() {
+    func test_topmost_keepsSelfOwnedWindow() {
+        // 自有进程窗口（如控制中心）与第三方窗口同点：前→后取前者，不做 pid 过滤。
+        let ownPID = ProcessInfo.processInfo.processIdentifier
         let windows = [
-            SnapWindowInfo(windowID: 9, ownerPID: 99, bounds: CGRect(x: 0, y: 0, width: 500, height: 500), layer: 0),
+            SnapWindowInfo(windowID: 9, ownerPID: ownPID, bounds: CGRect(x: 0, y: 0, width: 500, height: 500), layer: 0),
             SnapWindowInfo(windowID: 2, ownerPID: 20, bounds: CGRect(x: 0, y: 0, width: 400, height: 400), layer: 0),
         ]
         let hit = UnderlyingWindowResolver.topmost(
             at: CGPoint(x: 50, y: 50),
-            in: windows,
-            excludingOwnerPID: 99
+            in: windows
         )
-        XCTAssertEqual(hit?.windowID, 2)
+        XCTAssertEqual(hit?.windowID, 9)
+        XCTAssertEqual(hit?.ownerPID, ownPID)
     }
 
     func test_topmost_skipsNonContainingFrontWindow() {
@@ -38,8 +41,7 @@ final class UnderlyingWindowResolverTests: XCTestCase {
         ]
         let hit = UnderlyingWindowResolver.topmost(
             at: CGPoint(x: 250, y: 50),
-            in: windows,
-            excludingOwnerPID: 1
+            in: windows
         )
         XCTAssertEqual(hit?.windowID, 2)
     }
@@ -50,8 +52,7 @@ final class UnderlyingWindowResolverTests: XCTestCase {
         ]
         let hit = UnderlyingWindowResolver.topmost(
             at: CGPoint(x: 500, y: 500),
-            in: windows,
-            excludingOwnerPID: 1
+            in: windows
         )
         XCTAssertNil(hit)
     }
@@ -64,10 +65,29 @@ final class UnderlyingWindowResolverTests: XCTestCase {
         ]
         let front = UnderlyingWindowResolver.occluders(
             inFrontOf: windows[1],
-            in: windows,
-            excludingOwnerPID: 1
+            in: windows
         )
         XCTAssertEqual(front.map(\.windowID), [1])
+    }
+
+    /// 自有窗口在前也计为第三方候选的遮挡（此前按 pid 排除导致漏裁）。
+    func test_occluders包含前方的自有窗口() {
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        let ownPanel = SnapWindowInfo(
+            windowID: 1, ownerPID: ownPID,
+            bounds: CGRect(x: 0, y: 0, width: 300, height: 300),
+            layer: 0
+        )
+        let thirdParty = SnapWindowInfo(
+            windowID: 2, ownerPID: 20,
+            bounds: CGRect(x: 0, y: 0, width: 800, height: 600),
+            layer: 0
+        )
+        let occ = UnderlyingWindowResolver.occluders(
+            inFrontOf: thirdParty,
+            in: [ownPanel, thirdParty]
+        )
+        XCTAssertEqual(occ.map(\.windowID), [1])
     }
 
     func test_candidatesContaining_frontToBackAllHits() {
@@ -85,15 +105,13 @@ final class UnderlyingWindowResolverTests: XCTestCase {
         )
         let onMenuBand = UnderlyingWindowResolver.candidatesContaining(
             CGPoint(x: 100, y: 10),
-            in: [menu, app],
-            excludingOwnerPID: 1
+            in: [menu, app]
         )
         XCTAssertEqual(onMenuBand.map(\.windowID), [1, 2])
 
         let onAppOnly = UnderlyingWindowResolver.candidatesContaining(
             CGPoint(x: 100, y: 100),
-            in: [menu, app],
-            excludingOwnerPID: 1
+            in: [menu, app]
         )
         XCTAssertEqual(onAppOnly.map(\.windowID), [2])
     }
@@ -124,8 +142,7 @@ final class UnderlyingWindowResolverTests: XCTestCase {
         // backApp 前方有 dock / menu / frontApp，但只有 frontApp（layer 0）算遮挡。
         let occ = UnderlyingWindowResolver.occluders(
             inFrontOf: backApp,
-            in: [dock, menu, frontApp, backApp],
-            excludingOwnerPID: 1
+            in: [dock, menu, frontApp, backApp]
         )
         XCTAssertEqual(occ.map(\.windowID), [3])  // 仅 frontApp，不含 dock/menu
     }

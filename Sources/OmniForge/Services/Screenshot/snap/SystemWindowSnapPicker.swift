@@ -22,7 +22,8 @@ enum SystemWindowSnapPicker {
     /// - layer 20（Dock）不在范围。
     /// - Parameters:
     ///   - cgPoint: CG 全局坐标点（左上原点）。
-    ///   - windows: 已排除本 app 的窗口列表（调用方负责排除 selfPID）。
+    ///   - windows: 已排除遮罩面板（窗口 ID 粒度）的窗口列表；
+    ///     含本 app 的状态项窗口，悬停自家图标会细化到图标本身。
     /// - Returns: 命中的系统窗口；无则 nil（交回 AX/元素级路径）。
     static func pick(at cgPoint: CGPoint, in windows: [SnapWindowInfo]) -> SnapWindowInfo? {
         // 状态项优先：取面积最小的含点窗口（细化到单图标）。

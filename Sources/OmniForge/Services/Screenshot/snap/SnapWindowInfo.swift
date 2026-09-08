@@ -13,17 +13,20 @@ struct SnapWindowInfo: Equatable, Sendable {
 enum SnapWindowListParser {
     /// - Parameters:
     ///   - entries: 前→后有序的窗口字典。
-    ///   - excludingOwnerPID: 剔除的 owner（通常为本 app overlay）。
+    ///   - excludingWindowIDs: 剔除的窗口 ID（本 app 的全屏截图遮罩面板）。
+    ///     不能按 PID 整进程剔除——控制中心/剪贴板/钉图等自有业务窗口
+    ///     也是合法吸附目标，只有遮罩面板自身必须排除。
     /// - Returns: 有效尺寸、非 excluded 的窗口，保持原顺序。
     static func parse(
         _ entries: [[String: Any]],
-        excludingOwnerPID: pid_t
+        excludingWindowIDs: Set<CGWindowID>
     ) -> [SnapWindowInfo] {
         var result: [SnapWindowInfo] = []
         result.reserveCapacity(entries.count)
         for entry in entries {
-            guard let pid = ownerPID(from: entry), pid != excludingOwnerPID else { continue }
-            guard let windowID = windowID(from: entry) else { continue }
+            guard let windowID = windowID(from: entry),
+                  !excludingWindowIDs.contains(windowID) else { continue }
+            guard let pid = ownerPID(from: entry) else { continue }
             guard let bounds = bounds(from: entry), bounds.width > 0, bounds.height > 0 else { continue }
             let layer = (entry[kCGWindowLayer as String] as? Int)
                 ?? (entry[kCGWindowLayer as String] as? NSNumber)?.intValue
@@ -78,23 +81,23 @@ enum SnapWindowListParser {
 }
 
 /// 按 z-order 解析鼠标下最前窗口与其前方遮挡窗。
+/// 列表语义：调用方传入的列表已在解析时剔除遮罩面板（窗口 ID 粒度），
+/// 自有进程的业务窗口保留在列表中参与命中与遮挡。
 enum UnderlyingWindowResolver {
-    /// 从前到后找第一个 bounds 包含点、且 owner 未被排除的窗口。
+    /// 从前到后找第一个 bounds 包含点的窗口。
     static func topmost(
         at point: CGPoint,
-        in windows: [SnapWindowInfo],
-        excludingOwnerPID: pid_t
+        in windows: [SnapWindowInfo]
     ) -> SnapWindowInfo? {
-        candidatesContaining(point, in: windows, excludingOwnerPID: excludingOwnerPID).first
+        candidatesContaining(point, in: windows).first
     }
 
     /// 所有 bounds 包含点的窗口，前→后（用于 frontmost AX 失败时回退菜单栏等）。
     static func candidatesContaining(
         _ point: CGPoint,
-        in windows: [SnapWindowInfo],
-        excludingOwnerPID: pid_t
+        in windows: [SnapWindowInfo]
     ) -> [SnapWindowInfo] {
-        windows.filter { $0.ownerPID != excludingOwnerPID && $0.bounds.contains(point) }
+        windows.filter { $0.bounds.contains(point) }
     }
 
     /// 返回列表中位于 `target` 之前（更前层）的窗口，保持前→后顺序。
@@ -104,8 +107,7 @@ enum UnderlyingWindowResolver {
     /// 遮挡会错误地裁空候选。仅保留 layer 0 的真实 app 窗口半遮挡关系。
     static func occluders(
         inFrontOf target: SnapWindowInfo,
-        in windows: [SnapWindowInfo],
-        excludingOwnerPID: pid_t
+        in windows: [SnapWindowInfo]
     ) -> [SnapWindowInfo] {
         let systemLayerFloor = Int(CGWindowLevelForKey(.dockWindow))  // 20
         var result: [SnapWindowInfo] = []
@@ -113,7 +115,6 @@ enum UnderlyingWindowResolver {
             if window.windowID == target.windowID, window.ownerPID == target.ownerPID {
                 break
             }
-            if window.ownerPID == excludingOwnerPID { continue }
             if window.layer >= systemLayerFloor { continue }
             result.append(window)
         }

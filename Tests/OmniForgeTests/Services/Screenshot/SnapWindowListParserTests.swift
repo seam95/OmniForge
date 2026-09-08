@@ -14,7 +14,7 @@ final class SnapWindowListParserTests: XCTestCase {
                 ] as [String: CGFloat],
             ],
         ]
-        let windows = SnapWindowListParser.parse(entries, excludingOwnerPID: 1)
+        let windows = SnapWindowListParser.parse(entries, excludingWindowIDs: [])
         XCTAssertEqual(windows.count, 1)
         XCTAssertEqual(windows[0].windowID, 42)
         XCTAssertEqual(windows[0].ownerPID, 77)
@@ -22,7 +22,7 @@ final class SnapWindowListParserTests: XCTestCase {
         XCTAssertEqual(windows[0].layer, 0)
     }
 
-    func test_parse_excludesSelfAndEmptyBounds() {
+    func test_parse_excludesOverlayWindowIDsAndEmptyBounds() {
         let entries: [[String: Any]] = [
             [
                 kCGWindowNumber as String: 1,
@@ -49,8 +49,20 @@ final class SnapWindowListParserTests: XCTestCase {
                 ] as [String: CGFloat],
             ],
         ]
-        let windows = SnapWindowListParser.parse(entries, excludingOwnerPID: 99)
+        let windows = SnapWindowListParser.parse(entries, excludingWindowIDs: [1])
         XCTAssertEqual(windows.map(\.windowID), [3])
+    }
+
+    /// 排除粒度回归：同 pid 的非遮罩窗口必须保留。
+    /// 整进程排除会把自有业务窗口（控制中心/剪贴板/钉图）一并丢掉，
+    /// 导致悬停自家窗口永远无吸附候选。
+    func test_parse_keepsSameOwnerWindowsWhenOnlyOverlayIDExcluded() {
+        let entries: [[String: Any]] = [
+            windowEntry(id: 7, pid: 99, x: 0),
+            windowEntry(id: 8, pid: 99, x: 100),
+        ]
+        let windows = SnapWindowListParser.parse(entries, excludingWindowIDs: [7])
+        XCTAssertEqual(windows.map(\.windowID), [8])
     }
 
     func test_parse_preservesFrontToBackOrder() {
@@ -59,8 +71,8 @@ final class SnapWindowListParserTests: XCTestCase {
             windowEntry(id: 20, pid: 2, x: 10),
             windowEntry(id: 30, pid: 3, x: 20),
         ]
-        let windows = SnapWindowListParser.parse(entries, excludingOwnerPID: 99)
-        XCTAssertEqual(windows.map(\.windowID), [10, 20, 30])
+        let windows = SnapWindowListParser.parse(entries, excludingWindowIDs: [20])
+        XCTAssertEqual(windows.map(\.windowID), [10, 30])
     }
 
     private func windowEntry(id: Int, pid: pid_t, x: CGFloat) -> [String: Any] {
