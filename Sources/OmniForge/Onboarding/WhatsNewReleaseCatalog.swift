@@ -11,6 +11,17 @@ enum WhatsNewReleaseCatalog {
     /// 历次版本的更新内容，新版本在前
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            version: "3.8",
+            entries: [
+                WhatsNewEntry(type: .changed, text: "长截图引擎重写：手动滚动驱动拼接更稳，滚动停止后自动完成，Esc 随时取消"),
+                WhatsNewEntry(type: .changed, text: "长截图回归纯手动滚动模式，移除自动滚动及相关设置项"),
+                WhatsNewEntry(type: .fixed, text: "修复风扇助手首次安装等待批准时误报失败，批准后自动转为就绪"),
+                WhatsNewEntry(type: .fixed, text: "修复全局滚动周期性卡顿（风扇注册状态查询不再阻塞主线程）"),
+                WhatsNewEntry(type: .fixed, text: "卸载或关闭监控时归还风扇控制，转速不再停留在最后一次下发值"),
+                WhatsNewEntry(type: .fixed, text: "截图窗口吸附可正确命中控制中心、剪贴板等自有面板"),
+            ]
+        ),
+        WhatsNewRelease(
             version: "3.7",
             entries: [
                 WhatsNewEntry(type: .added, text: "新增风扇监控与控制：实时转速、温度传感器与四档风扇曲线，支持手动调速"),
