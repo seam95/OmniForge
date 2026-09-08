@@ -984,6 +984,8 @@ extension Strings {
         screenshotScrollAutoScroll: "自动滚动",
         screenshotScrollAutoScrollCaption: "开启后长截图会自动驱动页面滚动；需要辅助功能权限，会话中也可在悬浮条上切换。",
         screenshotScrollSpeed: "滚动速度",
+        screenshotScrollAutoScrollReversed: "反转自动滚动方向",
+        screenshotScrollAutoScrollReversedCaption: "自动滚动方向与预期相反（如外接鼠标或修改过滚动方向）时开启。",
         screenshotScrollMaxHeight: "最大高度（像素）",
         screenshotScrollFrozenDetection: "检测固定元素",
         screenshotScrollFrozenDetectionCaption: "自动识别并剔除吸顶头部与滚动条，避免它们重复出现在长图中。",

@@ -83,6 +83,7 @@ enum UserDefaultsKeys {
     // 长截图（滚动截图）
     static let screenshotScrollAutoScrollEnabled = "screenshot.scroll.autoScrollEnabled"
     static let screenshotScrollAutoScrollSpeed = "screenshot.scroll.autoScrollSpeed"
+    static let screenshotScrollAutoScrollReversed = "screenshot.scroll.autoScrollReversed"
     static let screenshotScrollMaxHeight = "screenshot.scroll.maxHeight"
     static let screenshotScrollFrozenDetection = "screenshot.scroll.frozenDetection"
     // 网络诊断 — 持久化字符串必须稳定，不得重命名

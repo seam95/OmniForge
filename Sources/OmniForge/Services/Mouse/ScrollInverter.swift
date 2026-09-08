@@ -137,6 +137,10 @@ final class ScrollInverter: ObservableObject {
         }
         guard type == .scrollWheel else { return Unmanaged.passUnretained(event) }
 
+        // 本进程合成的滚轮（长截图自动滚动、平滑滚动滑行流）保持原方向：
+        // 自动滚动的方向由长截图引擎自己决定，不能被滚轮方向偏好翻转。
+        guard !SyntheticEventTag.isOurs(event) else { return Unmanaged.passUnretained(event) }
+
         let traits = ScrollWheelEventTraits(
             isContinuous: event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0,
             momentumPhase: event.getIntegerValueField(.scrollWheelEventMomentumPhase),

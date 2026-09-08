@@ -1070,6 +1070,10 @@ struct Strings: Equatable {
     let screenshotScrollAutoScrollCaption: String
     /// 设置页自动滚动速度。
     let screenshotScrollSpeed: String
+    /// 设置页反转自动滚动方向开关。
+    let screenshotScrollAutoScrollReversed: String
+    /// 设置页反转自动滚动方向开关说明。
+    let screenshotScrollAutoScrollReversedCaption: String
     /// 设置页最大高度。
     let screenshotScrollMaxHeight: String
     /// 设置页固定元素检测开关。

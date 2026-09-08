@@ -218,6 +218,39 @@ final class ScrollCaptureCoreTests: XCTestCase {
         XCTAssertEqual(delivered?.size.height ?? 0, 159, accuracy: 1.0)
     }
 
+    /// 回归：首帧 settle 进行中（启动阶段）点停止，必须无图交付且会话
+    /// 不得在 settle 完成后复活（曾导致停止后编辑器卡在长截图状态）。
+    func test_stopSessionDuringStartup_deliversNilAndPreventsRevival() async {
+        // 制造 0.4s 的首帧采集窗口，期间触发停止。
+        let capture: ScrollCapturer.RegionCapture = { _, _ in
+            Thread.sleep(forTimeInterval: 0.4)
+            return Self.makeSolidCGImage(width: 40, height: 40, color: .red)
+        }
+
+        let capturer = ScrollCapturer(
+            captureRect: CGRect(x: 0, y: 0, width: 40, height: 40),
+            scaleFactor: 1,
+            capture: capture
+        )
+        let done = expectation(description: "startup-stop-delivers")
+        capturer.onSessionDone = { image in
+            XCTAssertNil(image, "启动阶段停止应无图交付")
+            done.fulfill()
+        }
+
+        let startTask = Task { await capturer.startSession() }
+        // 等 startSession 进入启动阶段（settle 正在进行）。
+        try? await Task.sleep(nanoseconds: 150_000_000)
+        capturer.stopSession()
+
+        XCTAssertFalse(capturer.isActive)
+        await fulfillment(of: [done], timeout: 5)
+
+        // settle 完成后不得复活（isCancelled 拦截）。
+        await startTask.value
+        XCTAssertFalse(capturer.isActive, "启动期停止后 settle 完成不得复活会话")
+    }
+
     // MARK: - 窗口排除列表
 
     func test_scrollCaptureExclusion_includesHostOverlayWindowFirst() {

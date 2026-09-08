@@ -121,6 +121,7 @@ enum Defaults {
             UserDefaultsKeys.recordingLastManualFormat: RecordingOutputConfiguration.defaultManualFormat.rawValue,
             UserDefaultsKeys.screenshotScrollAutoScrollEnabled: false,
             UserDefaultsKeys.screenshotScrollAutoScrollSpeed: 3,
+            UserDefaultsKeys.screenshotScrollAutoScrollReversed: false,
             UserDefaultsKeys.screenshotScrollMaxHeight: 30_000,
             UserDefaultsKeys.screenshotScrollFrozenDetection: true,
         ]

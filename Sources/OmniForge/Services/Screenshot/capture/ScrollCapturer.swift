@@ -43,6 +43,8 @@ final class ScrollCapturer {
         var autoScrollEnabled = false
         /// 自动滚动速度 1...4。
         var autoScrollSpeed = 3
+        /// 反转自动滚动方向（适配外接鼠标/滚动方向偏好与默认相反的环境）。
+        var autoScrollReversed = false
         /// 拼接图高度上限（px），达到即自动停止。
         var maxScrollHeight = 30_000
         /// 吸顶头部/滚动条检测开关。
@@ -206,9 +208,11 @@ final class ScrollCapturer {
         }
     }
 
-    /// 停止会话并交付拼接结果。
+    /// 停止会话并交付拼接结果。首帧 settle 进行中（启动阶段）同样有效：
+    /// 无图交付 nil，并置取消标志防止启动完成后会话复活。
     func stopSession() {
-        guard isActive else { return }
+        guard isActive || isSessionStarting else { return }
+        isCancelled = true
         isActive = false
         teardownDrivers()
 
@@ -431,16 +435,23 @@ final class ScrollCapturer {
 
     /// 自动滚动主循环：发滚轮 → settle 比较 → 检查自动停止。
     private func autoScrollLoop(linesPerTick: Int32, burstCount: Int) async {
+        // 默认 wheel1 为负 = 向下滚动；开启反转则翻符号。
+        let direction: Int32 = config.autoScrollReversed ? 1 : -1
+        let wheel1 = direction * linesPerTick
+
         while isActive, autoScrollActive {
             for _ in 0..<burstCount {
                 if let event = CGEvent(
                     scrollWheelEvent2Source: nil,
                     units: .line,
                     wheelCount: 1,
-                    wheel1: -linesPerTick,
+                    wheel1: wheel1,
                     wheel2: 0,
                     wheel3: 0
                 ) {
+                    // 打本进程合成标记：滚动反转/平滑滚动的 tap 须直通，
+                    // 否则自动滚轮会被自家滚轮方向偏好翻转成反向。
+                    event.setIntegerValueField(.eventSourceUserData, value: SyntheticEventTag.ours)
                     event.post(tap: .cghidEventTap)
                 }
             }

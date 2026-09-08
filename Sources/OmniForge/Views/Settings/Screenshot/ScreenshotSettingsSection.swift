@@ -19,6 +19,7 @@ struct ScreenshotSettingsSection: View {
         RecordingOutputConfiguration.defaultSavePreference.rawValue
     @AppStorage(UserDefaultsKeys.screenshotScrollAutoScrollEnabled) private var scrollAutoScrollEnabled = false
     @AppStorage(UserDefaultsKeys.screenshotScrollAutoScrollSpeed) private var scrollAutoScrollSpeed = 3
+    @AppStorage(UserDefaultsKeys.screenshotScrollAutoScrollReversed) private var scrollAutoScrollReversed = false
     @AppStorage(UserDefaultsKeys.screenshotScrollMaxHeight) private var scrollMaxHeight = 30_000
     @AppStorage(UserDefaultsKeys.screenshotScrollFrozenDetection) private var scrollFrozenDetection = true
 
@@ -158,6 +159,12 @@ struct ScreenshotSettingsSection: View {
             .frame(maxWidth: 240)
             .onChange(of: scrollAutoScrollSpeed) { _, newValue in
                 scrollAutoScrollSpeed = min(4, max(1, newValue))
+            }
+            Toggle(isOn: $scrollAutoScrollReversed) {
+                InfoHintLabel(
+                    strings.screenshotScrollAutoScrollReversed,
+                    hint: strings.screenshotScrollAutoScrollReversedCaption
+                )
             }
             Stepper(
                 "\(strings.screenshotScrollMaxHeight)：\(scrollMaxHeight)",

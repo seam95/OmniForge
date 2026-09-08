@@ -18,7 +18,7 @@ final class SmoothScrollService: ObservableObject {
     @Published private(set) var lastError: String?
 
     /// 标记合成事件，使 tap 永不重新处理自己的输出。
-    private static let syntheticTag: Int64 = 0x564F5253  // "VORS"
+    private static let syntheticTag: Int64 = SyntheticEventTag.ours
 
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?

@@ -984,6 +984,8 @@ extension Strings {
         screenshotScrollAutoScroll: "Auto scroll",
         screenshotScrollAutoScrollCaption: "Drive the page automatically during long screenshots. Requires Accessibility access; can also be toggled on the floating bar.",
         screenshotScrollSpeed: "Scroll speed",
+        screenshotScrollAutoScrollReversed: "Reverse auto-scroll direction",
+        screenshotScrollAutoScrollReversedCaption: "Turn on if auto scroll moves the wrong way (e.g. external mice or modified scroll direction).",
         screenshotScrollMaxHeight: "Max height (pixels)",
         screenshotScrollFrozenDetection: "Detect fixed elements",
         screenshotScrollFrozenDetectionCaption: "Detect and exclude sticky headers and scrollbars so they don't repeat in the long image.",

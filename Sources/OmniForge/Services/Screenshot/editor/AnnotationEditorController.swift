@@ -1354,6 +1354,7 @@ final class AnnotationEditorController {
         let defaults = UserDefaults.standard
         var config = ScrollCapturer.SessionConfig()
         config.autoScrollEnabled = defaults.bool(forKey: UserDefaultsKeys.screenshotScrollAutoScrollEnabled)
+        config.autoScrollReversed = defaults.bool(forKey: UserDefaultsKeys.screenshotScrollAutoScrollReversed)
         let speed = defaults.integer(forKey: UserDefaultsKeys.screenshotScrollAutoScrollSpeed)
         config.autoScrollSpeed = min(4, max(1, speed))
         let maxHeight = defaults.integer(forKey: UserDefaultsKeys.screenshotScrollMaxHeight)
