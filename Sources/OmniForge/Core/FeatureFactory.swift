@@ -345,27 +345,6 @@ struct FeatureFactory {
         }
     }
 
-    /// 同步 teardown（非 keepAwake 立即成功）。
-    func teardown(_ feature: AppFeature, from runtime: FeatureRuntime) {
-        teardownSync(feature, from: runtime)
-    }
-
-    /// 可等待 teardown；keepAwake 走 Manager.shutdown。
-    func teardownAsync(_ feature: AppFeature, from runtime: FeatureRuntime) async throws {
-        if feature == .keepAwake {
-            if let manager = runtime.manager(for: .keepAwake, as: KeepAwakeManager.self) {
-                await manager.shutdown(reason: .featureUninstall)
-                if case .cleanupRequired = manager.state {
-                    throw FeatureAvailabilityError.teardownFailed("keep-awake cleanup required")
-                }
-            }
-            runtime.manager(for: .keepAwake, as: KeepAwakeHotkeyManager.self)?.teardown()
-            runtime.unregisterAll(for: feature)
-            return
-        }
-        teardownSync(feature, from: runtime)
-    }
-
     /// 停止后台工作并卸注册，释放强引用。
     func teardownSync(_ feature: AppFeature, from runtime: FeatureRuntime) {
         switch feature {

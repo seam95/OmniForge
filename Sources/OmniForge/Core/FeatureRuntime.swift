@@ -18,8 +18,6 @@ final class FeatureRuntime: ObservableObject {
     private var factory: FeatureFactory?
     private var testingBindingsOverride: ((AppFeature) -> Void)?
     private var inFlight = Set<AppFeature>()
-    /// persist false 失败时保留的 detached lease，供 retry。
-    private var pausedLeases: [AppFeature: FeatureRegistrationLease] = [:]
 
     private init() {
         for feature in AppFeature.allCases {
@@ -96,7 +94,6 @@ final class FeatureRuntime: ObservableObject {
     /// 启动 compose 前清空注册表（不碰 availability）。
     func unregisterAllManagersForBootstrap() {
         managerRegistry.removeAll()
-        pausedLeases.removeAll()
     }
 
     // MARK: - 生命周期
@@ -192,30 +189,20 @@ final class FeatureRuntime: ObservableObject {
     private func uninstallTransactionSync(_ feature: AppFeature) -> Result<Void, FeatureAvailabilityError> {
         phases[feature] = .uninstalling
 
-        // 有 factory：先停工 + teardown 卸注册；无 factory：兼容测试注入，仅 binding 停工，保留 registry。
+        // 有 factory：teardown 停工并卸注册；无 factory：兼容测试注入，仅 binding 停工，保留 registry。
         if factory != nil {
-            runBindingStopping(feature)
-
-            let prefix = "\(feature.rawValue)::"
-            let detached = managerRegistry.filter { $0.key.hasPrefix(prefix) }
-            let lease = FeatureRegistrationLease(
-                feature: feature,
-                managers: detached,
-                isAttached: false
-            )
             factory?.teardownSync(feature, from: self)
-            pausedLeases[feature] = lease
 
             do {
                 try availabilityStore.setAvailable(feature, false)
             } catch {
-                reattach(lease)
+                // persist 失败：teardown 已生效而 availability 仍为 true，
+                // 本会话重新安装或下次启动 bootstrap 会按 availability 重建，自愈。
                 phases[feature] = .failed("persist false failed")
                 revision += 1
                 return .failure(.persistenceFailed(String(describing: error)))
             }
 
-            pausedLeases.removeValue(forKey: feature)
             loadedThisSession.remove(feature)
         } else {
             // 无 factory：先写 false 再 binding，使 isAvailable 为 false；不 unregister。
@@ -247,73 +234,21 @@ final class FeatureRuntime: ObservableObject {
             }
         }
         manager(for: .keepAwake, as: KeepAwakeHotkeyManager.self)?.teardown()
-
-        let prefix = "\(AppFeature.keepAwake.rawValue)::"
-        let detached = managerRegistry.filter { $0.key.hasPrefix(prefix) }
-        let lease = FeatureRegistrationLease(
-            feature: .keepAwake,
-            managers: detached,
-            isAttached: false
-        )
         unregisterAll(for: .keepAwake)
-        pausedLeases[.keepAwake] = lease
 
         do {
             try availabilityStore.setAvailable(.keepAwake, false)
         } catch {
-            reattach(lease)
+            // persist 失败语义与非 keepAwake 一致：已停工、availability 未变，可自愈。
             phases[.keepAwake] = .failed("persist false failed")
             revision += 1
             return .failure(.persistenceFailed(String(describing: error)))
         }
 
-        pausedLeases.removeValue(forKey: .keepAwake)
         loadedThisSession.remove(.keepAwake)
         phases[.keepAwake] = .idle
         revision += 1
         return .success(())
-    }
-
-    private func runBindingStopping(_ feature: AppFeature) {
-        // 对依赖 isAvailable 的 binding：先 teardown 侧停工接口
-        switch feature {
-        case .clipboardHistory:
-            manager(for: .clipboardHistory, as: ClipboardHistoryManager.self)?.stopMonitoring()
-            manager(for: .clipboardHistory, as: ClipboardHotkeyManager.self)?.stopListening()
-        case .systemMonitor:
-            if let m = manager(for: .systemMonitor, as: SystemMonitorManager.self) {
-                m.setPanelDemand(.none)
-                m.setMenuBarMetrics([])
-                m.setAlertRequirements([])
-            }
-        case .tokenUsage:
-            manager(for: .tokenUsage, as: TokenUsageManager.self)?.stop()
-            manager(for: .tokenUsage, as: DeepSeekBalanceManager.self)?.stop()
-        case .shelf:
-            manager(for: .shelf, as: ShelfService.self)?.syncWithPreferences()
-        case .cleaner:
-            CleanerScheduler.shared.stop()
-        case .scrollInverter:
-            ScrollInverter.shared.suspend()
-        case .smoothScroll:
-            SmoothScrollService.shared.suspend()
-        case .mouseNavigation:
-            MouseNavigationService.shared.suspend()
-        case .dockClick:
-            DockClickService.shared.suspend()
-        case .screenshot:
-            manager(for: .screenshot, as: ScreenshotFeatureManager.self)?.stopListening()
-        default:
-            break
-        }
-    }
-
-    private func reattach(_ lease: FeatureRegistrationLease) {
-        for (key, value) in lease.managers {
-            managerRegistry[key] = value
-        }
-        lease.markAttached()
-        // availability 仍为 true（persist 未成功）
     }
 
     // MARK: - binding
@@ -426,7 +361,6 @@ final class FeatureRuntime: ObservableObject {
         factory = nil
         revision = 0
         inFlight.removeAll()
-        pausedLeases.removeAll()
         phases = Dictionary(uniqueKeysWithValues: AppFeature.allCases.map { ($0, .idle) })
         loadedThisSession = Set(AppFeature.allCases.filter { availabilityStore.isAvailable($0) })
     }

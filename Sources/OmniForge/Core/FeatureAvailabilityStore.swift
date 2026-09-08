@@ -27,28 +27,6 @@ final class UserDefaultsFeatureAvailabilityStore: FeatureAvailabilityStoring {
     }
 }
 
-/// 单个 Feature 的 Manager 集合租约：detach 后仍强引用，persist 失败可 reattach。
-@MainActor
-final class FeatureRegistrationLease {
-    let feature: AppFeature
-    private(set) var managers: [String: Any]
-    private(set) var isAttached: Bool
-
-    init(feature: AppFeature, managers: [String: Any], isAttached: Bool) {
-        self.feature = feature
-        self.managers = managers
-        self.isAttached = isAttached
-    }
-
-    func markAttached() {
-        isAttached = true
-    }
-
-    func markDetached() {
-        isAttached = false
-    }
-}
-
 /// Feature 可用性事务 UI 状态。
 enum FeatureAvailabilityPhase: Equatable {
     case idle
