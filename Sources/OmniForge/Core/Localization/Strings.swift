@@ -158,6 +158,9 @@ struct Strings: Equatable {
     let fanSettingsHelperStatusNotInstalled: String
     let fanSettingsHelperStatusVersionMismatch: String
     let fanSettingsHelperStatusRegisterFailed: String
+    let fanSettingsHelperStatusAwaitingApproval: String
+    let fanSettingsHelperAwaitingApprovalHint: String
+    let fanSettingsHelperOpenApprovalSettings: String
     let fanSettingsHelperInstall: String
     let fanSettingsHelperUninstall: String
     let fanSettingsHelperFooter: String

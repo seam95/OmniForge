@@ -10,6 +10,8 @@ struct FanSettingsView: View {
     private enum HelperState: Equatable {
         case unknown
         case notRegistered
+        /// 已登记待用户批准：register() 报 code=1 后系统在等通知/系统设置里的「允许」
+        case awaitingApproval
         case registeredVersionOK
         case registeredVersionMismatch
         case registerFailed(String)
@@ -17,6 +19,10 @@ struct FanSettingsView: View {
 
     @State private var state: HelperState = .unknown
     @State private var isBusy = false
+
+    /// awaitingApproval 期间轮询注册状态：用户在通知/系统设置批准后 daemon 即刻生效，
+    /// 无需重启 app；发现 enabled 后转入版本协商并自然停止轮询
+    private let approvalPoller = Timer.publish(every: 1.5, on: .main, in: .common).autoconnect()
 
     var body: some View {
         Form {
@@ -38,6 +44,11 @@ struct FanSettingsView: View {
         }
         .settingsPageStyle()
         .onAppear(perform: refreshStatus)
+        .onReceive(approvalPoller) { _ in
+            guard state == .awaitingApproval else { return }
+            // 拒绝/撤销会把状态打回未注册，轮询里全量分流可一并收敛
+            refreshStatus()
+        }
     }
 
     // MARK: - Helper 管理
@@ -56,6 +67,11 @@ struct FanSettingsView: View {
                     }
                 }
                 .disabled(isBusy)
+            }
+            if state == .awaitingApproval {
+                Button(strings.fanSettingsHelperOpenApprovalSettings) {
+                    FanHelperInstaller.openApprovalSettings()
+                }
             }
             if isRegisteredState {
                 Button(action: uninstall) {
@@ -95,6 +111,19 @@ struct FanSettingsView: View {
             case .notRegistered:
                 Text(strings.fanSettingsHelperStatusNotInstalled)
                     .foregroundStyle(.secondary)
+            case .awaitingApproval:
+                VStack(alignment: .trailing, spacing: 2) {
+                    Label(
+                        strings.fanSettingsHelperStatusAwaitingApproval,
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .foregroundStyle(.orange)
+                    Text(strings.fanSettingsHelperAwaitingApprovalHint)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.trailing)
+                        .lineLimit(3)
+                }
             case .registeredVersionOK:
                 Label(strings.fanSettingsHelperStatusReady, systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
@@ -175,17 +204,20 @@ struct FanSettingsView: View {
     // MARK: - 动作
 
     private func refreshStatus() {
-        guard FanHelperInstaller.isRegistered() else {
-            state = .notRegistered
-            return
-        }
-        state = .unknown
-        // XPC reply 在后台队列回调，状态回写须回主线程；
-        // fetchVersion 带 3s 超时，daemon 未运行时会回调 nil（不再悬挂转圈）
-        FanHelperInstaller.checkVersion(client: FanHelperClient()) { matched in
-            DispatchQueue.main.async {
-                state = (matched == true) ? .registeredVersionOK : .registeredVersionMismatch
+        switch FanHelperInstaller.registrationStatus() {
+        case .enabled:
+            state = .unknown
+            // XPC reply 在后台队列回调，状态回写须回主线程；
+            // fetchVersion 带 3s 超时，daemon 未运行时会回调 nil（不再悬挂转圈）
+            FanHelperInstaller.checkVersion(client: FanHelperClient()) { matched in
+                DispatchQueue.main.async {
+                    state = (matched == true) ? .registeredVersionOK : .registeredVersionMismatch
+                }
             }
+        case .requiresApproval:
+            state = .awaitingApproval
+        default:
+            state = .notRegistered
         }
     }
 
@@ -204,11 +236,19 @@ struct FanSettingsView: View {
             }
         } catch {
             isBusy = false
-            // 附带 domain/code：SMAppService 的本地化描述过于含糊，错误码才是定位依据
-            let nserror = error as NSError
-            state = .registerFailed(
-                "\(nserror.localizedDescription) (\(nserror.domain) \(nserror.code))"
-            )
+            // 首次注册 macOS 会抛 code=1 并弹通知等批准 — 以事后 status 分流，
+            // 只有真正未登记才算失败（否则用户批准后 UI 卡死在"失败"直到重启）
+            switch FanHelperInstaller.outcome(
+                afterRegisterError: error,
+                status: FanHelperInstaller.registrationStatus()
+            ) {
+            case .enabled:
+                refreshStatus()
+            case .awaitingApproval:
+                state = .awaitingApproval
+            case .failed(let message):
+                state = .registerFailed(message)
+            }
         }
     }
 
