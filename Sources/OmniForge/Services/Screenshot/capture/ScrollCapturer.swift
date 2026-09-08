@@ -11,7 +11,6 @@ import Vision
 /// - TIFF 字节级 settle：连续两帧完全相等才认定内容停止渲染，零容忍。
 /// - 手动模式事件驱动双速率：滚动中 0.15s 节流立即抓帧（不等 settle），
 ///   滚动停止后 0.25s 补拍一张全 settle 帧。
-/// - 自动模式：合成滚轮事件驱动页面滚动，触底自动停止。
 /// - 整帧 Vision 平移配准；配准前裁掉吸顶头部与滚动条。
 /// - 1px 遮缝（新帧多覆盖一行）+ 立即增量合并（不保留帧序列）。
 @MainActor
@@ -24,8 +23,6 @@ final class ScrollCapturer {
     var onStripAdded: ((Int) -> Void)?
     /// 会话结束交付拼接结果；取消路径不触发。nil 表示会话无产出。
     var onSessionDone: ((NSImage?) -> Void)?
-    /// 自动滚动启动时回调（含会话按设置直入自动模式）。
-    var onAutoScrollStarted: (() -> Void)?
     /// 拼接图更新（含首帧），主线程回调。
     var onPreviewUpdated: ((NSImage) -> Void)?
 
@@ -39,12 +36,6 @@ final class ScrollCapturer {
     // MARK: - 会话配置
 
     struct SessionConfig: Sendable {
-        /// 会话直入自动滚动（HUD 按钮仍可切换）。
-        var autoScrollEnabled = false
-        /// 自动滚动速度 1...4。
-        var autoScrollSpeed = 3
-        /// 反转自动滚动方向（适配外接鼠标/滚动方向偏好与默认相反的环境）。
-        var autoScrollReversed = false
         /// 拼接图高度上限（px），达到即自动停止。
         var maxScrollHeight = 30_000
         /// 吸顶头部/滚动条检测开关。
@@ -58,7 +49,6 @@ final class ScrollCapturer {
     private(set) var stripCount = 0
     private(set) var stitchedPixelSize: CGSize = .zero
     private(set) var isActive = false
-    private(set) var autoScrollActive = false
     private var isCancelled = false
     /// startSession 首帧 settle 进行中（此阶段 isActive 尚未置位）。
     private var isSessionStarting = false
@@ -96,10 +86,8 @@ final class ScrollCapturer {
     private var rightMarginDetected = false
 
     // 自动停止计数
-    private var matchNotFoundCount = 0
     private var consecutiveZeroShifts = 0
     private var hasScrolledOnce = false
-    private let maxMatchNotFound = 8
     private let maxZeroShiftsBeforeStop = 6
 
     // 手动滚动监听与节流
@@ -112,11 +100,6 @@ final class ScrollCapturer {
 
     /// 单帧在飞互斥：立即抓帧与 settle 补拍不并发。
     private var isProcessingFrame = false
-
-    // 自动滚动
-    private var autoScrollTask: Task<Void, Never>?
-    /// 合成滚轮事件的目标（激活用）。
-    private var targetAppPID: pid_t = 0
 
     // MARK: - Init
 
@@ -184,28 +167,21 @@ final class ScrollCapturer {
         headerDetectionDone = false
         rightMarginPx = 0
         rightMarginDetected = false
-        matchNotFoundCount = 0
         consecutiveZeroShifts = 0
         hasScrolledOnce = false
         stripCount = 1
         stitchedPixelSize = CGSize(width: firstFrame.width, height: firstFrame.height)
 
-        resolveTargetApp()
         log(
             "session-start",
             metadata: [
                 "pixelSize": "\(firstFrame.width)x\(firstFrame.height)",
-                "autoScroll": config.autoScrollEnabled,
             ]
         )
         emitPreview()
         onStripAdded?(stripCount)
 
-        if config.autoScrollEnabled {
-            startAutoScroll()
-        } else {
-            startManualScrollMonitors()
-        }
+        startManualScrollMonitors()
     }
 
     /// 停止会话并交付拼接结果。首帧 settle 进行中（启动阶段）同样有效：
@@ -236,21 +212,7 @@ final class ScrollCapturer {
         log("session-cancel")
     }
 
-    /// HUD 切换自动/手动滚动。切向自动的权限门由编排层负责。
-    func toggleAutoScroll() {
-        if autoScrollActive {
-            stopAutoScroll()
-            startManualScrollMonitors()
-        } else {
-            stopManualScrollMonitors()
-            startAutoScroll()
-        }
-    }
-
     private func teardownDrivers() {
-        autoScrollTask?.cancel()
-        autoScrollTask = nil
-        autoScrollActive = false
         settlementTimer?.invalidate()
         settlementTimer = nil
         stopManualScrollMonitors()
@@ -264,37 +226,6 @@ final class ScrollCapturer {
             height: CGFloat(mergedImage.height) / backingScale
         )
         return NSImage(cgImage: mergedImage, size: ptSize)
-    }
-
-    /// 选区中心命中窗口的所属进程（自动滚动前激活目标 app）。
-    private func resolveTargetApp() {
-        guard
-            let windowList = CGWindowListCopyWindowInfo(
-                [.optionOnScreenOnly, .excludeDesktopElements],
-                kCGNullWindowID
-            ) as? [[String: Any]]
-        else { return }
-
-        let center = CGPoint(x: captureRect.midX, y: captureRect.midY)
-        let excluded = Set(excludedWindowIDs)
-
-        for info in windowList {
-            guard let layer = info[kCGWindowLayer as String] as? Int, layer == 0,
-                  let winID = info[kCGWindowNumber as String] as? Int,
-                  let pid = info[kCGWindowOwnerPID as String] as? pid_t,
-                  !excluded.contains(CGWindowID(winID)),
-                  let boundsDict = info[kCGWindowBounds as String] as? [String: CGFloat]
-            else { continue }
-
-            let x = boundsDict["X"] ?? 0
-            let y = boundsDict["Y"] ?? 0
-            let w = boundsDict["Width"] ?? 0
-            let h = boundsDict["Height"] ?? 0
-            if CGRect(x: x, y: y, width: w, height: h).contains(center) {
-                targetAppPID = pid
-                return
-            }
-        }
     }
 
     // MARK: - 手动滚动（事件驱动双速率）
@@ -330,7 +261,7 @@ final class ScrollCapturer {
 
     /// 滚动事件到达：立即路径节流抓帧 + 重置 settlement 补拍定时器。
     private func onManualScrollEvent() {
-        guard isActive, !autoScrollActive else { return }
+        guard isActive else { return }
 
         // 滚动停止后补一张全 settle 帧（每次事件重置倒计时）。
         settlementTimer?.invalidate()
@@ -397,94 +328,6 @@ final class ScrollCapturer {
             }
         }
         return matched
-    }
-
-    // MARK: - 自动滚动
-
-    private func startAutoScroll() {
-        autoScrollActive = true
-        onAutoScrollStarted?()
-
-        // 光标移到选区中心并激活目标 app，让合成滚轮事件落在正确窗口上。
-        CGWarpMouseCursorPosition(CGPoint(x: captureRect.midX, y: captureRect.midY))
-        if targetAppPID != 0 {
-            NSRunningApplication(processIdentifier: targetAppPID)?.activate(options: [])
-        }
-
-        let linesPerTick: Int32
-        let burstCount: Int
-        switch config.autoScrollSpeed {
-        case 1: linesPerTick = 1; burstCount = 1
-        case 2: linesPerTick = 1; burstCount = 2
-        case 4: linesPerTick = 2; burstCount = 4
-        default: linesPerTick = 1; burstCount = 3
-        }
-
-        autoScrollTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 300_000_000)
-            guard let self, self.isActive, self.autoScrollActive else { return }
-            await self.autoScrollLoop(linesPerTick: linesPerTick, burstCount: burstCount)
-        }
-    }
-
-    private func stopAutoScroll() {
-        autoScrollActive = false
-        autoScrollTask?.cancel()
-        autoScrollTask = nil
-    }
-
-    /// 自动滚动主循环：发滚轮 → settle 比较 → 检查自动停止。
-    private func autoScrollLoop(linesPerTick: Int32, burstCount: Int) async {
-        // 默认 wheel1 为负 = 向下滚动；开启反转则翻符号。
-        let direction: Int32 = config.autoScrollReversed ? 1 : -1
-        let wheel1 = direction * linesPerTick
-
-        while isActive, autoScrollActive {
-            for _ in 0..<burstCount {
-                if let event = CGEvent(
-                    scrollWheelEvent2Source: nil,
-                    units: .line,
-                    wheelCount: 1,
-                    wheel1: wheel1,
-                    wheel2: 0,
-                    wheel3: 0
-                ) {
-                    // 打本进程合成标记：滚动反转/平滑滚动的 tap 须直通，
-                    // 否则自动滚轮会被自家滚轮方向偏好翻转成反向。
-                    event.setIntegerValueField(.eventSourceUserData, value: SyntheticEventTag.ours)
-                    event.post(tap: .cghidEventTap)
-                }
-            }
-
-            // 等待滚动动画起效再进入 settle 轮询。
-            try? await Task.sleep(nanoseconds: 50_000_000)
-            let matched = await autoScrollCompareOnce()
-
-            if !matched {
-                matchNotFoundCount += 1
-                if matchNotFoundCount >= maxMatchNotFound {
-                    log("auto-stop-match-not-found", metadata: ["count": matchNotFoundCount])
-                    stopSession()
-                    return
-                }
-            } else {
-                matchNotFoundCount = 0
-            }
-
-            if let mergedImage, config.maxScrollHeight > 0, mergedImage.height >= config.maxScrollHeight {
-                log("auto-stop-max-height", metadata: ["height": mergedImage.height])
-                stopSession()
-                return
-            }
-
-            try? await Task.sleep(nanoseconds: 10_000_000)
-        }
-    }
-
-    /// 自动循环的比较体：复用手动 settle 路径（含零位移自动停止）。
-    private func autoScrollCompareOnce() async -> Bool {
-        guard isActive, autoScrollActive else { return false }
-        return await processSettledFrame()
     }
 
     // MARK: - 采集与 settle

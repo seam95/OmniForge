@@ -1,5 +1,4 @@
 import AppKit
-import ApplicationServices
 import Foundation
 import os.log
 import QuartzCore
@@ -1327,11 +1326,6 @@ final class AnnotationEditorController {
                 self?.updateScrollCaptureHUD()
             }
         }
-        capturer.onAutoScrollStarted = { [weak self] in
-            DispatchQueue.main.async {
-                self?.updateScrollCaptureHUD()
-            }
-        }
         capturer.onSessionDone = { [weak self] stitchedImage in
             DispatchQueue.main.async {
                 self?.finishScrollCapture(stitchedImage: stitchedImage)
@@ -1353,10 +1347,6 @@ final class AnnotationEditorController {
     private func scrollCaptureSessionConfig() -> ScrollCapturer.SessionConfig {
         let defaults = UserDefaults.standard
         var config = ScrollCapturer.SessionConfig()
-        config.autoScrollEnabled = defaults.bool(forKey: UserDefaultsKeys.screenshotScrollAutoScrollEnabled)
-        config.autoScrollReversed = defaults.bool(forKey: UserDefaultsKeys.screenshotScrollAutoScrollReversed)
-        let speed = defaults.integer(forKey: UserDefaultsKeys.screenshotScrollAutoScrollSpeed)
-        config.autoScrollSpeed = min(4, max(1, speed))
         let maxHeight = defaults.integer(forKey: UserDefaultsKeys.screenshotScrollMaxHeight)
         config.maxScrollHeight = maxHeight > 0 ? maxHeight : 30_000
         config.frozenDetectionEnabled = defaults.object(forKey: UserDefaultsKeys.screenshotScrollFrozenDetection) as? Bool ?? true
@@ -1404,7 +1394,6 @@ final class AnnotationEditorController {
         scrollCapturer = nil
         cancellingCapturer?.onStripAdded = nil
         cancellingCapturer?.onPreviewUpdated = nil
-        cancellingCapturer?.onAutoScrollStarted = nil
         cancellingCapturer?.onSessionDone = nil
         cancellingCapturer?.cancelSession()
 
@@ -1505,13 +1494,12 @@ final class AnnotationEditorController {
         scrollPreviewWindow?.updatePreview(image)
     }
 
-    /// HUD 进度刷新（信息条尺寸 + 自动滚动按钮状态）。
+    /// HUD 进度刷新（信息条尺寸）。
     private func updateScrollCaptureHUD() {
         guard let hud = scrollCaptureHUDWindow, let capturer = scrollCapturer else { return }
         hud.update(
             pixelSize: capturer.stitchedPixelSize,
-            backingScale: sourceBackingScaleFactor,
-            autoScrolling: capturer.autoScrollActive
+            backingScale: sourceBackingScaleFactor
         )
     }
 
@@ -1519,14 +1507,9 @@ final class AnnotationEditorController {
         let strings = stringsProvider()
         let hud = ScrollCaptureHUDWindow(
             title: strings.tipScrollCapture,
-            autoTitle: strings.scrollCaptureAutoScroll,
-            scrollingTitle: strings.scrollCaptureScrolling,
             stopTitle: strings.scrollCaptureStop,
             onStop: { [weak self] in
                 self?.stopScrollCapture(reason: "hud-stop")
-            },
-            onToggleAutoScroll: { [weak self] in
-                self?.handleScrollCaptureToggleAutoScroll()
             }
         )
         hud.position(
@@ -1534,35 +1517,6 @@ final class AnnotationEditorController {
             on: hostSelectionView?.window?.screen ?? NSScreen.main ?? NSScreen()
         )
         scrollCaptureHUDWindow = hud
-    }
-
-    /// HUD「自动滚动」切换：切向自动前做辅助功能权限门。
-    private func handleScrollCaptureToggleAutoScroll() {
-        guard let capturer = scrollCapturer, isScrollCapturing else { return }
-        if !capturer.autoScrollActive, !AXIsProcessTrusted() {
-            presentScrollCaptureAccessibilityPrompt()
-            return
-        }
-        capturer.toggleAutoScroll()
-        updateScrollCaptureHUD()
-    }
-
-    /// 辅助功能权限引导：弹窗 + 直达系统设置。
-    private func presentScrollCaptureAccessibilityPrompt() {
-        let strings = stringsProvider()
-        let alert = NSAlert()
-        alert.messageText = strings.scrollCaptureAccessibilityTitle
-        alert.informativeText = strings.scrollCaptureAccessibilityBody
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: strings.scrollCaptureOpenSettings)
-        alert.addButton(withTitle: strings.scrollCaptureCancel)
-        if alert.runModal() == .alertFirstButtonReturn {
-            if let url = URL(
-                string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-            ) {
-                NSWorkspace.shared.open(url)
-            }
-        }
     }
 
     private func installScrollCaptureKeyMonitor() {

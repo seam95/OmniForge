@@ -2,24 +2,17 @@ import AppKit
 
 // MARK: - Scroll capture HUD
 
-/// 长截图会话 HUD：信息条（标题 · 当前拼接尺寸）+ 自动滚动切换 + 停止按钮。
+/// 长截图会话 HUD：信息条（标题 · 当前拼接尺寸）+ 停止按钮。
 /// 独立 nonactivatingPanel 接收鼠标（宿主遮罩 ignoresMouseEvents），点击不夺焦。
 final class ScrollCaptureHUDView: NSView {
     private let infoLabel = NSTextField(labelWithString: "")
-    private let autoScrollButton = NSButton()
     private let stopButton = NSButton()
     private let baseTitle: String
-    private let autoTitle: String
-    private let scrollingTitle: String
-    private var isAutoScrolling = false
 
     var onStop: (() -> Void)?
-    var onToggleAutoScroll: (() -> Void)?
 
-    init(title: String, autoTitle: String, scrollingTitle: String, stopTitle: String) {
+    init(title: String, stopTitle: String) {
         self.baseTitle = title
-        self.autoTitle = autoTitle
-        self.scrollingTitle = scrollingTitle
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 8
@@ -36,18 +29,6 @@ final class ScrollCaptureHUDView: NSView {
         // 否则初始布局按零宽排布、后续 update 增宽会溢出窗口。
         infoLabel.sizeToFit()
         addSubview(infoLabel)
-
-        autoScrollButton.title = autoTitle
-        autoScrollButton.bezelStyle = .recessed
-        autoScrollButton.isBordered = false
-        autoScrollButton.wantsLayer = true
-        autoScrollButton.layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.85).cgColor
-        autoScrollButton.layer?.cornerRadius = 12
-        autoScrollButton.contentTintColor = .white
-        autoScrollButton.font = .systemFont(ofSize: 12, weight: .semibold)
-        autoScrollButton.target = self
-        autoScrollButton.action = #selector(autoScrollClicked)
-        addSubview(autoScrollButton)
 
         stopButton.title = stopTitle
         stopButton.bezelStyle = .recessed
@@ -70,25 +51,12 @@ final class ScrollCaptureHUDView: NSView {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    /// 更新进度信息与自动滚动按钮状态。
-    func update(
-        pixelSize: CGSize,
-        backingScale: CGFloat,
-        autoScrolling: Bool
-    ) {
+    /// 更新进度信息（当前拼接尺寸）。
+    func update(pixelSize: CGSize, backingScale: CGFloat) {
         let pointWidth = Int((pixelSize.width / max(1, backingScale)).rounded())
         let pointHeight = Int((pixelSize.height / max(1, backingScale)).rounded())
         if pointWidth > 0, pointHeight > 0 {
             infoLabel.stringValue = "\(baseTitle) · \(pointWidth)×\(pointHeight)"
-        }
-
-        isAutoScrolling = autoScrolling
-        if autoScrolling {
-            autoScrollButton.title = scrollingTitle
-            autoScrollButton.layer?.backgroundColor = NSColor.systemOrange.withAlphaComponent(0.85).cgColor
-        } else {
-            autoScrollButton.title = autoTitle
-            autoScrollButton.layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.85).cgColor
         }
         infoLabel.sizeToFit()
         layoutSubviews()
@@ -97,24 +65,17 @@ final class ScrollCaptureHUDView: NSView {
     func layoutSubviews() {
         let pad: CGFloat = 8
         let stopButtonWidth: CGFloat = 56
-        let autoButtonWidth: CGFloat = isAutoScrolling ? 90 : 86
         let buttonHeight: CGFloat = 24
         let barHeight: CGFloat = 36
 
         let infoWidth = infoLabel.frame.width
-        let totalWidth = pad + infoWidth + pad + autoButtonWidth + pad + stopButtonWidth + pad
+        let totalWidth = pad + infoWidth + pad + stopButtonWidth + pad
 
         frame.size = NSSize(width: totalWidth, height: barHeight)
 
         let infoHeight = infoLabel.frame.height
         infoLabel.frame.origin = NSPoint(x: pad, y: (barHeight - infoHeight) / 2)
 
-        autoScrollButton.frame = NSRect(
-            x: pad + infoWidth + pad,
-            y: (barHeight - buttonHeight) / 2,
-            width: autoButtonWidth,
-            height: buttonHeight
-        )
         stopButton.frame = NSRect(
             x: totalWidth - pad - stopButtonWidth,
             y: (barHeight - buttonHeight) / 2,
@@ -123,10 +84,6 @@ final class ScrollCaptureHUDView: NSView {
         )
 
         invalidateIntrinsicContentSize()
-    }
-
-    @objc private func autoScrollClicked() {
-        onToggleAutoScroll?()
     }
 
     @objc private func stopClicked() {
@@ -142,22 +99,9 @@ final class ScrollCaptureHUDWindow: NSPanel {
     private var selectionScreenRect: NSRect?
     private var targetScreen: NSScreen?
 
-    init(
-        title: String,
-        autoTitle: String,
-        scrollingTitle: String,
-        stopTitle: String,
-        onStop: @escaping () -> Void,
-        onToggleAutoScroll: @escaping () -> Void
-    ) {
-        hudView = ScrollCaptureHUDView(
-            title: title,
-            autoTitle: autoTitle,
-            scrollingTitle: scrollingTitle,
-            stopTitle: stopTitle
-        )
+    init(title: String, stopTitle: String, onStop: @escaping () -> Void) {
+        hudView = ScrollCaptureHUDView(title: title, stopTitle: stopTitle)
         hudView.onStop = onStop
-        hudView.onToggleAutoScroll = onToggleAutoScroll
 
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 10, height: 10),
@@ -213,8 +157,8 @@ final class ScrollCaptureHUDWindow: NSPanel {
     }
 
     /// 进度更新：内容尺寸变化后窗口必须跟随，否则右侧按钮会被 contentRect 裁掉。
-    func update(pixelSize: CGSize, backingScale: CGFloat, autoScrolling: Bool) {
-        hudView.update(pixelSize: pixelSize, backingScale: backingScale, autoScrolling: autoScrolling)
+    func update(pixelSize: CGSize, backingScale: CGFloat) {
+        hudView.update(pixelSize: pixelSize, backingScale: backingScale)
         layoutAroundSelection()
     }
 

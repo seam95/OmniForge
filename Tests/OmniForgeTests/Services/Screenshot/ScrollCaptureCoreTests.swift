@@ -277,23 +277,16 @@ final class ScrollCaptureCoreTests: XCTestCase {
     // MARK: - HUD 视图冒烟
 
     func test_hudView_updatesDimensionsAndAutoScrollState() {
-        let hud = ScrollCaptureHUDView(
-            title: "长截图",
-            autoTitle: "自动滚动",
-            scrollingTitle: "滚动中…",
-            stopTitle: "停止"
-        )
+        let hud = ScrollCaptureHUDView(title: "长截图", stopTitle: "停止")
         hud.update(
             pixelSize: CGSize(width: 800, height: 1200),
-            backingScale: 2,
-            autoScrolling: false
+            backingScale: 2
         )
         XCTAssertEqual(hud.frame.height, 36, accuracy: 0.5)
 
         hud.update(
             pixelSize: CGSize(width: 800, height: 2400),
-            backingScale: 2,
-            autoScrolling: true
+            backingScale: 2
         )
         XCTAssertEqual(hud.frame.height, 36, accuracy: 0.5)
     }
@@ -307,22 +300,19 @@ final class ScrollCaptureCoreTests: XCTestCase {
 
         let window = ScrollCaptureHUDWindow(
             title: "长截图",
-            autoTitle: "自动滚动",
-            scrollingTitle: "滚动中…",
             stopTitle: "停止",
-            onStop: {},
-            onToggleAutoScroll: {}
+            onStop: {}
         )
         let selection = NSRect(x: screen.visibleFrame.midX - 200, y: screen.visibleFrame.midY, width: 400, height: 300)
         window.position(relativeTo: selection, on: screen)
 
         // 初始：窗口宽度 == 内容宽度（标题已 sizeToFit，不再是零宽排布）。
         XCTAssertEqual(window.frame.width, window.hudView.frame.width, accuracy: 1.0)
-        XCTAssertGreaterThan(window.hudView.frame.width, 170, "标题宽度应计入初始布局")
+        XCTAssertGreaterThan(window.hudView.frame.width, 100, "标题宽度应计入初始布局")
 
-        // 首帧进度 + 更长尺寸文本 + 自动滚动激活态（更宽的按钮文案）。
-        window.update(pixelSize: CGSize(width: 1600, height: 2400), backingScale: 2, autoScrolling: false)
-        window.update(pixelSize: CGSize(width: 1600, height: 9600), backingScale: 2, autoScrolling: true)
+        // 首帧进度 + 更长尺寸文本。
+        window.update(pixelSize: CGSize(width: 1600, height: 2400), backingScale: 2)
+        window.update(pixelSize: CGSize(width: 1600, height: 9600), backingScale: 2)
 
         // 视图右边缘不得超出窗口（截断回归断言），窗口仍水平夹在屏内。
         XCTAssertEqual(window.frame.width, window.hudView.frame.width, accuracy: 1.0)
