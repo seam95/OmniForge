@@ -20,6 +20,12 @@ final class FeatureRuntime: ObservableObject {
     private var inFlight = Set<AppFeature>()
 
     private init() {
+        // 完备性契约：每个特性必须在 bindings 显式登记（工具型登记空闭包），
+        // 字典查询非穷举 switch，漏配只会在运行时静默无行为。
+        assert(
+            Self.bindings.count == AppFeature.allCases.count,
+            "新增特性须在 FeatureRuntime.bindings 登记（无 binding 的工具型特性登记空闭包）"
+        )
         for feature in AppFeature.allCases {
             phases[feature] = .idle
             if availabilityStore.isAvailable(feature) {
@@ -315,6 +321,11 @@ final class FeatureRuntime: ObservableObject {
             CleanerScheduler.shared.syncWithPreferences()
         },
         .uninstaller: {},
+        // 以下工具型特性确认无 binding 职责：显式登记空闭包以满足完备性契约
+        .colorPicker: {},
+        .networkDiagnostics: {},
+        .dshWeb: {},
+        .providerSwitch: {},
         .scrollInverter: { ScrollInverter.shared.syncWithPreferences() },
         .smoothScroll: { SmoothScrollService.shared.syncWithPreferences() },
         .mouseNavigation: { MouseNavigationService.shared.syncWithPreferences() },

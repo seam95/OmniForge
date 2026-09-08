@@ -185,14 +185,7 @@ final class NavigationRoutesTests: XCTestCase {
     }
 
     func test_settingsMouseTab_acceptsEveryMouseFeature() {
-        let mouseFeatures: [AppFeature] = [
-            .scrollInverter,
-            .smoothScroll,
-            .mouseNavigation,
-            .dockClick,
-        ]
-
-        for availableFeature in mouseFeatures {
+        for availableFeature in AppFeature.mouseFeatures {
             XCTAssertEqual(
                 SettingsToolbarTab.visibleCases(isAvailable: { $0 == availableFeature }),
                 [.general, .features, .mouse],

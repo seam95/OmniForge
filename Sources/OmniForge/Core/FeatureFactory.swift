@@ -99,15 +99,19 @@ struct FeatureFactory {
                 runtime.register(.systemMonitor, manager: coordinator)
             }
         case .tokenUsage:
-            if runtime.manager(for: .tokenUsage, as: TokenUsagePreferences.self) == nil {
-                runtime.register(
-                    .tokenUsage,
-                    manager: TokenUsagePreferences(userDefaults: userDefaults)
-                )
+            // preferences 单源：注册点唯一，各 Manager 一律从 registry 取同一实例；
+            // 此前的 `??` fallback 一旦触发会创建未注册的第二实例，配置静默分裂。
+            func ensurePreferences() -> TokenUsagePreferences {
+                if runtime.manager(for: .tokenUsage, as: TokenUsagePreferences.self) == nil {
+                    runtime.register(
+                        .tokenUsage,
+                        manager: TokenUsagePreferences(userDefaults: userDefaults)
+                    )
+                }
+                return runtime.manager(for: .tokenUsage, as: TokenUsagePreferences.self)!
             }
             if runtime.manager(for: .tokenUsage, as: TokenUsageAlertManager.self) == nil {
-                let preferences = runtime.manager(for: .tokenUsage, as: TokenUsagePreferences.self)
-                    ?? TokenUsagePreferences(userDefaults: userDefaults)
+                let preferences = ensurePreferences()
                 let l10n = L10n(userDefaults: userDefaults)
                 runtime.register(
                     .tokenUsage,
@@ -120,8 +124,7 @@ struct FeatureFactory {
                 )
             }
             if runtime.manager(for: .tokenUsage, as: TokenUsageManager.self) == nil {
-                let preferences = runtime.manager(for: .tokenUsage, as: TokenUsagePreferences.self)
-                    ?? TokenUsagePreferences(userDefaults: userDefaults)
+                let preferences = ensurePreferences()
                 let alerts = runtime.manager(for: .tokenUsage, as: TokenUsageAlertManager.self)
                 // 限额重置监控：窗口 rollover 后按用户开关触发全屏撒花 + toast。
                 let l10n = L10n(userDefaults: userDefaults)
@@ -151,8 +154,7 @@ struct FeatureFactory {
                 )
             }
             if runtime.manager(for: .tokenUsage, as: DeepSeekBalanceManager.self) == nil {
-                let preferences = runtime.manager(for: .tokenUsage, as: TokenUsagePreferences.self)
-                    ?? TokenUsagePreferences(userDefaults: userDefaults)
+                let preferences = ensurePreferences()
                 let l10n = L10n(userDefaults: userDefaults)
                 runtime.register(
                     .tokenUsage,

@@ -27,12 +27,8 @@ enum AppFeature: String, CaseIterable {
     case cleaningMode
 
     /// 设置「鼠标」分区与相关入口共用的功能集合。
-    static let mouseFeatures: [AppFeature] = [
-        .scrollInverter,
-        .smoothScroll,
-        .mouseNavigation,
-        .dockClick,
-    ]
+    /// 派生自 mouse 分组成员，新增鼠标特性只需改 group 归属，消除手抄列表漂移。
+    static let mouseFeatures: [AppFeature] = FeatureGroup.features(in: .mouse)
 }
 
 /// 特性分组，用于 Settings UI 展示；case 顺序即侧栏与功能目录的分组展示顺序。
