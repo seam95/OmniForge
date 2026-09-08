@@ -21,7 +21,11 @@ struct PerformanceSettingsView: View {
                     Section {
                         Toggle(state.l10n.s.featureHubNameSystemMonitor, isOn: Binding(
                             get: { false },
-                            set: { runtime.setAvailable(.systemMonitor, $0) }
+                            set: { newValue in
+                                Task { @MainActor in
+                                    _ = await runtime.setAvailableAsync(.systemMonitor, newValue)
+                                }
+                            }
                         ))
                         .accessibilityIdentifier(SettingsAccessibilityID.performanceMonitorEnabled.rawValue)
                     } footer: {

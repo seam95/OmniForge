@@ -808,6 +808,7 @@ extension Strings {
         keepAwakeNotifCleanupLowBattery: "Session ended for low battery, but system sleep may not be fully restored.",
         featureHubRetryUninstall: "Retry",
         featureHubUninstallFailedFormat: "Uninstall failed: %@",
+        featureHubInstallFailedFormat: "Install failed: %@",
         screenshotEnable: "Enable Screenshot",
         screenshotEnableCaption: "When enabled, global screenshot hotkeys are active while the feature is installed.",
         screenshotPermissionSection: "Screen Recording Permission",

@@ -27,12 +27,13 @@ final class UserDefaultsFeatureAvailabilityStore: FeatureAvailabilityStoring {
     }
 }
 
-/// Feature 可用性事务 UI 状态。
+/// Feature 可用性事务 UI 状态。failed 携带请求方向，UI 据此区分安装/卸载失败
+/// 并把重试按钮指向同方向（卸载失败时 availability 仍为 true，不能用它判向）。
 enum FeatureAvailabilityPhase: Equatable {
     case idle
     case installing
     case uninstalling
-    case failed(String)
+    case failed(requestedAvailable: Bool, reason: String)
 }
 
 enum FeatureAvailabilityError: Error, Equatable {

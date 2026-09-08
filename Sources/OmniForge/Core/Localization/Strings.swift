@@ -850,6 +850,7 @@ struct Strings: Equatable {
     // Hub
     let featureHubRetryUninstall: String
     let featureHubUninstallFailedFormat: String
+    let featureHubInstallFailedFormat: String
 
     // MARK: - Screenshot
     let screenshotEnable: String

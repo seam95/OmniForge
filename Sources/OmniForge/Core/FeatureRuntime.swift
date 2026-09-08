@@ -174,7 +174,7 @@ final class FeatureRuntime: ObservableObject {
         } catch {
             factory?.teardownSync(feature, from: self)
             unregisterAll(for: feature)
-            phases[feature] = .failed("persist true failed")
+            phases[feature] = .failed(requestedAvailable: true, reason: "persist true failed")
             revision += 1
             return .failure(.persistenceFailed(String(describing: error)))
         }
@@ -198,7 +198,7 @@ final class FeatureRuntime: ObservableObject {
             } catch {
                 // persist 失败：teardown 已生效而 availability 仍为 true，
                 // 本会话重新安装或下次启动 bootstrap 会按 availability 重建，自愈。
-                phases[feature] = .failed("persist false failed")
+                phases[feature] = .failed(requestedAvailable: false, reason: "persist false failed")
                 revision += 1
                 return .failure(.persistenceFailed(String(describing: error)))
             }
@@ -209,7 +209,7 @@ final class FeatureRuntime: ObservableObject {
             do {
                 try availabilityStore.setAvailable(feature, false)
             } catch {
-                phases[feature] = .failed("persist false failed")
+                phases[feature] = .failed(requestedAvailable: false, reason: "persist false failed")
                 revision += 1
                 return .failure(.persistenceFailed(String(describing: error)))
             }
@@ -228,7 +228,7 @@ final class FeatureRuntime: ObservableObject {
         if let manager = manager(for: .keepAwake, as: KeepAwakeManager.self) {
             await manager.shutdown(reason: .featureUninstall)
             if case .cleanupRequired = manager.state {
-                phases[.keepAwake] = .failed("cleanup required after shutdown")
+                phases[.keepAwake] = .failed(requestedAvailable: false, reason: "cleanup required after shutdown")
                 revision += 1
                 return .failure(.teardownFailed("keep-awake cleanup required"))
             }
@@ -240,7 +240,7 @@ final class FeatureRuntime: ObservableObject {
             try availabilityStore.setAvailable(.keepAwake, false)
         } catch {
             // persist 失败语义与非 keepAwake 一致：已停工、availability 未变，可自愈。
-            phases[.keepAwake] = .failed("persist false failed")
+            phases[.keepAwake] = .failed(requestedAvailable: false, reason: "persist false failed")
             revision += 1
             return .failure(.persistenceFailed(String(describing: error)))
         }

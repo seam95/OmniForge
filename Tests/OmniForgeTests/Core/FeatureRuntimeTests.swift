@@ -147,4 +147,28 @@ final class FeatureRuntimeTests: XCTestCase {
 
         XCTAssertTrue(FeatureRuntime.shared.needsRestartToUnload)
     }
+
+    /// persist 失败时 phase 携带请求方向：UI 据此区分安装/卸载失败并把重试指向同方向
+    func test_persistFailure_phaseCarriesRequestedDirection() async {
+        FeatureRuntime.shared.resetForTesting()
+        FeatureRuntime.shared.configureAvailabilityStore(AlwaysFailingAvailabilityStore())
+
+        let result = await FeatureRuntime.shared.setAvailableAsync(.quickPhrase, false)
+        guard case .failure = result else {
+            XCTFail("persist 抛错时应返回失败")
+            return
+        }
+        XCTAssertEqual(
+            FeatureRuntime.shared.phase(for: .quickPhrase),
+            .failed(requestedAvailable: false, reason: "persist false failed")
+        )
+    }
+}
+
+/// 写入恒抛错（真实 UserDefaults 永不 throw，仅用于验证失败事务语义）。
+private final class AlwaysFailingAvailabilityStore: FeatureAvailabilityStoring {
+    func isAvailable(_ feature: AppFeature) -> Bool { true }
+    func setAvailable(_ feature: AppFeature, _ available: Bool) throws {
+        throw CocoaError(.userActivityConnectionUnavailable)
+    }
 }

@@ -68,15 +68,18 @@ struct FeatureHubView: View {
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button(strings.featureHubInstallAll) {
-                    for feature in AppFeature.allCases {
-                        runtime.setAvailable(feature, true)
+                    Task { @MainActor in
+                        for feature in AppFeature.allCases {
+                            _ = await runtime.setAvailableAsync(feature, true)
+                        }
                     }
                 }
                 .disabled(runtime.availableCount == AppFeature.allCases.count)
                 Button(strings.featureHubUninstallAll) {
-                    for feature in AppFeature.allCases {
-                        if uninstallGuard.canSetAvailability(of: feature, to: false) {
-                            runtime.setAvailable(feature, false)
+                    Task { @MainActor in
+                        for feature in AppFeature.allCases
+                        where uninstallGuard.canSetAvailability(of: feature, to: false) {
+                            _ = await runtime.setAvailableAsync(feature, false)
                         }
                     }
                 }

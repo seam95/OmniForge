@@ -808,6 +808,7 @@ extension Strings {
         keepAwakeNotifCleanupLowBattery: "电量达到阈值会话已结束，但系统睡眠可能未完全恢复。",
         featureHubRetryUninstall: "重试",
         featureHubUninstallFailedFormat: "卸载失败：%@",
+        featureHubInstallFailedFormat: "安装失败：%@",
         screenshotEnable: "启用截图",
         screenshotEnableCaption: "启用后，在特性已安装时全局截图快捷键生效。",
         screenshotPermissionSection: "屏幕录制权限",

@@ -53,7 +53,7 @@ struct FeatureRow: View {
                 )
             }
 
-            if let failedMessage = uninstallFailedMessage {
+            if let failedMessage = transactionFailedMessage {
                 HStack(spacing: 8) {
                     Text(failedMessage)
                         .font(.caption)
@@ -63,7 +63,7 @@ struct FeatureRow: View {
                     Spacer(minLength: 0)
                     Button(strings.featureHubRetryUninstall) {
                         Task { @MainActor in
-                            _ = await runtime.setAvailableAsync(feature, false)
+                            _ = await runtime.setAvailableAsync(feature, retryAvailable)
                         }
                     }
                     .controlSize(.small)
@@ -74,9 +74,18 @@ struct FeatureRow: View {
         .padding(.vertical, 2)
     }
 
-    /// 仅当 feature 仍处于 failed（卸载失败）时显示 retry。
-    private var uninstallFailedMessage: String? {
-        guard !isAvailable, case .failed(let reason) = phase else { return nil }
-        return String(format: strings.featureHubUninstallFailedFormat, reason)
+    /// 安装/卸载失败提示与重试方向由 phase 携带的请求方向决定
+    /// （卸载失败时 availability 仍为 true，不能用它判向）。
+    private var transactionFailedMessage: String? {
+        guard case .failed(let requestedAvailable, let reason) = phase else { return nil }
+        let format = requestedAvailable
+            ? strings.featureHubInstallFailedFormat
+            : strings.featureHubUninstallFailedFormat
+        return String(format: format, reason)
+    }
+
+    private var retryAvailable: Bool {
+        guard case .failed(let requestedAvailable, _) = phase else { return false }
+        return requestedAvailable
     }
 }

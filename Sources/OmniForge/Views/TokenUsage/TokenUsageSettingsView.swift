@@ -67,7 +67,11 @@ struct TokenUsageSettingsView: View {
             Section {
                 Toggle(state.l10n.s.featureHubNameTokenUsage, isOn: Binding(
                     get: { false },
-                    set: { runtime.setAvailable(.tokenUsage, $0) }
+                    set: { newValue in
+                        Task { @MainActor in
+                            _ = await runtime.setAvailableAsync(.tokenUsage, newValue)
+                        }
+                    }
                 ))
                 .accessibilityIdentifier(SettingsAccessibilityID.tokenUsageEnabled.rawValue)
             } footer: {
