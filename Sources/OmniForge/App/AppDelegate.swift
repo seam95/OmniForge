@@ -200,6 +200,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MainMenuSettingsTarget
     // MARK: - 权限订阅
 
     func setupPermissionSubscriptions() {
+        // inputMonitoring 无订阅：当前无特性在 possiblePermissions 中声明它，
+        // sync 的特性列表恒为空；未来有特性声明时再补对称订阅。
         Permissions.shared.$accessibility
             .removeDuplicates()
             .dropFirst()
@@ -207,18 +209,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MainMenuSettingsTarget
             .sink { _ in
                 let features = AppFeature.allCases.filter {
                     $0.permissions.contains(.accessibility)
-                }
-                FeatureRuntime.shared.sync(features)
-            }
-            .store(in: &cancellables)
-
-        Permissions.shared.$inputMonitoring
-            .removeDuplicates()
-            .dropFirst()
-            .receive(on: DispatchQueue.main)
-            .sink { _ in
-                let features = AppFeature.allCases.filter {
-                    $0.permissions.contains(.inputMonitoring)
                 }
                 FeatureRuntime.shared.sync(features)
             }

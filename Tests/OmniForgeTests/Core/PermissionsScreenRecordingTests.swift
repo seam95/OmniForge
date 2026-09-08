@@ -39,13 +39,13 @@ final class PermissionsScreenRecordingTests: XCTestCase {
         wait(for: [expectation], timeout: 1)
     }
 
-    func test_featuresRequiring_screenRecording_includesScreenshotWhenAvailable() {
-        let features = AppFeature.featuresRequiring(
-            .screenRecording,
-            isAvailable: { $0 == .screenshot },
-            isPermissionGranted: { _ in false }
+    func test_usageEntries_screenRecording_includesScreenshotWhenAvailable() {
+        let entries = PermissionsPortalState.usageEntries(
+            for: .screenRecording,
+            isAvailable: { $0 == .screenshot }
         )
-        XCTAssertEqual(features, [.screenshot])
+        XCTAssertEqual(entries.map(\.feature), [.screenshot])
+        XCTAssertEqual(entries.first?.usage, .required)
     }
 
     func test_permissionsPortal_isPermissionGranted_mapsScreenRecording() {

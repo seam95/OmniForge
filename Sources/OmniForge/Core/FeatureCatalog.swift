@@ -181,17 +181,6 @@ extension AppFeature {
         Dictionary(uniqueKeysWithValues: allCases.map { ($0.availabilityKey, true) })
     }
 
-    /// 返回声明了指定权限的所有已安装特性（静态 possiblePermissions）。
-    /// 不表示权限当前为 required 或正在使用；展示层应结合 permissionUsage。
-    static func featuresRequiring(_ permission: AppPermission,
-                                  isAvailable: (AppFeature) -> Bool,
-                                  isPermissionGranted: (AppPermission) -> Bool) -> [AppFeature] {
-        allCases.filter { feature in
-            feature.possiblePermissions.contains(permission) && isAvailable(feature)
-        }
-    }
-
-    
     /// 特性在 Hub 中展示的 SF Symbol
     var symbolName: String {
         switch self {

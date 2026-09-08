@@ -78,17 +78,11 @@ final class PermissionsTests: XCTestCase {
     }
 
     func test_featureRequiringPermission_listedWhenNotGranted() {
-        let features = AppFeature.featuresRequiring(.accessibility,
-                                                     isAvailable: { _ in true },
-                                                     isPermissionGranted: { _ in false })
-        XCTAssertTrue(features.contains(.inputLock))
+        XCTAssertTrue(AppFeature.inputLock.possiblePermissions.contains(.accessibility))
     }
 
     func test_featureNotRequiringPermission_notListed() {
-        let features = AppFeature.featuresRequiring(.accessibility,
-                                                     isAvailable: { _ in true },
-                                                     isPermissionGranted: { _ in true })
-        XCTAssertFalse(features.contains(.clipboardHistory))
+        XCTAssertFalse(AppFeature.clipboardHistory.possiblePermissions.contains(.accessibility))
     }
 }
 
