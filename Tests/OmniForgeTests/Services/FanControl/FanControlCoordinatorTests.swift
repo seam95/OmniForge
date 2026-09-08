@@ -10,6 +10,11 @@ final class RecordingFanHelperClient: FanHelperCommanding {
         completion(true, nil)
     }
 
+    /// 清空已记录命令（测试分段断言用）
+    func reset() {
+        commands.removeAll()
+    }
+
     func setFanAuto(index: Int, completion: @escaping (Bool, String?) -> Void) {
         commands.append("auto(\(index))")
         completion(true, nil)
@@ -36,6 +41,7 @@ final class FanControlCoordinatorTests: XCTestCase {
     private var helper: RecordingFanHelperClient!
     private var power: StubPowerSupply!
     private var preferences: FanPreferences!
+    private var monitorPreferences: MonitorPreferences!
     private var registered = true
     /// 注册状态查询计数 — 固化「热路径零查询」约束
     private var registrationQueryCount = 0
@@ -48,6 +54,7 @@ final class FanControlCoordinatorTests: XCTestCase {
         let defaults = UserDefaults(suiteName: "fan-coordinator-tests")!
         defaults.removePersistentDomain(forName: "fan-coordinator-tests")
         preferences = FanPreferences(userDefaults: defaults)
+        monitorPreferences = MonitorPreferences(userDefaults: defaults)
     }
 
     private func makeCoordinator() -> FanControlCoordinator {
@@ -59,7 +66,11 @@ final class FanControlCoordinatorTests: XCTestCase {
                 return self?.registered ?? false
             }
         )
-        coordinator.start(monitor: makeFakeMonitor(), preferences: preferences)
+        coordinator.start(
+            monitor: makeFakeMonitor(),
+            preferences: preferences,
+            monitorPreferences: monitorPreferences
+        )
         return coordinator
     }
 
@@ -256,6 +267,106 @@ final class FanControlCoordinatorTests: XCTestCase {
 
         XCTAssertTrue(helper.commands.contains("reset"))
         XCTAssertFalse(preferences.configuration.performanceMode, "归还同时关闭性能模式")
+        XCTAssertTrue(coordinator.currentManualTargets.isEmpty)
+    }
+
+    // MARK: - 监控停用/恢复（总开关与特性卸载）
+
+    func test_suspendForMonitoringStop_resetsActiveCurveWithoutTouchingPreference() {
+        preferences.update { $0.performanceMode = true; $0.performanceLevel = .medium }
+        let coordinator = makeCoordinator()
+        coordinator.evaluate(snapshot: makeSnapshot())
+        XCTAssertTrue(helper.commands.contains { $0.hasPrefix("speed(") })
+
+        coordinator.suspendForMonitoringStop()
+
+        XCTAssertTrue(helper.commands.contains("reset"), "停用监控时归还自动模式")
+        XCTAssertTrue(preferences.configuration.performanceMode,
+                      "停用监控不改性能模式偏好（区别于用户显式归还）")
+        XCTAssertTrue(coordinator.currentManualTargets.isEmpty)
+    }
+
+    func test_suspendForMonitoringStop_resetsManualTargets() {
+        let coordinator = makeCoordinator()
+        coordinator.setManualTarget(index: 0, rpm: 3200)
+
+        coordinator.suspendForMonitoringStop()
+
+        XCTAssertTrue(helper.commands.contains("reset"), "手动物标在位时停用须归还")
+        XCTAssertTrue(coordinator.currentManualTargets.isEmpty)
+    }
+
+    func test_suspendThenResume_evaluateGatedAndRestored() {
+        preferences.update { $0.performanceMode = true }
+        let coordinator = makeCoordinator()
+        coordinator.evaluate(snapshot: makeSnapshot())
+        XCTAssertFalse(helper.commands.isEmpty)
+        helper.reset()
+
+        coordinator.suspendForMonitoringStop()
+        // suspend 归还在位曲线会发一条 reset；此后不得再有任何转速命令
+        coordinator.evaluate(snapshot: makeSnapshot())
+        XCTAssertFalse(helper.commands.contains { $0.hasPrefix("speed(") },
+                       "挂起期间不得下发转速")
+
+        coordinator.resumeFromMonitoringStop()
+        coordinator.evaluate(snapshot: makeSnapshot())
+        XCTAssertTrue(helper.commands.contains { $0.hasPrefix("speed(") },
+                      "恢复后重新接管")
+    }
+
+    func test_monitorPreferencesDisabled_handsBackAndSuspends() {
+        preferences.update { $0.performanceMode = true; $0.performanceLevel = .medium }
+        let coordinator = makeCoordinator()
+        coordinator.evaluate(snapshot: makeSnapshot())
+        XCTAssertFalse(helper.commands.isEmpty)
+        helper.reset()
+
+        monitorPreferences.update { $0.isEnabled = false }
+        // 订阅经主队列派发：排空主队列后再断言
+        let drained = expectation(description: "主队列排空")
+        DispatchQueue.main.async { drained.fulfill() }
+        wait(for: [drained], timeout: 1)
+
+        XCTAssertEqual(helper.commands, ["reset"], "总开关关闭触发全量归还")
+
+        coordinator.evaluate(snapshot: makeSnapshot())
+        XCTAssertEqual(helper.commands, ["reset"], "挂起期间快照不驱动下发")
+    }
+
+    func test_monitorPreferencesEnabledAfterSuspend_resumes() {
+        preferences.update { $0.performanceMode = true; $0.performanceLevel = .medium }
+        let coordinator = makeCoordinator()
+        monitorPreferences.update { $0.isEnabled = false }
+        let drained1 = expectation(description: "主队列排空")
+        DispatchQueue.main.async { drained1.fulfill() }
+        wait(for: [drained1], timeout: 1)
+        helper.reset()
+
+        monitorPreferences.update { $0.isEnabled = true }
+        let drained2 = expectation(description: "主队列排空")
+        DispatchQueue.main.async { drained2.fulfill() }
+        wait(for: [drained2], timeout: 1)
+
+        // fake monitor 无采样，snapshot 由直接 evaluate 模拟；
+        // 此处验证挂起标志已被订阅清除（若未清除则不下发）
+        coordinator.evaluate(snapshot: makeSnapshot())
+        XCTAssertFalse(helper.commands.isEmpty, "总开关重开后恢复接管")
+    }
+
+    func test_stop_defendsAgainstLateEvaluate() {
+        preferences.update { $0.performanceMode = true }
+        let coordinator = makeCoordinator()
+        coordinator.evaluate(snapshot: makeSnapshot())
+        XCTAssertFalse(helper.commands.isEmpty)
+        helper.reset()
+
+        coordinator.stop()
+        XCTAssertEqual(helper.commands, ["reset"], "stop 时归还仍在位的曲线目标")
+
+        // stop 后依赖已置空：迟到的评估请求直接早退，不产生新命令
+        coordinator.evaluate(snapshot: makeSnapshot())
+        XCTAssertEqual(helper.commands, ["reset"])
         XCTAssertTrue(coordinator.currentManualTargets.isEmpty)
     }
 }

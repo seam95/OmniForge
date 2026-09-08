@@ -82,7 +82,8 @@ struct FeatureFactory {
             }
             if runtime.manager(for: .systemMonitor, as: FanControlCoordinator.self) == nil,
                let monitor = runtime.manager(for: .systemMonitor, as: SystemMonitorManager.self),
-               let fanPreferences = runtime.manager(for: .systemMonitor, as: FanPreferences.self) {
+               let fanPreferences = runtime.manager(for: .systemMonitor, as: FanPreferences.self),
+               let monitorPreferences = runtime.manager(for: .systemMonitor, as: MonitorPreferences.self) {
                 let coordinator = FanControlCoordinator(
                     helper: FanHelperClient(),
                     powerSupply: PowerSupplyChecker()
@@ -92,6 +93,7 @@ struct FeatureFactory {
                 coordinator.start(
                     monitor: monitor,
                     preferences: fanPreferences,
+                    monitorPreferences: monitorPreferences,
                     immediatelyResolveRegistration: false
                 )
                 runtime.register(.systemMonitor, manager: coordinator)
@@ -381,6 +383,9 @@ struct FeatureFactory {
             runtime.manager(for: .quickPhrase, as: QuickPhraseManager.self)?
                 .releaseMemory()
         case .systemMonitor:
+            // 先归还风扇控制（性能模式/手动物标在位时 resetAllFans），
+            // 再停采样 — 卸载后无 UI 可归还，钉死的转速只能靠 helper 重启解除
+            runtime.manager(for: .systemMonitor, as: FanControlCoordinator.self)?.stop()
             if let manager = runtime.manager(for: .systemMonitor, as: SystemMonitorManager.self) {
                 manager.setPanelDemand(.none)
                 manager.setMenuBarMetrics([])

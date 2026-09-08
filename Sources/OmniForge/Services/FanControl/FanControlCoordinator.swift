@@ -40,6 +40,7 @@ final class FanControlCoordinator: ObservableObject {
     private let isHelperRegistered: () -> Bool
     private var preferences: FanPreferences?
     private var monitor: SystemMonitorManager?
+    private var monitorPreferences: MonitorPreferences?
     private var cancellables = Set<AnyCancellable>()
 
     private var smoothedZoneTemps: [ThermalZone: Double] = [:]
@@ -49,6 +50,8 @@ final class FanControlCoordinator: ObservableObject {
     private var wasPerformanceActive = false
     private var systemAsleep = false
     private var performanceSuspended = false
+    /// 监控总开关关闭/特性卸载导致的挂起（独立于屏幕睡眠/锁屏挂起）
+    private var monitoringSuspended = false
     private var observersInstalled = false
 
     init(
@@ -71,10 +74,12 @@ final class FanControlCoordinator: ObservableObject {
     func start(
         monitor: SystemMonitorManager,
         preferences: FanPreferences,
+        monitorPreferences: MonitorPreferences,
         immediatelyResolveRegistration: Bool = true
     ) {
         self.monitor = monitor
         self.preferences = preferences
+        self.monitorPreferences = monitorPreferences
         if immediatelyResolveRegistration {
             helperRegistered = isHelperRegistered()
         } else {
@@ -97,6 +102,23 @@ final class FanControlCoordinator: ObservableObject {
                 // 偏好转关/转开的即时响应：用最新快照重评估
                 if let snapshot = self?.monitor?.snapshot {
                     self?.evaluate(snapshot: snapshot)
+                }
+            }
+            .store(in: &cancellables)
+
+        // 监控总开关：关闭即停采样，曲线会冻结在最后一次下发值 — 在此归还风扇
+        // 并挂起评估（覆盖设置页开关等全部写入入口）；重开立即按快照接管。
+        monitorPreferences.$configuration
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] config in
+                guard let self else { return }
+                if config.isEnabled {
+                    self.resumeFromMonitoringStop()
+                    if let snapshot = self.monitor?.snapshot {
+                        self.evaluate(snapshot: snapshot)
+                    }
+                } else {
+                    self.suspendForMonitoringStop()
                 }
             }
             .store(in: &cancellables)
@@ -152,10 +174,54 @@ final class FanControlCoordinator: ObservableObject {
         }
     }
 
+    // MARK: - 监控停用/恢复（总开关与特性卸载）
+
+    /// 监控停用（总开关关闭或特性卸载）：立即归还自动模式并挂起评估。
+    /// 与用户显式「全部归还」不同，不改偏好 — 重开后按原偏好自动接管。
+    func suspendForMonitoringStop() {
+        monitoringSuspended = true
+        handBackHardware()
+    }
+
+    /// 监控恢复（总开关重开）：清挂起标志，下一轮快照或即时评估自动接管。
+    func resumeFromMonitoringStop() {
+        monitoringSuspended = false
+    }
+
+    /// 特性卸载终态：归还硬件、断开全部订阅、移除系统观察者、置空依赖。
+    /// 此后不再有任何下发路径，风扇完全交还 SMC 自动策略。
+    func stop() {
+        suspendForMonitoringStop()
+        cancellables.removeAll()
+        removeSystemObservers()
+        monitor = nil
+        preferences = nil
+        monitorPreferences = nil
+    }
+
+    /// 条件归还：性能模式或手动物标在位时 resetAllFans，随后清空曲线内部状态。
+    private func handBackHardware() {
+        if wasPerformanceActive || !manualTargets.isEmpty {
+            helper.resetAllFans { [weak self] ok, error in
+                Task { @MainActor in self?.recordResult(ok: ok, error: error) }
+            }
+        }
+        resetInternalState()
+        wasPerformanceActive = false
+    }
+
+    /// 显式移除系统事件观察者（不依赖 dealloc 时的 zeroing-weak 隐式注销）。
+    private func removeSystemObservers() {
+        guard observersInstalled else { return }
+        observersInstalled = false
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+        DistributedNotificationCenter.default().removeObserver(self)
+    }
+
     // MARK: - 核心评估（快照驱动）
 
     func evaluate(snapshot: SystemSnapshot) {
-        guard !systemAsleep, !performanceSuspended else { return }
+        guard !systemAsleep, !performanceSuspended, !monitoringSuspended else { return }
         guard let preferences else { return }
 
         // 机型判定：fans 非空即有风扇；风扇轮成功执行（无 issue 且传感器有读数，
