@@ -80,6 +80,11 @@ enum UserDefaultsKeys {
     static let recordingLastManualFormat = "screenshot.recording.lastManualFormat"
     static let screenshotHotkeyRecordKeyCode = "screenshot.hotkey.record.keyCode"
     static let screenshotHotkeyRecordModifiers = "screenshot.hotkey.record.modifiers"
+    // 长截图（滚动截图）
+    static let screenshotScrollAutoScrollEnabled = "screenshot.scroll.autoScrollEnabled"
+    static let screenshotScrollAutoScrollSpeed = "screenshot.scroll.autoScrollSpeed"
+    static let screenshotScrollMaxHeight = "screenshot.scroll.maxHeight"
+    static let screenshotScrollFrozenDetection = "screenshot.scroll.frozenDetection"
     // 网络诊断 — 持久化字符串必须稳定，不得重命名
     static let networkDiagnosticsSegment = "networkDiagnostics.segment"
     // DSH Web — 持久化字符串必须稳定，不得重命名

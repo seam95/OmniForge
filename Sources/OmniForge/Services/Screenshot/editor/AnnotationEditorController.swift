@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import Foundation
 import os.log
 import QuartzCore
@@ -76,15 +77,10 @@ final class AnnotationEditorController {
 
     private var isScrollCapturing = false
     private var isScrollCaptureFinalizing = false
-    private var isCropping = false
     private var scrollCapturer: ScrollCapturer?
-    private var scrollCaptureControlWindow: ScrollCaptureControlWindow?
+    private var scrollCaptureHUDWindow: ScrollCaptureHUDWindow?
     private var scrollPreviewWindow: ScrollPreviewWindow?
-    private var scrollCaptureHintWindow: ScrollCaptureHintWindow?
-    private var scrollCropView: ScrollCropView?
-    private var scrollCropControlWindow: ScrollCropControlWindow?
     private var infoToastWindow: EditorInfoToastWindow?
-    private var manualScrollCaptureTimer: DispatchSourceTimer?
     private var scrollCaptureKeyMonitor: Any?
 
     private var isScrollCaptureBusy: Bool { isScrollCapturing || isScrollCaptureFinalizing }
@@ -446,7 +442,7 @@ final class AnnotationEditorController {
     /// 同步选区交互标志、scroll 透传与 chrome 显隐（对齐 CapCap）。
     private func updateEditorInteractionState() {
         let hasPreview = canvasView?.hasPreviewImage == true
-        let isBlocked = isScrollCaptureBusy || isCropping
+        let isBlocked = isScrollCaptureBusy
         hostSelectionView?.annotationToolActive = !isBlocked
         // 长截图 preview 后禁止再移动/缩放选区。
         hostSelectionView?.selectionInteractionEnabled = !(isBlocked || hasPreview)
@@ -1094,15 +1090,14 @@ final class AnnotationEditorController {
         Self.logger.info("editor.tearDown 执行")
         // 停止进行中的长截图，避免回调落到已拆除控制器。
         if isScrollCapturing || isScrollCaptureFinalizing {
-            stopManualScrollCapture()
             removeScrollCaptureKeyMonitor()
             scrollCapturer?.onPreviewUpdated = nil
+            scrollCapturer?.cancelSession()
             scrollCapturer = nil
             isScrollCapturing = false
             isScrollCaptureFinalizing = false
         }
         dismissScrollCaptureChrome()
-        exitCropMode(restoreToolbars: false)
         dismissInfoToast()
         dismissEmojiPopover()
         removeKeyboardShortcuts()
@@ -1240,10 +1235,10 @@ final class AnnotationEditorController {
             }
         }
 
-        // 回车确认（裁剪模式优先）
+        // 回车确认
         if event.keyCode == 36 { // Return
-            if isCropping {
-                confirmCrop()
+            if isScrollCapturing {
+                stopScrollCapture(reason: "return")
             } else {
                 confirm()
             }
@@ -1251,13 +1246,9 @@ final class AnnotationEditorController {
         }
         // ESC 取消
         if event.keyCode == 53 {
-            if isCropping {
-                // 裁剪中 ESC：与对号一致，确认当前裁切框并完成（复制+关闭）。
-                confirmCrop()
-                return nil
-            }
             if isScrollCapturing {
-                stopScrollCapture(reason: "escape")
+                // 长截图会话中 ESC = 取消：不产出任何图像，恢复编辑器。
+                cancelScrollCapture(reason: "escape")
                 return nil
             }
             close()
@@ -1266,7 +1257,7 @@ final class AnnotationEditorController {
         return event
     }
 
-    // MARK: - 长截图编排（仅手动滚动）
+    // MARK: - 长截图编排（手动/自动双模式）
 
     func toggleScrollCapture() {
         guard isScrollCaptureAllowed else { return }
@@ -1279,7 +1270,7 @@ final class AnnotationEditorController {
         }
     }
 
-    /// 点击工具栏长截图后直接进入手动滚动捕获（无自动/手动菜单）。
+    /// 点击工具栏长截图进入滚动捕获会话；滚动驱动模式（手动/自动）由设置决定。
     func startScrollCapture() {
         guard isScrollCaptureAllowed else { return }
         guard !isScrollCaptureBusy else { return }
@@ -1295,8 +1286,7 @@ final class AnnotationEditorController {
         subToolbarView = nil
         toolbars.forEach { $0.setScrollCaptureActive(true) }
         hostSelectionView?.scrollCaptureActive = true
-        // 画布底图与选区 chrome 会盖住选区；滚动期隐藏，让 dig-out 透出底层实时页面
-        //（SelectionView 在 scrollCaptureActive 时已跳过冻结快照，对齐 CapCap 视觉）。
+        // 画布底图与选区 chrome 会盖住选区；滚动期隐藏，让 dig-out 透出底层实时页面。
         canvasScrollView?.isHidden = true
         selectionChromeOverlay?.isHidden = true
         updateEditorInteractionState()
@@ -1305,43 +1295,46 @@ final class AnnotationEditorController {
         hostSelectionView?.display()
         CATransaction.flush()
 
-        // 3. chrome first so we can exclude their window IDs from capture
-        // BEFORE ScrollCapturer.init (which takes the first frame synchronously).
-        let strings = stringsProvider()
-        let hintWindow = ScrollCaptureHintWindow(text: strings.scrollCaptureManualHint)
-        hintWindow.present(in: selectionScreenRect())
-        scrollCaptureHintWindow = hintWindow
-        showScrollCaptureControl()
-        // Side preview is normally lazy; seed + place it now so its CGWindowID
-        // is in the capturer exclusion list before the first frame.
+        // 3. chrome 先行：HUD 与预览窗要在会话首帧前建好，其窗口 ID 进排除列表。
+        showScrollCaptureHUD()
         if scrollPreviewWindow == nil {
-            scrollPreviewWindow = ScrollPreviewWindow()
+            scrollPreviewWindow = ScrollPreviewWindow(
+                captureRect: selectionScreenRect(),
+                screen: hostSelectionView?.window?.screen ?? NSScreen.main ?? NSScreen()
+            )
         }
-        scrollPreviewWindow?.updatePreview(
-            NSImage(size: NSSize(width: 1, height: 1)),
-            anchorRect: selectionScreenRect()
-        )
         toolbars.forEach { $0.isHidden = true }
 
-        // Host overlay + all scroll chrome must be excluded before init-time capture.
-        // Host panel dig-out 露出实时页面；SCK 排除 host/chrome 后只采底层内容。
+        // Host overlay + all scroll chrome must be excluded from every frame.
+        // Host panel dig-out 露出实时页面；排除 host/chrome 后只采底层内容。
         let excluding = scrollCaptureExcludedWindowIDs()
         Self.logger.info(
             "scroll-capture exclude windows=\(excluding.map(String.init).joined(separator: ","), privacy: .public)"
         )
-        let displayID = sourceDisplayID
-            ?? hostSelectionView?.window?.screen?.displayID
-            ?? CGMainDisplayID()
-        let scale = sourceBackingScaleFactor
         let capturer = ScrollCapturer(
-            rect: captureRect,
-            displayID: displayID,
-            scaleFactor: scale,
-            excludingWindowIDs: excluding
+            captureRect: captureRect,
+            scaleFactor: sourceBackingScaleFactor,
+            excludingWindowIDs: excluding,
+            config: scrollCaptureSessionConfig()
         )
         capturer.onPreviewUpdated = { [weak self] image in
             DispatchQueue.main.async {
                 self?.updateScrollPreview(image)
+            }
+        }
+        capturer.onStripAdded = { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.updateScrollCaptureHUD()
+            }
+        }
+        capturer.onAutoScrollStarted = { [weak self] in
+            DispatchQueue.main.async {
+                self?.updateScrollCaptureHUD()
+            }
+        }
+        capturer.onSessionDone = { [weak self] stitchedImage in
+            DispatchQueue.main.async {
+                self?.finishScrollCapture(stitchedImage: stitchedImage)
             }
         }
         scrollCapturer = capturer
@@ -1351,64 +1344,77 @@ final class AnnotationEditorController {
         hostSelectionView?.window?.ignoresMouseEvents = true
         NSApp.deactivate()
 
-        startManualScrollCapture(capturer: capturer)
-    }
-
-    private func startManualScrollCapture(capturer: ScrollCapturer) {
-        let timer = DispatchSource.makeTimerSource(
-            queue: DispatchQueue(label: "com.omniforge.manual-scroll-capture", qos: .userInitiated)
-        )
-        manualScrollCaptureTimer = timer
-        timer.schedule(deadline: .now() + 0.25, repeating: 0.25, leeway: .milliseconds(80))
-        timer.setEventHandler { [weak capturer] in
-            _ = capturer?.captureSynchronously(expectedShiftPoints: 0)
+        Task { @MainActor [weak capturer] in
+            await capturer?.startSession()
         }
-        timer.resume()
     }
 
-    private func stopManualScrollCapture() {
-        manualScrollCaptureTimer?.setEventHandler {}
-        manualScrollCaptureTimer?.cancel()
-        manualScrollCaptureTimer = nil
+    /// 从用户默认值组装会话配置（带取值夹取）。
+    private func scrollCaptureSessionConfig() -> ScrollCapturer.SessionConfig {
+        let defaults = UserDefaults.standard
+        var config = ScrollCapturer.SessionConfig()
+        config.autoScrollEnabled = defaults.bool(forKey: UserDefaultsKeys.screenshotScrollAutoScrollEnabled)
+        let speed = defaults.integer(forKey: UserDefaultsKeys.screenshotScrollAutoScrollSpeed)
+        config.autoScrollSpeed = min(4, max(1, speed))
+        let maxHeight = defaults.integer(forKey: UserDefaultsKeys.screenshotScrollMaxHeight)
+        config.maxScrollHeight = maxHeight > 0 ? maxHeight : 30_000
+        config.frozenDetectionEnabled = defaults.object(forKey: UserDefaultsKeys.screenshotScrollFrozenDetection) as? Bool ?? true
+        return config
     }
 
+    /// 停止会话并交付拼接结果。
     func stopScrollCapture(reason: String = "unknown") {
         guard isScrollCapturing else { return }
         isScrollCapturing = false
         isScrollCaptureFinalizing = true
-        stopManualScrollCapture()
         removeScrollCaptureKeyMonitor()
         let finishingCapturer = scrollCapturer
         finishingCapturer?.onPreviewUpdated = nil
         scrollCapturer = nil
-        scrollCaptureControlWindow?.dismiss()
-        scrollCaptureControlWindow = nil
+        scrollCaptureHUDWindow?.dismiss()
+        scrollCaptureHUDWindow = nil
         scrollPreviewWindow?.dismiss()
         scrollPreviewWindow = nil
-        scrollCaptureHintWindow?.dismiss()
-        scrollCaptureHintWindow = nil
         hostSelectionView?.window?.ignoresMouseEvents = false
         hostSelectionView?.scrollCaptureActive = false
         hostSelectionView?.needsDisplay = true
         toolbars.forEach { $0.setScrollCaptureActive(false) }
-        // 停止后若无长图结果会恢复编辑器；有结果则 enterCropMode 继续隐藏画布。
-        // 这里先恢复画布/chrome 可见性标志，crop 入口会再盖上。
         canvasScrollView?.isHidden = false
         selectionChromeOverlay?.isHidden = false
         updateEditorInteractionState()
 
         guard let finishingCapturer else {
-            finishScrollCapture(stitchedImage: nil, reason: reason)
+            finishScrollCapture(stitchedImage: nil)
             return
         }
-        finishingCapturer.stopAndStitch { [weak self] stitchedImage in
-            DispatchQueue.main.async {
-                self?.finishScrollCapture(stitchedImage: stitchedImage, reason: reason)
-            }
-        }
+        // stopSession 同步触发 onSessionDone → finishScrollCapture。
+        finishingCapturer.stopSession()
     }
 
-    private func finishScrollCapture(stitchedImage: NSImage?, reason: String) {
+    /// 取消会话：不产出任何图像，恢复编辑器。首帧采集中也有效。
+    func cancelScrollCapture(reason: String = "unknown") {
+        guard isScrollCapturing else { return }
+        isScrollCapturing = false
+        isScrollCaptureFinalizing = false
+        removeScrollCaptureKeyMonitor()
+
+        // 先摘回调：在飞的采集/循环不得在取消后交付。
+        let cancellingCapturer = scrollCapturer
+        scrollCapturer = nil
+        cancellingCapturer?.onStripAdded = nil
+        cancellingCapturer?.onPreviewUpdated = nil
+        cancellingCapturer?.onAutoScrollStarted = nil
+        cancellingCapturer?.onSessionDone = nil
+        cancellingCapturer?.cancelSession()
+
+        dismissScrollCaptureChrome()
+        dismissInfoToast()
+        updateEditorInteractionState()
+        bringEditorToFront()
+        Self.logger.info("scroll-capture cancelled reason=\(reason, privacy: .public)")
+    }
+
+    private func finishScrollCapture(stitchedImage: NSImage?) {
         guard isScrollCaptureFinalizing else { return }
         isScrollCaptureFinalizing = false
 
@@ -1420,48 +1426,8 @@ final class AnnotationEditorController {
             bringEditorToFront()
             return
         }
-        // Auto-scroll often over-shoots; route through crop mode first.
-        enterCropMode(with: stitchedImage)
-    }
-
-    private func enterCropMode(with image: NSImage) {
-        guard let hostSelectionView else {
-            finishCropFallback(with: image)
-            return
-        }
-
-        isCropping = true
-        selectTool(.none)
-        toolbars.forEach { $0.isHidden = true }
-        selectionChromeOverlay?.isHidden = true
-
-        let cropView = ScrollCropView(frame: hostSelectionView.bounds, image: image)
-        cropView.autoresizingMask = [.width, .height]
-        hostSelectionView.addSubview(cropView)
-        scrollCropView = cropView
-
-        showCropControl()
-        bringEditorToFront()
-        updateEditorInteractionState()
-        presentInfoMessage(stringsProvider().cropLongScreenshotHint)
-    }
-
-    private func finishCropFallback(with image: NSImage) {
-        loadScrollCaptureImageIntoEditor(image)
-        toolbars.forEach { $0.isHidden = false }
-        bringEditorToFront()
-    }
-
-    func confirmCrop() {
-        guard isCropping, let cropView = scrollCropView else {
-            exitCropMode()
-            return
-        }
-        let cropped = cropView.croppedImage()
-        // 裁切确认即完成：复制到剪贴板并关闭截图会话，不再回填编辑器二次确认。
-        exitCropMode(restoreToolbars: false)
-        dismissInfoToast()
-        completeScrollCapture(with: cropped)
+        // 直达交付：编码 → 剪贴板 → tearDown → onComplete。
+        completeScrollCapture(with: stitchedImage)
     }
 
     /// 长截图裁切结果：编码 → 剪贴板 → tearDown → onComplete。
@@ -1504,45 +1470,16 @@ final class AnnotationEditorController {
         bringEditorToFront()
     }
 
-    private func exitCropMode(restoreToolbars: Bool = true) {
-        isCropping = false
-        scrollCropView?.removeFromSuperview()
-        scrollCropView = nil
-        scrollCropControlWindow?.dismiss()
-        scrollCropControlWindow = nil
-        selectionChromeOverlay?.isHidden = false
-        if restoreToolbars {
-            toolbars.forEach { $0.isHidden = false }
-            bringEditorToFront()
-        }
-        updateEditorInteractionState()
-    }
-
-    private func showCropControl() {
-        let controlWindow = ScrollCropControlWindow(
-            onConfirm: { [weak self] in self?.confirmCrop() },
-            toolTip: stringsProvider().tipScrollCropConfirm
-        )
-        if let screen = hostSelectionView?.window?.screen ?? NSScreen.main {
-            controlWindow.positionAtBottom(of: screen)
-        }
-        scrollCropControlWindow = controlWindow
-        controlWindow.orderFrontRegardless()
-    }
-
     /// Window numbers for chrome that must never bake into scroll frames.
     ///
     /// Critical: the host overlay panel (`hostSelectionView.window`) is full-screen
     /// and holds the frozen selection snapshot. Without excluding it, every long-
     /// scroll frame captures the freeze overlay instead of the live page underneath.
-    /// SCKit `excludingWindows` still captures content under the excluded window.
     private func scrollCaptureExcludedWindowIDs() -> [CGWindowID] {
         ScrollCaptureExclusion.excludedWindowIDs(
             hostWindowNumber: hostSelectionView?.window?.windowNumber,
-            hintWindowNumber: scrollCaptureHintWindow?.windowNumber,
-            controlWindowNumber: scrollCaptureControlWindow?.windowNumber,
+            hudWindowNumber: scrollCaptureHUDWindow?.windowNumber,
             previewWindowNumber: scrollPreviewWindow?.windowNumber,
-            cropWindowNumber: scrollCropControlWindow?.windowNumber,
             toastWindowNumber: infoToastWindow?.windowNumber
         )
     }
@@ -1550,62 +1487,81 @@ final class AnnotationEditorController {
     /// Test hook: same exclusion builder used before `ScrollCapturer` init.
     func scrollCaptureExcludedWindowIDsForTesting(
         hostWindowNumber: Int?,
-        hintWindowNumber: Int? = nil,
-        controlWindowNumber: Int? = nil,
+        hudWindowNumber: Int? = nil,
         previewWindowNumber: Int? = nil,
-        cropWindowNumber: Int? = nil,
         toastWindowNumber: Int? = nil
     ) -> [CGWindowID] {
-        ScrollCaptureExclusion.excludedWindowIDs(
+        return ScrollCaptureExclusion.excludedWindowIDs(
             hostWindowNumber: hostWindowNumber,
-            hintWindowNumber: hintWindowNumber,
-            controlWindowNumber: controlWindowNumber,
+            hudWindowNumber: hudWindowNumber,
             previewWindowNumber: previewWindowNumber,
-            cropWindowNumber: cropWindowNumber,
             toastWindowNumber: toastWindowNumber
         )
     }
 
     private func updateScrollPreview(_ image: NSImage) {
         guard isScrollCapturing else { return }
-        if scrollPreviewWindow == nil {
-            scrollPreviewWindow = ScrollPreviewWindow()
-        }
-        scrollPreviewWindow?.updatePreview(image, anchorRect: selectionScreenRect())
+        scrollPreviewWindow?.updatePreview(image)
     }
 
-    private func showScrollCaptureControl() {
-        guard
-            let hostSelectionView,
-            let hostWindow = hostSelectionView.window,
-            let scrollToolbar = toolbars.first(where: { $0.contains(.scrollCapture) }),
-            let buttonFrame = scrollToolbar.scrollCaptureButtonFrame
-        else {
-            // Fallback: place near selection bottom-center.
-            let screenRect = selectionScreenRect()
-            let fallback = NSRect(
-                x: screenRect.midX - 16,
-                y: screenRect.minY - 48,
-                width: 32,
-                height: 32
-            )
-            let controlWindow = ScrollCaptureControlWindow(buttonFrame: fallback) { [weak self] in
-                self?.toggleScrollCapture()
+    /// HUD 进度刷新（信息条尺寸 + 自动滚动按钮状态）。
+    private func updateScrollCaptureHUD() {
+        guard let hud = scrollCaptureHUDWindow, let capturer = scrollCapturer else { return }
+        hud.update(
+            pixelSize: capturer.stitchedPixelSize,
+            backingScale: sourceBackingScaleFactor,
+            autoScrolling: capturer.autoScrollActive
+        )
+    }
+
+    private func showScrollCaptureHUD() {
+        let strings = stringsProvider()
+        let hud = ScrollCaptureHUDWindow(
+            title: strings.tipScrollCapture,
+            autoTitle: strings.scrollCaptureAutoScroll,
+            scrollingTitle: strings.scrollCaptureScrolling,
+            stopTitle: strings.scrollCaptureStop,
+            onStop: { [weak self] in
+                self?.stopScrollCapture(reason: "hud-stop")
+            },
+            onToggleAutoScroll: { [weak self] in
+                self?.handleScrollCaptureToggleAutoScroll()
             }
-            scrollCaptureControlWindow = controlWindow
-            controlWindow.orderFrontRegardless()
+        )
+        hud.position(
+            relativeTo: selectionScreenRect(),
+            on: hostSelectionView?.window?.screen ?? NSScreen.main ?? NSScreen()
+        )
+        scrollCaptureHUDWindow = hud
+    }
+
+    /// HUD「自动滚动」切换：切向自动前做辅助功能权限门。
+    private func handleScrollCaptureToggleAutoScroll() {
+        guard let capturer = scrollCapturer, isScrollCapturing else { return }
+        if !capturer.autoScrollActive, !AXIsProcessTrusted() {
+            presentScrollCaptureAccessibilityPrompt()
             return
         }
+        capturer.toggleAutoScroll()
+        updateScrollCaptureHUD()
+    }
 
-        let frameInSelectionView = scrollToolbar.convert(buttonFrame, to: hostSelectionView)
-        let frameInWindow = hostSelectionView.convert(frameInSelectionView, to: nil)
-        let frameOnScreen = hostWindow.convertToScreen(frameInWindow)
-
-        let controlWindow = ScrollCaptureControlWindow(buttonFrame: frameOnScreen) { [weak self] in
-            self?.toggleScrollCapture()
+    /// 辅助功能权限引导：弹窗 + 直达系统设置。
+    private func presentScrollCaptureAccessibilityPrompt() {
+        let strings = stringsProvider()
+        let alert = NSAlert()
+        alert.messageText = strings.scrollCaptureAccessibilityTitle
+        alert.informativeText = strings.scrollCaptureAccessibilityBody
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: strings.scrollCaptureOpenSettings)
+        alert.addButton(withTitle: strings.scrollCaptureCancel)
+        if alert.runModal() == .alertFirstButtonReturn {
+            if let url = URL(
+                string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+            ) {
+                NSWorkspace.shared.open(url)
+            }
         }
-        scrollCaptureControlWindow = controlWindow
-        controlWindow.orderFrontRegardless()
     }
 
     private func installScrollCaptureKeyMonitor() {
@@ -1613,7 +1569,7 @@ final class AnnotationEditorController {
         scrollCaptureKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] _ in
             guard let self, self.isScrollCapturing else { return }
             DispatchQueue.main.async {
-                self.stopScrollCapture(reason: "global-key")
+                self.cancelScrollCapture(reason: "global-key")
             }
         }
     }
@@ -1626,19 +1582,14 @@ final class AnnotationEditorController {
     }
 
     private func dismissScrollCaptureChrome() {
-        scrollCaptureControlWindow?.dismiss()
-        scrollCaptureControlWindow = nil
+        scrollCaptureHUDWindow?.dismiss()
+        scrollCaptureHUDWindow = nil
         scrollPreviewWindow?.dismiss()
         scrollPreviewWindow = nil
-        scrollCaptureHintWindow?.dismiss()
-        scrollCaptureHintWindow = nil
         hostSelectionView?.window?.ignoresMouseEvents = false
         hostSelectionView?.scrollCaptureActive = false
         canvasScrollView?.isHidden = false
-        // crop 模式自管 chrome 显隐；非 crop 时恢复。
-        if !isCropping {
-            selectionChromeOverlay?.isHidden = false
-        }
+        selectionChromeOverlay?.isHidden = false
         toolbars.forEach { $0.setScrollCaptureActive(false) }
         toolbars.forEach { $0.isHidden = false }
     }

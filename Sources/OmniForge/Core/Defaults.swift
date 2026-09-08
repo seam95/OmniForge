@@ -119,6 +119,10 @@ enum Defaults {
             UserDefaultsKeys.recordingSaveDirectoryPath: RecordingOutputConfiguration.defaultDirectoryPath,
             UserDefaultsKeys.recordingSavePreference: RecordingOutputConfiguration.defaultSavePreference.rawValue,
             UserDefaultsKeys.recordingLastManualFormat: RecordingOutputConfiguration.defaultManualFormat.rawValue,
+            UserDefaultsKeys.screenshotScrollAutoScrollEnabled: false,
+            UserDefaultsKeys.screenshotScrollAutoScrollSpeed: 3,
+            UserDefaultsKeys.screenshotScrollMaxHeight: 30_000,
+            UserDefaultsKeys.screenshotScrollFrozenDetection: true,
         ]
     }
 

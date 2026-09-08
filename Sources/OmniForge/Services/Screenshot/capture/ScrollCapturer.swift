@@ -1,1312 +1,845 @@
 import AppKit
+import CoreGraphics
 import Foundation
 import os.log
+import Vision
 
-/// Captures successive frames of a screen region and stitches them into a
-/// long screenshot using Vision translational registration.
+/// 长截图采集与拼接引擎。
+///
+/// 行为规格见 docs/active/2026-09-08-长截图引擎对齐/SPEC.md，要点：
+/// - 按需单帧采集：每帧都是合成器输出的完整快照，无流管理、无陈旧帧。
+/// - TIFF 字节级 settle：连续两帧完全相等才认定内容停止渲染，零容忍。
+/// - 手动模式事件驱动双速率：滚动中 0.15s 节流立即抓帧（不等 settle），
+///   滚动停止后 0.25s 补拍一张全 settle 帧。
+/// - 自动模式：合成滚轮事件驱动页面滚动，触底自动停止。
+/// - 整帧 Vision 平移配准；配准前裁掉吸顶头部与滚动条。
+/// - 1px 遮缝（新帧多覆盖一行）+ 立即增量合并（不保留帧序列）。
+@MainActor
 final class ScrollCapturer {
     private static let logger = Logger(subsystem: "com.omniforge.app", category: "ScrollCapturer")
 
-    private struct ImageFormat {
-        let bitsPerComponent: Int
-        let bitsPerPixel: Int
-        let bitmapInfo: CGBitmapInfo
-        let colorSpace: CGColorSpace
-    }
+    // MARK: - 回调（主线程触发）
 
-    private struct CapturedFrame {
-        let image: NSImage
-        let bitmap: BitmapData
-    }
-
-    /// Result of a single capture attempt, used by auto-scroll to decide
-    /// whether the page kept producing fresh content or has bottomed out.
-    enum FrameOutcome: Equatable {
-        /// A new frame with fresh content was stitched in.
-        case appended
-        /// Reverse scrolling trimmed rows off the stitched image.
-        case trimmed
-        /// The frame was a duplicate, too similar, or failed — no progress.
-        case noNewContent
-        /// The frame budget is exhausted; capturing should stop.
-        case atFrameLimit
-
-        var diagnosticName: String {
-            switch self {
-            case .appended: return "appended"
-            case .trimmed: return "trimmed"
-            case .noNewContent: return "no-new-content"
-            case .atFrameLimit: return "at-frame-limit"
-            }
-        }
-    }
-
-    /// Sync capture bridge used by the stitcher (test-injectable).
-    typealias RegionCapture = (
-        _ rect: CGRect,
-        _ displayID: CGDirectDisplayID,
-        _ scaleFactor: CGFloat,
-        _ excludingWindowIDs: [CGWindowID],
-        _ timeout: TimeInterval
-    ) -> NSImage?
-
+    /// 每合入一条新内容后回调（首帧也算一条），参数为当前条数。
+    var onStripAdded: ((Int) -> Void)?
+    /// 会话结束交付拼接结果；取消路径不触发。nil 表示会话无产出。
+    var onSessionDone: ((NSImage?) -> Void)?
+    /// 自动滚动启动时回调（含会话按设置直入自动模式）。
+    var onAutoScrollStarted: (() -> Void)?
+    /// 拼接图更新（含首帧），主线程回调。
     var onPreviewUpdated: ((NSImage) -> Void)?
 
+    // MARK: - 采集与配准注入（测试钩子）
+
+    /// 同步按需采集：返回 `rect`（全局 CG 坐标）区域的合成器快照。
+    typealias RegionCapture = @Sendable (_ rect: CGRect, _ excludingWindowIDs: [CGWindowID]) -> CGImage?
+    /// 整帧平移配准：返回 current 相对 previous 的垂直位移（ty）。
+    typealias AlignmentFinder = @Sendable (_ current: CGImage, _ previous: CGImage) -> CGFloat?
+
+    // MARK: - 会话配置
+
+    struct SessionConfig: Sendable {
+        /// 会话直入自动滚动（HUD 按钮仍可切换）。
+        var autoScrollEnabled = false
+        /// 自动滚动速度 1...4。
+        var autoScrollSpeed = 3
+        /// 拼接图高度上限（px），达到即自动停止。
+        var maxScrollHeight = 30_000
+        /// 吸顶头部/滚动条检测开关。
+        var frozenDetectionEnabled = true
+
+        static let standard = SessionConfig()
+    }
+
+    // MARK: - 公开状态
+
+    private(set) var stripCount = 0
+    private(set) var stitchedPixelSize: CGSize = .zero
+    private(set) var isActive = false
+    private(set) var autoScrollActive = false
+    private var isCancelled = false
+    /// startSession 首帧 settle 进行中（此阶段 isActive 尚未置位）。
+    private var isSessionStarting = false
+
+    /// 拼接结果当前总高（pt），HUD 进度用。
+    var estimatedTotalHeightPoints: CGFloat {
+        guard let mergedImage else { return 0 }
+        return CGFloat(mergedImage.height) / backingScale
+    }
+
+    // MARK: - 私有状态
+
     private let captureRect: CGRect
-    private let displayID: CGDirectDisplayID
-    private let scaleFactor: CGFloat
+    private let backingScale: CGFloat
     private let excludedWindowIDs: [CGWindowID]
+    private let config: SessionConfig
     private let capture: RegionCapture
-    private let captureQueue = DispatchQueue(label: "com.omniforge.scroll-capture", qos: .userInitiated)
-    private let maxFrames: Int
+    private let findAlignment: AlignmentFinder
     private let diagnosticID: String
-    private let settledCaptureTimeout: TimeInterval = 1.5
-    private let offsetEstimator: ScrollOffsetEstimating
 
-    private var frames: [CapturedFrame] = []
-    /// Stitch history shared by the live preview and the final stitch replay:
-    /// appended frames (with overlap) plus reverse-scroll bottom trims.
-    private var steps: [ScrollStitchMath.StitchStep] = []
-    /// Registration baseline. Updated on append and on executed reverse trims;
-    /// the first reverse signal keeps the old baseline so the next reverse
-    /// frame reports the cumulative scroll-back.
-    private var referenceFrame: CapturedFrame?
-    private var hasPendingReverseOffset = false
-    private var captureAttemptCount = 0
-    private var consecutiveNoNewContentCount = 0
+    /// 重计算（TIFF 生成 / Vision / 合并 / 像素检测）串行队列。
+    private nonisolated let computeQueue = DispatchQueue(
+        label: "com.omniforge.scroll-capture",
+        qos: .userInitiated
+    )
 
-    // Sticky element exclusion state (scrollbar / sticky header).
-    private var scrollbarWidthPx: Int = 0
-    private var scrollbarDetected: Bool = false
-    private var stickyHeaderPx: Int = 0
-    private var stickyHeaderDetectionDone: Bool = false
-    private var stickyHeaderSamplesTaken: Int = 0
+    // 帧状态
+    private var shotA: CGImage?
+    private var mergedImage: CGImage?
 
-    // Incremental preview state
-    private var previewBitmap: BitmapData?
-    private var previewHeightPixels: Int = 0
-    private var previewScale: CGFloat = 1
-    private var previewPointWidth: CGFloat = 0
+    // 固定元素检测
+    private var headerHeightPx = 0
+    private var headerDetectionDone = false
+    private var rightMarginPx = 0
+    private var rightMarginDetected = false
 
-    /// - Parameters:
-    ///   - rect: capture region in global CG coordinates.
-    ///   - displayID: target display.
-    ///   - scaleFactor: screen backing scale.
-    ///   - excludingWindowIDs: window IDs omitted from every frame (e.g. hint toast).
-    ///   - maxFrames: hard frame budget (default 100).
-    ///   - captureClient: used when `capture` is not injected.
-    ///   - capture: injectable sync capture bridge for tests / custom paths.
-    ///   - offsetEstimator: frame-to-frame registration (band consensus by default).
+    // 自动停止计数
+    private var matchNotFoundCount = 0
+    private var consecutiveZeroShifts = 0
+    private var hasScrolledOnce = false
+    private let maxMatchNotFound = 8
+    private let maxZeroShiftsBeforeStop = 6
+
+    // 手动滚动监听与节流
+    private var scrollMonitorGlobal: Any?
+    private var scrollMonitorLocal: Any?
+    private let manualCaptureInterval: TimeInterval = 0.15
+    private var lastCaptureTime: TimeInterval = 0
+    private var settlementTimer: Timer?
+    private let settlementInterval: TimeInterval = 0.25
+
+    /// 单帧在飞互斥：立即抓帧与 settle 补拍不并发。
+    private var isProcessingFrame = false
+
+    // 自动滚动
+    private var autoScrollTask: Task<Void, Never>?
+    /// 合成滚轮事件的目标（激活用）。
+    private var targetAppPID: pid_t = 0
+
+    // MARK: - Init
+
     init(
-        rect: CGRect,
-        displayID: CGDirectDisplayID,
+        captureRect: CGRect,
         scaleFactor: CGFloat,
         excludingWindowIDs: [CGWindowID] = [],
-        maxFrames: Int = ScrollStitchMath.defaultMaxFrames,
-        captureClient: ScreenCaptureClient? = nil,
+        config: SessionConfig = .standard,
         capture: RegionCapture? = nil,
-        offsetEstimator: ScrollOffsetEstimating? = nil,
+        alignment: AlignmentFinder? = nil,
         diagnosticID: String? = nil
     ) {
-        self.captureRect = rect
-        self.displayID = displayID
-        self.scaleFactor = scaleFactor
+        self.captureRect = captureRect
+        self.backingScale = max(1, scaleFactor)
         self.excludedWindowIDs = excludingWindowIDs
-        self.maxFrames = max(1, maxFrames)
+        self.config = config
         self.diagnosticID = diagnosticID ?? String(UUID().uuidString.prefix(8))
-        self.offsetEstimator = offsetEstimator ?? VisionBandOffsetEstimator()
-
-        if let capture {
-            self.capture = capture
-        } else if let captureClient {
-            self.capture = { rect, displayID, scale, excluding, timeout in
-                Self.captureViaClient(
-                    captureClient,
-                    rect: rect,
-                    displayID: displayID,
-                    scaleFactor: scale,
-                    excludingWindowIDs: excluding,
-                    timeout: timeout
-                )
-            }
-        } else {
-            let client = ScreenCaptureKitClient()
-            self.capture = { rect, displayID, scale, excluding, timeout in
-                Self.captureViaClient(
-                    client,
-                    rect: rect,
-                    displayID: displayID,
-                    scaleFactor: scale,
-                    excludingWindowIDs: excluding,
-                    timeout: timeout
-                )
-            }
-        }
-
-        log(
-            "init-begin",
-            metadata: [
-                "captureRect": Self.diagnosticRect(rect),
-                "displayID": displayID,
-                "scaleFactor": Self.diagnosticNumber(scaleFactor),
-                "excludedWindowIDs": excludingWindowIDs.map { String($0) }.joined(separator: ","),
-            ]
-        )
-
-        // First frame: use a longer timeout so init does not fail on cold SCKit.
-        if
-            let image = self.capture(rect, displayID, scaleFactor, excludingWindowIDs, 3.0),
-            let bitmap = bitmapData(from: image)
-        {
-            let firstFrame = CapturedFrame(image: image, bitmap: bitmap)
-            frames.append(firstFrame)
-            referenceFrame = firstFrame
-            log(
-                "init-first-frame",
-                metadata: [
-                    "imageSize": Self.diagnosticSize(image.size),
-                    "bitmap": Self.diagnosticBitmap(bitmap),
-                ]
-            )
-            initPreview(from: firstFrame)
-        } else {
-            log("init-first-frame-failed")
-        }
+        self.capture = capture ?? Self.defaultCapture
+        self.findAlignment = alignment ?? Self.findAlignmentViaVision
     }
 
-    /// Convenience initializer matching CapCap's screen-based call sites.
-    convenience init(
-        rect: CGRect,
-        screen: NSScreen,
-        excludingWindowIDs: [CGWindowID] = [],
-        maxFrames: Int = ScrollStitchMath.defaultMaxFrames,
-        captureClient: ScreenCaptureClient? = nil,
-        capture: RegionCapture? = nil,
-        offsetEstimator: ScrollOffsetEstimating? = nil,
-        diagnosticID: String? = nil
-    ) {
-        let displayID = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID) ?? CGMainDisplayID()
-        self.init(
-            rect: rect,
-            displayID: displayID,
-            scaleFactor: screen.backingScaleFactor,
-            excludingWindowIDs: excludingWindowIDs,
-            maxFrames: maxFrames,
-            captureClient: captureClient,
-            capture: capture,
-            offsetEstimator: offsetEstimator,
-            diagnosticID: diagnosticID
-        )
+    /// 按需单帧采集：取排除列表首个窗口之下的合成器快照。
+    /// 传入 rect 为全局 CG 坐标（顶左原点），与 CGWindowList 系 API 一致。
+    private static let defaultCapture: RegionCapture = { rect, excludingWindowIDs in
+        let listOption: CGWindowListOption = [.optionOnScreenBelowWindow]
+        let windowID = excludingWindowIDs.first ?? kCGNullWindowID
+        return CGWindowListCreateImage(rect, listOption, windowID, [.boundsIgnoreFraming])
     }
 
-    func stopAndStitch(completion: @escaping (NSImage?) -> Void) {
-        log("stop-and-stitch-enter")
-        captureQueue.async {
-            var result: NSImage?
-
-            // One last frame so the final scrolled state is never missed.
-            let finalFrameOutcome = self.captureFrame(expectedShiftPoints: 0)
-            self.log(
-                "stop-and-stitch-final-frame",
-                metadata: ["outcome": finalFrameOutcome.diagnosticName]
-            )
-
-            guard !self.frames.isEmpty else {
-                self.log("stop-and-stitch-no-frames")
-                result = nil
-                self.log("stop-and-stitch-leave")
-                DispatchQueue.main.async {
-                    completion(result)
-                }
-                return
-            }
-
-            if self.frames.count == 1 {
-                self.log("stop-and-stitch-single-frame")
-                result = self.frames[0].image
-                self.log("stop-and-stitch-leave")
-                DispatchQueue.main.async {
-                    completion(result)
-                }
-                return
-            }
-
-            self.log("final-stitch-begin")
-            result = self.stitchAcceptedFrames()
-            self.log(
-                "final-stitch-end",
-                metadata: [
-                    "result": result.map { Self.diagnosticSize($0.size) } ?? "nil",
-                ]
-            )
-
-            self.log("stop-and-stitch-leave")
-            DispatchQueue.main.async {
-                completion(result)
-            }
-        }
-    }
-
-    /// Captures a frame synchronously and reports the outcome. Used by the
-    /// auto-scroll loop: it scrolls a fixed step, then calls this to learn
-    /// whether the step revealed new content (keep going) or not (page end).
-    func captureSynchronously(expectedShiftPoints: CGFloat) -> FrameOutcome {
-        var outcome: FrameOutcome = .noNewContent
-        captureQueue.sync {
-            outcome = captureFrame(expectedShiftPoints: expectedShiftPoints)
-        }
-        return outcome
-    }
-
-    // MARK: - Sync capture bridge
-
-    /// Bridge async `ScreenCaptureClient` to a semaphore + `Task.detached`
-    /// so the stitcher can run off the main thread without deadlocking.
-    private static func captureViaClient(
-        _ client: ScreenCaptureClient,
-        rect: CGRect,
-        displayID: CGDirectDisplayID,
-        scaleFactor: CGFloat,
-        excludingWindowIDs: [CGWindowID],
-        timeout: TimeInterval
-    ) -> NSImage? {
-        let resultBox = CaptureResultBox()
-        let semaphore = DispatchSemaphore(value: 0)
-
-        let task = Task.detached {
-            do {
-                let cgImage = try await client.captureRegion(
-                    rect,
-                    displayID: displayID,
-                    scaleFactor: scaleFactor,
-                    excludingWindowIDs: excludingWindowIDs
-                )
-                let image = NSImage(cgImage: cgImage, size: NSSize(width: rect.width, height: rect.height))
-                resultBox.set(image)
-            } catch {
-                Self.logger.error("scroll capture failed: \(error.localizedDescription, privacy: .public)")
-            }
-            semaphore.signal()
-        }
-
-        let waitResult = semaphore.wait(timeout: .now() + .milliseconds(max(1, Int(timeout * 1000))))
-        if waitResult == .timedOut {
-            task.cancel()
-            Self.logger.notice("scroll capture timed out after \(timeout, privacy: .public)s")
+    /// 整帧 Vision 平移配准，返回 ty（正=底部露出新内容）。
+    private static let findAlignmentViaVision: AlignmentFinder = { current, previous in
+        let request = VNTranslationalImageRegistrationRequest(targetedCGImage: previous)
+        let handler = VNImageRequestHandler(cgImage: current, options: [:])
+        do {
+            try handler.perform([request])
+        } catch {
             return nil
         }
-        return resultBox.get()
+        guard let observation = request.results?.first as? VNImageTranslationAlignmentObservation else {
+            return nil
+        }
+        return observation.alignmentTransform.ty
     }
 
-    private final class CaptureResultBox: @unchecked Sendable {
-        private let lock = NSLock()
-        private var image: NSImage?
+    // MARK: - 会话生命周期
 
-        func set(_ image: NSImage?) {
-            lock.lock()
-            self.image = image
-            lock.unlock()
+    func startSession() async {
+        guard !isActive, !isCancelled, !isSessionStarting else { return }
+        isSessionStarting = true
+        defer { isSessionStarting = false }
+
+        // 首帧 settle（冷启动容忍多轮重试）。
+        guard let firstFrame = await captureSettledFrame() else {
+            guard !isCancelled else { return }
+            log("session-start-first-frame-failed")
+            onSessionDone?(nil)
+            return
         }
+        guard !isCancelled else { return }
 
-        func get() -> NSImage? {
-            lock.lock()
-            defer { lock.unlock() }
-            return image
+        isActive = true
+        shotA = nil
+        mergedImage = firstFrame
+        headerHeightPx = 0
+        headerDetectionDone = false
+        rightMarginPx = 0
+        rightMarginDetected = false
+        matchNotFoundCount = 0
+        consecutiveZeroShifts = 0
+        hasScrolledOnce = false
+        stripCount = 1
+        stitchedPixelSize = CGSize(width: firstFrame.width, height: firstFrame.height)
+
+        resolveTargetApp()
+        log(
+            "session-start",
+            metadata: [
+                "pixelSize": "\(firstFrame.width)x\(firstFrame.height)",
+                "autoScroll": config.autoScrollEnabled,
+            ]
+        )
+        emitPreview()
+        onStripAdded?(stripCount)
+
+        if config.autoScrollEnabled {
+            startAutoScroll()
+        } else {
+            startManualScrollMonitors()
         }
     }
 
-    // MARK: - Settled capture
+    /// 停止会话并交付拼接结果。
+    func stopSession() {
+        guard isActive else { return }
+        isActive = false
+        teardownDrivers()
 
-    /// Polls until two consecutive captures produce byte-identical raw pixel
-    /// data (page settled) or timeout elapses.
-    private func captureSettledFrame() -> NSImage? {
-        var previousData: Data?
-        var lastImage: NSImage?
-        var waitNs: UInt64 = 12_000_000
-        var captureFailures = 0
-        var signatureFailures = 0
-        let deadline = Date().addingTimeInterval(settledCaptureTimeout)
+        let finalImage = deliverableImage()
+        log(
+            "session-stop",
+            metadata: [
+                "strips": stripCount,
+                "pixelSize": "\(Int(stitchedPixelSize.width))x\(Int(stitchedPixelSize.height))",
+                "hasImage": finalImage != nil,
+            ]
+        )
+        onSessionDone?(finalImage)
+    }
 
-        for _ in 0..<20 {
-            let remaining = deadline.timeIntervalSinceNow
-            guard remaining > 0 else { break }
-            guard let image = capture(
-                captureRect,
-                displayID,
-                scaleFactor,
-                excludedWindowIDs,
-                remaining
-            ) else {
-                captureFailures += 1
-                sleepUntilDeadline(min(0.03, deadline.timeIntervalSinceNow))
+    /// 取消会话：拆掉一切驱动，不交付任何图像。首帧 settle 进行中同样有效。
+    func cancelSession() {
+        isCancelled = true
+        isActive = false
+        teardownDrivers()
+        log("session-cancel")
+    }
+
+    /// HUD 切换自动/手动滚动。切向自动的权限门由编排层负责。
+    func toggleAutoScroll() {
+        if autoScrollActive {
+            stopAutoScroll()
+            startManualScrollMonitors()
+        } else {
+            stopManualScrollMonitors()
+            startAutoScroll()
+        }
+    }
+
+    private func teardownDrivers() {
+        autoScrollTask?.cancel()
+        autoScrollTask = nil
+        autoScrollActive = false
+        settlementTimer?.invalidate()
+        settlementTimer = nil
+        stopManualScrollMonitors()
+    }
+
+    /// 交付包装：像素尺寸换算 point 尺寸。
+    private func deliverableImage() -> NSImage? {
+        guard let mergedImage else { return nil }
+        let ptSize = NSSize(
+            width: CGFloat(mergedImage.width) / backingScale,
+            height: CGFloat(mergedImage.height) / backingScale
+        )
+        return NSImage(cgImage: mergedImage, size: ptSize)
+    }
+
+    /// 选区中心命中窗口的所属进程（自动滚动前激活目标 app）。
+    private func resolveTargetApp() {
+        guard
+            let windowList = CGWindowListCopyWindowInfo(
+                [.optionOnScreenOnly, .excludeDesktopElements],
+                kCGNullWindowID
+            ) as? [[String: Any]]
+        else { return }
+
+        let center = CGPoint(x: captureRect.midX, y: captureRect.midY)
+        let excluded = Set(excludedWindowIDs)
+
+        for info in windowList {
+            guard let layer = info[kCGWindowLayer as String] as? Int, layer == 0,
+                  let winID = info[kCGWindowNumber as String] as? Int,
+                  let pid = info[kCGWindowOwnerPID as String] as? pid_t,
+                  !excluded.contains(CGWindowID(winID)),
+                  let boundsDict = info[kCGWindowBounds as String] as? [String: CGFloat]
+            else { continue }
+
+            let x = boundsDict["X"] ?? 0
+            let y = boundsDict["Y"] ?? 0
+            let w = boundsDict["Width"] ?? 0
+            let h = boundsDict["Height"] ?? 0
+            if CGRect(x: x, y: y, width: w, height: h).contains(center) {
+                targetAppPID = pid
+                return
+            }
+        }
+    }
+
+    // MARK: - 手动滚动（事件驱动双速率）
+
+    private func startManualScrollMonitors() {
+        scrollMonitorGlobal = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) {
+            [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.onManualScrollEvent()
+            }
+        }
+        scrollMonitorLocal = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) {
+            [weak self] event in
+            Task { @MainActor [weak self] in
+                self?.onManualScrollEvent()
+            }
+            return event
+        }
+    }
+
+    private func stopManualScrollMonitors() {
+        if let scrollMonitorGlobal {
+            NSEvent.removeMonitor(scrollMonitorGlobal)
+            self.scrollMonitorGlobal = nil
+        }
+        if let scrollMonitorLocal {
+            NSEvent.removeMonitor(scrollMonitorLocal)
+            self.scrollMonitorLocal = nil
+        }
+        settlementTimer?.invalidate()
+        settlementTimer = nil
+    }
+
+    /// 滚动事件到达：立即路径节流抓帧 + 重置 settlement 补拍定时器。
+    private func onManualScrollEvent() {
+        guard isActive, !autoScrollActive else { return }
+
+        // 滚动停止后补一张全 settle 帧（每次事件重置倒计时）。
+        settlementTimer?.invalidate()
+        settlementTimer = Timer.scheduledTimer(withTimeInterval: settlementInterval, repeats: false) {
+            [weak self] _ in
+            Task { @MainActor [weak self] in
+                await self?.processSettledFrame()
+            }
+        }
+
+        // 滚动进行中：固定节流立即抓帧，不等待 settle——小选区下一次手势
+        // 就可能滚过整个视口，等稳定会丢内容。
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastCaptureTime >= manualCaptureInterval else { return }
+        lastCaptureTime = now
+        Task { @MainActor [weak self] in
+            await self?.processImmediateFrame()
+        }
+    }
+
+    /// 当前比较基线：上一帧，或（会话首比较）拼接图顶部同高裁切。
+    private func baselineFrame(matchingHeight height: Int) -> CGImage? {
+        if let shotA { return shotA }
+        guard let merged = mergedImage else { return nil }
+        return merged.cropping(
+            to: CGRect(x: 0, y: 0, width: merged.width, height: min(height, merged.height))
+        )
+    }
+
+    /// 手动滚动中的立即抓帧：拿来当前画面直接尝试拼接（测试驱动点）。
+    func processImmediateFrame() async {
+        guard isActive, !isProcessingFrame else { return }
+        isProcessingFrame = true
+        defer { isProcessingFrame = false }
+
+        guard let currentFrame = captureFrame() else { return }
+        guard let previousFrame = baselineFrame(matchingHeight: currentFrame.height) else {
+            shotA = currentFrame
+            return
+        }
+        _ = await processFrame(current: currentFrame, previous: previousFrame, settled: false)
+    }
+
+    /// 停止后的全 settle 补拍；维护零位移自动停止计数（测试驱动点）。
+    @discardableResult
+    func processSettledFrame() async -> Bool {
+        guard isActive, !isProcessingFrame else { return false }
+        isProcessingFrame = true
+        defer { isProcessingFrame = false }
+
+        guard let currentFrame = await captureSettledFrame() else { return false }
+        guard let previousFrame = baselineFrame(matchingHeight: currentFrame.height) else {
+            shotA = currentFrame
+            return false
+        }
+        let matched = await processFrame(current: currentFrame, previous: previousFrame, settled: true)
+
+        // 零位移自动停止判定（触底后页面不再变化）。
+        if !matched {
+            consecutiveZeroShifts += 1
+            if hasScrolledOnce, consecutiveZeroShifts >= maxZeroShiftsBeforeStop {
+                log("auto-stop-zero-shifts", metadata: ["count": consecutiveZeroShifts])
+                stopSession()
+            }
+        }
+        return matched
+    }
+
+    // MARK: - 自动滚动
+
+    private func startAutoScroll() {
+        autoScrollActive = true
+        onAutoScrollStarted?()
+
+        // 光标移到选区中心并激活目标 app，让合成滚轮事件落在正确窗口上。
+        CGWarpMouseCursorPosition(CGPoint(x: captureRect.midX, y: captureRect.midY))
+        if targetAppPID != 0 {
+            NSRunningApplication(processIdentifier: targetAppPID)?.activate(options: [])
+        }
+
+        let linesPerTick: Int32
+        let burstCount: Int
+        switch config.autoScrollSpeed {
+        case 1: linesPerTick = 1; burstCount = 1
+        case 2: linesPerTick = 1; burstCount = 2
+        case 4: linesPerTick = 2; burstCount = 4
+        default: linesPerTick = 1; burstCount = 3
+        }
+
+        autoScrollTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard let self, self.isActive, self.autoScrollActive else { return }
+            await self.autoScrollLoop(linesPerTick: linesPerTick, burstCount: burstCount)
+        }
+    }
+
+    private func stopAutoScroll() {
+        autoScrollActive = false
+        autoScrollTask?.cancel()
+        autoScrollTask = nil
+    }
+
+    /// 自动滚动主循环：发滚轮 → settle 比较 → 检查自动停止。
+    private func autoScrollLoop(linesPerTick: Int32, burstCount: Int) async {
+        while isActive, autoScrollActive {
+            for _ in 0..<burstCount {
+                if let event = CGEvent(
+                    scrollWheelEvent2Source: nil,
+                    units: .line,
+                    wheelCount: 1,
+                    wheel1: -linesPerTick,
+                    wheel2: 0,
+                    wheel3: 0
+                ) {
+                    event.post(tap: .cghidEventTap)
+                }
+            }
+
+            // 等待滚动动画起效再进入 settle 轮询。
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            let matched = await autoScrollCompareOnce()
+
+            if !matched {
+                matchNotFoundCount += 1
+                if matchNotFoundCount >= maxMatchNotFound {
+                    log("auto-stop-match-not-found", metadata: ["count": matchNotFoundCount])
+                    stopSession()
+                    return
+                }
+            } else {
+                matchNotFoundCount = 0
+            }
+
+            if let mergedImage, config.maxScrollHeight > 0, mergedImage.height >= config.maxScrollHeight {
+                log("auto-stop-max-height", metadata: ["height": mergedImage.height])
+                stopSession()
+                return
+            }
+
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+    }
+
+    /// 自动循环的比较体：复用手动 settle 路径（含零位移自动停止）。
+    private func autoScrollCompareOnce() async -> Bool {
+        guard isActive, autoScrollActive else { return false }
+        return await processSettledFrame()
+    }
+
+    // MARK: - 采集与 settle
+
+    private func captureFrame() -> CGImage? {
+        capture(captureRect, excludedWindowIDs)
+    }
+
+    /// 轮询抓帧直到连续两帧 TIFF 表示字节级完全相等（内容真正停止渲染），
+    /// 或重试耗尽返回最后一帧。重试 30 次，10ms 起 ×1.5 退避至 80ms。
+    private func captureSettledFrame() async -> CGImage? {
+        var previousTIFF: Data?
+        var previousFrame: CGImage?
+        var waitNs: UInt64 = 10_000_000
+
+        for _ in 0..<30 {
+            guard !isCancelled, isSessionStarting || isActive else { return nil }
+
+            guard let frame = captureFrame() else {
+                try? await Task.sleep(nanoseconds: 30_000_000)
                 continue
             }
 
-            guard
-                let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
-                let signature = cgImage.dataProvider?.data as Data?
-            else {
-                signatureFailures += 1
-                sleepUntilDeadline(min(Double(waitNs) / 1_000_000_000, deadline.timeIntervalSinceNow))
+            let tiff = await computeOnQueue {
+                NSBitmapImageRep(cgImage: frame).tiffRepresentation
+            }
+            guard let currentTIFF = tiff else {
+                try? await Task.sleep(nanoseconds: waitNs)
+                waitNs = min(waitNs * 3 / 2, 80_000_000)
                 continue
             }
 
-            if let prev = previousData, prev == signature {
-                return image
+            if let previousTIFF, currentTIFF == previousTIFF {
+                return frame
             }
 
-            previousData = signature
-            lastImage = image
-            sleepUntilDeadline(min(Double(waitNs) / 1_000_000_000, deadline.timeIntervalSinceNow))
+            previousTIFF = currentTIFF
+            previousFrame = frame
+            try? await Task.sleep(nanoseconds: waitNs)
             waitNs = min(waitNs * 3 / 2, 80_000_000)
         }
 
-        log(
-            "settled-capture-timeout",
-            metadata: [
-                "captureFailures": captureFailures,
-                "signatureFailures": signatureFailures,
-                "hasLastImage": lastImage != nil,
-            ]
-        )
-        return lastImage
+        return previousFrame
     }
 
-    private func sleepUntilDeadline(_ interval: TimeInterval) {
-        guard interval > 0 else { return }
-        Thread.sleep(forTimeInterval: interval)
-    }
+    // MARK: - 帧处理核心
 
-    @discardableResult
-    private func captureFrame(expectedShiftPoints: CGFloat) -> FrameOutcome {
-        captureAttemptCount += 1
-        let attempt = captureAttemptCount
+    /// 单帧比较与合入。返回是否成功拼入新内容。
+    private func processFrame(current: CGImage, previous: CGImage, settled: Bool) async -> Bool {
+        if !rightMarginDetected {
+            detectRightMargin(current: current, previous: previous)
+        }
+
+        guard let shift = await visionShift(current: current, previous: previous) else {
+            // 配准失败：基线前移，丢弃该帧。
+            shotA = current
+            return false
+        }
+
+        let offsetPx = Int(round(shift))
+        guard offsetPx > 0 else {
+            // 向上滚/无位移：基线前移、丢弃（不支持回裁）。
+            shotA = current
+            return false
+        }
+
+        // 最小位移门槛：不足则不拼也不更新基线，让位移累积到下一帧。
+        let minShift = current.height / 10
+        if offsetPx < minShift {
+            return false
+        }
+
+        consecutiveZeroShifts = 0
+        hasScrolledOnce = true
+
+        if config.frozenDetectionEnabled, !headerDetectionDone {
+            detectHeader(current: current, previous: previous, shiftPx: offsetPx)
+        }
+
+        // 1px 遮缝：新条多覆盖一行，遮住接缝处的亚像素渲染差。
+        let safeOffset = max(1, offsetPx - 1)
+        mergeNewContent(currentFrame: current, offsetPx: safeOffset)
+
+        shotA = current
+        stripCount += 1
         log(
-            "capture-frame-begin",
+            "frame-merged",
             metadata: [
-                "attempt": attempt,
-                "expectedShiftPoints": Self.diagnosticNumber(expectedShiftPoints),
+                "offsetPx": offsetPx,
+                "safeOffset": safeOffset,
+                "settled": settled,
+                "strips": stripCount,
             ]
         )
+        emitPreview()
+        onStripAdded?(stripCount)
+        return true
+    }
 
-        guard frames.count < maxFrames else {
-            log("capture-frame-limit", metadata: ["attempt": attempt])
-            return .atFrameLimit
+    /// 整帧 Vision 平移配准；配准前裁掉吸顶头部与滚动条（快照检测状态
+    /// 后在队列上执行裁剪与配准）。
+    private func visionShift(current: CGImage, previous: CGImage) async -> CGFloat? {
+        let maxCropY = current.height / 5
+        let cropY = headerDetectionDone ? min(headerHeightPx, maxCropY) : 0
+        let cropW = current.width - rightMarginPx
+        let cropH = current.height - cropY
+        let shouldCrop = cropY > 0 || rightMarginPx > 0
+        let alignment = findAlignment
+
+        return await computeOnQueue { () -> CGFloat? in
+            guard !shouldCrop else {
+                guard cropH > 20, cropW > 20 else { return nil }
+                let cropRect = CGRect(x: 0, y: cropY, width: cropW, height: cropH)
+                guard let croppedCurrent = current.cropping(to: cropRect),
+                      let croppedPrevious = previous.cropping(to: cropRect)
+                else { return nil }
+                return alignment(croppedCurrent, croppedPrevious)
+            }
+            return alignment(current, previous)
         }
-        guard
-            let image = captureSettledFrame(),
-            let bitmap = bitmapData(from: image)
-        else {
-            logNoNewContent(reason: "capture-or-bitmap-failed", attempt: attempt)
-            return .noNewContent
+    }
+
+    // MARK: - 固定元素检测
+
+    /// 滚动条检测（一次性）：右缘向左逐列 SAD，列均值差 >8 记为动区；
+    /// 宽度 3...40px 合法，生效宽度 = 检出宽 + 4px 余量。
+    private func detectRightMargin(current: CGImage, previous: CGImage) {
+        rightMarginDetected = true
+        guard let result = detectRightMarginValue(current: current, previous: previous) else {
+            log("scrollbar-detection", metadata: ["committedWidth": 0])
+            return
         }
+        rightMarginPx = result
+        log("scrollbar-detection", metadata: ["committedWidth": result])
+    }
 
-        let candidateFrame = CapturedFrame(image: image, bitmap: bitmap)
+    private nonisolated func detectRightMarginValue(current: CGImage, previous: CGImage) -> Int? {
+        computeQueue.sync {
+            guard current.width == previous.width,
+                  current.height == previous.height,
+                  let curData = rawPixelData(current),
+                  let prevData = rawPixelData(previous)
+            else { return nil }
 
-        // Nearly-identical check runs against the registration baseline: a
-        // settled page keeps producing frames that match the last reference.
-        if let baseline = referenceFrame ?? frames.last,
-           imagesAreNearlyIdentical(baseline.bitmap, candidateFrame.bitmap) {
-            logNoNewContent(
-                reason: "nearly-identical",
-                attempt: attempt,
-                metadata: ["bitmap": Self.diagnosticBitmap(bitmap)]
-            )
-            return .noNewContent
-        }
+            let w = current.width
+            let h = current.height
+            let bytesPerRow = w * 4
 
-        guard let reference = referenceFrame ?? frames.last else {
-            frames.append(candidateFrame)
-            referenceFrame = candidateFrame
-            initPreview(from: candidateFrame)
-            consecutiveNoNewContentCount = 0
-            log(
-                "capture-frame-appended",
-                metadata: [
-                    "attempt": attempt,
-                    "reason": "first-frame",
-                    "bitmap": Self.diagnosticBitmap(bitmap),
-                ]
-            )
-            return .appended
-        }
+            let rowStart = h * 2 / 10
+            let rowEnd = h * 8 / 10
+            let rowStep = max(1, (rowEnd - rowStart) / 40)
 
-        let scale = CGFloat(candidateFrame.bitmap.height) / max(candidateFrame.image.size.height, 1)
-        let expectedShiftPixels: Int?
-        if expectedShiftPoints > 0 {
-            expectedShiftPixels = Int((expectedShiftPoints * scale).rounded())
-        } else {
-            expectedShiftPixels = nil
-        }
+            var scrollbarWidth = 0
+            let maxScanCols = min(50, w / 8)
 
-        let frameHeight = candidateFrame.bitmap.height
-        let minimumNewRows = ScrollStitchMath.minimumNewRows(height: frameHeight)
+            for colOffset in 0..<maxScanCols {
+                let col = w - 1 - colOffset
+                var sad: UInt64 = 0
+                var samples = 0
 
-        switch estimateShift(
-            previous: reference.bitmap,
-            current: candidateFrame.bitmap,
-            expectedNewContentPixels: expectedShiftPixels
-        ) {
-        case let .forward(newContentPx):
-            let overlap = ScrollStitchMath.clampOverlap(
-                frameHeight - newContentPx,
-                height: frameHeight
-            )
-            let newRows = ScrollStitchMath.newRows(height: frameHeight, overlap: overlap)
-            guard newRows >= minimumNewRows else {
-                logNoNewContent(
-                    reason: "new-rows-below-threshold",
-                    attempt: attempt,
-                    metadata: [
-                        "overlap": overlap,
-                        "newRows": newRows,
-                        "minimumNewRows": minimumNewRows,
-                    ]
-                )
-                return .noNewContent
+                for row in stride(from: rowStart, to: rowEnd, by: rowStep) {
+                    let idx = row * bytesPerRow + col * 4
+                    guard idx + 2 < h * bytesPerRow else { continue }
+                    sad += UInt64(
+                        abs(Int(curData[idx]) - Int(prevData[idx]))
+                            + abs(Int(curData[idx + 1]) - Int(prevData[idx + 1]))
+                            + abs(Int(curData[idx + 2]) - Int(prevData[idx + 2]))
+                    )
+                    samples += 1
+                }
+                guard samples > 0 else { continue }
+                if sad / UInt64(samples) > 8 {
+                    scrollbarWidth = colOffset + 1
+                } else if scrollbarWidth > 0 {
+                    break
+                }
             }
 
-            hasPendingReverseOffset = false
-            frames.append(candidateFrame)
-            steps.append(.append(overlap: overlap))
-            appendToPreview(candidateFrame.bitmap, overlapPixels: overlap)
-            referenceFrame = candidateFrame
-            consecutiveNoNewContentCount = 0
-            log(
-                "capture-frame-appended",
-                metadata: [
-                    "attempt": attempt,
-                    "overlap": overlap,
-                    "newRows": newRows,
-                    "bitmap": Self.diagnosticBitmap(bitmap),
-                    "previewHeightPixels": previewHeightPixels,
-                ]
-            )
-            return .appended
-
-        case .none:
-            hasPendingReverseOffset = false
-            logNoNewContent(
-                reason: "no-measurable-shift",
-                attempt: attempt
-            )
-            return .noNewContent
-
-        case let .reverse(rows):
-            return handleReverseShift(
-                candidateFrame,
-                rows: rows,
-                minimumRows: minimumNewRows,
-                attempt: attempt
-            )
+            guard scrollbarWidth >= 3, scrollbarWidth <= 40 else { return nil }
+            return scrollbarWidth + 4
         }
     }
 
-    /// Reverse-scroll handling. The first reverse signal only arms the pending
-    /// flag (keeping the old baseline so the next reverse frame reports the
-    /// cumulative scroll-back); the second executes the trim.
-    private func handleReverseShift(
-        _ candidateFrame: CapturedFrame,
-        rows: Int,
-        minimumRows: Int,
-        attempt: Int
-    ) -> FrameOutcome {
-        guard rows >= minimumRows else {
-            hasPendingReverseOffset = false
-            logNoNewContent(
-                reason: "reverse-below-threshold",
-                attempt: attempt,
-                metadata: ["rows": rows, "minimumRows": minimumRows]
-            )
-            return .noNewContent
-        }
-
-        guard hasPendingReverseOffset else {
-            hasPendingReverseOffset = true
-            logNoNewContent(
-                reason: "reverse-pending",
-                attempt: attempt,
-                metadata: ["rows": rows]
-            )
-            return .noNewContent
-        }
-
-        hasPendingReverseOffset = false
-        let trimRows = ScrollStitchMath.clampedTrimRows(
-            rows,
-            currentHeightPixels: previewHeightPixels,
-            frameHeight: candidateFrame.bitmap.height
-        )
-        referenceFrame = candidateFrame
-        guard trimRows > 0 else {
-            logNoNewContent(
-                reason: "reverse-trim-clamped-to-zero",
-                attempt: attempt,
-                metadata: ["rows": rows]
-            )
-            return .noNewContent
-        }
-
-        steps.append(.trimBottom(rows: trimRows))
-        trimPreviewBottom(trimRows)
-        consecutiveNoNewContentCount = 0
-        log(
-            "capture-frame-trimmed",
-            metadata: [
-                "attempt": attempt,
-                "requestedRows": rows,
-                "trimRows": trimRows,
-                "previewHeightPixels": previewHeightPixels,
-            ]
-        )
-        return .trimmed
-    }
-
-    // MARK: - Incremental Preview
-
-    private func initPreview(from frame: CapturedFrame) {
-        previewScale = CGFloat(frame.bitmap.height) / max(frame.image.size.height, 1)
-        previewPointWidth = frame.image.size.width
-
-        let initialCapacity = frame.bitmap.height * 10
-        guard let output = makeOutputBitmap(from: frame.bitmap, totalHeightPixels: initialCapacity) else {
-            log(
-                "preview-init-bitmap-failed",
-                metadata: ["initialCapacity": initialCapacity]
-            )
-            return
-        }
-
-        copyRows(
-            from: frame.bitmap,
-            sourceStartRow: 0,
-            rowCount: frame.bitmap.height,
-            to: output,
-            destinationStartRow: 0
-        )
-
-        previewBitmap = output
-        previewHeightPixels = frame.bitmap.height
-        log(
-            "preview-init",
-            metadata: [
-                "initialCapacity": initialCapacity,
-                "previewHeightPixels": previewHeightPixels,
-            ]
-        )
-        emitPreviewImage()
-    }
-
-    private func appendToPreview(_ bitmap: BitmapData, overlapPixels: Int) {
-        guard var previewBitmap else {
-            log("preview-append-missing-bitmap")
-            return
-        }
-
-        let newRows = bitmap.height - overlapPixels
-        guard newRows > 0 else {
-            log(
-                "preview-append-no-rows",
-                metadata: [
-                    "overlap": overlapPixels,
-                    "bitmap": Self.diagnosticBitmap(bitmap),
-                ]
-            )
-            return
-        }
-
-        let neededHeight = previewHeightPixels + newRows
-        if neededHeight > previewBitmap.height {
-            let newCapacity = neededHeight + bitmap.height * 5
-            log(
-                "preview-grow-begin",
-                metadata: [
-                    "neededHeight": neededHeight,
-                    "newCapacity": newCapacity,
-                    "oldCapacity": previewBitmap.height,
-                ]
-            )
-            guard let grown = makeOutputBitmap(from: bitmap, totalHeightPixels: newCapacity) else {
-                log("preview-grow-failed", metadata: ["newCapacity": newCapacity])
-                return
-            }
-            copyRows(
-                from: previewBitmap,
-                sourceStartRow: 0,
-                rowCount: previewHeightPixels,
-                to: grown,
-                destinationStartRow: 0
-            )
-            self.previewBitmap = grown
-            previewBitmap = grown
-        }
-
-        copyRows(
-            from: bitmap,
-            sourceStartRow: overlapPixels,
-            rowCount: newRows,
-            to: previewBitmap,
-            destinationStartRow: previewHeightPixels
-        )
-
-        previewHeightPixels += newRows
-        log(
-            "preview-append",
-            metadata: [
-                "newRows": newRows,
-                "overlap": overlapPixels,
-                "previewHeightPixels": previewHeightPixels,
-            ]
-        )
-        emitPreviewImage()
-    }
-
-    /// Reverse-scroll trim on the live preview. Rows are laid out top-down and
-    /// only the used height shrinks — no pixel copying is needed.
-    private func trimPreviewBottom(_ rows: Int) {
-        guard previewBitmap != nil, rows > 0 else { return }
-        previewHeightPixels -= rows
-        log(
-            "preview-trim",
-            metadata: ["rows": rows, "previewHeightPixels": previewHeightPixels]
-        )
-        emitPreviewImage()
-    }
-
-    private func emitPreviewImage() {
-        guard let previewBitmap, previewHeightPixels > 0 else {
-            log("preview-emit-skipped")
-            return
-        }
-
-        let totalHeightPoints = CGFloat(previewHeightPixels) / previewScale
-        guard let image = previewBitmap.makeImage(
-            pointSize: NSSize(width: previewPointWidth, height: totalHeightPoints),
-            pixelHeight: previewHeightPixels
+    /// 吸顶头部检测（单次采纳）：有效位移 >5 触发；自顶向下逐行 SAD，
+    /// 首个动行为冻结区下界；行数 ≥10 且 <60% 帧高即采纳。
+    private func detectHeader(current: CGImage, previous: CGImage, shiftPx: Int) {
+        guard shiftPx > 5 else { return }
+        guard let frozenRows = detectHeaderValue(
+            current: current,
+            previous: previous,
+            rightMarginPx: rightMarginPx
         ) else {
-            log(
-                "preview-image-failed",
-                metadata: [
-                    "previewHeightPixels": previewHeightPixels,
-                    "totalHeightPoints": Self.diagnosticNumber(totalHeightPoints),
-                ]
-            )
+            // 整帧冻结（两帧无可区分内容）：留待下次再测。
             return
         }
 
-        log(
-            "preview-image-dispatch",
-            metadata: [
-                "imageSize": Self.diagnosticSize(image.size),
-                "pixelHeight": previewHeightPixels,
-            ]
-        )
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.onPreviewUpdated?(image)
+        headerDetectionDone = true
+        if frozenRows >= 10, frozenRows < (current.height * 6 / 10) {
+            headerHeightPx = frozenRows
+            log("header-detection", metadata: ["frozenRows": frozenRows, "committed": true])
+        } else {
+            // 冻结区过小（无头部）或占帧高六成以上（不可信）都按无头部处理。
+            headerHeightPx = 0
+            log("header-detection", metadata: ["frozenRows": frozenRows, "committed": false])
         }
     }
 
-    // MARK: - Final Stitch
+    /// 返回自顶向下的首个动行（整帧无动行返回 nil）。行内横向每 4 像素采样。
+    private nonisolated func detectHeaderValue(
+        current: CGImage,
+        previous: CGImage,
+        rightMarginPx: Int
+    ) -> Int? {
+        computeQueue.sync {
+            guard current.width == previous.width,
+                  current.height == previous.height,
+                  let curData = rawPixelData(current),
+                  let prevData = rawPixelData(previous)
+            else { return nil }
 
-    private func stitchAcceptedFrames() -> NSImage? {
-        guard let firstFrame = frames.first else { return nil }
+            let w = current.width
+            let h = current.height
+            let bytesPerRow = w * 4
+            let compareBytes = max(4, w - rightMarginPx) * 4
+            let colByteStep = 4 * 4 // 每 4 像素采样一列
 
-        let bitmapHeight = firstFrame.bitmap.height
-        let scale = CGFloat(bitmapHeight) / max(firstFrame.image.size.height, 1)
-
-        let totalHeightPixels = ScrollStitchMath.totalHeightPixels(
-            frameHeight: bitmapHeight,
-            steps: steps
-        )
-        let totalHeightPoints = CGFloat(totalHeightPixels) / scale
-
-        guard let stitchedBitmap = makeOutputBitmap(from: firstFrame.bitmap, totalHeightPixels: totalHeightPixels) else {
-            log(
-                "final-stitch-bitmap-failed",
-                metadata: ["totalHeightPixels": totalHeightPixels]
-            )
-            return firstFrame.image
+            for row in 0..<h {
+                var rowSAD: UInt64 = 0
+                var samples = 0
+                let rowOffset = row * bytesPerRow
+                for col in stride(from: 0, to: compareBytes, by: colByteStep) {
+                    guard rowOffset + col + 2 < h * bytesPerRow else { continue }
+                    rowSAD += UInt64(
+                        abs(Int(curData[rowOffset + col]) - Int(prevData[rowOffset + col]))
+                            + abs(Int(curData[rowOffset + col + 1]) - Int(prevData[rowOffset + col + 1]))
+                            + abs(Int(curData[rowOffset + col + 2]) - Int(prevData[rowOffset + col + 2]))
+                    )
+                    samples += 1
+                }
+                guard samples > 0 else { continue }
+                if rowSAD / UInt64(samples) > 8 {
+                    return row
+                }
+            }
+            return nil
         }
-        log(
-            "final-stitch-copy-begin",
-            metadata: [
-                "frameCount": frames.count,
-                "totalHeightPixels": totalHeightPixels,
-                "totalHeightPoints": Self.diagnosticNumber(totalHeightPoints),
-            ]
-        )
+    }
 
-        // Replay the step history: appends copy their non-overlapping rows
-        // forward, trims rewind the destination so later appends overwrite
-        // the tail the user scrolled back past.
-        var destinationRow = 0
-        var appendIndex = 0
+    /// CGImage 原始像素字节（BGRA）。
+    private nonisolated func rawPixelData(_ image: CGImage) -> UnsafePointer<UInt8>? {
+        guard let dataProvider = image.dataProvider,
+              let data = dataProvider.data
+        else { return nil }
+        return CFDataGetBytePtr(data)
+    }
 
-        for step in steps {
-            switch step {
-            case let .append(overlap):
-                let sourceStartRow = appendIndex == 0 ? 0 : overlap
-                let rowsToCopy = bitmapHeight - sourceStartRow
+    // MARK: - 增量合并
 
-                copyRows(
-                    from: frames[appendIndex].bitmap,
-                    sourceStartRow: sourceStartRow,
-                    rowCount: rowsToCopy,
-                    to: stitchedBitmap,
-                    destinationStartRow: destinationRow
+    /// 立即增量合并：旧图在上、新内容在下。检出吸顶头部时只贴底部新条，
+    /// 否则整帧绘制（自然覆盖重叠区）。新条高度为 `offsetPx` 行。
+    private func mergeNewContent(currentFrame: CGImage, offsetPx: Int) {
+        guard let existing = mergedImage else {
+            mergedImage = currentFrame
+            stitchedPixelSize = CGSize(width: currentFrame.width, height: currentFrame.height)
+            return
+        }
+
+        let width = currentFrame.width
+        let existingHeight = existing.height
+        let newRows = offsetPx
+        guard newRows > 0, newRows <= currentFrame.height else { return }
+
+        let stripsHeaderOnly = headerDetectionDone && headerHeightPx > 0
+        guard let merged = renderMerged(
+            existing: existing,
+            currentFrame: currentFrame,
+            width: width,
+            existingHeight: existingHeight,
+            newRows: newRows,
+            stripsHeaderOnly: stripsHeaderOnly
+        ) else { return }
+
+        mergedImage = merged
+        stitchedPixelSize = CGSize(width: width, height: existingHeight + newRows)
+    }
+
+    private nonisolated func renderMerged(
+        existing: CGImage,
+        currentFrame: CGImage,
+        width: Int,
+        existingHeight: Int,
+        newRows: Int,
+        stripsHeaderOnly: Bool
+    ) -> CGImage? {
+        computeQueue.sync {
+            let totalHeight = existingHeight + newRows
+            let colorSpace = existing.colorSpace
+                ?? CGColorSpace(name: CGColorSpace.sRGB)
+                ?? CGColorSpaceCreateDeviceRGB()
+            let bitmapInfo = CGImageAlphaInfo.premultipliedFirst.rawValue
+                | CGBitmapInfo.byteOrder32Little.rawValue
+
+            guard let context = CGContext(
+                data: nil,
+                width: width,
+                height: totalHeight,
+                bitsPerComponent: 8,
+                bytesPerRow: width * 4,
+                space: colorSpace,
+                bitmapInfo: bitmapInfo
+            ) else { return nil }
+
+            // CGContext 原点在左下：旧图画在高位（顶部），新内容在低位（底部）。
+            context.draw(existing, in: CGRect(x: 0, y: newRows, width: width, height: existingHeight))
+
+            if stripsHeaderOnly {
+                // 有吸顶头部：只把新帧底部新行贴入，头部区不重复拼接。
+                let stripY = currentFrame.height - newRows
+                if let strip = currentFrame.cropping(
+                    to: CGRect(x: 0, y: stripY, width: width, height: newRows)
+                ) {
+                    context.draw(strip, in: CGRect(x: 0, y: 0, width: width, height: newRows))
+                }
+            } else {
+                context.draw(
+                    currentFrame,
+                    in: CGRect(x: 0, y: 0, width: width, height: currentFrame.height)
                 )
-
-                destinationRow += rowsToCopy
-                appendIndex += 1
-
-            case let .trimBottom(rows):
-                destinationRow -= rows
             }
-        }
 
-        let image = stitchedBitmap.makeImage(
-            pointSize: NSSize(width: firstFrame.image.size.width, height: totalHeightPoints),
-            pixelHeight: totalHeightPixels
+            return context.makeImage()
+        }
+    }
+
+    // MARK: - 预览
+
+    private func emitPreview() {
+        guard let mergedImage else { return }
+        let ptSize = NSSize(
+            width: CGFloat(mergedImage.width) / backingScale,
+            height: CGFloat(mergedImage.height) / backingScale
         )
-        log(
-            "final-stitch-image",
-            metadata: [
-                "result": image.map { Self.diagnosticSize($0.size) } ?? "nil",
-                "destinationRow": destinationRow,
-            ]
-        )
-        return image
+        onPreviewUpdated?(NSImage(cgImage: mergedImage, size: ptSize))
     }
 
-    // MARK: - Shift Estimation
+    // MARK: - 队列桥与日志
 
-    /// Frame-to-frame shift classification consumed by the capture loop.
-    private enum FrameShift {
-        /// Fresh content revealed at the bottom; `newContentPx` > 0.
-        case forward(newContentPx: Int)
-        /// Registration failed or produced no measurable offset.
-        case none
-        /// Content scrolled back up; `rows` > 0 rows should be trimmed.
-        case reverse(rows: Int)
-    }
-
-    /// Registers the candidate frame against the reference frame after
-    /// cropping scrollbar / sticky-header regions, classifying the shift.
-    private func estimateShift(
-        previous: BitmapData,
-        current: BitmapData,
-        expectedNewContentPixels: Int?
-    ) -> FrameShift {
-        let height = min(previous.height, current.height)
-        guard height > 0 else {
-            log("overlap-empty")
-            return .none
-        }
-
-        if !scrollbarDetected {
-            detectScrollbar(current: current, previous: previous)
-        }
-
-        guard let previousCG = previous.makeCGImage(pixelHeight: previous.height),
-              let currentCG = current.makeCGImage(pixelHeight: current.height) else {
-            log("overlap-cgimage-failed")
-            return .none
-        }
-
-        let commonWidth = min(currentCG.width, previousCG.width)
-        let commonHeight = min(currentCG.height, previousCG.height)
-        let cropWidth = max(0, commonWidth - scrollbarWidthPx)
-        let cropY = stickyHeaderDetectionDone
-            ? min(stickyHeaderPx, commonHeight / 5)
-            : 0
-        let cropHeight = commonHeight - cropY
-
-        let visionPrevious: CGImage
-        let visionCurrent: CGImage
-        if cropWidth >= 50 && cropHeight >= 50 && (scrollbarWidthPx > 0 || cropY > 0) {
-            let cropRect = CGRect(x: 0, y: cropY, width: cropWidth, height: cropHeight)
-            visionPrevious = previousCG.cropping(to: cropRect) ?? previousCG
-            visionCurrent = currentCG.cropping(to: cropRect) ?? currentCG
-        } else {
-            visionPrevious = previousCG
-            visionCurrent = currentCG
-        }
-
-        var visionMetadata: [String: Any] = [
-            "commonWidth": commonWidth,
-            "commonHeight": commonHeight,
-            "cropWidth": cropWidth,
-            "cropY": cropY,
-            "cropHeight": cropHeight,
-            "scrollbarWidthPx": scrollbarWidthPx,
-            "stickyHeaderPx": stickyHeaderPx,
-        ]
-        // Diagnostic only (mirrors CapCap): not used to bias Vision alignment.
-        if let expectedNewContentPixels {
-            visionMetadata["expectedNewContentPixels"] = expectedNewContentPixels
-        }
-        log("vision-registration-begin", metadata: visionMetadata)
-
-        guard let estimate = offsetEstimator.estimate(current: visionCurrent, previous: visionPrevious) else {
-            log("vision-registration-no-result", metadata: visionMetadata)
-            return .none
-        }
-
-        let translationY = estimate.translationY
-        visionMetadata["newContentPx"] = translationY
-        visionMetadata["source"] = estimate.source.diagnosticName
-
-        if translationY > 5 && !stickyHeaderDetectionDone {
-            detectStickyHeader(current: current, previous: previous)
-            visionMetadata["stickyHeaderAfterDetection"] = stickyHeaderPx
-            visionMetadata["stickyHeaderDetectionDone"] = stickyHeaderDetectionDone
-        }
-
-        if translationY > 0 {
-            visionMetadata["overlap"] = ScrollStitchMath.clampOverlap(
-                height - translationY,
-                height: height
-            )
-        }
-        log("vision-registration-end", metadata: visionMetadata)
-
-        if translationY > 0 {
-            return .forward(newContentPx: translationY)
-        }
-        if translationY < 0 {
-            return .reverse(rows: -translationY)
-        }
-        return .none
-    }
-
-    // MARK: - Sticky element detection
-
-    private func detectScrollbar(current: BitmapData, previous: BitmapData) {
-        defer { scrollbarDetected = true }
-
-        let width = min(current.width, previous.width)
-        let height = min(current.height, previous.height)
-        guard width > 80, height > 40 else { return }
-
-        let maxScan = min(50, width / 8)
-        let sampleStart = height / 5
-        let sampleEnd = (height * 4) / 5
-        let sampleStep = max(1, (sampleEnd - sampleStart) / 30)
-
-        var detectedWidth = 0
-        var sawQuietAfterMoving = false
-
-        for offset in 0..<maxScan {
-            let column = width - 1 - offset
-            var totalDiff = 0
-            var samples = 0
-
-            var row = sampleStart
-            while row < sampleEnd {
-                let lhs = current.pixel(x: column, y: row)
-                let rhs = previous.pixel(x: column, y: row)
-                totalDiff +=
-                    abs(Int(lhs.r) - Int(rhs.r)) +
-                    abs(Int(lhs.g) - Int(rhs.g)) +
-                    abs(Int(lhs.b) - Int(rhs.b))
-                samples += 1
-                row += sampleStep
-            }
-
-            guard samples > 0 else { continue }
-            let avg = totalDiff / samples
-
-            if avg > 8 {
-                detectedWidth = offset + 1
-            } else if detectedWidth > 0 {
-                sawQuietAfterMoving = true
-                break
+    /// 把重计算派发到串行队列（TIFF/Vision/合并/像素检测），返回结果值。
+    private nonisolated func computeOnQueue<T: Sendable>(
+        _ work: @escaping @Sendable () -> T
+    ) async -> T {
+        await withCheckedContinuation { continuation in
+            computeQueue.async {
+                continuation.resume(returning: work())
             }
         }
-
-        if sawQuietAfterMoving && detectedWidth >= 3 && detectedWidth <= 40 {
-            scrollbarWidthPx = detectedWidth + 4
-        }
-        log(
-            "scrollbar-detection",
-            metadata: [
-                "detectedWidth": detectedWidth,
-                "committedWidth": scrollbarWidthPx,
-                "sawQuietAfterMoving": sawQuietAfterMoving,
-            ]
-        )
-    }
-
-    private func detectStickyHeader(current: BitmapData, previous: BitmapData) {
-        let width = min(current.width, previous.width)
-        let height = min(current.height, previous.height)
-        guard width > 80, height > 40 else {
-            stickyHeaderDetectionDone = true
-            log(
-                "sticky-header-detection-skipped",
-                metadata: [
-                    "width": width,
-                    "height": height,
-                ]
-            )
-            return
-        }
-
-        let scanWidth = max(40, width - scrollbarWidthPx)
-        let columnStart = width / 10
-        let columnEnd = min(scanWidth - 1, (scanWidth * 9) / 10)
-        let columnStep = max(1, (columnEnd - columnStart) / 20)
-
-        var firstMovingRow = -1
-        for row in 0..<height {
-            var totalDiff = 0
-            var samples = 0
-
-            var column = columnStart
-            while column <= columnEnd {
-                let lhs = current.pixel(x: column, y: row)
-                let rhs = previous.pixel(x: column, y: row)
-                totalDiff +=
-                    abs(Int(lhs.r) - Int(rhs.r)) +
-                    abs(Int(lhs.g) - Int(rhs.g)) +
-                    abs(Int(lhs.b) - Int(rhs.b))
-                samples += 1
-                column += columnStep
-            }
-
-            guard samples > 0 else { continue }
-            if totalDiff / samples > 8 {
-                firstMovingRow = row
-                break
-            }
-        }
-
-        guard firstMovingRow >= 0 else {
-            log("sticky-header-detection-frozen-frame")
-            return
-        }
-
-        let frozenRows = firstMovingRow
-        let maxPlausibleHeader = (height * 6) / 10
-
-        stickyHeaderSamplesTaken += 1
-
-        if frozenRows < 10 {
-            stickyHeaderPx = 0
-            stickyHeaderDetectionDone = true
-            log(
-                "sticky-header-detection-none",
-                metadata: ["frozenRows": frozenRows]
-            )
-            return
-        }
-
-        if frozenRows > maxPlausibleHeader {
-            stickyHeaderPx = 0
-            stickyHeaderDetectionDone = true
-            log(
-                "sticky-header-detection-implausible",
-                metadata: [
-                    "frozenRows": frozenRows,
-                    "maxPlausibleHeader": maxPlausibleHeader,
-                ]
-            )
-            return
-        }
-
-        if stickyHeaderSamplesTaken == 1 {
-            stickyHeaderPx = frozenRows
-        } else if abs(frozenRows - stickyHeaderPx) <= 5 {
-            stickyHeaderPx = min(stickyHeaderPx, frozenRows)
-        } else {
-            stickyHeaderPx = 0
-            stickyHeaderDetectionDone = true
-            log(
-                "sticky-header-detection-unstable",
-                metadata: [
-                    "frozenRows": frozenRows,
-                    "sampleCount": stickyHeaderSamplesTaken,
-                ]
-            )
-            return
-        }
-
-        if stickyHeaderSamplesTaken >= 2 {
-            stickyHeaderDetectionDone = true
-        }
-        log(
-            "sticky-header-detection-sample",
-            metadata: [
-                "frozenRows": frozenRows,
-                "stickyHeaderPx": stickyHeaderPx,
-                "sampleCount": stickyHeaderSamplesTaken,
-                "done": stickyHeaderDetectionDone,
-            ]
-        )
-    }
-
-    // MARK: - Image Helpers
-
-    private func logNoNewContent(
-        reason: String,
-        attempt: Int,
-        metadata: [String: Any] = [:]
-    ) {
-        consecutiveNoNewContentCount += 1
-        guard consecutiveNoNewContentCount == 1 || consecutiveNoNewContentCount.isMultiple(of: 5) else {
-            return
-        }
-
-        var fields = metadata
-        fields["attempt"] = attempt
-        fields["reason"] = reason
-        fields["consecutiveNoNewContent"] = consecutiveNoNewContentCount
-        log("capture-frame-no-new-content", metadata: fields)
     }
 
     private func log(_ event: String, metadata: [String: Any] = [:]) {
         var fields = metadata
         fields["session"] = diagnosticID
-        fields["frames"] = frames.count
-        fields["steps"] = steps.count
-        fields["attempts"] = captureAttemptCount
-        fields["previewHeightPixels"] = previewHeightPixels
+        fields["strips"] = stripCount
         let summary = fields
             .map { "\($0.key)=\($0.value)" }
             .sorted()
             .joined(separator: " ")
-        Self.logger.debug("scroll-stitch \(event, privacy: .public) \(summary, privacy: .public)")
-    }
-
-    private static func diagnosticRect(_ rect: CGRect) -> String {
-        "x=\(diagnosticNumber(rect.origin.x)) y=\(diagnosticNumber(rect.origin.y)) w=\(diagnosticNumber(rect.width)) h=\(diagnosticNumber(rect.height))"
-    }
-
-    private static func diagnosticSize(_ size: NSSize) -> String {
-        "w=\(diagnosticNumber(size.width)) h=\(diagnosticNumber(size.height))"
-    }
-
-    private static func diagnosticBitmap(_ bitmap: BitmapData) -> String {
-        "w=\(bitmap.width) h=\(bitmap.height) bpr=\(bitmap.bytesPerRow)"
-    }
-
-    private static func diagnosticNumber(_ value: CGFloat) -> String {
-        String(format: "%.1f", Double(value))
-    }
-
-    private func imagesAreNearlyIdentical(_ lhs: BitmapData, _ rhs: BitmapData) -> Bool {
-        guard lhs.width == rhs.width, lhs.height == rhs.height else {
-            return false
-        }
-
-        let numCols = min(32, max(16, lhs.width / 20))
-        let numRows = min(32, max(16, lhs.height / 20))
-        let sampleCols = sampledColumns(width: lhs.width, count: numCols)
-        let sampleRows = sampledRows(height: lhs.height, count: numRows)
-
-        var diff = 0
-        var comparisons = 0
-
-        for row in sampleRows {
-            for col in sampleCols {
-                diff += pixelDiff(lhs.pixel(x: col, y: row), rhs.pixel(x: col, y: row))
-                comparisons += 1
-            }
-        }
-
-        guard comparisons > 0 else { return false }
-        return diff / comparisons < 3
-    }
-
-    private func sampledColumns(width: Int, count: Int) -> [Int] {
-        guard width > 0, count > 0 else { return [] }
-
-        let inset = min(max(4, width / 12), max(4, width / 4))
-        let lowerBound = min(width - 1, inset)
-        let upperBound = max(lowerBound, width - inset - 1)
-        let span = max(1, upperBound - lowerBound + 1)
-
-        var result: [Int] = []
-        result.reserveCapacity(count)
-
-        for index in 0..<count {
-            let column = lowerBound + min(span - 1, span * (index * 2 + 1) / max(1, count * 2))
-            if result.last != column {
-                result.append(column)
-            }
-        }
-
-        return result
-    }
-
-    private func sampledRows(height: Int, count: Int) -> [Int] {
-        guard height > 0, count > 0 else { return [] }
-
-        var rows: [Int] = []
-        rows.reserveCapacity(count)
-
-        for index in 0..<count {
-            let row = min(height - 1, height * (index * 2 + 1) / max(1, count * 2))
-            if rows.last != row {
-                rows.append(row)
-            }
-        }
-
-        return rows
-    }
-
-    private func pixelDiff(_ lhs: (r: UInt8, g: UInt8, b: UInt8), _ rhs: (r: UInt8, g: UInt8, b: UInt8)) -> Int {
-        abs(Int(lhs.r) - Int(rhs.r)) +
-        abs(Int(lhs.g) - Int(rhs.g)) +
-        abs(Int(lhs.b) - Int(rhs.b))
-    }
-
-    private func bitmapData(from image: NSImage) -> BitmapData? {
-        guard let rep = image.bitmapImageRepPreservingBacking() else { return nil }
-        return BitmapData(rep: rep)
-    }
-
-    private func makeOutputBitmap(from source: BitmapData, totalHeightPixels: Int) -> BitmapData? {
-        guard let rep = NSBitmapImageRep(
-            bitmapDataPlanes: nil,
-            pixelsWide: source.width,
-            pixelsHigh: totalHeightPixels,
-            bitsPerSample: source.rep.bitsPerSample,
-            samplesPerPixel: source.rep.samplesPerPixel,
-            hasAlpha: source.rep.hasAlpha,
-            isPlanar: false,
-            colorSpaceName: source.rep.colorSpaceName,
-            bitmapFormat: source.rep.bitmapFormat,
-            bytesPerRow: 0,
-            bitsPerPixel: 0
-        ) else {
-            return nil
-        }
-
-        return BitmapData(rep: rep, format: source.imageFormat)
-    }
-
-    private func copyRows(
-        from source: BitmapData,
-        sourceStartRow: Int,
-        rowCount: Int,
-        to destination: BitmapData,
-        destinationStartRow: Int
-    ) {
-        guard rowCount > 0 else { return }
-
-        let bytesPerRow = min(source.width * source.bytesPerPixelValue, min(source.bytesPerRow, destination.bytesPerRow))
-
-        for rowOffset in 0..<rowCount {
-            let sourceOffset = (sourceStartRow + rowOffset) * source.bytesPerRow
-            let destinationOffset = (destinationStartRow + rowOffset) * destination.bytesPerRow
-            memcpy(
-                destination.data.advanced(by: destinationOffset),
-                source.data.advanced(by: sourceOffset),
-                bytesPerRow
-            )
-        }
-    }
-
-    private final class BitmapData {
-        let rep: NSBitmapImageRep
-        let data: UnsafeMutablePointer<UInt8>
-        let bytesPerRow: Int
-        let width: Int
-        let height: Int
-        let imageFormat: ImageFormat
-        private let bytesPerPixel: Int
-
-        init?(rep: NSBitmapImageRep, format: ImageFormat? = nil) {
-            guard let data = rep.bitmapData else { return nil }
-
-            let resolvedFormat: ImageFormat
-            if let format {
-                resolvedFormat = format
-            } else {
-                let cgImage = rep.cgImage
-                guard
-                    let cgImage,
-                    let colorSpace = cgImage.colorSpace
-                else {
-                    return nil
-                }
-
-                resolvedFormat = ImageFormat(
-                    bitsPerComponent: cgImage.bitsPerComponent,
-                    bitsPerPixel: cgImage.bitsPerPixel,
-                    bitmapInfo: cgImage.bitmapInfo,
-                    colorSpace: colorSpace
-                )
-            }
-
-            self.rep = rep
-            self.data = data
-            self.bytesPerRow = rep.bytesPerRow
-            self.width = rep.pixelsWide
-            self.height = rep.pixelsHigh
-            self.imageFormat = resolvedFormat
-            self.bytesPerPixel = max(1, rep.bitsPerPixel / 8)
-        }
-
-        func pixel(x: Int, y: Int) -> (r: UInt8, g: UInt8, b: UInt8) {
-            guard x >= 0, x < width, y >= 0, y < height else {
-                return (0, 0, 0)
-            }
-
-            let offset = y * bytesPerRow + x * bytesPerPixel
-            return (data[offset], data[offset + 1], data[offset + 2])
-        }
-
-        func makeImage(pointSize: NSSize, pixelHeight: Int) -> NSImage? {
-            guard let cgImage = makeCGImage(pixelHeight: pixelHeight) else { return nil }
-            return NSImage(cgImage: cgImage, size: pointSize)
-        }
-
-        func makeCGImage(pixelHeight: Int) -> CGImage? {
-            guard pixelHeight > 0, pixelHeight <= height else { return nil }
-
-            let byteCount = pixelHeight * bytesPerRow
-            let buffer = UnsafeBufferPointer(start: data, count: byteCount)
-            let imageData = Data(buffer: buffer)
-
-            guard let provider = CGDataProvider(data: imageData as CFData) else { return nil }
-            return CGImage(
-                width: width,
-                height: pixelHeight,
-                bitsPerComponent: imageFormat.bitsPerComponent,
-                bitsPerPixel: imageFormat.bitsPerPixel,
-                bytesPerRow: bytesPerRow,
-                space: imageFormat.colorSpace,
-                bitmapInfo: imageFormat.bitmapInfo,
-                provider: provider,
-                decode: nil,
-                shouldInterpolate: false,
-                intent: .defaultIntent
-            )
-        }
-
-        var bytesPerPixelValue: Int { bytesPerPixel }
-    }
-}
-
-// MARK: - NSImage bitmap helper
-
-private extension NSImage {
-    /// Highest-resolution bitmap rep, or a freshly drawn one.
-    func bitmapImageRepPreservingBacking() -> NSBitmapImageRep? {
-        let highestRes = representations
-            .compactMap { $0 as? NSBitmapImageRep }
-            .filter { $0.pixelsWide > 0 && $0.pixelsHigh > 0 }
-            .max { lhs, rhs in
-                (lhs.pixelsWide * lhs.pixelsHigh) < (rhs.pixelsWide * rhs.pixelsHigh)
-            }
-        if let highestRes {
-            return highestRes
-        }
-
-        guard let cgImage = cgImagePreservingBacking() else { return nil }
-        return NSBitmapImageRep(cgImage: cgImage)
+        Self.logger.debug("scroll-capture \(event, privacy: .public) \(summary, privacy: .public)")
     }
 }

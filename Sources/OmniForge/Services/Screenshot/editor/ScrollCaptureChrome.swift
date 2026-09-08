@@ -1,302 +1,320 @@
 import AppKit
 
-// MARK: - Hint
+// MARK: - Scroll capture HUD
 
-/// Persistent "press any key to finish" hint shown centered near the top of
-/// the selection during scroll capture. Own window so ScreenCaptureKit can
-/// exclude it from stitched frames.
-final class ScrollCaptureHintWindow: NSPanel {
-    private let label = NSTextField(labelWithString: "")
-    private let horizontalPadding: CGFloat = 14
-    private let verticalPadding: CGFloat = 8
-    /// Gap between the selection's top edge and the hint pill.
-    private let topInset: CGFloat = 12
+/// 长截图会话 HUD：信息条（标题 · 当前拼接尺寸）+ 自动滚动切换 + 停止按钮。
+/// 独立 nonactivatingPanel 接收鼠标（宿主遮罩 ignoresMouseEvents），点击不夺焦。
+final class ScrollCaptureHUDView: NSView {
+    private let infoLabel = NSTextField(labelWithString: "")
+    private let autoScrollButton = NSButton()
+    private let stopButton = NSButton()
+    private let baseTitle: String
+    private let autoTitle: String
+    private let scrollingTitle: String
+    private var isAutoScrolling = false
 
-    init(text: String) {
-        super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 10, height: 10),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
+    var onStop: (() -> Void)?
+    var onToggleAutoScroll: (() -> Void)?
+
+    init(title: String, autoTitle: String, scrollingTitle: String, stopTitle: String) {
+        self.baseTitle = title
+        self.autoTitle = autoTitle
+        self.scrollingTitle = scrollingTitle
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = 8
+        layer?.backgroundColor = EditorHUD.toolbarBackground().cgColor
+
+        infoLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        infoLabel.textColor = .labelColor
+        infoLabel.isEditable = false
+        infoLabel.isBordered = false
+        infoLabel.drawsBackground = false
+        infoLabel.lineBreakMode = .byTruncatingTail
+        infoLabel.stringValue = title
+        addSubview(infoLabel)
+
+        autoScrollButton.title = autoTitle
+        autoScrollButton.bezelStyle = .recessed
+        autoScrollButton.isBordered = false
+        autoScrollButton.wantsLayer = true
+        autoScrollButton.layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.85).cgColor
+        autoScrollButton.layer?.cornerRadius = 12
+        autoScrollButton.contentTintColor = .white
+        autoScrollButton.font = .systemFont(ofSize: 12, weight: .semibold)
+        autoScrollButton.target = self
+        autoScrollButton.action = #selector(autoScrollClicked)
+        addSubview(autoScrollButton)
+
+        stopButton.title = stopTitle
+        stopButton.bezelStyle = .recessed
+        stopButton.isBordered = false
+        stopButton.wantsLayer = true
+        stopButton.layer?.backgroundColor = NSColor.systemRed.withAlphaComponent(0.85).cgColor
+        stopButton.layer?.cornerRadius = 12
+        stopButton.contentTintColor = .white
+        stopButton.font = .systemFont(ofSize: 12, weight: .semibold)
+        stopButton.target = self
+        stopButton.action = #selector(stopClicked)
+        addSubview(stopButton)
+
+        layoutSubviews()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    /// 更新进度信息与自动滚动按钮状态。
+    func update(
+        pixelSize: CGSize,
+        backingScale: CGFloat,
+        autoScrolling: Bool
+    ) {
+        let pointWidth = Int((pixelSize.width / max(1, backingScale)).rounded())
+        let pointHeight = Int((pixelSize.height / max(1, backingScale)).rounded())
+        if pointWidth > 0, pointHeight > 0 {
+            infoLabel.stringValue = "\(baseTitle) · \(pointWidth)×\(pointHeight)"
+        }
+
+        isAutoScrolling = autoScrolling
+        if autoScrolling {
+            autoScrollButton.title = scrollingTitle
+            autoScrollButton.layer?.backgroundColor = NSColor.systemOrange.withAlphaComponent(0.85).cgColor
+        } else {
+            autoScrollButton.title = autoTitle
+            autoScrollButton.layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.85).cgColor
+        }
+        infoLabel.sizeToFit()
+        layoutSubviews()
+    }
+
+    func layoutSubviews() {
+        let pad: CGFloat = 8
+        let stopButtonWidth: CGFloat = 56
+        let autoButtonWidth: CGFloat = isAutoScrolling ? 90 : 86
+        let buttonHeight: CGFloat = 24
+        let barHeight: CGFloat = 36
+
+        let infoWidth = infoLabel.frame.width
+        let totalWidth = pad + infoWidth + pad + autoButtonWidth + pad + stopButtonWidth + pad
+
+        frame.size = NSSize(width: totalWidth, height: barHeight)
+
+        let infoHeight = infoLabel.frame.height
+        infoLabel.frame.origin = NSPoint(x: pad, y: (barHeight - infoHeight) / 2)
+
+        autoScrollButton.frame = NSRect(
+            x: pad + infoWidth + pad,
+            y: (barHeight - buttonHeight) / 2,
+            width: autoButtonWidth,
+            height: buttonHeight
+        )
+        stopButton.frame = NSRect(
+            x: totalWidth - pad - stopButtonWidth,
+            y: (barHeight - buttonHeight) / 2,
+            width: stopButtonWidth,
+            height: buttonHeight
         )
 
-        level = .screenSaver + 3
+        invalidateIntrinsicContentSize()
+    }
+
+    @objc private func autoScrollClicked() {
+        onToggleAutoScroll?()
+    }
+
+    @objc private func stopClicked() {
+        onStop?()
+    }
+}
+
+/// 承载长截图 HUD 的独立面板。高于编辑器遮罩与预览面板；不可成为 key
+/// （点击按钮不夺走底层页面的焦点）。
+final class ScrollCaptureHUDWindow: NSPanel {
+    let hudView: ScrollCaptureHUDView
+
+    init(
+        title: String,
+        autoTitle: String,
+        scrollingTitle: String,
+        stopTitle: String,
+        onStop: @escaping () -> Void,
+        onToggleAutoScroll: @escaping () -> Void
+    ) {
+        hudView = ScrollCaptureHUDView(
+            title: title,
+            autoTitle: autoTitle,
+            scrollingTitle: scrollingTitle,
+            stopTitle: stopTitle
+        )
+        hudView.onStop = onStop
+        hudView.onToggleAutoScroll = onToggleAutoScroll
+
+        super.init(
+            contentRect: NSRect(x: 0, y: 0, width: 300, height: 36),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: true
+        )
+
+        level = .screenSaver + 4
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
-        ignoresMouseEvents = true
+        isMovableByWindowBackground = false
         hidesOnDeactivate = false
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
-        let container = NSView(frame: .zero)
-        container.wantsLayer = true
-        container.layer?.backgroundColor = EditorHUD.toolbarBackground().cgColor
-        container.layer?.cornerRadius = 8
-
-        label.stringValue = text
-        label.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-        label.textColor = .labelColor
-        label.alignment = .center
-        container.addSubview(label)
+        let container = NSView()
+        container.addSubview(hudView)
         contentView = container
     }
 
-    /// Size to the text and place top-center inside `selectionRect`
-    /// (AppKit screen coordinates).
-    func present(in selectionRect: NSRect) {
-        label.sizeToFit()
-        let textSize = label.frame.size
-        let width = textSize.width + horizontalPadding * 2
-        let height = textSize.height + verticalPadding * 2
+    override var canBecomeKey: Bool { false }
 
-        contentView?.frame = NSRect(x: 0, y: 0, width: width, height: height)
-        contentView?.layer?.backgroundColor = EditorHUD.toolbarBackground().cgColor
-        label.setFrameOrigin(NSPoint(x: horizontalPadding, y: verticalPadding))
+    /// 摆到选区下方居中；下方放不下移到选区上方；水平方向夹在屏内。
+    func position(relativeTo selectionScreenRect: NSRect, on screen: NSScreen) {
+        hudView.layoutSubviews()
+        let hudSize = hudView.frame.size
+        let totalWidth = max(hudSize.width, frame.width)
 
-        let origin = NSPoint(
-            x: round(selectionRect.midX - width / 2),
-            y: round(selectionRect.maxY - topInset - height)
-        )
-        setFrame(NSRect(origin: origin, size: NSSize(width: width, height: height)), display: true)
+        var barX = selectionScreenRect.midX - totalWidth / 2
+        var barY = selectionScreenRect.minY - hudSize.height - 6
+
+        let visible = screen.visibleFrame
+        if barY < visible.minY + 4 {
+            barY = selectionScreenRect.maxY + 6
+        }
+        barX = max(visible.minX + 4, min(barX, visible.maxX - totalWidth - 4))
+
+        setFrame(NSRect(x: barX, y: barY, width: totalWidth, height: hudSize.height), display: true)
+        hudView.frame.origin = NSPoint(x: (totalWidth - hudSize.width) / 2, y: 0)
+        contentView?.frame = NSRect(origin: .zero, size: NSSize(width: totalWidth, height: hudSize.height))
+
         orderFrontRegardless()
     }
 
-    func dismiss() {
-        orderOut(nil)
-        contentView = nil
-    }
-}
-
-// MARK: - Stop control
-
-/// Floating stop button anchored to the scroll-capture toolbar button frame.
-final class ScrollCaptureControlWindow: NSPanel {
-    init(buttonFrame: NSRect, onTap: @escaping () -> Void) {
-        let padding: CGFloat = 6
-        let windowRect = NSRect(
-            x: buttonFrame.minX - padding,
-            y: buttonFrame.minY - padding,
-            width: buttonFrame.width + padding * 2,
-            height: buttonFrame.height + padding * 2
-        )
-
-        super.init(
-            contentRect: windowRect,
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-
-        level = .screenSaver + 4
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = true
-        ignoresMouseEvents = false
-        hidesOnDeactivate = false
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-
-        contentView = ScrollCaptureControlView(
-            frame: NSRect(origin: .zero, size: windowRect.size),
-            onTap: onTap
-        )
+    func update(pixelSize: CGSize, backingScale: CGFloat, autoScrolling: Bool) {
+        hudView.update(pixelSize: pixelSize, backingScale: backingScale, autoScrolling: autoScrolling)
     }
 
     func dismiss() {
         orderOut(nil)
         contentView = nil
-    }
-}
-
-private final class ScrollCaptureControlView: NSView {
-    private let onTap: () -> Void
-
-    init(frame: NSRect, onTap: @escaping () -> Void) {
-        self.onTap = onTap
-        super.init(frame: frame)
-        setup()
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
-    private func setup() {
-        let button = AnnotationToolButton(
-            frame: bounds.insetBy(dx: 6, dy: 6),
-            symbolName: "arrow.up.and.down.text.horizontal",
-            normalColor: .labelColor,
-            selectedColor: EditorHUD.accentGreen
-        )
-        button.isSelected = true
-        button.target = self
-        button.action = #selector(buttonTapped)
-        addSubview(button)
-    }
-
-    @objc private func buttonTapped() {
-        onTap()
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 8, yRadius: 8)
-        EditorHUD.toolbarBackground().setFill()
-        path.fill()
-    }
-}
-
-// MARK: - Crop confirm
-
-/// Floating confirm button shown during crop mode.
-final class ScrollCropControlWindow: NSPanel {
-    private static let windowSize = NSSize(width: 56, height: 44)
-
-    init(onConfirm: @escaping () -> Void, toolTip: String? = nil) {
-        super.init(
-            contentRect: NSRect(origin: .zero, size: Self.windowSize),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-
-        level = .screenSaver + 4
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = true
-        ignoresMouseEvents = false
-        hidesOnDeactivate = false
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-
-        contentView = ScrollCropControlView(
-            frame: NSRect(origin: .zero, size: Self.windowSize),
-            onConfirm: onConfirm,
-            toolTip: toolTip
-        )
-    }
-
-    func positionAtBottom(of screen: NSScreen) {
-        let size = frame.size
-        let visible = screen.visibleFrame
-        setFrameOrigin(NSPoint(
-            x: round(visible.midX - size.width / 2),
-            y: round(visible.minY + 36)
-        ))
-    }
-
-    func dismiss() {
-        orderOut(nil)
-        contentView = nil
-    }
-}
-
-private final class ScrollCropControlView: NSView {
-    private let onConfirm: () -> Void
-    private let confirmToolTip: String?
-
-    init(frame: NSRect, onConfirm: @escaping () -> Void, toolTip: String? = nil) {
-        self.onConfirm = onConfirm
-        self.confirmToolTip = toolTip
-        super.init(frame: frame)
-        setup()
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
-    private func setup() {
-        let button = AnnotationToolButton(
-            frame: bounds.insetBy(dx: 6, dy: 6),
-            symbolName: "checkmark",
-            normalColor: EditorHUD.accentGreen,
-            selectedColor: EditorHUD.accentGreen
-        )
-        button.target = self
-        button.action = #selector(confirmTapped)
-        if let confirmToolTip {
-            button.toolTip = confirmToolTip
-            button.hoverTip = confirmToolTip
-        }
-        addSubview(button)
-    }
-
-    @objc private func confirmTapped() {
-        onConfirm()
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 2), xRadius: 8, yRadius: 8)
-        EditorHUD.toolbarBackground().setFill()
-        path.fill()
     }
 }
 
 // MARK: - Side preview
 
-/// Side panel showing the incrementally stitched long-screenshot preview.
+/// 长截图侧边实时预览：固定 200pt 宽，出现在选区右侧（空间不足换左侧，
+/// 两侧都不足则不创建）；底边对齐选区底边、向上生长，贴屏顶按剩余高度收缩。
 final class ScrollPreviewWindow: NSPanel {
     private let imageView = NSImageView()
-    private let maxPreviewWidth: CGFloat = 120
-    private let maxPreviewHeight: CGFloat = 400
-    private let contentInset: CGFloat = 4
+    private let captureRect: NSRect
+    private let targetScreen: NSScreen
+    private let previewWidth: CGFloat = 200
+    private let margin: CGFloat = 12
+    private let minHeight: CGFloat = 100
+    /// 选区描边（2.5pt）居中于边缘，可见底线低于 minY 约 1.25pt。
+    private let selectionBorderOutset: CGFloat = 1.25
 
-    init() {
-        let initialRect = NSRect(
-            x: 0,
-            y: 0,
-            width: maxPreviewWidth + contentInset * 2,
-            height: maxPreviewHeight + contentInset * 2
+    private enum Side {
+        case left, right
+    }
+
+    private let side: Side
+
+    init?(captureRect: NSRect, screen: NSScreen) {
+        self.captureRect = captureRect
+        self.targetScreen = screen
+
+        let spaceLeft = captureRect.minX - screen.frame.minX
+        let spaceRight = screen.frame.maxX - captureRect.maxX
+        let needed = previewWidth + margin * 2
+
+        if spaceRight >= needed {
+            side = .right
+        } else if spaceLeft >= needed {
+            side = .left
+        } else {
+            return nil
+        }
+
+        let x: CGFloat
+        switch side {
+        case .right: x = captureRect.maxX + margin
+        case .left: x = captureRect.minX - margin - previewWidth
+        }
+        let frame = NSRect(
+            x: x,
+            y: captureRect.minY - selectionBorderOutset,
+            width: previewWidth,
+            height: minHeight
         )
+
         super.init(
-            contentRect: initialRect,
+            contentRect: frame,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
+
         level = .screenSaver + 3
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
         ignoresMouseEvents = true
+        isReleasedWhenClosed = false
         hidesOnDeactivate = false
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
-        let containerRect = NSRect(origin: .zero, size: initialRect.size)
-        let container = NSView(frame: containerRect)
+        // 纯图片 + 圆角容器，无附加 chrome。
+        let container = NSView(frame: NSRect(origin: .zero, size: frame.size))
         container.wantsLayer = true
+        container.layer?.cornerRadius = 6
+        container.layer?.masksToBounds = true
         container.layer?.backgroundColor = EditorHUD.toolbarBackground().cgColor
-        container.layer?.cornerRadius = 8
-        container.layer?.borderWidth = 0.5
-        container.layer?.borderColor = EditorHUD.separator().cgColor
         container.autoresizingMask = [.width, .height]
 
+        imageView.frame = container.bounds
+        imageView.autoresizingMask = [.width, .height]
         imageView.imageScaling = .scaleProportionallyUpOrDown
         imageView.imageAlignment = .alignTop
-        imageView.frame = containerRect.insetBy(dx: contentInset, dy: contentInset)
-        imageView.autoresizingMask = [.width, .height]
         container.addSubview(imageView)
-
         contentView = container
     }
 
-    func updatePreview(_ image: NSImage, anchorRect: NSRect) {
+    /// 用最新拼接图更新预览：底锚选区底边、按纵横比长高，触屏顶收缩。
+    func updatePreview(_ image: NSImage) {
         imageView.image = image
-        let windowW = maxPreviewWidth + contentInset * 2
-        let windowH = maxPreviewHeight + contentInset * 2
 
-        // Position to the right of selection, or left if no room.
-        let screenFrame = NSScreen.main?.visibleFrame ?? .zero
-        var x = anchorRect.maxX + 12
-        if x + windowW > screenFrame.maxX {
-            x = anchorRect.minX - windowW - 12
+        let visible = targetScreen.visibleFrame
+        let x: CGFloat
+        switch side {
+        case .right: x = captureRect.maxX + margin
+        case .left: x = captureRect.minX - margin - previewWidth
         }
-        // Vertically align to top of selection.
-        let y = anchorRect.maxY - windowH
 
-        setFrame(NSRect(x: x, y: y, width: windowW, height: windowH), display: true)
+        let anchorBottom = captureRect.minY - selectionBorderOutset
+        let ceilingY = visible.maxY - 20
+        let availableHeight = max(minHeight, ceilingY - anchorBottom)
+
+        let imageAspect = image.size.height / max(1, image.size.width)
+        let contentWidth = previewWidth - 8
+        let desiredHeight = contentWidth * imageAspect + 8
+
+        let panelHeight = min(desiredHeight, availableHeight)
+        let panelBottom = anchorBottom + panelHeight <= ceilingY
+            ? anchorBottom
+            : ceilingY - panelHeight
+
+        setFrame(
+            NSRect(x: x, y: panelBottom, width: previewWidth, height: panelHeight),
+            display: true
+        )
 
         if !isVisible {
             orderFrontRegardless()
@@ -313,8 +331,8 @@ final class ScrollPreviewWindow: NSPanel {
 // MARK: - Info toast
 
 /// Short-lived non-blocking status toast (success / guidance). Mirrors the
-/// hint pill styling so scroll-capture feedback stays consistent without a
-/// modal NSAlert.
+/// HUD styling so scroll-capture feedback stays consistent without a modal
+/// NSAlert.
 final class EditorInfoToastWindow: NSPanel {
     private let label = NSTextField(labelWithString: "")
     private let horizontalPadding: CGFloat = 16

@@ -1048,20 +1048,34 @@ struct Strings: Equatable {
     let tipRecord: String
     /// 长截图自动滚动模式。
     let scrollCaptureAutoScroll: String
-    /// 长截图手动滚动模式。
-    let scrollCaptureManualScroll: String
-    /// 自动滚动时提示（按任意键结束）。
-    let scrollCaptureHint: String
-    /// 手动滚动时提示。
-    let scrollCaptureManualHint: String
+    /// 长截图自动滚动进行中（HUD 按钮激活态）。
+    let scrollCaptureScrolling: String
+    /// 长截图 HUD 停止按钮。
+    let scrollCaptureStop: String
     /// 缺少辅助功能权限时的提示。
     let autoScrollPermissionNeeded: String
-    /// 进入长截图裁剪模式提示。
-    let cropLongScreenshotHint: String
-    /// 长截图合并完成提示。
-    let mergedLongScreenshot: String
-    /// 长截图裁剪确认按钮提示。
-    let tipScrollCropConfirm: String
+    /// 辅助功能权限引导弹窗标题。
+    let scrollCaptureAccessibilityTitle: String
+    /// 辅助功能权限引导弹窗正文。
+    let scrollCaptureAccessibilityBody: String
+    /// 权限引导「打开系统设置」按钮。
+    let scrollCaptureOpenSettings: String
+    /// 权限引导「取消」按钮。
+    let scrollCaptureCancel: String
+    /// 设置页长截图分区标题。
+    let screenshotScrollSection: String
+    /// 设置页自动滚动开关。
+    let screenshotScrollAutoScroll: String
+    /// 设置页自动滚动开关说明。
+    let screenshotScrollAutoScrollCaption: String
+    /// 设置页自动滚动速度。
+    let screenshotScrollSpeed: String
+    /// 设置页最大高度。
+    let screenshotScrollMaxHeight: String
+    /// 设置页固定元素检测开关。
+    let screenshotScrollFrozenDetection: String
+    /// 设置页固定元素检测开关说明。
+    let screenshotScrollFrozenDetectionCaption: String
     let annotationZoomIn: String
     let annotationZoomOut: String
     let annotationZoomFit: String

@@ -17,6 +17,10 @@ struct ScreenshotSettingsSection: View {
         RecordingOutputConfiguration.defaultDirectoryPath
     @AppStorage(UserDefaultsKeys.recordingSavePreference) private var recordingSavePreferenceRaw =
         RecordingOutputConfiguration.defaultSavePreference.rawValue
+    @AppStorage(UserDefaultsKeys.screenshotScrollAutoScrollEnabled) private var scrollAutoScrollEnabled = false
+    @AppStorage(UserDefaultsKeys.screenshotScrollAutoScrollSpeed) private var scrollAutoScrollSpeed = 3
+    @AppStorage(UserDefaultsKeys.screenshotScrollMaxHeight) private var scrollMaxHeight = 30_000
+    @AppStorage(UserDefaultsKeys.screenshotScrollFrozenDetection) private var scrollFrozenDetection = true
 
     private var strings: Strings { state.l10n.s }
 
@@ -48,6 +52,8 @@ struct ScreenshotSettingsSection: View {
             outputSection
                 .disabled(!enabled)
             recordingSection
+                .disabled(!enabled)
+            scrollCaptureSection
                 .disabled(!enabled)
             if let lastError = manager.lastError, !lastError.isEmpty {
                 Section {
@@ -130,6 +136,39 @@ struct ScreenshotSettingsSection: View {
                 InfoHintLabel(
                     strings.screenshotFileNamePrefixLabel,
                     hint: strings.screenshotFileNamePrefixCaption
+                )
+            }
+        }
+    }
+
+    /// 长截图（滚动截图）偏好：双模式开关、速度、高度上限、固定元素检测。
+    private var scrollCaptureSection: some View {
+        Section(strings.screenshotScrollSection) {
+            Toggle(isOn: $scrollAutoScrollEnabled) {
+                InfoHintLabel(
+                    strings.screenshotScrollAutoScroll,
+                    hint: strings.screenshotScrollAutoScrollCaption
+                )
+            }
+            Picker(strings.screenshotScrollSpeed, selection: $scrollAutoScrollSpeed) {
+                ForEach(1...4, id: \.self) { level in
+                    Text("\(level)").tag(level)
+                }
+            }
+            .frame(maxWidth: 240)
+            .onChange(of: scrollAutoScrollSpeed) { _, newValue in
+                scrollAutoScrollSpeed = min(4, max(1, newValue))
+            }
+            Stepper(
+                "\(strings.screenshotScrollMaxHeight)：\(scrollMaxHeight)",
+                value: $scrollMaxHeight,
+                in: 1_000...200_000,
+                step: 1_000
+            )
+            Toggle(isOn: $scrollFrozenDetection) {
+                InfoHintLabel(
+                    strings.screenshotScrollFrozenDetection,
+                    hint: strings.screenshotScrollFrozenDetectionCaption
                 )
             }
         }
