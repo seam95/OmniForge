@@ -11,6 +11,18 @@ enum WhatsNewReleaseCatalog {
     /// 历次版本的更新内容，新版本在前
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            version: "3.7",
+            entries: [
+                WhatsNewEntry(type: .added, text: "新增风扇监控与控制：实时转速、温度传感器与四档风扇曲线，支持手动调速"),
+                WhatsNewEntry(type: .added, text: "菜单栏新增风扇转速指标，散热状态随时可见"),
+                WhatsNewEntry(type: .changed, text: "温度传感器改为分组摘要展示，处理器等热点区域一目了然"),
+                WhatsNewEntry(type: .changed, text: "磁盘详情页迁移平面分区风格，读写速率更醒目"),
+                WhatsNewEntry(type: .changed, text: "菜单栏直指标精简，移除日期 / 磁盘 / 电源与 token 用量块"),
+                WhatsNewEntry(type: .fixed, text: "修复电池健康长期显示 100% 的口径失真"),
+                WhatsNewEntry(type: .fixed, text: "老配置自动并入新增面板指标，风扇卡对老用户可见"),
+            ]
+        ),
+        WhatsNewRelease(
             version: "3.6",
             entries: [
                 WhatsNewEntry(type: .changed, text: "唤醒页迁移平面分区风格，与全应用视觉统一"),
