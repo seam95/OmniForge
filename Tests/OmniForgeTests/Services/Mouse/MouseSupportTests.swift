@@ -120,12 +120,4 @@ final class MouseSupportTests: XCTestCase {
     func test_stepClampsToRange() {
         XCTAssertEqual(SmoothScrollSupport.sanitizedStep(500), SmoothScrollSupport.stepRange.upperBound)
     }
-
-    func test_naturalScrollingPreFlipsGlide() {
-        XCTAssertEqual(SmoothScrollSupport.postedDelta(18, naturalScrolling: true), -18)
-    }
-
-    func test_classicScrollingPostsGlideAsIs() {
-        XCTAssertEqual(SmoothScrollSupport.postedDelta(18, naturalScrolling: false), 18)
-    }
 }

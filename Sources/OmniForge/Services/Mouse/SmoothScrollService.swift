@@ -30,8 +30,6 @@ final class SmoothScrollService: ObservableObject {
     /// 启动或喂入滑行的滚轮事件的修饰符，在合成事件上回放，使 shift
     /// 或 option 滚动保持其含义。
     private var currentFlags: CGEventFlags = []
-    /// 系统自然滚动方向的符号修正，在滑行开始时采样。
-    private var postSign: Double = 1
     private let userDefaults: UserDefaults
     private let featureAvailable: () -> Bool
     private let permissionGranted: () -> Bool
@@ -181,9 +179,6 @@ final class SmoothScrollService: ObservableObject {
                                                             step: step,
                                                             current: remainingHorizontal)
         currentFlags = event.flags
-        if frameTimer == nil {
-            postSign = SmoothScrollSupport.postedDelta(1, naturalScrolling: Self.naturalScrollingOn())
-        }
         startGlideIfNeeded()
         // 刻度本身被吞掉；滑行回放其距离。
         return nil
@@ -224,19 +219,16 @@ final class SmoothScrollService: ObservableObject {
     }
 
     private func post(vertical: Double, horizontal: Double) {
+        // 滑行值即应用收到的值：合成连续像素事件派发时不被系统按
+        // 自然滚动翻转（2026-09-08 实测，见 SmoothScrollSupport 尾注）。
         guard let event = CGEvent(scrollWheelEvent2Source: nil,
                                   units: .pixel,
                                   wheelCount: 2,
-                                  wheel1: Int32((vertical * postSign).rounded()),
-                                  wheel2: Int32((horizontal * postSign).rounded()),
+                                  wheel1: Int32(vertical.rounded()),
+                                  wheel2: Int32(horizontal.rounded()),
                                   wheel3: 0) else { return }
         event.setIntegerValueField(.eventSourceUserData, value: Self.syntheticTag)
         event.flags = currentFlags
         event.post(tap: .cghidEventTap)
-    }
-
-    /// 用户的「自然滚动」系统偏好（macOS 默认：开启）。
-    private static func naturalScrollingOn() -> Bool {
-        (UserDefaults.standard.persistentDomain(forName: UserDefaults.globalDomain)?["com.apple.swipescrolldirection"] as? Bool) ?? true
     }
 }

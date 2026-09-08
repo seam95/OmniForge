@@ -46,10 +46,9 @@ enum SmoothScrollSupport {
         return min(max(value, stepRange.lowerBound), stepRange.upperBound)
     }
 
-    /// 系统只对连续像素事件（而非离散滚轮刻度）应用自然滚动方向
-    /// （实测两种事件均投递过），因此开启自然滚动时，滑行必须预先
-    /// 翻转 delta，回放才能保持滚轮方向。
-    static func postedDelta(_ frameDelta: Double, naturalScrolling: Bool) -> Double {
-        naturalScrolling ? -frameDelta : frameDelta
-    }
+    // 滑行回放不做自然滚动方向补偿：2026-09-08 在 macOS 15.7 实测，
+    // 本进程合成注入的连续像素滚轮事件（无手势相位）在派发时不被
+    // 系统按自然滚动翻转，post 的值即应用收到的值。旧实现按自然滚
+    // 动预翻转（postedDelta），会与滚动反转的代劳系数 (-1) 相乘抵消，
+    // 导致「反转 + 平滑滚动」双开时反转体感失效。
 }
