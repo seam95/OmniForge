@@ -14,8 +14,6 @@ struct MonitorFanDetailView: View {
     var fanPreferences: FanPreferences? = nil
 
     @Environment(\.colorScheme) private var colorScheme
-    /// Helper 注册状态镜像 — 安装成功后翻转触发控制区重绘
-    @State private var helperRegistered = false
     /// 已展开的热区（默认全部收起，摘要形态优先）
     @State private var expandedZones: Set<ThermalZone> = []
 
@@ -42,7 +40,9 @@ struct MonitorFanDetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
-            helperRegistered = FanHelperInstaller.isRegistered()
+            // 后台刷新注册状态缓存（SMAppService.status 是同步 XPC，
+            // 禁止在主线程直查 — 会连带冻结主 runloop 上的全局事件 tap）
+            fanControl?.refreshHelperRegistration()
         }
     }
 
@@ -354,14 +354,36 @@ struct MonitorFanDetailView: View {
                     .tracking(1)
                     .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
 
-                if !helperRegistered {
-                    helperInstallBanner
-                } else {
-                    performanceControls(fanControl, fanPreferences)
-                    manualSliders(fanControl)
-                }
+                FanControlGateView(
+                    control: fanControl,
+                    preferences: fanPreferences,
+                    fans: fans,
+                    strings: strings,
+                    fanNameProvider: fanName
+                )
             }
             .padding(.vertical, 4)
+        }
+    }
+}
+
+/// 控制区门禁与内容 — 独立子视图以 @ObservedObject 观察协调器，
+/// 注册状态（后台解析的缓存）变化时自动重绘，安装动作后触发刷新
+private struct FanControlGateView: View {
+    @ObservedObject var control: FanControlCoordinator
+    let preferences: FanPreferences
+    let fans: [FanReading]
+    let strings: Strings
+    let fanNameProvider: (FanReading) -> String
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        if !control.helperRegistered {
+            helperInstallBanner
+        } else {
+            performanceControls
+            manualSliders
         }
     }
 
@@ -391,19 +413,16 @@ struct MonitorFanDetailView: View {
     private func installHelper() {
         do {
             try FanHelperInstaller.register()
-            // daemon 拉起需短暂时间，翻转镜像状态重绘控制区
+            // daemon 拉起需短暂时间，异步刷新协调器缓存后本视图经观察自动重绘
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                helperRegistered = FanHelperInstaller.isRegistered()
+                control.refreshHelperRegistration()
             }
         } catch {
             // 授权取消/失败：保持引导态，错误经 FanSettingsView 可查详情
         }
     }
 
-    private func performanceControls(
-        _ control: FanControlCoordinator,
-        _ preferences: FanPreferences
-    ) -> some View {
+    private var performanceControls: some View {
         VStack(alignment: .leading, spacing: 8) {
             Toggle(strings.fanPerformanceMode, isOn: Binding(
                 get: { preferences.configuration.performanceMode },
@@ -444,12 +463,12 @@ struct MonitorFanDetailView: View {
         }
     }
 
-    private func manualSliders(_ control: FanControlCoordinator) -> some View {
+    private var manualSliders: some View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(fans) { fan in
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text(fanName(fan))
+                        Text(fanNameProvider(fan))
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
                         Spacer()

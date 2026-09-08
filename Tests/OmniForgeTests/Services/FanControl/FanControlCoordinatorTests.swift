@@ -37,6 +37,8 @@ final class FanControlCoordinatorTests: XCTestCase {
     private var power: StubPowerSupply!
     private var preferences: FanPreferences!
     private var registered = true
+    /// 注册状态查询计数 — 固化「热路径零查询」约束
+    private var registrationQueryCount = 0
 
     override func setUp() {
         super.setUp()
@@ -52,7 +54,10 @@ final class FanControlCoordinatorTests: XCTestCase {
         let coordinator = FanControlCoordinator(
             helper: helper,
             powerSupply: power,
-            isHelperRegistered: { [weak self] in self?.registered ?? false }
+            isHelperRegistered: { [weak self] in
+                self?.registrationQueryCount += 1
+                return self?.registered ?? false
+            }
         )
         coordinator.start(monitor: makeFakeMonitor(), preferences: preferences)
         return coordinator
@@ -86,6 +91,21 @@ final class FanControlCoordinatorTests: XCTestCase {
         let coordinator = makeCoordinator()
         coordinator.evaluate(snapshot: makeSnapshot())
         XCTAssertTrue(helper.commands.isEmpty, "Helper 未注册不下发")
+    }
+
+    /// 固化「热路径零查询」：快照评估（每 2s）绝不触发 SMAppService 同步查询
+    /// （实测 ~120ms 的主线程 XPC 会冻结挂在主 runloop 的全局滚动事件 tap）
+    func test_evaluate_neverQueriesRegistrationState() {
+        registrationQueryCount = 0
+        preferences.update { $0.performanceMode = true }
+        let coordinator = makeCoordinator()
+        XCTAssertEqual(registrationQueryCount, 1, "仅在 start 解析一次")
+
+        for _ in 0..<10 {
+            coordinator.evaluate(snapshot: makeSnapshot())
+        }
+        XCTAssertEqual(registrationQueryCount, 1,
+                       "快照评估热路径不得查询注册状态（同步 XPC 禁入）")
     }
 
     func test_evaluate_modeOn_sendsCurvedSpeedsToAllFans() {

@@ -87,7 +87,13 @@ struct FeatureFactory {
                     helper: FanHelperClient(),
                     powerSupply: PowerSupplyChecker()
                 )
-                coordinator.start(monitor: monitor, preferences: fanPreferences)
+                // 注册状态后台解析：SMAppService.status 是同步 XPC（~120ms），
+                // 不得进入启动路径或每 2s 快照评估路径
+                coordinator.start(
+                    monitor: monitor,
+                    preferences: fanPreferences,
+                    immediatelyResolveRegistration: false
+                )
                 runtime.register(.systemMonitor, manager: coordinator)
             }
         case .tokenUsage:

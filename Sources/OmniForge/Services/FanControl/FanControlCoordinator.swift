@@ -27,6 +27,12 @@ final class FanControlCoordinator: ObservableObject {
     @Published private(set) var lastError: String?
     /// 机器是否有风扇 — nil=尚无快照；false=无风扇机型（设置页隐藏控制入口）
     @Published private(set) var hasFans: Bool?
+    /// Helper 注册状态缓存 — SMAppService.status 是同步 XPC（实测 ~120ms），
+    /// 绝不可进每 2s 的快照评估路径（会冻结主 runloop 上的全局事件 tap）。
+    /// 启动时同步解析一次，此后仅事件驱动刷新（安装/卸载/页面进入）。
+    @Published private(set) var helperRegistered = false
+    /// 后台刷新防重入
+    private var refreshInFlight = false
 
     private let helper: FanHelperCommanding
     private let powerSupply: PowerSupplyChecking
@@ -57,10 +63,23 @@ final class FanControlCoordinator: ObservableObject {
 
     // MARK: - 接线
 
-    /// 订阅监控快照与偏好变化；在 FeatureFactory 装配时调用一次
-    func start(monitor: SystemMonitorManager, preferences: FanPreferences) {
+    /// 订阅监控快照与偏好变化；在 FeatureFactory 装配时调用一次。
+    /// - Parameter immediatelyResolveRegistration: true 时同步解析 Helper 注册状态
+    ///   （测试用，注入闭包零开销）；生产传 false — 后台解析，避免把同步 XPC
+    ///   （实测 ~120ms）带进 app 启动路径。缓存就绪前 evaluate 跳过下发，
+    ///   就绪后下一轮快照自动接管。
+    func start(
+        monitor: SystemMonitorManager,
+        preferences: FanPreferences,
+        immediatelyResolveRegistration: Bool = true
+    ) {
         self.monitor = monitor
         self.preferences = preferences
+        if immediatelyResolveRegistration {
+            helperRegistered = isHelperRegistered()
+        } else {
+            refreshHelperRegistration()
+        }
         setupSystemObserversIfNeeded()
 
         monitor.$snapshot
@@ -118,6 +137,21 @@ final class FanControlCoordinator: ObservableObject {
     /// 手动目标（UI 回显）
     var currentManualTargets: [Int: Double] { manualTargets }
 
+    /// 事件驱动的注册状态刷新（安装/卸载完成、控制页进入时调用）。
+    /// SMAppService.status 在后台队列解析，回主线程写缓存 — 调用方永不阻塞。
+    func refreshHelperRegistration() {
+        guard !refreshInFlight else { return }
+        refreshInFlight = true
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let registered = self?.isHelperRegistered() ?? false
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.refreshInFlight = false
+                self.helperRegistered = registered
+            }
+        }
+    }
+
     // MARK: - 核心评估（快照驱动）
 
     func evaluate(snapshot: SystemSnapshot) {
@@ -133,8 +167,8 @@ final class FanControlCoordinator: ObservableObject {
         }
 
         let config = preferences.configuration
-        // Helper 未注册时不下发（监控照常，控制不可用）
-        guard isHelperRegistered() else {
+        // 只读缓存判定 Helper 可用（同步 XPC 查询禁止进入本热路径）
+        guard helperRegistered else {
             if wasPerformanceActive { handBackToAuto() }
             return
         }

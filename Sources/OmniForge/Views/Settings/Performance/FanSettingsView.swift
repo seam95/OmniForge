@@ -229,10 +229,12 @@ struct FanSettingsView: View {
         }
         do {
             try FanHelperInstaller.register()
-            // daemon 拉起需要短暂时间，延迟后核对版本
+            // daemon 拉起需要短暂时间，延迟后核对版本；
+            // 同步刷新协调器注册缓存（性能模式热路径只读该缓存）
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                 isBusy = false
                 refreshStatus()
+                fanControl?.refreshHelperRegistration()
             }
         } catch {
             isBusy = false
@@ -244,6 +246,7 @@ struct FanSettingsView: View {
             ) {
             case .enabled:
                 refreshStatus()
+                fanControl?.refreshHelperRegistration()
             case .awaitingApproval:
                 state = .awaitingApproval
             case .failed(let message):
@@ -257,5 +260,6 @@ struct FanSettingsView: View {
         try? FanHelperInstaller.unregister()
         isBusy = false
         state = .notRegistered
+        fanControl?.refreshHelperRegistration()
     }
 }
