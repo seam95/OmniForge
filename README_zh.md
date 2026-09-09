@@ -1,96 +1,92 @@
+<div align="center">
+  <img src="Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-256.png" width="96" alt="OmniForge 图标">
+
 # OmniForge
 
-<p align="center">
-  <img src="Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-256.png" width="128" alt="OmniForge 图标">
-</p>
+**模块化的 macOS 菜单栏工具集** —— 输入法锁定、剪贴板历史、截图标注、系统监控、AI CLI Token 用量与日常实用工具。
 
-<p align="center">
-  <strong>模块化的 macOS 菜单栏工具集</strong>：输入法锁定、剪贴板历史、截图标注、系统监控、AI CLI Token 用量与日常实用工具。
-</p>
+[![CI](https://github.com/seam95/OmniForge/actions/workflows/ci.yml/badge.svg)](https://github.com/seam95/OmniForge/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/seam95/OmniForge?logo=github)](https://github.com/seam95/OmniForge/releases)
+[![License](https://img.shields.io/github/license/seam95/OmniForge)](LICENSE)
+![Platform](https://img.shields.io/badge/macOS-14%2B-black?logo=apple&logoColor=white)
 
-<p align="center">
-  <a href="./README.md">English</a> · <a href="./README_zh.md">中文</a>
-</p>
+[English](./README.md) · [中文](./README_zh.md)
 
----
+<br>
 
-## 截图
+<img src="Resources/Screenshots/monitor.png" width="250" alt="系统监控面板">&nbsp;&nbsp;<img src="Resources/Screenshots/token-usage.png" width="250" alt="Token 用量">&nbsp;&nbsp;<img src="Resources/Screenshots/token-balance.png" width="250" alt="供应商额度窗口">
 
-<p align="center">
-  <img src="Resources/Screenshots/monitor.png" width="400" alt="系统监控"> &nbsp;&nbsp; <img src="Resources/Screenshots/token-usage.png" width="360" alt="Token 用量"><br>
-  <sub>系统监控面板 · AI CLI Token 用量与额度窗口</sub>
-</p>
+<img src="Resources/Screenshots/providers.png" width="250" alt="供应商切换">&nbsp;&nbsp;<img src="Resources/Screenshots/utilities-tab.png" width="250" alt="实用工具">
 
-<p align="center">
-  <img src="Resources/Screenshots/providers.png" width="340" alt="供应商切换"> &nbsp;&nbsp; <img src="Resources/Screenshots/utilities-tab.png" width="300" alt="实用工具"> &nbsp;&nbsp; <img src="Resources/Screenshots/feature-hub.png" width="300" alt="功能中心"><br>
-  <sub>Claude Code / Codex 供应商切换 · 实用工具中心 · 功能中心</sub>
-</p>
+<br>
 
-<p align="center">
-  <img src="Resources/Screenshots/screenshot-annotation.png" width="640" alt="截图标注"><br>
-  <sub>全能截图与标注工具</sub>
-</p>
+<img src="Resources/Screenshots/feature-hub.png" width="600" alt="功能中心设置窗口">
 
-## 功能
+<sub>功能中心 —— 按需安装功能、按功能授予权限</sub>
 
-OmniForge 以 **功能中心** 为核心：按需安装功能、按功能授予权限，避免菜单栏与权限一次塞满。
+</div>
 
-### 输入
+## ✨ 功能
 
-- **输入法锁定** — 按使用场景固定输入法，减少中英切换错乱。
+OmniForge 常驻菜单栏、按需生长：在 **功能中心** 逐个启用功能、按功能授予权限，避免菜单栏与权限一次塞满。
 
-### 剪贴板
+### 📊 系统监控
 
-- **剪贴板历史** — 本地记录文本、图片、文件、链接与富文本；支持搜索、筛选与再次粘贴。
-- **快捷用语** — 保存、编辑并快速粘贴常用文本片段。
-
-### 截图
-
-- **全能截图** — 选区 / 全屏捕获，标注工具、钉图及相关捕获流程。
-
-### 系统监控
-
-- **监控面板** — CPU、GPU、内存、温度、网络、磁盘、电池与进程排行等。
+- **监控面板** — CPU、GPU、内存、温度、网络、磁盘、电池与进程排行，一屏总览。
 - **菜单栏指标** — 自选常驻指标与布局，支持阈值告警。
 - **告警** — CPU、温度、内存、磁盘空间、电池等通知提醒。
 
-### AI 工具
+### 🤖 AI 工具
 
 - **Token 用量** — 汇总十余款 AI CLI（Claude Code、Codex、Cursor、Qoder、Trae、Kimi、Grok、OpenCode、Zcode、Antigravity 等）的 Token 消耗与额度窗口（5 小时 / 7 天重置、订阅余额），支持用量告警与重置提醒。
 - **供应商切换** — 菜单栏一键切换 Claude Code / Codex 的 API 供应商与中转配置；切换前自动备份，可随时恢复。
 
-### 电源
-
-- **保持唤醒** — 按时长或无限期阻止休眠；在机型与系统允许时支持合盖保持唤醒。
-
-### 生产力
+### 🧰 生产力
 
 - **桌面便签** — 多彩桌面便签，随手记录、随时查看。
 - **暂存架** — 停放文件、图片、链接与文本，稍后再拖入其他应用。
 - **清理** — 扫描残留、缓存、日志等项目，确认后再处理。
+- **清洁模式** — 擦拭键盘或屏幕时锁定全部输入。
 - **卸载器** — 查找应用本体及相关支持文件，确认后移到废纸篓。
 - **取色器** — 从屏幕取色，复制 HEX / RGB / HSL。
 - **网络诊断** — 本机网络身份、公网 IP、监听端口与进程信息。
 
-### 鼠标与触控板
+### ⌨️ 输入
+
+- **输入法锁定** — 按使用场景固定输入法，减少中英切换错乱。
+
+### 📋 剪贴板
+
+- **剪贴板历史** — 本地记录文本、图片、文件、链接与富文本；支持搜索、筛选与再次粘贴。
+- **快捷用语** — 保存、编辑并快速粘贴常用文本片段。
+
+### 📸 截图
+
+- **全能截图** — 选区 / 全屏捕获，标注工具、钉图及相关捕获流程。
+
+### 🔋 电源
+
+- **保持唤醒** — 按时长或无限期阻止休眠；在机型与系统允许时支持合盖保持唤醒。
+
+### 🖱️ 鼠标与触控板
 
 - **反转滚动** — 单独反转鼠标滚轮，保留触控板自然滚动。
 - **平滑滚动** — 将滚轮步进转换为更平滑的滚动。
 - **鼠标导航** — 侧键映射为后退 / 前进。
 - **Dock 点击** — 通过 Dock 图标最小化、恢复或循环窗口。
 
-### 系统与体验
+### ⚙️ 系统与体验
 
 - 开机自启、可选隐藏 Dock 图标
 - 首次引导、权限门户与功能中心
 - 语言：简体中文、英文，或跟随系统
 
-## 系统要求
+## 📦 系统要求
 
 - **macOS 14** 或更高版本
 - 从源码构建：Xcode 16+，或匹配的 Swift 工具链与命令行工具（`swift`、`actool`、`codesign`）
 
-## 安装
+## 🚀 安装
 
 ### 下载 Release
 
@@ -123,7 +119,7 @@ open build/stage/OmniForge.app
 - `./build.sh --install` 安装到 `/Applications`。
 - `./build.sh --dmg` 生成用于分发的 `.dmg`，输出在 `build/stage/`。
 
-## 权限说明
+## 🔐 权限说明
 
 权限按 **功能** 申请，不会在首次启动时一次性全部索取：
 
@@ -137,7 +133,7 @@ open build/stage/OmniForge.app
 
 剪贴板历史、快捷用语、暂存架、取色器、网络诊断在基础使用下对隐私权限要求较低。应用内 **设置 → 权限 / 功能中心** 可查看各功能实时状态。
 
-## 开发
+## 🛠 开发
 
 简要分层：
 

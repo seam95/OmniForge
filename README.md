@@ -1,96 +1,92 @@
+<div align="center">
+  <img src="Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-256.png" width="96" alt="OmniForge icon">
+
 # OmniForge
 
-<p align="center">
-  <img src="Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-256.png" width="128" alt="OmniForge icon">
-</p>
+**A modular macOS menu-bar toolkit** — input method lock, clipboard history, screenshots, system monitoring, AI CLI token tracking, and everyday utilities.
 
-<p align="center">
-  <strong>A modular macOS menu-bar toolkit</strong> for input method lock, clipboard history, screenshots, system monitoring, AI CLI token tracking, and everyday utilities.
-</p>
+[![CI](https://github.com/seam95/OmniForge/actions/workflows/ci.yml/badge.svg)](https://github.com/seam95/OmniForge/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/seam95/OmniForge?logo=github)](https://github.com/seam95/OmniForge/releases)
+[![License](https://img.shields.io/github/license/seam95/OmniForge)](LICENSE)
+![Platform](https://img.shields.io/badge/macOS-14%2B-black?logo=apple&logoColor=white)
 
-<p align="center">
-  <a href="./README.md">English</a> · <a href="./README_zh.md">中文</a>
-</p>
+[English](./README.md) · [中文](./README_zh.md)
 
----
+<br>
 
-## Screenshots
+<img src="Resources/Screenshots/monitor.png" width="250" alt="System monitor panel">&nbsp;&nbsp;<img src="Resources/Screenshots/token-usage.png" width="250" alt="Token usage">&nbsp;&nbsp;<img src="Resources/Screenshots/token-balance.png" width="250" alt="Provider quota windows">
 
-<p align="center">
-  <img src="Resources/Screenshots/monitor.png" width="400" alt="System monitor"> &nbsp;&nbsp; <img src="Resources/Screenshots/token-usage.png" width="360" alt="Token usage"><br>
-  <sub>System monitor · AI CLI token usage & quota windows</sub>
-</p>
+<img src="Resources/Screenshots/providers.png" width="250" alt="Provider switch">&nbsp;&nbsp;<img src="Resources/Screenshots/utilities-tab.png" width="250" alt="Utilities">
 
-<p align="center">
-  <img src="Resources/Screenshots/providers.png" width="340" alt="Provider switch"> &nbsp;&nbsp; <img src="Resources/Screenshots/utilities-tab.png" width="300" alt="Utilities"> &nbsp;&nbsp; <img src="Resources/Screenshots/feature-hub.png" width="300" alt="Feature Hub"><br>
-  <sub>Provider switch for Claude Code / Codex · Utilities hub · Feature Hub</sub>
-</p>
+<br>
 
-<p align="center">
-  <img src="Resources/Screenshots/screenshot-annotation.png" width="640" alt="Screenshot annotation"><br>
-  <sub>Screenshot capture with annotation tools</sub>
-</p>
+<img src="Resources/Screenshots/feature-hub.png" width="600" alt="Feature Hub settings window">
 
-## Features
+<sub>The Feature Hub — install only what you need, grant permissions per feature</sub>
 
-OmniForge is built around a **Feature Hub**: install only what you need, grant permissions per feature, and keep the menu bar uncluttered.
+</div>
 
-### Input
+## ✨ Features
 
-- **Input Method Lock** — Pin an input source per workflow and keep it from flipping mid-typing.
+OmniForge lives in the menu bar and grows with you: enable features individually from the **Feature Hub**, grant permissions per feature, and keep the menu bar uncluttered.
 
-### Clipboard
+### 📊 System Monitor
 
-- **Clipboard History** — Local history for text, images, files, links, and rich text; search, filter, and paste again.
-- **Quick Phrase** — Save, edit, and paste reusable text snippets.
-
-### Capture
-
-- **Screenshot** — Region / fullscreen capture with annotation tools, pin-to-screen, and related capture workflows.
-
-### Monitor
-
-- **System Monitor** — CPU, GPU, memory, temperature, network, disk, battery, and process rankings.
+- **Monitor panel** — CPU, GPU, memory, temperature, network, disk, battery, and process rankings at a glance.
 - **Menu bar metrics** — Choose which metrics stay visible, with layout and alert options.
 - **Alerts** — Threshold notifications for CPU, temperature, memory, disk space, and battery.
 
-### AI tooling
+### 🤖 AI tooling
 
 - **Token Usage** — Track token spend and quota windows (5-hour / 7-day resets, subscription balance) across a dozen-plus AI CLIs — Claude Code, Codex, Cursor, Qoder, Trae, Kimi, Grok, OpenCode, Zcode, Antigravity, and more — with usage alerts and reset reminders.
 - **Provider Switch** — One-click switching of API providers / relay profiles for Claude Code and Codex from the menu bar; configs are backed up before every switch and can be restored.
 
-### Energy
-
-- **Keep Awake** — Prevent sleep for a duration or indefinitely; optional clamshell (lid closed) stay-awake support where the Mac allows it.
-
-### Productivity
+### 🧰 Productivity
 
 - **Sticky Notes** — Colorful sticky notes pinned to your desktop for quick capture.
 - **Shelf** — Park files, images, links, and text, then drag them into another app later.
 - **Cleaner** — Scan leftovers, caches, logs, and other junk; confirm before cleaning.
+- **Cleaning Mode** — Lock all input while you wipe your keyboard or screen.
 - **Uninstaller** — Find an app and its related support files, then move them to Trash after confirmation.
 - **Color Picker** — Sample a screen color and copy HEX / RGB / HSL.
 - **Network Diagnostics** — Local network identity, public IP, and listening ports with process info.
 
-### Mouse & trackpad
+### ⌨️ Input
+
+- **Input Method Lock** — Pin an input source per workflow and keep it from flipping mid-typing.
+
+### 📋 Clipboard
+
+- **Clipboard History** — Local history for text, images, files, links, and rich text; search, filter, and paste again.
+- **Quick Phrase** — Save, edit, and paste reusable text snippets.
+
+### 📸 Capture
+
+- **Screenshot** — Region / fullscreen capture with annotation tools, pin-to-screen, and related capture workflows.
+
+### 🔋 Energy
+
+- **Keep Awake** — Prevent sleep for a duration or indefinitely; optional clamshell (lid closed) stay-awake support where the Mac allows it.
+
+### 🖱️ Mouse & trackpad
 
 - **Scroll Inverter** — Invert mouse wheel scrolling while keeping trackpad natural scroll.
 - **Smooth Scroll** — Turn discrete mouse wheel steps into smoother scrolling.
 - **Mouse Navigation** — Map side buttons to back / forward.
 - **Dock Click** — Minimize, restore, or cycle windows from the Dock icon.
 
-### System & experience
+### ⚙️ System & experience
 
 - Launch at login, optional hide Dock icon
 - Onboarding, permission portal, and Feature Hub
 - Languages: Simplified Chinese, English, or follow system
 
-## Requirements
+## 📦 Requirements
 
 - **macOS 14** or later
 - To build from source: Xcode 16+ or a matching Swift toolchain with command-line tools (`swift`, `actool`, `codesign`)
 
-## Install
+## 🚀 Install
 
 ### From Releases
 
@@ -123,7 +119,7 @@ open build/stage/OmniForge.app
 - `./build.sh --install` installs into `/Applications`.
 - `./build.sh --dmg` produces a distributable `.dmg` under `build/stage/`.
 
-## Permissions
+## 🔐 Permissions
 
 Permissions are requested **per feature**, not all at once:
 
@@ -137,7 +133,7 @@ Permissions are requested **per feature**, not all at once:
 
 Clipboard history, Quick Phrase, Shelf, Color Picker, and Network Diagnostics need little or no special privacy access for basic use. Use **Settings → permissions / Feature Hub** inside the app for the live status of each feature.
 
-## Development
+## 🛠 Development
 
 Short overview:
 
