@@ -1,3 +1,4 @@
+import AppKit
 import ApplicationServices
 import Foundation
 import os.log
@@ -19,9 +20,13 @@ protocol SelectedTextReading: AnyObject {
 
 /// 经辅助功能 API 直读其他应用（含本应用自身）的选中文本。
 ///
-/// 焦点元素解析按可靠性顺序尝试两条路径（对 Electron 系应用尤为关键）：
-/// B. systemWide 直取 `kAXFocusedUIElementAttribute`（首选——不依赖应用侧焦点转发的正确性）
-/// A. systemWide → focusedApplication → `kAXFocusedUIElementAttribute`（回退）
+/// 焦点元素解析按独立性依次尝试三条路径（覆盖不同宿主的 AX 缺陷）：
+/// B. systemWide 直取 `kAXFocusedUIElementAttribute`（Electron 等应用上比经 app 中转可靠）
+/// A. systemWide → focusedApplication → `kAXFocusedUIElementAttribute`（经典链）
+/// C. NSWorkspace 前台应用 PID → `AXUIElementCreateApplication` → focusedUIElement
+///    （不依赖 systemWide 焦点转发——终端 TUI / GPU 渲染类宿主的 systemWide
+///    焦点查询会返回 noValue(-25212)，按 PID 直建元素是唯一通路）
+///
 /// 任一路径取得元素后：主路径读 `kAXSelectedTextAttribute`，
 /// 为空时回退 selectedTextRange + 参数化属性取范围文本。
 final class AXSelectedTextReader: SelectedTextReading {
@@ -43,7 +48,7 @@ final class AXSelectedTextReader: SelectedTextReading {
         var sawPermissionLevelError = false
         var candidates: [AXUIElement] = []
 
-        // 路径 B：systemWide 直取焦点元素（Electron 等应用上比经 app 中转更可靠）。
+        // 路径 B：systemWide 直取焦点元素。
         var elementBRef: CFTypeRef?
         let elementBError = AXUIElementCopyAttributeValue(
             systemWide,
@@ -53,7 +58,8 @@ final class AXSelectedTextReader: SelectedTextReading {
         Self.logger.notice("路径B systemWide.focusedUIElement = \(elementBError.rawValue, privacy: .public)")
         if elementBError == .success, let elementBRef {
             candidates.append(elementBRef as! AXUIElement)
-        } else if Self.isPermissionLevelError(elementBError) {
+        }
+        if Self.isPermissionLevelError(elementBError) {
             sawPermissionLevelError = true
         }
 
@@ -67,32 +73,27 @@ final class AXSelectedTextReader: SelectedTextReading {
         Self.logger.notice("路径A1 systemWide.focusedApplication = \(appError.rawValue, privacy: .public)")
         if appError == .success, let appRef {
             let app = appRef as! AXUIElement
-            var elementARef: CFTypeRef?
-            let elementAError = AXUIElementCopyAttributeValue(
-                app,
-                kAXFocusedUIElementAttribute as CFString,
-                &elementARef
-            )
-            Self.logger.notice("路径A2 app.focusedUIElement = \(elementAError.rawValue, privacy: .public)")
-            if elementAError == .success, let elementARef {
-                let elementA = elementARef as! AXUIElement
-                // 两条路径常返回同一元素；CFEqual 去重后仍逐路径读取（防 B 路径元素残缺）。
-                if !candidates.contains(where: { CFEqual($0, elementA) }) {
-                    candidates.append(elementA)
-                }
-            } else if Self.isPermissionLevelError(elementAError) {
-                sawPermissionLevelError = true
-            }
-        } else if Self.isPermissionLevelError(appError) {
+            appendFocusedElement(of: app, into: &candidates, label: "路径A2")
+        }
+        if Self.isPermissionLevelError(appError) {
             sawPermissionLevelError = true
+        }
+
+        // 路径 C：前台应用按 PID 直接创建元素，不经 systemWide 焦点查询。
+        if let frontmost = NSWorkspace.shared.frontmostApplication {
+            let frontApp = AXUIElementCreateApplication(frontmost.processIdentifier)
+            Self.logger.notice(
+                "路径C frontmost=\(frontmost.localizedName ?? "?", privacy: .public) pid=\(frontmost.processIdentifier, privacy: .public)"
+            )
+            appendFocusedElement(of: frontApp, into: &candidates, label: "路径C")
         }
 
         guard !candidates.isEmpty else {
             if sawPermissionLevelError {
-                Self.logger.notice("取词失败：trusted 通过但 AX 调用权限级错误（授权未生效假阳性）")
+                Self.logger.notice("取词失败：trusted 通过但存在权限级错误（授权未生效假阳性）")
                 return .failure(.accessibilityInactive)
             }
-            Self.logger.notice("取词失败：两条路径均未取得焦点元素")
+            Self.logger.notice("取词失败：三条路径均未取得焦点元素")
             return .failure(.noSelection)
         }
 
@@ -114,6 +115,25 @@ final class AXSelectedTextReader: SelectedTextReading {
 
     private static func isPermissionLevelError(_ error: AXError) -> Bool {
         error == .cannotComplete || error == .apiDisabled
+    }
+
+    /// 从应用元素取焦点元素，成功则（去重后）追加进候选列表；失败打日志并按需上浮权限级错误。
+    private func appendFocusedElement(of app: AXUIElement, into candidates: inout [AXUIElement], label: String) {
+        var elementRef: CFTypeRef?
+        let error = AXUIElementCopyAttributeValue(
+            app,
+            kAXFocusedUIElementAttribute as CFString,
+            &elementRef
+        )
+        Self.logger.notice("\(label, privacy: .public) app.focusedUIElement = \(error.rawValue, privacy: .public)")
+        guard error == .success, let elementRef else {
+            return
+        }
+        let element = elementRef as! AXUIElement
+        // 多路径常返回同一元素；CFEqual 去重。
+        if !candidates.contains(where: { CFEqual($0, element) }) {
+            candidates.append(element)
+        }
     }
 
     /// 主路径：直接读选中文本属性。
