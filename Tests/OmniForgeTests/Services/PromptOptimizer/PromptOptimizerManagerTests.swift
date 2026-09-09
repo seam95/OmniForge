@@ -23,6 +23,16 @@ private final class FakePromptOptimizingService: PromptOptimizing {
     }
 }
 
+private final class FakeSelectionCopier: SelectionCopying {
+    var stubbedText: String?
+    private(set) var callCount = 0
+
+    func copySelectionAndRead() async -> String? {
+        callCount += 1
+        return stubbedText
+    }
+}
+
 private final class FakePasteboardWriter: PasteboardWriting {
     private(set) var clearedCount = 0
     private(set) var writtenStrings: [String] = []
@@ -44,7 +54,9 @@ private final class FakePasteboardWriter: PasteboardWriting {
 
 private final class FakeKeyEventPoster: KeyEventPosting {
     private(set) var commandVCount = 0
+    private(set) var commandCCount = 0
     func postCommandV() { commandVCount += 1 }
+    func postCommandC() { commandCCount += 1 }
 }
 
 @MainActor
@@ -97,6 +109,7 @@ final class PromptOptimizerManagerTests: XCTestCase {
     private var poster: FakeKeyEventPoster!
     private var hud: FakePromptOptimizerHUD!
     private var shortcuts: FakeKeyboardShortcutsClient!
+    private var fallbackCopier: FakeSelectionCopier!
     private var serviceConfigured = true
 
     override func setUp() {
@@ -110,6 +123,7 @@ final class PromptOptimizerManagerTests: XCTestCase {
         poster = FakeKeyEventPoster()
         hud = FakePromptOptimizerHUD()
         shortcuts = FakeKeyboardShortcutsClient()
+        fallbackCopier = FakeSelectionCopier()
         serviceConfigured = true
     }
 
@@ -128,6 +142,7 @@ final class PromptOptimizerManagerTests: XCTestCase {
             isAccessibilityGranted: isAccessibilityGranted,
             stringsProvider: { .zhHans },
             reader: reader,
+            fallbackCopier: fallbackCopier,
             serviceFactory: { [weak self] in self?.serviceConfigured == true ? self?.service : nil },
             writer: writer,
             keyPoster: poster,
@@ -258,6 +273,48 @@ final class PromptOptimizerManagerTests: XCTestCase {
 
         XCTAssertEqual(hud.outcomes, [.init(text: "无法获取选中文本", isFailure: true)])
         XCTAssertTrue(service.receivedInputs.isEmpty)
+    }
+
+    // MARK: - ⌘C 兜底
+
+    func test_axFails_fallbackRecoversAndProceeds() async {
+        reader.stubbedResult = .failure(.noSelection)
+        fallbackCopier.stubbedText = "兜底取得的选中文本"
+        service.stubbedResult = "优化结果"
+        let manager = makeManager()
+
+        await runOnce(manager)
+
+        XCTAssertEqual(fallbackCopier.callCount, 1, "AX 无选区后必须尝试兜底")
+        XCTAssertEqual(service.receivedInputs, ["兜底取得的选中文本"])
+        XCTAssertEqual(writer.writtenStrings, ["优化结果"])
+        // 兜底与优化各亮一次「优化中」（HUD 同窗更新幂等），首条必须出现在兜底等待期间。
+        XCTAssertGreaterThanOrEqual(hud.runningTexts.count, 1)
+        XCTAssertEqual(hud.runningTexts.first, "优化中…")
+        XCTAssertEqual(hud.outcomes, [.init(text: "已复制优化结果", isFailure: false)])
+    }
+
+    func test_axFails_fallbackAlsoFails_showsNoSelection() async {
+        reader.stubbedResult = .failure(.noSelection)
+        fallbackCopier.stubbedText = nil
+        let manager = makeManager()
+
+        await runOnce(manager)
+
+        XCTAssertEqual(fallbackCopier.callCount, 1)
+        XCTAssertEqual(hud.outcomes, [.init(text: "无法获取选中文本", isFailure: true)])
+        XCTAssertTrue(service.receivedInputs.isEmpty)
+    }
+
+    func test_axSucceeds_fallbackNotCalled() async {
+        reader.stubbedResult = .success("AX 取到的文本")
+        service.stubbedResult = "优化结果"
+        let manager = makeManager()
+
+        await runOnce(manager)
+
+        XCTAssertEqual(fallbackCopier.callCount, 0, "AX 成功时不得动剪贴板")
+        XCTAssertEqual(service.receivedInputs, ["AX 取到的文本"])
     }
 
     // MARK: - 服务错误映射

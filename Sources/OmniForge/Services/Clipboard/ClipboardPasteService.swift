@@ -45,23 +45,32 @@ final class SystemPasteboardWriter: PasteboardWriting {
 
 protocol KeyEventPosting {
     func postCommandV()
+    func postCommandC()
 }
 
-/// 模拟 Cmd+V 注入到当前会话（对齐 Maccy 的 Clipboard.paste 实现）。
+/// 模拟 Cmd+V / Cmd+C 注入到当前会话（对齐 Maccy 的 Clipboard.paste 实现）。
 final class SystemKeyEventPoster: KeyEventPosting {
     /// 低位 0x8 为区分左/右修饰键的设备依赖标志位，部分应用要求其存在才响应合成 Cmd 组合键。
     private static let commandFlags = CGEventFlags(rawValue: CGEventFlags.maskCommand.rawValue | 0x000008)
 
     func postCommandV() {
+        postCommand(keyCode: CGKeyCode(kVK_ANSI_V))
+    }
+
+    func postCommandC() {
+        postCommand(keyCode: CGKeyCode(kVK_ANSI_C))
+    }
+
+    private func postCommand(keyCode: CGKeyCode) {
         guard let source = CGEventSource(stateID: .combinedSessionState) else { return }
         // 粘贴瞬间抑制本地物理键盘事件，防止用户物理按键（如回车的 keyUp）与合成 Cmd+V 竞态混入。
         source.setLocalEventsFilterDuringSuppressionState(
             [.permitLocalMouseEvents, .permitSystemDefinedEvents],
             state: .eventSuppressionStateSuppressionInterval
         )
-        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: true)
+        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true)
         keyDown?.flags = Self.commandFlags
-        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: false)
+        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
         keyUp?.flags = Self.commandFlags
         // 必须走 session tap：macOS 26 起 WindowServer 校验合成事件来源，
         // HID tap 注入的合成事件在部分分发路径被静默丢弃（需「辅助功能」权限，否则同样不生效）。

@@ -61,6 +61,22 @@ final class ClipboardHistoryManager: ObservableObject {
     /// 监控意图标志 — startMonitoring 被调用且未被 stopMonitoring 清除时为 true。
     /// 与 pollTimer 解耦：测试环境下 pollTimer 不会创建，但意图仍可观测。
     private var isMonitoringActive = false
+    /// 历史采集暂停计数（>0 时 pollPasteboard 直接跳过）。
+    /// 供「模拟 ⌘C 取词」等临时剪贴板操作开辟零污染窗口，可重入。
+    private var captureSuspensionCount = 0
+
+    /// 暂停历史采集：临时操作期间的剪贴板变化不进历史。
+    func suspendCapture() {
+        captureSuspensionCount += 1
+    }
+
+    /// 恢复历史采集；把变更基线拉平到当前值，暂停期间的一切变化被整体丢弃。
+    func resumeCapture() {
+        captureSuspensionCount = max(0, captureSuspensionCount - 1)
+        if captureSuspensionCount == 0 {
+            lastChangeCount = pasteboard.changeCount
+        }
+    }
 
     /// 当前是否正在监控剪贴板（供 FeatureRuntime binding 和测试使用）
     var isMonitoring: Bool {
@@ -163,6 +179,7 @@ final class ClipboardHistoryManager: ObservableObject {
     }
 
     func pollPasteboard() {
+        guard captureSuspensionCount == 0 else { return }
         let changeCount = pasteboard.changeCount
         if let lastChangeCount, lastChangeCount == changeCount {
             return

@@ -44,6 +44,8 @@ final class PromptOptimizerManager: ObservableObject {
     private let isAccessibilityGranted: () -> Bool
     private let stringsProvider: () -> Strings
     private let reader: SelectedTextReading
+    /// ⌘C 兜底取词（AX 路径失败后启用；nil 表示未接线，仅 AX 可用）。
+    private let fallbackCopier: SelectionCopying?
     /// 每次触发时按当前配置构造服务；API Key 未配置 → nil（决策 D1/D7 的「未配置」短路）。
     private let serviceFactory: () -> PromptOptimizing?
     private let writer: PasteboardWriting
@@ -60,6 +62,7 @@ final class PromptOptimizerManager: ObservableObject {
         isAccessibilityGranted: @escaping () -> Bool = { AXIsProcessTrusted() },
         stringsProvider: @escaping () -> Strings = { .en },
         reader: SelectedTextReading = AXSelectedTextReader(),
+        fallbackCopier: SelectionCopying? = nil,
         serviceFactory: @escaping () -> PromptOptimizing?,
         writer: PasteboardWriting = SystemPasteboardWriter(),
         keyPoster: KeyEventPosting = SystemKeyEventPoster(),
@@ -71,6 +74,7 @@ final class PromptOptimizerManager: ObservableObject {
         self.isAccessibilityGranted = isAccessibilityGranted
         self.stringsProvider = stringsProvider
         self.reader = reader
+        self.fallbackCopier = fallbackCopier
         self.serviceFactory = serviceFactory
         self.writer = writer
         self.keyPoster = keyPoster
@@ -147,28 +151,40 @@ final class PromptOptimizerManager: ObservableObject {
             hud.showOutcome(stringsProvider().promptOptimizerErrorNoAccessibility, isFailure: true)
             return
         }
+
         switch reader.readSelectedText() {
         case .success(let selectedText):
-            hud.showRunning(stringsProvider().promptOptimizerRunning)
-            do {
-                let enhanced = try await service.optimize(selectedText: selectedText)
-                writer.clearContents()
-                writer.setString(enhanced, forType: .string)
-                if isAutoReplaceEnabled {
-                    // 粘贴作用于返回时刻焦点应用的当前选区/光标（决策 D6 的预期行为语义）。
-                    keyPoster.postCommandV()
-                }
-                hud.showOutcome(stringsProvider().promptOptimizerSuccess, isFailure: false)
-            } catch let error as PromptOptimizerErrorKind {
-                hud.showOutcome(Self.failureText(for: error, strings: stringsProvider()), isFailure: true)
-            } catch {
-                hud.showOutcome(stringsProvider().promptOptimizerErrorGeneric, isFailure: true)
-            }
+            await performOptimization(selectedText, service: service)
         case .failure(.accessibilityInactive):
             // trusted 通过但 AX 调用失败（授权未生效的假阳性）——与预检未授权同文案。
             hud.showOutcome(stringsProvider().promptOptimizerErrorNoAccessibility, isFailure: true)
         case .failure(.noSelection):
-            hud.showOutcome(stringsProvider().promptOptimizerErrorNoSelection, isFailure: true)
+            // ⌘C 兜底：终端 TUI 等 systemWide 焦点 noValue 的宿主，AX 直读无入口。
+            // 兜底有数百毫秒耗时，先亮「优化中」再等待。
+            hud.showRunning(stringsProvider().promptOptimizerRunning)
+            if let fallbackCopier, let text = await fallbackCopier.copySelectionAndRead() {
+                await performOptimization(text, service: service)
+            } else {
+                hud.showOutcome(stringsProvider().promptOptimizerErrorNoSelection, isFailure: true)
+            }
+        }
+    }
+
+    private func performOptimization(_ selectedText: String, service: PromptOptimizing) async {
+        hud.showRunning(stringsProvider().promptOptimizerRunning)
+        do {
+            let enhanced = try await service.optimize(selectedText: selectedText)
+            writer.clearContents()
+            writer.setString(enhanced, forType: .string)
+            if isAutoReplaceEnabled {
+                // 粘贴作用于返回时刻焦点应用的当前选区/光标（决策 D6 的预期行为语义）。
+                keyPoster.postCommandV()
+            }
+            hud.showOutcome(stringsProvider().promptOptimizerSuccess, isFailure: false)
+        } catch let error as PromptOptimizerErrorKind {
+            hud.showOutcome(Self.failureText(for: error, strings: stringsProvider()), isFailure: true)
+        } catch {
+            hud.showOutcome(stringsProvider().promptOptimizerErrorGeneric, isFailure: true)
         }
     }
 

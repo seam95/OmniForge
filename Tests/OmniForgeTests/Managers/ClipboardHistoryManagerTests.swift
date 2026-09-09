@@ -118,6 +118,60 @@ final class ClipboardHistoryManagerTests: XCTestCase {
         XCTAssertEqual(store.releaseMemoryCallCount, 1)
     }
 
+    // MARK: - 采集暂停窗口（⌘C 兜底取词的零污染保障）
+
+    func test_suspendCapture_skipsChangesAndResumeDiscardsThem() {
+        let pasteboard = FakeHistoryPasteboardClient()
+        let manager = ClipboardHistoryManager(
+            store: FakeClipboardStore(entries: []),
+            userDefaults: UserDefaults(suiteName: "ClipboardHistoryManagerTests_suspend")!,
+            pasteboard: pasteboard
+        )
+
+        // 暂停窗口内：临时写入（模拟 ⌘C 的选中内容 + 恢复原内容）一律不采集。
+        manager.suspendCapture()
+        pasteboard.changeCountValue += 1
+        pasteboard.text = "模拟 ⌘C 的临时内容"
+        manager.pollPasteboard()
+        XCTAssertTrue(manager.entries.isEmpty, "暂停期间不采集")
+
+        pasteboard.changeCountValue += 1
+        pasteboard.text = "恢复的原内容"
+        manager.resumeCapture()
+        manager.pollPasteboard()
+        XCTAssertTrue(manager.entries.isEmpty, "resume 拉平基线，暂停期间变化整体丢弃")
+
+        // 恢复后：新变化正常采集。
+        pasteboard.changeCountValue += 1
+        pasteboard.text = "用户真实复制"
+        manager.pollPasteboard()
+        XCTAssertEqual(manager.entries.count, 1)
+        XCTAssertEqual(manager.entries.first?.preview, "用户真实复制")
+    }
+
+    func test_suspendCapture_isReentrant() {
+        let pasteboard = FakeHistoryPasteboardClient()
+        let manager = ClipboardHistoryManager(
+            store: FakeClipboardStore(entries: []),
+            userDefaults: UserDefaults(suiteName: "ClipboardHistoryManagerTests_suspend2")!,
+            pasteboard: pasteboard
+        )
+
+        manager.suspendCapture()
+        manager.suspendCapture()
+        manager.resumeCapture()
+        pasteboard.changeCountValue += 1
+        pasteboard.text = "仍处于暂停"
+        manager.pollPasteboard()
+        XCTAssertTrue(manager.entries.isEmpty, "嵌套计数未归零时保持暂停")
+
+        manager.resumeCapture()
+        pasteboard.changeCountValue += 1
+        pasteboard.text = "归零后恢复采集"
+        manager.pollPasteboard()
+        XCTAssertEqual(manager.entries.count, 1)
+    }
+
     private func makeTextEntry(id: UUID, text: String) -> ClipboardEntry {
         ClipboardEntry(
             id: id,
@@ -129,6 +183,20 @@ final class ClipboardHistoryManagerTests: XCTestCase {
             content: .text(text)
         )
     }
+}
+
+/// 可控 changeCount / 文本的 PasteboardClient 假件（驱动 pollPasteboard 采集分支）。
+private final class FakeHistoryPasteboardClient: PasteboardClient {
+    var changeCountValue = 0
+    var text: String?
+
+    var changeCount: Int { changeCountValue }
+
+    func readFileURLs() -> [URL] { [] }
+    func readURL() -> URL? { nil }
+    func readImageData() -> Data? { nil }
+    func readText() -> String? { text }
+    func readRTFData() -> Data? { nil }
 }
 
 private final class FakeClipboardStore: ClipboardStore {

@@ -171,4 +171,6 @@ private final class FakeKeyEventPoster: KeyEventPosting {
         postCount += 1
         onPost?()
     }
+
+    func postCommandC() {}
 }

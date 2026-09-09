@@ -314,6 +314,10 @@ struct FeatureFactory {
                     userDefaults: userDefaults,
                     isFeatureAvailable: { FeatureRuntime.shared.isAvailable(.promptOptimizer) },
                     stringsProvider: { L10n(userDefaults: userDefaults).s },
+                    // ⌘C 兜底取词：历史暂停器运行时动态解析，与剪贴板功能的 install 顺序无关。
+                    fallbackCopier: FallbackSelectionCopier(
+                        captureSuspender: RuntimeClipboardCaptureSuspender()
+                    ),
                     serviceFactory: {
                         // 每次触发按当前配置构造：baseURL/模型走 UserDefaults，key 走 Keychain。
                         guard let apiKey = (try? keychainStore.readAPIKey()) ?? nil, !apiKey.isEmpty else {
