@@ -156,7 +156,7 @@ final class NavigationRoutesTests: XCTestCase {
             SettingsToolbarTab.visibleCases(isAvailable: { _ in true }),
             [
                 .general, .features, .inputMethod, .clipboard, .shelf, .screenshot, .mouse,
-                .performance, .tokenUsage, .keepAwake, .providerSwitch, .cleaner, .uninstaller
+                .performance, .tokenUsage, .keepAwake, .providerSwitch, .promptOptimizer, .cleaner, .uninstaller
             ]
         )
 

@@ -23,6 +23,7 @@ enum AppFeature: String, CaseIterable {
     case keepAwake
     case screenshot
     case providerSwitch
+    case promptOptimizer
     case stickyNotes
     case cleaningMode
 
@@ -74,7 +75,7 @@ extension AppFeature {
         case .scrollInverter, .smoothScroll, .mouseNavigation, .dockClick: return .mouse
         case .keepAwake: return .energy
         case .screenshot: return .capture
-        case .providerSwitch: return .ai
+        case .providerSwitch, .promptOptimizer: return .ai
         case .stickyNotes, .cleaningMode: return .productivity
         }
     }
@@ -103,6 +104,7 @@ extension AppFeature {
         case .keepAwake: return []
         case .screenshot: return [UserDefaultsKeys.screenshotEnabled]
         case .providerSwitch: return []
+        case .promptOptimizer: return []
         case .stickyNotes: return []
         case .cleaningMode: return []
         }
@@ -125,6 +127,7 @@ extension AppFeature {
         case .keepAwake: return [.accessibility, .notifications]
         case .screenshot: return [.screenRecording]
         case .providerSwitch: return []
+        case .promptOptimizer: return [.accessibility]
         case .stickyNotes: return [.notifications]
         case .cleaningMode: return [.accessibility]
         }
@@ -167,6 +170,9 @@ extension AppFeature {
             return permission == .accessibility ? .required : nil
         case .providerSwitch:
             return nil
+        case .promptOptimizer:
+            // AX 取词与合成 ⌘V 注入均依赖辅助功能。
+            return permission == .accessibility ? .required : nil
         case .clipboardHistory, .quickPhrase, .shelf, .launchAtLogin:
             return nil
         }
@@ -199,6 +205,7 @@ extension AppFeature {
         case .keepAwake: return "moon.zzz.fill"
         case .screenshot: return "camera.viewfinder"
         case .providerSwitch: return "arrow.triangle.swap"
+        case .promptOptimizer: return "wand.and.stars"
         case .stickyNotes: return "note.text"
         case .cleaningMode: return "bubbles.and.sparkles"
         }
@@ -226,6 +233,7 @@ extension AppFeature {
         case .keepAwake: return strings.featureHubNameKeepAwake
         case .screenshot: return strings.featureHubNameScreenshot
         case .providerSwitch: return strings.featureHubNameProviderSwitch
+        case .promptOptimizer: return strings.featureHubNamePromptOptimizer
         case .stickyNotes: return strings.featureHubNameStickyNotes
         case .cleaningMode: return strings.featureHubNameCleaningMode
         }
@@ -253,6 +261,7 @@ extension AppFeature {
         case .keepAwake: return strings.featureHubDescKeepAwake
         case .screenshot: return strings.featureHubDescScreenshot
         case .providerSwitch: return strings.featureHubDescProviderSwitch
+        case .promptOptimizer: return strings.featureHubDescPromptOptimizer
         case .stickyNotes: return strings.featureHubDescStickyNotes
         case .cleaningMode: return strings.featureHubDescCleaningMode
         }

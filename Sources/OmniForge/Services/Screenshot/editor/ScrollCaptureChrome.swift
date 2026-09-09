@@ -330,13 +330,43 @@ final class EditorInfoToastWindow: NSPanel {
     }
 
     /// Present `message` near the bottom-center of `anchorScreen` (or main
-    /// screen), auto-dismissing after `duration`.
+    /// screen), auto-dismissing after `duration`. Pass `duration <= 0` to keep
+    /// the toast visible until a later `update`/`dismiss` (running-state HUD).
     func present(
         _ message: String,
         near anchorScreen: NSScreen? = NSScreen.main,
         duration: TimeInterval = 2.0
     ) {
+        layout(for: message, on: anchorScreen)
+        orderFrontRegardless()
+        scheduleDismiss(after: duration)
+    }
+
+    /// Update the visible toast in place (same window, bottom-center of the
+    /// screen it currently sits on) and re-arm auto-dismiss for `duration`.
+    /// Presents the window if it is not currently visible.
+    func update(_ message: String, duration: TimeInterval = 2.0) {
+        let anchorScreen = NSScreen.screens.first { $0.frame.intersects(frame) }
+        layout(for: message, on: anchorScreen ?? NSScreen.main)
+        if !isVisible {
+            orderFrontRegardless()
+        }
+        scheduleDismiss(after: duration)
+    }
+
+    func dismiss() {
         dismissWorkItem?.cancel()
+        dismissWorkItem = nil
+        orderOut(nil)
+    }
+
+    // MARK: - Internals
+
+    /// 重设文本、自适应尺寸并保持屏幕底部居中定位（present 与 update 共用）。
+    private func layout(for message: String, on anchorScreen: NSScreen?) {
+        dismissWorkItem?.cancel()
+        dismissWorkItem = nil
+
         label.stringValue = message
         label.sizeToFit()
         let textSize = label.frame.size
@@ -353,18 +383,17 @@ final class EditorInfoToastWindow: NSPanel {
             y: round(visible.minY + 72)
         )
         setFrame(NSRect(origin: origin, size: NSSize(width: width, height: height)), display: true)
-        orderFrontRegardless()
+    }
 
+    /// 排定自动消失；`duration <= 0` 表示常驻（不排定）。
+    private func scheduleDismiss(after duration: TimeInterval) {
+        dismissWorkItem?.cancel()
+        dismissWorkItem = nil
+        guard duration > 0 else { return }
         let work = DispatchWorkItem { [weak self] in
             self?.dismiss()
         }
         dismissWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: work)
-    }
-
-    func dismiss() {
-        dismissWorkItem?.cancel()
-        dismissWorkItem = nil
-        orderOut(nil)
     }
 }

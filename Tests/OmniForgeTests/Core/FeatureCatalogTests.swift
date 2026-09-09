@@ -307,7 +307,7 @@ final class FeatureCatalogTests: XCTestCase {
         XCTAssertEqual(AppFeature.providerSwitch.group, .ai)
         XCTAssertEqual(
             FeatureGroup.features(in: .ai),
-            [.providerSwitch]
+            [.providerSwitch, .promptOptimizer]
         )
         XCTAssertTrue(AppFeature.providerSwitch.enabledKeys.isEmpty)
         XCTAssertTrue(AppFeature.providerSwitch.possiblePermissions.isEmpty)

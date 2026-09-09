@@ -326,6 +326,10 @@ final class FeatureRuntime: ObservableObject {
         .networkDiagnostics: {},
         .dshWeb: {},
         .providerSwitch: {},
+        .promptOptimizer: {
+            // availability 即启用：快捷键跟随可用性注册 / 注销。
+            shared.manager(for: .promptOptimizer, as: PromptOptimizerManager.self)?.syncWithPreferences()
+        },
         .scrollInverter: { ScrollInverter.shared.syncWithPreferences() },
         .smoothScroll: { SmoothScrollService.shared.syncWithPreferences() },
         .mouseNavigation: { MouseNavigationService.shared.syncWithPreferences() },

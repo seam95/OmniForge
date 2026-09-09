@@ -125,6 +125,9 @@ struct SettingsView: View {
                 )
                 .navigationTitle(tab.title(in: state.l10n.s))
             }
+        case .promptOptimizer:
+            PromptOptimizerSettingsView(state: state)
+                .navigationTitle(tab.title(in: state.l10n.s))
         case .cleaner:
             CleanerView(strings: state.l10n.s)
                 .navigationTitle(tab.title(in: state.l10n.s))

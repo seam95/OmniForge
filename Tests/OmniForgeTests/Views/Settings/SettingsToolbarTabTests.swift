@@ -3,12 +3,12 @@ import XCTest
 
 final class SettingsToolbarTabTests: XCTestCase {
     func test_sidebarContainsStableTabs() {
-        XCTAssertEqual(SettingsToolbarTab.allCases.count, 13)
+        XCTAssertEqual(SettingsToolbarTab.allCases.count, 14)
         XCTAssertEqual(
             SettingsToolbarTab.allCases,
             [
                 .general, .features, .inputMethod, .clipboard, .shelf, .screenshot, .mouse,
-                .performance, .tokenUsage, .keepAwake, .providerSwitch, .cleaner, .uninstaller
+                .performance, .tokenUsage, .keepAwake, .providerSwitch, .promptOptimizer, .cleaner, .uninstaller
             ]
         )
     }
@@ -20,7 +20,7 @@ final class SettingsToolbarTabTests: XCTestCase {
                 SettingsSidebarSection(group: .input, tabs: [.inputMethod]),
                 SettingsSidebarSection(group: .clipboard, tabs: [.clipboard]),
                 SettingsSidebarSection(group: .monitor, tabs: [.performance, .tokenUsage]),
-                SettingsSidebarSection(group: .ai, tabs: [.providerSwitch]),
+                SettingsSidebarSection(group: .ai, tabs: [.providerSwitch, .promptOptimizer]),
                 SettingsSidebarSection(group: .productivity, tabs: [.shelf, .cleaner, .uninstaller]),
                 SettingsSidebarSection(group: .mouse, tabs: [.mouse]),
                 SettingsSidebarSection(group: .energy, tabs: [.keepAwake]),

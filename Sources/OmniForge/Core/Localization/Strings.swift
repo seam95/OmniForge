@@ -1496,6 +1496,30 @@ struct Strings: Equatable {
     let cleaningModeTimeoutMinutesFormat: String
     let cleaningModePermissionTitle: String
     let cleaningModePermissionAction: String
+    // MARK: - Prompt Optimizer（提示词优化）
+    let settingsTabPromptOptimizer: String
+    let featureHubNamePromptOptimizer: String
+    let featureHubDescPromptOptimizer: String
+    let promptOptimizerModelSection: String
+    let promptOptimizerBaseURL: String
+    let promptOptimizerModel: String
+    let promptOptimizerAPIKey: String
+    let promptOptimizerAPIKeyPlaceholder: String
+    let promptOptimizerBehaviorSection: String
+    let promptOptimizerAutoReplace: String
+    let promptOptimizerAutoReplaceHint: String
+    let promptOptimizerHotkeySection: String
+    let promptOptimizerHotkey: String
+    let promptOptimizerPrivacyHint: String
+    let promptOptimizerRunning: String
+    let promptOptimizerSuccess: String
+    let promptOptimizerErrorNotConfigured: String
+    let promptOptimizerErrorNoSelection: String
+    let promptOptimizerErrorNoAccessibility: String
+    let promptOptimizerErrorNetwork: String
+    let promptOptimizerErrorTimeout: String
+    let promptOptimizerErrorUnauthorized: String
+    let promptOptimizerErrorGeneric: String
 }
 
 // MARK: - 派生文案

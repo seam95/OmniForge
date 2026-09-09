@@ -91,4 +91,10 @@ enum UserDefaultsKeys {
     // Sticky Notes — 持久化字符串必须稳定，不得重命名
     static let stickyNoteHotkeyKeyCode = "stickyNote.hotkey.keyCode"
     static let stickyNoteHotkeyModifiers = "stickyNote.hotkey.modifiers"
+    // Prompt Optimizer — 提示词优化（持久化字符串必须稳定，不得重命名）
+    static let promptOptimizerBaseURL = "promptOptimizer.baseURL"
+    static let promptOptimizerModel = "promptOptimizer.model"
+    static let promptOptimizerAutoReplace = "promptOptimizer.autoReplace"
+    static let promptOptimizerHotkeyKeyCode = "promptOptimizer.hotkey.keyCode"
+    static let promptOptimizerHotkeyModifiers = "promptOptimizer.hotkey.modifiers"
 }

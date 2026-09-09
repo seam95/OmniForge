@@ -306,6 +306,28 @@ struct FeatureFactory {
             if runtime.manager(for: .providerSwitch, as: ProviderSwitchManager.self) == nil {
                 runtime.register(.providerSwitch, manager: ProviderSwitchManager.production())
             }
+        case .promptOptimizer:
+            // 轻量接线：无后台工作，install 即注册快捷键（availability 已由 FeatureRuntime 把关）。
+            if runtime.manager(for: .promptOptimizer, as: PromptOptimizerManager.self) == nil {
+                let keychainStore = PromptOptimizerKeychainAPIKeyStore()
+                let manager = PromptOptimizerManager(
+                    userDefaults: userDefaults,
+                    isFeatureAvailable: { FeatureRuntime.shared.isAvailable(.promptOptimizer) },
+                    stringsProvider: { L10n(userDefaults: userDefaults).s },
+                    serviceFactory: {
+                        // 每次触发按当前配置构造：baseURL/模型走 UserDefaults，key 走 Keychain。
+                        guard let apiKey = (try? keychainStore.readAPIKey()) ?? nil, !apiKey.isEmpty else {
+                            return nil
+                        }
+                        let baseURL = userDefaults.string(forKey: UserDefaultsKeys.promptOptimizerBaseURL) ?? ""
+                        let model = userDefaults.string(forKey: UserDefaultsKeys.promptOptimizerModel) ?? ""
+                        guard !baseURL.isEmpty, !model.isEmpty else { return nil }
+                        return PromptOptimizerService(baseURL: baseURL, model: model, apiKey: apiKey)
+                    },
+                    hud: EditorToastPromptOptimizerHUD()
+                )
+                runtime.register(.promptOptimizer, manager: manager)
+            }
         case .stickyNotes:
             // 重接线 feature（对齐截图模式）：install 时恢复便签窗口与提醒调度。
             if runtime.manager(for: .stickyNotes, as: StickyNoteManager.self) == nil {
@@ -406,6 +428,8 @@ struct FeatureFactory {
         case .providerSwitch:
             // 无后台工作；视图持有引用，卸注册即释放
             break
+        case .promptOptimizer:
+            runtime.manager(for: .promptOptimizer, as: PromptOptimizerManager.self)?.teardown()
         case .stickyNotes:
             runtime.manager(for: .stickyNotes, as: StickyNoteManager.self)?.teardown()
         case .cleaningMode:

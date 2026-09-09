@@ -13,6 +13,7 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
     case tokenUsage
     case keepAwake
     case providerSwitch
+    case promptOptimizer
     case cleaner
     case uninstaller
 
@@ -39,6 +40,8 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
                 return isAvailable(.keepAwake)
             case .providerSwitch:
                 return isAvailable(.providerSwitch)
+            case .promptOptimizer:
+                return isAvailable(.promptOptimizer)
             case .cleaner:
                 return isAvailable(.cleaner)
             case .uninstaller:
@@ -85,7 +88,7 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
             return .monitor
         case .keepAwake:
             return .energy
-        case .providerSwitch:
+        case .providerSwitch, .promptOptimizer:
             return .ai
         }
     }
@@ -102,6 +105,7 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
         case .tokenUsage: return "chart.line.uptrend.xyaxis"
         case .keepAwake: return "moon.zzz.fill"
         case .providerSwitch: return "arrow.triangle.swap"
+        case .promptOptimizer: return "wand.and.stars"
         case .cleaner: return "sparkles"
         case .uninstaller: return "trash"
         case .features: return "puzzlepiece.extension"
@@ -124,6 +128,7 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
         case .tokenUsage: return .orange
         case .keepAwake: return .purple
         case .providerSwitch: return .blue
+        case .promptOptimizer: return .purple
         }
     }
 
@@ -139,6 +144,7 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
         case .tokenUsage: return strings.settingsTabTokenUsage
         case .keepAwake: return strings.featureHubNameKeepAwake
         case .providerSwitch: return strings.settingsTabProviderSwitch
+        case .promptOptimizer: return strings.settingsTabPromptOptimizer
         case .cleaner: return strings.cleanerName
         case .uninstaller: return strings.uninstallerName
         case .features: return strings.settingsTabFeatures

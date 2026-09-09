@@ -25,6 +25,7 @@ enum Defaults {
             .merging(screenshotDefaults, uniquingKeysWith: { _, new in new })
             .merging(networkDiagnosticsDefaults, uniquingKeysWith: { _, new in new })
             .merging(dshWebDefaults, uniquingKeysWith: { _, new in new })
+            .merging(promptOptimizerDefaults, uniquingKeysWith: { _, new in new })
     }
 
     /// Onboarding 相关默认值
@@ -139,6 +140,17 @@ enum Defaults {
 
     private static var dshWebDefaults: [String: Any] {
         [UserDefaultsKeys.dshWebPort: DSHWebManager.defaultPort]
+    }
+
+    /// 提示词优化偏好默认值（决策 D12：预填 DeepSeek，可一步清空换任何 OpenAI 兼容服务）。
+    private static var promptOptimizerDefaults: [String: Any] {
+        [
+            UserDefaultsKeys.promptOptimizerBaseURL: "https://api.deepseek.com/v1",
+            UserDefaultsKeys.promptOptimizerModel: "deepseek-chat",
+            UserDefaultsKeys.promptOptimizerAutoReplace: false,
+            UserDefaultsKeys.promptOptimizerHotkeyKeyCode: HotkeyDefinition.defaultPromptOptimizer.keyCode,
+            UserDefaultsKeys.promptOptimizerHotkeyModifiers: HotkeyDefinition.defaultPromptOptimizer.modifiers.rawValue,
+        ]
     }
 
     /// Trims, drops empties, and de-duplicates bundle identifiers while preserving order.
