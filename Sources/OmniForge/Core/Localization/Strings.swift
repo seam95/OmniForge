@@ -14,6 +14,11 @@ struct Strings: Equatable {
     // MARK: - Settings
     let settingsLanguage: String
     let settingsSystem: String
+    let settingsAppearance: String
+    let settingsAppearanceSystem: String
+    let settingsAppearanceLight: String
+    let settingsAppearanceDark: String
+    let settingsAppearanceHint: String
     let settingsLaunchAtLogin: String
     let settingsHideDockIcon: String
     let settingsHideDockIconHint: String

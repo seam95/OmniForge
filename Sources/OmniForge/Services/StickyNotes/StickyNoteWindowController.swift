@@ -80,7 +80,8 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
     init(
         note: StickyNote,
         actionsProvider: @escaping () -> StickyNoteViewActions,
-        stringsProvider: @escaping () -> Strings
+        stringsProvider: @escaping () -> Strings,
+        appearance: AppearanceSettings? = nil
     ) {
         self.noteID = note.id
         self.actionsProvider = actionsProvider
@@ -95,6 +96,9 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
         self.viewModel = StickyNoteViewModel(note: note)
         self.lastCollapsed = note.collapsed
         super.init()
+
+        // 便签窗口在外观白名单：偏好切换即时传导（贴纸配色豁免，见 SPEC）。
+        appearance?.attach(panel)
 
         panel.delegate = self
         panel.setContentSize(finalFrame.size)

@@ -56,7 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MainMenuSettingsTarget
             self.setupPermissionSubscriptions()
 
             let coordinator = OnboardingCoordinator.shared
-            OnboardingWindowController.shared.startObserving(coordinator, l10n: root.appState.l10n)
+            OnboardingWindowController.shared.startObserving(coordinator, l10n: root.appState.l10n, appearance: root.appState.appearance)
             DispatchQueue.main.async {
                 coordinator.startIfNeeded()
             }

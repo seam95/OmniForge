@@ -5,6 +5,8 @@ import Foundation
 final class StickyNoteWindowRegistry: StickyNoteWindowPresenting {
     /// Manager 在 Factory 装配完成后回填；weak 避免循环持有。
     weak var manager: StickyNoteManager?
+    /// 外观偏好注入（组合根接线）；nil=未接线，窗口跟随系统。
+    weak var appearance: AppearanceSettings?
 
     private let stringsProvider: () -> Strings
     private var controllers: [UUID: StickyNoteWindowController] = [:]
@@ -90,7 +92,8 @@ final class StickyNoteWindowRegistry: StickyNoteWindowPresenting {
         let controller = StickyNoteWindowController(
             note: note,
             actionsProvider: actionsProvider,
-            stringsProvider: stringsProvider
+            stringsProvider: stringsProvider,
+            appearance: appearance
         )
         controller.onFrameChanged = { [weak self] id, frame in
             self?.manager?.updateFrame(id: id, frame: frame)

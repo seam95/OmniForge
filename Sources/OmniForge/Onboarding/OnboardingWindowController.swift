@@ -12,12 +12,14 @@ final class OnboardingWindowController {
     private var whatsNewWindow: NSWindow?
     private var subscriptions = Set<AnyCancellable>()
     private var l10n: L10n?
+    private weak var appearance: AppearanceSettings?
 
     private init() {}
 
     /// 开始监听 coordinator 状态，自动管理窗口
-    func startObserving(_ coordinator: OnboardingCoordinator, l10n: L10n) {
+    func startObserving(_ coordinator: OnboardingCoordinator, l10n: L10n, appearance: AppearanceSettings) {
         self.l10n = l10n
+        self.appearance = appearance
         subscriptions.removeAll()
 
         coordinator.$isWindowVisible
@@ -62,6 +64,7 @@ final class OnboardingWindowController {
         window.isReleasedWhenClosed = false
 
         onboardingWindow = window
+        appearance?.attach(window)
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -89,6 +92,7 @@ final class OnboardingWindowController {
         window.isReleasedWhenClosed = false
 
         whatsNewWindow = window
+        appearance?.attach(window)
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }

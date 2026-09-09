@@ -36,6 +36,8 @@ final class SettingsWindowManager: NSObject, NSWindowDelegate {
             newWindow.delegate = self
             newWindow.center()
             window = newWindow
+            // 设置窗口在外观白名单：偏好切换即时生效。
+            appState.appearance.attach(newWindow)
         }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)

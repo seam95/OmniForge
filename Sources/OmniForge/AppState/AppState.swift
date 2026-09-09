@@ -6,6 +6,7 @@ import Foundation
 final class AppState: ObservableObject {
     /// 始终存在的轻量依赖
     let l10n: L10n
+    let appearance: AppearanceSettings
     let launchAtLogin: LaunchAtLoginManager
     private let userDefaults: UserDefaults
 
@@ -48,11 +49,13 @@ final class AppState: ObservableObject {
     /// 生产路径：从 FeatureRuntime 取 Manager，revision 变化时重绑。
     convenience init(
         l10n: L10n,
+        appearance: AppearanceSettings? = nil,
         launchAtLogin: LaunchAtLoginManager,
         userDefaults: UserDefaults = .standard
     ) {
         self.init(
             l10n: l10n,
+            appearance: appearance ?? AppearanceSettings(userDefaults: userDefaults),
             launchAtLogin: launchAtLogin,
             inputMethods: nil,
             lockState: nil,
@@ -67,9 +70,11 @@ final class AppState: ObservableObject {
         )
     }
 
-    /// 测试 / 显式注入路径。
+    /// 测试 / 显式注入路径。appearance 为 nil 时自建（UserDefaults 同源），
+    /// 保持旧调用签名兼容；显式注入用于测试观察同一实例。
     init(
         l10n: L10n,
+        appearance: AppearanceSettings? = nil,
         launchAtLogin: LaunchAtLoginManager,
         inputMethods: InputMethodManager?,
         lockState: LockStateManager?,
@@ -85,6 +90,7 @@ final class AppState: ObservableObject {
         bindToRuntime: Bool = false
     ) {
         self.l10n = l10n
+        self.appearance = appearance ?? AppearanceSettings(userDefaults: userDefaults)
         self.launchAtLogin = launchAtLogin
         self.inputMethods = inputMethods
         self.lockState = lockState
@@ -130,6 +136,7 @@ final class AppState: ObservableObject {
         inputMethods: InputMethodManager,
         lockState: LockStateManager,
         l10n: L10n,
+        appearance: AppearanceSettings? = nil,
         launchAtLogin: LaunchAtLoginManager,
         clipboardHistory: ClipboardHistoryManager,
         clipboardHotkey: ClipboardHotkeyManager,
@@ -143,6 +150,7 @@ final class AppState: ObservableObject {
     ) {
         self.init(
             l10n: l10n,
+            appearance: appearance,
             launchAtLogin: launchAtLogin,
             inputMethods: inputMethods,
             lockState: lockState,

@@ -2,6 +2,12 @@ import SwiftUI
 
 struct GeneralSettingsView: View {
     let state: AppState
+    @ObservedObject private var appearance: AppearanceSettings
+
+    init(state: AppState) {
+        self.state = state
+        _appearance = ObservedObject(wrappedValue: state.appearance)
+    }
 
     var body: some View {
         Form {
@@ -23,6 +29,23 @@ struct GeneralSettingsView: View {
                     Text(AppLanguage.zhHans.displayName).tag(AppLanguage.zhHans.rawValue)
                 }
                 .accessibilityIdentifier(SettingsAccessibilityID.generalLanguage.rawValue)
+
+                Picker(selection: Binding(
+                    get: { appearance.mode.rawValue },
+                    set: { newValue in
+                        if let mode = AppearanceMode(rawValue: newValue) {
+                            appearance.setMode(mode)
+                        }
+                    }
+                )) {
+                    Text(state.l10n.s.settingsAppearanceSystem).tag(AppearanceMode.system.rawValue)
+                    Text(state.l10n.s.settingsAppearanceLight).tag(AppearanceMode.light.rawValue)
+                    Text(state.l10n.s.settingsAppearanceDark).tag(AppearanceMode.dark.rawValue)
+                } label: {
+                    // 既定规范：新设置项说明不平铺，走 InfoHint 气泡。
+                    InfoHintLabel(state.l10n.s.settingsAppearance, hint: state.l10n.s.settingsAppearanceHint)
+                }
+                .accessibilityIdentifier(SettingsAccessibilityID.generalAppearance.rawValue)
 
                 Toggle(state.l10n.s.settingsLaunchAtLogin, isOn: Binding(
                     get: { state.launchAtLogin.isEnabled },

@@ -197,6 +197,8 @@ final class StatusBarController: NSObject, NSWindowDelegate {
         super.init()
         panel.delegate = self
         panel.onDismiss = { [weak self] in self?.closePanel() }
+        // 控制中心面板在外观白名单：用户三态偏好即时传导（菜单栏图标豁免）。
+        state.appearance.attach(panel)
 
         if let button = statusItem.button {
             button.image = Self.menuBarIcon()

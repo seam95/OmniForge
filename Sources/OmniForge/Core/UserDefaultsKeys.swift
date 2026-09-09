@@ -2,6 +2,7 @@ enum UserDefaultsKeys {
     static let isLocked = "isLocked"
     static let lockedInputSourceID = "lockedInputSourceID"
     static let preferredLanguage = "preferredLanguage"
+    static let appearanceMode = "appearanceMode"
     static let launchAtLogin = "launchAtLogin"
     static let hideDockIcon = "hideDockIcon"
     static let clipboardRetentionDays = "clipboardRetentionDays"

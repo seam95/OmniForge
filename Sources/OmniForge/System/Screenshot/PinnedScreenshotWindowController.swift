@@ -28,6 +28,8 @@ final class PinnedScreenshotWindowController: NSObject, NSWindowDelegate {
 
     private var panel: NSPanel?
     private var contentView: PinnedScreenshotContentView?
+    /// 外观偏好注入（Registry 接线）；nil=未接线，窗口跟随系统。
+    weak var appearance: AppearanceSettings?
     private var dragStartOrigin: CGPoint?
     private var dragStartEventLocation: CGPoint?
 
@@ -155,6 +157,8 @@ final class PinnedScreenshotWindowController: NSObject, NSWindowDelegate {
 
         self.panel = panel
         self.contentView = content
+        // 钉图窗口在外观白名单：偏好切换即时传导（截图业务固定色豁免）。
+        appearance?.attach(panel)
         if !suppressesWindowDisplay {
             panel.orderFront(nil)
         }

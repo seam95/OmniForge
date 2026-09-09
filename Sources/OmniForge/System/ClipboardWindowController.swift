@@ -78,6 +78,8 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
         panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         panel.minSize = minimumWindowSize
         panel.delegate = self
+        // 剪贴板面板在外观白名单：偏好切换即时传导。
+        state.appearance.attach(panel)
 
         restoreWindowFrame()
 

@@ -171,6 +171,7 @@ final class AppCompositionRoot {
 
     private static func makeUIParts(userDefaults: UserDefaults) -> UIParts {
         let l10n = L10n(userDefaults: userDefaults)
+        let appearance = AppearanceSettings(userDefaults: userDefaults)
         let launchAtLogin = LaunchAtLoginManager(
             client: ServiceManagementLaunchAtLoginClient(),
             userDefaults: userDefaults
@@ -178,6 +179,7 @@ final class AppCompositionRoot {
         // 此时 FeatureRuntime registry 已装载 available 特性的 Manager。
         let appState = AppState(
             l10n: l10n,
+            appearance: appearance,
             launchAtLogin: launchAtLogin,
             userDefaults: userDefaults
         )
@@ -200,6 +202,7 @@ final class AppCompositionRoot {
     /// 共享接线：recovery 注入、hotkey/shelf 绑定、revision 订阅。
     private func finishWiring() {
         appState.attachClamshellRecoveryCoordinator(clamshellRecoveryCoordinator)
+        wireAppearanceTargets()
         wireShelfAnchor()
         wireClipboardHotkey()
         wireKeepAwakeHotkey()
@@ -215,6 +218,7 @@ final class AppCompositionRoot {
             .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
+                self?.wireAppearanceTargets()
                 self?.wireShelfAnchor()
                 self?.wireClipboardHotkey()
                 self?.wireKeepAwakeHotkey()
@@ -231,6 +235,15 @@ final class AppCompositionRoot {
         shelf.statusItemFrameProvider = { [weak statusBarController] in
             statusBarController?.mainStatusItemScreenFrame()
         }
+    }
+
+    /// 为动态创建窗口的特性（Shelf、便签、钉图）注入外观偏好引用。
+    private func wireAppearanceTargets() {
+        let appearance = appState.appearance
+        FeatureRuntime.shared.manager(for: .shelf, as: ShelfService.self)?.appearance = appearance
+        FeatureRuntime.shared.manager(for: .stickyNotes, as: StickyNoteManager.self)?.appearance = appearance
+        FeatureRuntime.shared.manager(for: .screenshot, as: ScreenshotFeatureManager.self)?
+            .pinnedScreenshotRegistry?.appearance = appearance
     }
 
     private func wireClipboardHotkey() {

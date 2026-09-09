@@ -83,6 +83,8 @@ final class ShelfService: ObservableObject {
     private let storeDirectory: URL
     private let tempDir: URL
     private let persistQueue: DispatchQueue
+    /// 外观偏好注入（组合根接线；nil=未接线，窗口跟随系统）。
+    weak var appearance: AppearanceSettings?
 
     private var persistScheduled = false
     private var activeInternalDragIDs: [UUID] = []
@@ -660,6 +662,7 @@ final class ShelfService: ObservableObject {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         dockedPanel = panel
         Self.activeForUI = self
+        appearance?.attach(panel)
         return panel
     }
 
@@ -1158,6 +1161,7 @@ final class ShelfService: ObservableObject {
         panel.contentViewController = host
         self.panel = panel
         Self.activeForUI = self
+        appearance?.attach(panel)
         return panel
     }
 

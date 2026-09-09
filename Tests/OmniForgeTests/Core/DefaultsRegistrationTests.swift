@@ -200,6 +200,23 @@ final class DefaultsRegistrationTests: XCTestCase {
         XCTAssertNil(registration[retiredAutoClose])
     }
 
+    func test_register_defaultsAppearanceModeToSystem() {
+        let suite = "DefaultsRegistrationTests_appearanceMode"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+
+        Defaults.register(in: defaults)
+
+        XCTAssertEqual(
+            defaults.string(forKey: UserDefaultsKeys.appearanceMode),
+            AppearanceMode.system.rawValue
+        )
+        XCTAssertEqual(
+            Defaults.registrationValues[UserDefaultsKeys.appearanceMode] as? String,
+            AppearanceMode.system.rawValue
+        )
+    }
+
     func test_register_setsNetworkDiagnosticsSegmentDefault() {
         let suite = "DefaultsRegistrationTests_networkDiagnostics"
         let defaults = UserDefaults(suiteName: suite)!

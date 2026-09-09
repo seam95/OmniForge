@@ -16,6 +16,7 @@ enum Defaults {
         AppFeature.availabilityDefaults
             .merging(onboardingDefaults, uniquingKeysWith: { _, new in new })
             .merging(shelfDefaults, uniquingKeysWith: { _, new in new })
+            .merging(appearanceDefaults, uniquingKeysWith: { _, new in new })
             .merging(cleanerDefaults, uniquingKeysWith: { _, new in new })
             .merging(mouseDefaults, uniquingKeysWith: { _, new in new })
             .merging(utilityDefaults, uniquingKeysWith: { _, new in new })
@@ -48,6 +49,11 @@ enum Defaults {
             UserDefaultsKeys.shelfRemoveAfterDrop: true,
             UserDefaultsKeys.shelfAutomaticExclusions: [String](),
         ]
+    }
+
+    /// 外观默认值；与 AppearanceMode.system rawValue 对齐。
+    private static var appearanceDefaults: [String: Any] {
+        [UserDefaultsKeys.appearanceMode: AppearanceMode.system.rawValue]
     }
 
     /// Cleaner 调度相关默认值

@@ -55,6 +55,10 @@ final class StickyNoteManager: ObservableObject {
     private var persistTasks: [UUID: Task<Void, Never>] = [:]
     private var isHotkeyListening = false
     private var hasRegisteredHotkeyOnKeyUpHandler = false
+    /// 便签窗口外观偏好注入（组合根接线）；转发给窗口注册表，nil=跟随系统。
+    weak var appearance: AppearanceSettings? {
+        didSet { (windowPresenter as? StickyNoteWindowRegistry)?.appearance = appearance }
+    }
 
     init(
         store: StickyNoteStore,

@@ -33,6 +33,8 @@ final class PinnedScreenshotRegistry {
 
     /// T15 L10n 注入；Factory 设置后，新建钉图控制器沿用运行时语言。
     var stringsProvider: () -> Strings = { .en }
+    /// 外观偏好注入（组合根接线）；nil=未接线，窗口跟随系统。
+    weak var appearance: AppearanceSettings?
 
     // MARK: - 创建
 
@@ -88,6 +90,7 @@ final class PinnedScreenshotRegistry {
         controller.onTouch = { [weak self] id in
             self?.markTouched(id)
         }
+        controller.appearance = appearance
         try controller.present(preferredScreenFrame: preferredScreenFrame, preferredOrigin: preferredOrigin)
         controllers[id] = controller
         // 新钉图默认选中，允许用户立即按 ESC 撤销本次贴图。
