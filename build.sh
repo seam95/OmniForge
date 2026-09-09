@@ -189,23 +189,30 @@ if (( DMG )); then
     fi
     if hdiutil attach -readwrite -noverify -noautoopen "$UDRW_PATH" >/dev/null 2>&1; then
         sleep 2
-        # 写入图标视图：600×400 无栏窗口、128pt 图标、背景图、app 与 Applications 对齐箭头两端。
+        # 写入图标视图：窗口 600×428（内容区 600×400，背景图 1:1 铺设不缩放）、128pt 图标。
+        # 布局契约与 tools/make_dmg_background.swift 成对维护：背景虚线槽心 (150,170)/(450,170)，
+        # 图标 position 以「图标渲染中心 = 槽心 + 标题栏 28pt」标定（中心 ≈ position + (2, 29)）。
+        # Finder 就绪前写入会静默丢背景/图标尺寸，关键步骤间用 delay 兜底；
         # 首次运行会请求一次「控制 Finder」授权；失败不阻塞出包，仅回退默认外观。
         if ! osascript <<AS 2>/dev/null
 tell application "Finder"
     tell disk "$APP_NAME"
         open
+        delay 1
         set current view of container window to icon view
         set toolbar visible of container window to false
         set statusbar visible of container window to false
         set pathbar visible of container window to false
-        set the bounds of container window to {180, 120, 780, 520}
+        set the bounds of container window to {180, 120, 780, 548}
+        delay 0.5
         set viewOptions to the icon view options of container window
         set arrangement of viewOptions to not arranged
         set icon size of viewOptions to 128
         set background picture of viewOptions to (POSIX file "$MOUNT_DIR/.background/background.png")
-        set position of item "$APP_NAME.app" of container window to {86, 126}
-        set position of item "Applications" of container window to {386, 126}
+        delay 0.5
+        set position of item "$APP_NAME.app" of container window to {148, 169}
+        set position of item "Applications" of container window to {448, 169}
+        delay 0.5
         close
         open
         update without registering applications
