@@ -37,7 +37,14 @@ final class SystemMonitorManager: ObservableObject {
     private var lastGPUUsage: Double?
     /// 面板打开后的短间隔追加采样（可取消）；关闭面板即作废
     private var rapidFollowUp: DispatchWorkItem?
+    /// 进程排行首开补采任务（可取消）；收起/切换指标/停采样即作废
+    private var processFollowUp: DispatchWorkItem?
+    /// 当前展开指标的补采已调度次数（基线始终建不起来时封顶，防无限重试）
+    private var processFollowUpAttempts = 0
     private static let rapidFollowUpDelay: TimeInterval = 0.5
+    /// delta 类指标首开补采间隔：首采仅建基线，1s 后补采即可算出真实速率
+    private static let processFollowUpDelay: TimeInterval = 1.0
+    private static let processFollowUpMaxAttempts = 4
     private static let processRefreshInterval: TimeInterval = 4.0
     private static let processDisplayLimit = ProcessRankingDisplay.limit
 
@@ -119,6 +126,9 @@ final class SystemMonitorManager: ObservableObject {
     }
 
     func setExpandedProcessMetric(_ kind: ProcessMetricKind?) {
+        processFollowUp?.cancel()
+        processFollowUp = nil
+        processFollowUpAttempts = 0
         if let current = processState.kind, current != kind {
             processSampler.stop(current)
         }
@@ -214,6 +224,8 @@ final class SystemMonitorManager: ObservableObject {
         isSampling = false
         rapidFollowUp?.cancel()
         rapidFollowUp = nil
+        processFollowUp?.cancel()
+        processFollowUp = nil
         cancellables.removeAll()
         stopActiveProcessSamplerIfNeeded()
         processState = .collapsed
@@ -446,6 +458,9 @@ final class SystemMonitorManager: ObservableObject {
 
     private func sampleProcessUsage(_ kind: ProcessMetricKind) {
         lastProcessSampleAt = Date()
+        // 采样前记录基线状态：delta 类指标（GPU/网络）首采仅建基线、必返回空。
+        // 据此识别"首开刚建基线"场景并调度短间隔补采，避免空态干等 4s 节流 tick。
+        let hadBaseline = processSampler.hasProcessBaseline(for: kind)
         queue.async { [weak self] in
             guard let self else { return }
             do {
@@ -456,8 +471,12 @@ final class SystemMonitorManager: ObservableObject {
                 DispatchQueue.main.async {
                     // 若期间已折叠或切换到其他指标，丢弃过期结果
                     guard self.processState.kind == kind else { return }
-                    if needsBaseline {
+                    // 首开仅建基线（采样前无基线）或基线未就绪：保持 loading 并
+                    // ~1s 后补采；补采次数封顶，超限落 loaded 防止无限重试。
+                    let stillPriming = rows.isEmpty && (!hadBaseline || needsBaseline)
+                    if stillPriming, self.processFollowUpAttempts < Self.processFollowUpMaxAttempts {
                         self.processState = .loading(kind)
+                        self.scheduleProcessFollowUp(kind)
                     } else {
                         self.processState = .loaded(kind, rows)
                     }
@@ -469,5 +488,18 @@ final class SystemMonitorManager: ObservableObject {
                 }
             }
         }
+    }
+
+    /// 首开/基线未就绪时的短间隔补采：直接调 sampleProcessUsage 绕过 4s 节流；
+    /// 收起/切换指标由 setExpandedProcessMetric 取消，work 内的 kind 守卫兜底。
+    private func scheduleProcessFollowUp(_ kind: ProcessMetricKind) {
+        processFollowUpAttempts += 1
+        processFollowUp?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.processState.kind == kind else { return }
+            self.sampleProcessUsage(kind)
+        }
+        processFollowUp = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.processFollowUpDelay, execute: work)
     }
 }

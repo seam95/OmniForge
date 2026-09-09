@@ -424,6 +424,69 @@ final class SystemMonitorManagerTests: XCTestCase {
         XCTAssertEqual(process.sampleCount, 1)
     }
 
+    func test_firstSampleWithoutBaseline_keepsLoadingAndFollowsUp() async throws {
+        // delta 类指标（GPU/网络）首开：首采仅建基线必返回空，不应切 loaded([]) 空态
+        // 干等 4s 节流 tick；应保持 loading，由 ~1s 后的自动补采产出真实数据。
+        let process = FirstEmptyThenRowsProcessUsageSampler()
+        let manager = SystemMonitorManager(
+            scheduler: FakeRepeatingScheduler(),
+            cpuSampler: FakeCPUSampler(),
+            gpuSampler: FakeGPUSampler(),
+            memorySampler: FakeMemorySampler(),
+            temperatureSampler: FakeTemperatureSampler(),
+            networkSampler: FakeNetworkSampler(),
+            diskSampler: FakeDiskSampler(),
+            powerSampler: FakePowerSampler(),
+            peripheralBatterySampler: FakePeripheralBatterySampler(),
+            processSampler: process
+        )
+
+        manager.setPanelDemand(.init(gpu: true))
+        manager.setExpandedProcessMetric(.gpu)
+
+        // 首采回写完成后（补采 1s 未到）应保持 loading，而非 loaded(空) 假空态
+        try await waitForFirstEmptySampleCount(process, atLeast: 1)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        if case .loading = manager.processState {
+        } else {
+            XCTFail("首开仅建基线，应保持 .loading，实际为 \(manager.processState)")
+        }
+
+        // ~1s 后自动补采出数，全程无需手动刷新或定时 tick
+        try await waitForProcessState(manager, timeout: 2.5) { state in
+            if case .loaded(.gpu, let rows) = state { return !rows.isEmpty }
+            return false
+        }
+        XCTAssertEqual(process.sampleCount, 2)
+    }
+
+    func test_collapseDuringFollowUpWait_cancelsResample() async throws {
+        // 首开补采等待期内收起排行：补采任务必须取消，不得再采样
+        let process = FirstEmptyThenRowsProcessUsageSampler()
+        let manager = SystemMonitorManager(
+            scheduler: FakeRepeatingScheduler(),
+            cpuSampler: FakeCPUSampler(),
+            gpuSampler: FakeGPUSampler(),
+            memorySampler: FakeMemorySampler(),
+            temperatureSampler: FakeTemperatureSampler(),
+            networkSampler: FakeNetworkSampler(),
+            diskSampler: FakeDiskSampler(),
+            powerSampler: FakePowerSampler(),
+            peripheralBatterySampler: FakePeripheralBatterySampler(),
+            processSampler: process
+        )
+
+        manager.setPanelDemand(.init(gpu: true))
+        manager.setExpandedProcessMetric(.gpu)
+        try await waitForFirstEmptySampleCount(process, atLeast: 1)
+        try await Task.sleep(nanoseconds: 100_000_000) // 等主线程回写调度补采
+
+        manager.setExpandedProcessMetric(nil)
+        // 越过 1s 补采时刻，不得发生第二次采样
+        try await Task.sleep(nanoseconds: 1_300_000_000)
+        XCTAssertEqual(process.sampleCount, 1)
+    }
+
     func test_memorySampleFailureClearsPressureToUnknown() async throws {
         let memory = ScriptedMemorySampler(results: [
             .success(MemoryReading(used: 4_000_000_000, total: 8_000_000_000, pressure: .critical)),
@@ -751,6 +814,33 @@ final class BaselineReadyProcessUsageSampler: ProcessUsageSampling {
     func hasProcessBaseline(for kind: ProcessMetricKind) -> Bool { true }
 }
 
+/// 模拟 delta 指标首开：首采仅建基线返回空（此前无基线），此后基线就绪返回真实行。
+/// 对齐真实 topGPU/topNetwork 的"首开必空"行为。
+final class FirstEmptyThenRowsProcessUsageSampler: ProcessUsageSampling {
+    private let lock = NSLock()
+    private(set) var sampleCount = 0
+
+    func sample(_ kind: ProcessMetricKind, limit: Int) throws -> [ProcessUsage] {
+        lock.lock()
+        sampleCount += 1
+        let count = sampleCount
+        lock.unlock()
+        if count == 1 { return [] }
+        return [
+            ProcessUsage(pid: 1, name: "test", value: 0.5),
+            ProcessUsage(pid: 2, name: "test2", value: 0.3),
+        ]
+    }
+
+    func stop(_ kind: ProcessMetricKind) {}
+
+    func hasProcessBaseline(for kind: ProcessMetricKind) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return sampleCount >= 1
+    }
+}
+
 final class SequencedCPUSampler: CPUUsageSampling {
     var results: [Result<CPUUsageReading?, MetricSamplingError>]
     var index = 0
@@ -868,6 +958,20 @@ private func waitForBaselineQuery(
         try await Task.sleep(nanoseconds: 20_000_000)
     }
     XCTFail("Timed out waiting for hasProcessBaseline query")
+}
+
+@MainActor
+private func waitForFirstEmptySampleCount(
+    _ sampler: FirstEmptyThenRowsProcessUsageSampler,
+    atLeast count: Int,
+    timeout: TimeInterval = 1.0
+) async throws {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if sampler.sampleCount >= count { return }
+        try await Task.sleep(nanoseconds: 20_000_000)
+    }
+    XCTFail("Timed out waiting for process sample count >= \(count); got \(sampler.sampleCount)")
 }
 
 
