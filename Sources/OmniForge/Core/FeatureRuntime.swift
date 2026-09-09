@@ -68,6 +68,9 @@ final class FeatureRuntime: ObservableObject {
         loadedThisSession = Set(AppFeature.allCases.filter { store.isAvailable($0) })
     }
 
+    /// 已注入的 UserDefaults 实例（与 availability 存储同源，供 UI 读写特性偏好）。
+    var injectedDefaults: UserDefaults { defaults }
+
     /// 启动：只 install + bind 已安装特性。
     func bootstrapInstalledFeatures() {
         for feature in AppFeature.allCases where isAvailable(feature) {
@@ -352,6 +355,16 @@ final class FeatureRuntime: ObservableObject {
             // availability 关闭时强制退出清洁（teardown 之外的独立保险）。
             if !shared.isAvailable(.cleaningMode) {
                 shared.manager(for: .cleaningMode, as: CleaningModeManager.self)?.stop()
+            }
+        },
+        .desktopPet: {
+            // 重接线 feature：可用 + 开关开启才建窗；否则窗口消失、循环停止。
+            let manager = shared.manager(for: .desktopPet, as: DesktopPetManager.self)
+            let enabled = shared.defaults.bool(forKey: UserDefaultsKeys.petEnabled)
+            if shared.isAvailable(.desktopPet), enabled {
+                manager?.start()
+            } else {
+                manager?.teardown()
             }
         },
     ]

@@ -1520,6 +1520,21 @@ struct Strings: Equatable {
     let promptOptimizerErrorTimeout: String
     let promptOptimizerErrorUnauthorized: String
     let promptOptimizerErrorGeneric: String
+    // MARK: - Desktop Pet（桌面宠物）
+    let featureHubNameDesktopPet: String
+    let featureHubDescDesktopPet: String
+    let utilityDesktopPetSubtitle: String
+    let desktopPetEnable: String
+    let desktopPetSizeSection: String
+    let desktopPetSizeSmall: String
+    let desktopPetSizeMedium: String
+    let desktopPetSizeLarge: String
+    let desktopPetClickThrough: String
+    let desktopPetResetPosition: String
+    let desktopPetHide: String
+    let desktopPetOpenSettings: String
+    let desktopPetShow: String
+    let desktopPetClickThroughHint: String
 }
 
 // MARK: - 派生文案

@@ -1374,6 +1374,21 @@ extension Strings {
         promptOptimizerErrorNetwork: "网络错误",
         promptOptimizerErrorTimeout: "请求超时",
         promptOptimizerErrorUnauthorized: "鉴权失败，请检查 API Key",
-        promptOptimizerErrorGeneric: "优化失败"
+        promptOptimizerErrorGeneric: "优化失败",
+        // MARK: - Desktop Pet（桌面宠物）
+        featureHubNameDesktopPet: "桌面宠物",
+        featureHubDescDesktopPet: "像素宠物常驻桌面，会自己走动、发呆，也能被拖着玩",
+        utilityDesktopPetSubtitle: "像素宠物常驻桌面，自己走动发呆",
+        desktopPetEnable: "启用桌面宠物",
+        desktopPetSizeSection: "尺寸",
+        desktopPetSizeSmall: "小",
+        desktopPetSizeMedium: "中",
+        desktopPetSizeLarge: "大",
+        desktopPetClickThrough: "点击穿透",
+        desktopPetResetPosition: "重置位置",
+        desktopPetHide: "隐藏宠物",
+        desktopPetOpenSettings: "打开设置",
+        desktopPetShow: "显示宠物",
+        desktopPetClickThroughHint: "开启后鼠标完全穿过宠物，需从菜单栏切回"
     )
 }

@@ -366,6 +366,16 @@ struct FeatureFactory {
                 )
                 runtime.register(.cleaningMode, manager: manager)
             }
+        case .desktopPet:
+            // 重接线 feature（对齐便签）：install 时按 petEnabled 建窗并恢复位置。
+            if runtime.manager(for: .desktopPet, as: DesktopPetManager.self) == nil {
+                let manager = DesktopPetManager(
+                    userDefaults: userDefaults,
+                    asset: PetAssetLocator.loadBuiltIn(),
+                    stringsProvider: { L10n(userDefaults: userDefaults).s }
+                )
+                runtime.register(.desktopPet, manager: manager)
+            }
         }
     }
 
@@ -435,6 +445,9 @@ struct FeatureFactory {
         case .cleaningMode:
             // 卸载时若清洁进行中，先撤遮罩、恢复输入，再卸注册。
             runtime.manager(for: .cleaningMode, as: CleaningModeManager.self)?.stop()
+        case .desktopPet:
+            // 窗口立即消失 + 行为循环停止（可插拔停用契约）。
+            runtime.manager(for: .desktopPet, as: DesktopPetManager.self)?.teardown()
         }
         runtime.unregisterAll(for: feature)
     }

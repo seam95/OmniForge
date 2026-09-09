@@ -26,6 +26,7 @@ enum AppFeature: String, CaseIterable {
     case promptOptimizer
     case stickyNotes
     case cleaningMode
+    case desktopPet
 
     /// 设置「鼠标」分区与相关入口共用的功能集合。
     /// 派生自 mouse 分组成员，新增鼠标特性只需改 group 归属，消除手抄列表漂移。
@@ -76,7 +77,7 @@ extension AppFeature {
         case .keepAwake: return .energy
         case .screenshot: return .capture
         case .providerSwitch, .promptOptimizer: return .ai
-        case .stickyNotes, .cleaningMode: return .productivity
+        case .stickyNotes, .cleaningMode, .desktopPet: return .productivity
         }
     }
 
@@ -107,6 +108,7 @@ extension AppFeature {
         case .promptOptimizer: return []
         case .stickyNotes: return []
         case .cleaningMode: return []
+        case .desktopPet: return [UserDefaultsKeys.petEnabled]
         }
     }
 
@@ -130,6 +132,7 @@ extension AppFeature {
         case .promptOptimizer: return [.accessibility]
         case .stickyNotes: return [.notifications]
         case .cleaningMode: return [.accessibility]
+        case .desktopPet: return []
         }
     }
 
@@ -175,6 +178,9 @@ extension AppFeature {
             return permission == .accessibility ? .required : nil
         case .clipboardHistory, .quickPhrase, .shelf, .launchAtLogin:
             return nil
+        case .desktopPet:
+            // 纯桌宠不监听全局输入、不读窗口标题，零系统权限。
+            return nil
         }
     }
 
@@ -208,6 +214,7 @@ extension AppFeature {
         case .promptOptimizer: return "wand.and.stars"
         case .stickyNotes: return "note.text"
         case .cleaningMode: return "bubbles.and.sparkles"
+        case .desktopPet: return "pawprint"
         }
     }
 
@@ -236,6 +243,7 @@ extension AppFeature {
         case .promptOptimizer: return strings.featureHubNamePromptOptimizer
         case .stickyNotes: return strings.featureHubNameStickyNotes
         case .cleaningMode: return strings.featureHubNameCleaningMode
+        case .desktopPet: return strings.featureHubNameDesktopPet
         }
     }
 
@@ -264,6 +272,7 @@ extension AppFeature {
         case .promptOptimizer: return strings.featureHubDescPromptOptimizer
         case .stickyNotes: return strings.featureHubDescStickyNotes
         case .cleaningMode: return strings.featureHubDescCleaningMode
+        case .desktopPet: return strings.featureHubDescDesktopPet
         }
     }
 

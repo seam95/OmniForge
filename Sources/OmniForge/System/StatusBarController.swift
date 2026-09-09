@@ -446,7 +446,8 @@ final class StatusBarController: NSObject, NSWindowDelegate {
             .pinnedScreenshotRegistry
         let hasPinsMenu = pinRegistry != nil
         let hasStickyNotes = FeatureRuntime.shared.isAvailable(.stickyNotes)
-        guard hasKeepAwake || hasPinsMenu || hasStickyNotes || render.includeQuit else {
+        let hasDesktopPet = FeatureRuntime.shared.isAvailable(.desktopPet)
+        guard hasKeepAwake || hasPinsMenu || hasStickyNotes || hasDesktopPet || render.includeQuit else {
             return nil
         }
 
@@ -483,6 +484,18 @@ final class StatusBarController: NSObject, NSWindowDelegate {
             for item in menu.items where item.action != nil {
                 item.target = self
             }
+            if hasKeepAwake {
+                menu.addItem(.separator())
+            }
+        }
+
+        // 桌面宠物：点击穿透后宠物不可交互，此处是切回的唯一入口。
+        if hasDesktopPet {
+            let isPetEnabled = UserDefaults.standard.bool(forKey: UserDefaultsKeys.petEnabled)
+            let title = isPetEnabled ? s.desktopPetHide : s.desktopPetShow
+            let item = NSMenuItem(title: title, action: #selector(toggleDesktopPet), keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
             if hasKeepAwake {
                 menu.addItem(.separator())
             }
@@ -633,6 +646,23 @@ final class StatusBarController: NSObject, NSWindowDelegate {
 
     @objc private func stickyNoteHideAll() {
         stickyNoteManager()?.hideAll()
+    }
+
+    /// 切换桌面宠物显示：写开关后由 binding 统一建窗 / 拆窗。
+    @objc private func toggleDesktopPet() {
+        let defaults = UserDefaults.standard
+        let next = !defaults.bool(forKey: UserDefaultsKeys.petEnabled)
+        defaults.set(next, forKey: UserDefaultsKeys.petEnabled)
+        FeatureRuntime.shared.sync([.desktopPet])
+    }
+
+    /// 宠物右键菜单「打开设置」：打开控制中心并切到实用工具页的宠物详情。
+    func showDesktopPetSettings() {
+        UserDefaults.standard.set(MenuPanel.utilities.rawValue, forKey: UserDefaultsKeys.lastControlCenterPanel)
+        UserDefaults.standard.set(UtilityTool.desktopPet.rawValue, forKey: UserDefaultsKeys.lastUtilityTool)
+        if !panel.isVisible {
+            openPanel()
+        }
     }
 
     @objc private func keepAwakeStartDefault() {

@@ -235,6 +235,8 @@ struct UtilityToolsView: View {
             StickyNotesView(strings: strings)
         case .cleaningMode:
             CleaningModeView(strings: strings)
+        case .desktopPet:
+            DesktopPetDetailView(strings: strings)
         }
     }
 

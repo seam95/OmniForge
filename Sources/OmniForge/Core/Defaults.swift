@@ -26,6 +26,7 @@ enum Defaults {
             .merging(networkDiagnosticsDefaults, uniquingKeysWith: { _, new in new })
             .merging(dshWebDefaults, uniquingKeysWith: { _, new in new })
             .merging(promptOptimizerDefaults, uniquingKeysWith: { _, new in new })
+            .merging(desktopPetDefaults, uniquingKeysWith: { _, new in new })
     }
 
     /// Onboarding 相关默认值
@@ -150,6 +151,18 @@ enum Defaults {
             UserDefaultsKeys.promptOptimizerAutoReplace: false,
             UserDefaultsKeys.promptOptimizerHotkeyKeyCode: HotkeyDefinition.defaultPromptOptimizer.keyCode,
             UserDefaultsKeys.promptOptimizerHotkeyModifiers: HotkeyDefinition.defaultPromptOptimizer.modifiers.rawValue,
+        ]
+    }
+
+    /// 桌面宠物默认值：默认关闭，避免升级用户桌面突然多一只宠物。
+    private static var desktopPetDefaults: [String: Any] {
+        [
+            UserDefaultsKeys.petEnabled: false,
+            UserDefaultsKeys.petSize: DesktopPetSize.medium.rawValue,
+            UserDefaultsKeys.petClickThrough: false,
+            UserDefaultsKeys.petPositionX: 0.0,
+            UserDefaultsKeys.petPositionY: 0.0,
+            UserDefaultsKeys.petPositionScreen: "",
         ]
     }
 

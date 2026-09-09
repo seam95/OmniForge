@@ -116,6 +116,11 @@ if [[ -d Resources/zh-Hans.lproj ]]; then
     cp -R Resources/zh-Hans.lproj "$STAGE/Contents/Resources/"
 fi
 
+# Step 4b: 复制桌面宠物内置资产（Pets/<id>/pet.json + 图集）
+if [[ -d Resources/Pets ]]; then
+    cp -R Resources/Pets "$STAGE/Contents/Resources/"
+fi
+
 # Step 5: 清除扩展属性（xattr 会导致 codesign 失败）
 xattr -c -r "$STAGE" 2>/dev/null || true
 

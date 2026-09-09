@@ -1374,6 +1374,21 @@ extension Strings {
         promptOptimizerErrorNetwork: "Network error",
         promptOptimizerErrorTimeout: "Request timed out",
         promptOptimizerErrorUnauthorized: "Unauthorized. Check your API key",
-        promptOptimizerErrorGeneric: "Optimization failed"
+        promptOptimizerErrorGeneric: "Optimization failed",
+        // MARK: - Desktop Pet
+        featureHubNameDesktopPet: "Desktop Pet",
+        featureHubDescDesktopPet: "A pixel pet living on your desktop that wanders, idles and can be dragged around",
+        utilityDesktopPetSubtitle: "A pixel pet that wanders and idles on your desktop",
+        desktopPetEnable: "Enable Desktop Pet",
+        desktopPetSizeSection: "Size",
+        desktopPetSizeSmall: "Small",
+        desktopPetSizeMedium: "Medium",
+        desktopPetSizeLarge: "Large",
+        desktopPetClickThrough: "Click-through",
+        desktopPetResetPosition: "Reset Position",
+        desktopPetHide: "Hide Pet",
+        desktopPetOpenSettings: "Open Settings",
+        desktopPetShow: "Show Pet",
+        desktopPetClickThroughHint: "The mouse passes through the pet entirely; turn it back on from the menu bar"
     )
 }

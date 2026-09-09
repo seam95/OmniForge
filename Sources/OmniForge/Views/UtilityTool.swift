@@ -9,6 +9,7 @@ enum UtilityTool: String, CaseIterable, Identifiable {
     case uninstaller
     case cleaner
     case cleaningMode
+    case desktopPet
 
     var id: String { rawValue }
 
@@ -29,6 +30,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
                 return isAvailable(.cleaner)
             case .cleaningMode:
                 return isAvailable(.cleaningMode)
+            case .desktopPet:
+                return isAvailable(.desktopPet)
             }
         }
     }
@@ -58,6 +61,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
             return strings.utilityCleaner
         case .cleaningMode:
             return strings.featureHubNameCleaningMode
+        case .desktopPet:
+            return strings.featureHubNameDesktopPet
         }
     }
 
@@ -78,6 +83,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
             return .cleaner
         case .cleaningMode:
             return .cleaningMode
+        case .desktopPet:
+            return .desktopPet
         }
     }
 
@@ -98,6 +105,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
             return "trash"
         case .cleaningMode:
             return "bubbles.and.sparkles"
+        case .desktopPet:
+            return "pawprint"
         }
     }
 
@@ -118,6 +127,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
             return .blue
         case .cleaningMode:
             return .mint
+        case .desktopPet:
+            return .brown
         }
     }
 
@@ -141,6 +152,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
             return strings.utilityCleanerSubtitle
         case .cleaningMode:
             return strings.utilityCleaningModeSubtitle
+        case .desktopPet:
+            return strings.utilityDesktopPetSubtitle
         }
     }
 }
