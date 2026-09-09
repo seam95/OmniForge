@@ -1375,6 +1375,12 @@ extension Strings {
         promptOptimizerErrorTimeout: "请求超时",
         promptOptimizerErrorUnauthorized: "鉴权失败，请检查 API Key",
         promptOptimizerErrorGeneric: "优化失败",
+        promptOptimizerTestConnection: "测试连接",
+        promptOptimizerTesting: "测试中…",
+        promptOptimizerTestSuccess: "连接成功",
+        promptOptimizerTestNoKey: "未配置 API Key，请先填写并保存",
+        promptOptimizerTestFailed: "连接失败",
+        promptOptimizerEndpointFormat: "协议：POST %@",
         // MARK: - Desktop Pet（桌面宠物）
         featureHubNameDesktopPet: "桌面宠物",
         featureHubDescDesktopPet: "像素宠物常驻桌面，会自己走动、发呆，也能被拖着玩",

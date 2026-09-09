@@ -1375,6 +1375,12 @@ extension Strings {
         promptOptimizerErrorTimeout: "Request timed out",
         promptOptimizerErrorUnauthorized: "Unauthorized. Check your API key",
         promptOptimizerErrorGeneric: "Optimization failed",
+        promptOptimizerTestConnection: "Test Connection",
+        promptOptimizerTesting: "Testing…",
+        promptOptimizerTestSuccess: "Connection successful",
+        promptOptimizerTestNoKey: "No API key configured. Enter one and save it first",
+        promptOptimizerTestFailed: "Connection failed",
+        promptOptimizerEndpointFormat: "Protocol: POST %@",
         // MARK: - Desktop Pet
         featureHubNameDesktopPet: "Desktop Pet",
         featureHubDescDesktopPet: "A pixel pet living on your desktop that wanders, idles and can be dragged around",

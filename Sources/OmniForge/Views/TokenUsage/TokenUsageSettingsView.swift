@@ -364,7 +364,8 @@ struct TokenCredentialRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            SecureField(placeholder, text: $text)
+            // grouped Form 会把 SecureField 首参提升为行 label，须置空并走 prompt 防 placeholder 泄漏。
+            SecureField("", text: $text, prompt: Text(placeholder))
                 .textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier(fieldID ?? "")
             HStack(spacing: 8) {

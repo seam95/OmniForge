@@ -14,6 +14,16 @@ struct PromptOptimizerSettingsView: View {
     @FocusState private var baseURLFocused: Bool
     @FocusState private var modelFocused: Bool
 
+    /// 连接测试状态：进行中禁用按钮，结果以行内文本反馈。
+    @State private var isTestingConnection = false
+    @State private var testResult: ConnectionTestResult?
+
+    /// 连接测试结果（行内反馈：成功绿 / 失败红）。
+    private struct ConnectionTestResult {
+        let text: String
+        let isFailure: Bool
+    }
+
     private let keychain = PromptOptimizerKeychainAPIKeyStore()
     private var strings: Strings { state.l10n.s }
 
@@ -37,7 +47,9 @@ struct PromptOptimizerSettingsView: View {
         Section {
             VStack(alignment: .leading, spacing: 6) {
                 Text(strings.promptOptimizerBaseURL)
-                TextField("https://api.deepseek.com/v1", text: $baseURLText)
+                // grouped Form 会把 TextField 首参提升为行 label，须置空并走 prompt，
+                // 否则 placeholder 泄漏到左列、与输入框内实际值重复显示。
+                TextField("", text: $baseURLText, prompt: Text("https://api.deepseek.com/v1"))
                     .textFieldStyle(.roundedBorder)
                     .focused($baseURLFocused)
                     .onSubmit { commitBaseURL() }
@@ -47,7 +59,7 @@ struct PromptOptimizerSettingsView: View {
             }
             VStack(alignment: .leading, spacing: 6) {
                 Text(strings.promptOptimizerModel)
-                TextField("deepseek-chat", text: $modelText)
+                TextField("", text: $modelText, prompt: Text("deepseek-chat"))
                     .textFieldStyle(.roundedBorder)
                     .focused($modelFocused)
                     .onSubmit { commitModel() }
@@ -70,11 +82,83 @@ struct PromptOptimizerSettingsView: View {
             .onChange(of: apiKeyInput) { _, _ in
                 saveFailed = false
             }
+            connectionTestRow
         } header: {
             HStack(spacing: 5) {
                 Text(strings.promptOptimizerModelSection)
                 InfoHintButton(text: strings.promptOptimizerPrivacyHint)
             }
+        }
+    }
+
+    // MARK: - 连接测试
+
+    /// 连通性测试行：发送「你好」验证整条链路；caption 标注当前完整请求端点。
+    private var connectionTestRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                Button(
+                    isTestingConnection
+                        ? strings.promptOptimizerTesting
+                        : strings.promptOptimizerTestConnection
+                ) {
+                    runConnectionTest()
+                }
+                .disabled(isTestingConnection || endpointDisplay == nil)
+                if let result = testResult {
+                    Text(result.text)
+                        .font(.caption)
+                        .foregroundStyle(result.isFailure ? Color.red : Color.green)
+                }
+                Spacer()
+            }
+            if let endpoint = endpointDisplay {
+                Text(String(format: strings.promptOptimizerEndpointFormat, endpoint))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    /// 当前输入 baseURL 规范化后的完整端点（含 `/chat/completions`）；baseURL 为空 → nil。
+    private var endpointDisplay: String? {
+        PromptOptimizerService.endpointURL(forBaseURL: baseURLText)?.absoluteString
+    }
+
+    private func runConnectionTest() {
+        guard !isTestingConnection else { return }
+        commitBaseURL()
+        commitModel()
+        // 输入框有未保存的 key 时优先用它，方便「先填再测」；否则读钥匙串已存值。
+        let entered = DeepSeekSettingsValidation.sanitizedAPIKey(apiKeyInput)
+        let apiKey = !entered.isEmpty ? entered : ((try? keychain.readAPIKey()) ?? "")
+        guard !apiKey.isEmpty else {
+            testResult = ConnectionTestResult(text: strings.promptOptimizerTestNoKey, isFailure: true)
+            return
+        }
+        let service = PromptOptimizerService(baseURL: baseURLText, model: modelText, apiKey: apiKey)
+        isTestingConnection = true
+        testResult = nil
+        Task {
+            defer { isTestingConnection = false }
+            do {
+                _ = try await service.testConnection()
+                testResult = ConnectionTestResult(text: strings.promptOptimizerTestSuccess, isFailure: false)
+            } catch let error as PromptOptimizerErrorKind {
+                testResult = ConnectionTestResult(text: testFailureText(for: error), isFailure: true)
+            } catch {
+                testResult = ConnectionTestResult(text: strings.promptOptimizerTestFailed, isFailure: true)
+            }
+        }
+    }
+
+    private func testFailureText(for kind: PromptOptimizerErrorKind) -> String {
+        switch kind {
+        case .network: return strings.promptOptimizerErrorNetwork
+        case .timeout: return strings.promptOptimizerErrorTimeout
+        case .unauthorized: return strings.promptOptimizerErrorUnauthorized
+        default: return strings.promptOptimizerTestFailed
         }
     }
 
@@ -127,7 +211,7 @@ struct PromptOptimizerSettingsView: View {
         guard !cleaned.isEmpty else { return }
         do {
             try keychain.writeAPIKey(cleaned)
-            apiKeyInput = ""
+            // 保存后保留输入（SecureField 掩码显示），清空会让用户误以为没有输入成功。
             saveFailed = false
             hasStoredKey = true
         } catch {

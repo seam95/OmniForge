@@ -1520,6 +1520,12 @@ struct Strings: Equatable {
     let promptOptimizerErrorTimeout: String
     let promptOptimizerErrorUnauthorized: String
     let promptOptimizerErrorGeneric: String
+    let promptOptimizerTestConnection: String
+    let promptOptimizerTesting: String
+    let promptOptimizerTestSuccess: String
+    let promptOptimizerTestNoKey: String
+    let promptOptimizerTestFailed: String
+    let promptOptimizerEndpointFormat: String
     // MARK: - Desktop Pet（桌面宠物）
     let featureHubNameDesktopPet: String
     let featureHubDescDesktopPet: String

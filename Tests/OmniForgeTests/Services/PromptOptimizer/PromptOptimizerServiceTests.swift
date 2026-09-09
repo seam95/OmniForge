@@ -155,6 +155,49 @@ final class PromptOptimizerServiceTests: XCTestCase {
         }
     }
 
+    // MARK: - 连通性测试（testConnection）
+
+    func test_testConnection_sendsSingleUserHelloMessage() async throws {
+        URLProtocolStub.stub = .init(statusCode: 200, data: successBody(content: "你好！"))
+
+        _ = try await makeService().testConnection()
+
+        let request = try XCTUnwrap(URLProtocolStub.recordedRequests.first)
+        XCTAssertEqual(request.url?.absoluteString, "https://api.deepseek.com/v1/chat/completions")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer sk-test")
+
+        let body = try XCTUnwrap(URLProtocolStub.recordedBodies.first)
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(object["model"] as? String, "deepseek-chat")
+        XCTAssertEqual(object["stream"] as? Bool, false)
+        let messages = try XCTUnwrap(object["messages"] as? [[String: Any]])
+        XCTAssertEqual(messages.count, 1)
+        XCTAssertEqual(messages[0]["role"] as? String, "user")
+        XCTAssertEqual(messages[0]["content"] as? String, "你好")
+    }
+
+    func test_testConnection_returnsFirstChoiceContent() async throws {
+        URLProtocolStub.stub = .init(statusCode: 200, data: successBody(content: "你好！"))
+
+        let result = try await makeService().testConnection()
+
+        XCTAssertEqual(result, "你好！")
+    }
+
+    func test_testConnection_401MapsToUnauthorized() async {
+        URLProtocolStub.stub = .init(statusCode: 401)
+        await assertThrowsKind(.unauthorized) {
+            try await self.makeService().testConnection()
+        }
+    }
+
+    func test_testConnection_malformedResponseThrowsGeneric() async {
+        URLProtocolStub.stub = .init(statusCode: 200, data: Data("{}".utf8))
+        await assertThrowsKind(.generic) {
+            try await self.makeService().testConnection()
+        }
+    }
+
     // MARK: - 工具
 
     private func assertThrowsKind(

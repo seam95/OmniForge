@@ -32,6 +32,19 @@ final class PromptOptimizerService: PromptOptimizing {
     }
 
     func optimize(selectedText: String) async throws -> String {
+        let messages = PromptOptimizerTemplate.compose(input: selectedText).map { message in
+            ["role": message.role, "content": message.content]
+        }
+        return try await send(messages: messages)
+    }
+
+    /// 连通性测试（设置页「测试连接」按钮）：发送单条「你好」，返回模型回复。
+    func testConnection() async throws -> String {
+        try await send(messages: [["role": "user", "content": "你好"]])
+    }
+
+    /// 共享请求链路：POST `{baseURL}/chat/completions`，非流式，返回首个 choice 内容。
+    private func send(messages: [[String: Any]]) async throws -> String {
         guard let url = Self.endpointURL(forBaseURL: baseURL) else {
             throw PromptOptimizerErrorKind.generic
         }
@@ -41,9 +54,6 @@ final class PromptOptimizerService: PromptOptimizing {
         request.timeoutInterval = Self.defaultTimeout
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        let messages = PromptOptimizerTemplate.compose(input: selectedText).map { message in
-            ["role": message.role, "content": message.content]
-        }
         let body: [String: Any] = [
             "model": model,
             "messages": messages,
