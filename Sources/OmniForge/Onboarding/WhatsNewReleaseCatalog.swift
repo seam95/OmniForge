@@ -11,6 +11,12 @@ enum WhatsNewReleaseCatalog {
     /// 历次版本的更新内容，新版本在前
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            version: "3.8.2",
+            entries: [
+                WhatsNewEntry(type: .fixed, text: "重设计 DMG 安装窗口：修复背景错位与图标不对齐，安装页焕新为放置槽引导布局"),
+            ]
+        ),
+        WhatsNewRelease(
             version: "3.8",
             entries: [
                 WhatsNewEntry(type: .changed, text: "长截图引擎重写：手动滚动驱动拼接更稳，滚动停止后自动完成，Esc 随时取消"),
