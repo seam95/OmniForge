@@ -197,6 +197,7 @@ private func makeState(
         inputMethods: InputMethodManager(tis: tis, scheduler: scheduler, notifications: notifications),
         lockState: LockStateManager(userDefaults: defaults),
         l10n: L10n(userDefaults: defaults),
+        appearance: AppearanceSettings(userDefaults: defaults),
         launchAtLogin: LaunchAtLoginManager(client: FakeLaunchAtLoginClient(), userDefaults: defaults),
         clipboardHistory: ClipboardHistoryManager(store: clipboardStore, userDefaults: defaults),
         clipboardHotkey: hotkeyManager,

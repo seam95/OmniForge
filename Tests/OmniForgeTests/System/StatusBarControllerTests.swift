@@ -98,6 +98,7 @@ private func makeStatusBarState() -> AppState {
         ),
         lockState: LockStateManager(userDefaults: defaults),
         l10n: L10n(userDefaults: defaults),
+        appearance: AppearanceSettings(userDefaults: defaults),
         launchAtLogin: LaunchAtLoginManager(
             client: FakeLaunchAtLoginClient(),
             userDefaults: defaults
