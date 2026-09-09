@@ -1370,7 +1370,7 @@ extension Strings {
         promptOptimizerSuccess: "Enhanced prompt copied",
         promptOptimizerErrorNotConfigured: "Model not configured. Open Settings to set up",
         promptOptimizerErrorNoSelection: "Could not read the selected text",
-        promptOptimizerErrorNoAccessibility: "Accessibility permission required. Enable it in System Settings",
+        promptOptimizerErrorNoAccessibility: "Accessibility not effective. Restart the app or check the permission in System Settings",
         promptOptimizerErrorNetwork: "Network error",
         promptOptimizerErrorTimeout: "Request timed out",
         promptOptimizerErrorUnauthorized: "Unauthorized. Check your API key",

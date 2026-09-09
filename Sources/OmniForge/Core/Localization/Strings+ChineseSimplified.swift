@@ -1370,7 +1370,7 @@ extension Strings {
         promptOptimizerSuccess: "已复制优化结果",
         promptOptimizerErrorNotConfigured: "未配置模型，请到设置中填写",
         promptOptimizerErrorNoSelection: "无法获取选中文本",
-        promptOptimizerErrorNoAccessibility: "需要「辅助功能」权限，请在系统设置中开启",
+        promptOptimizerErrorNoAccessibility: "辅助功能权限未生效，请重启应用或到系统设置检查授权",
         promptOptimizerErrorNetwork: "网络错误",
         promptOptimizerErrorTimeout: "请求超时",
         promptOptimizerErrorUnauthorized: "鉴权失败，请检查 API Key",

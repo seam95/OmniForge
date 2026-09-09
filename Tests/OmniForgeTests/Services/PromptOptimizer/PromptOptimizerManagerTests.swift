@@ -7,8 +7,8 @@ import XCTest
 // MARK: - 测试假件
 
 private final class FakeSelectedTextReader: SelectedTextReading {
-    var stubbedText: String?
-    func readSelectedText() -> String? { stubbedText }
+    var stubbedResult: Result<String, SelectedTextReadFailure> = .failure(.noSelection)
+    func readSelectedText() -> Result<String, SelectedTextReadFailure> { stubbedResult }
 }
 
 private final class FakePromptOptimizingService: PromptOptimizing {
@@ -163,7 +163,7 @@ final class PromptOptimizerManagerTests: XCTestCase {
     func test_shortcutHandlerWiredThroughClient() async {
         let manager = makeManager()
         manager.syncWithPreferences()
-        reader.stubbedText = "选中文本"
+        reader.stubbedResult = .success("选中文本")
         service.stubbedResult = "优化结果"
 
         shortcuts.fireKeyUp()
@@ -188,7 +188,7 @@ final class PromptOptimizerManagerTests: XCTestCase {
     // MARK: - 成功路径
 
     func test_success_writesClipboardShowsOutcomeWithoutPaste() async {
-        reader.stubbedText = "原始提示词"
+        reader.stubbedResult = .success("原始提示词")
         service.stubbedResult = "优化后的提示词"
         let manager = makeManager()
 
@@ -204,7 +204,7 @@ final class PromptOptimizerManagerTests: XCTestCase {
 
     func test_success_withAutoReplaceInjectsPaste() async {
         defaults.set(true, forKey: UserDefaultsKeys.promptOptimizerAutoReplace)
-        reader.stubbedText = "原始"
+        reader.stubbedResult = .success("原始")
         service.stubbedResult = "优化后"
         let manager = makeManager()
 
@@ -230,16 +230,28 @@ final class PromptOptimizerManagerTests: XCTestCase {
 
     func test_accessibilityDenied_showsDedicatedError() async {
         let manager = makeManager(isAccessibilityGranted: { false })
-        reader.stubbedText = "文本"
+        reader.stubbedResult = .success("文本")
 
         await runOnce(manager)
 
-        XCTAssertEqual(hud.outcomes, [.init(text: "需要「辅助功能」权限，请在系统设置中开启", isFailure: true)])
+        XCTAssertEqual(hud.outcomes, [.init(text: "辅助功能权限未生效，请重启应用或到系统设置检查授权", isFailure: true)])
         XCTAssertTrue(service.receivedInputs.isEmpty)
     }
 
+    func test_accessibilityFalsePositiveFromReader_mapsToAccessibilityError() async {
+        // trusted 检查通过但 AX 调用失败（授权未生效的假阳性）——同样归为权限文案。
+        reader.stubbedResult = .failure(.accessibilityInactive)
+        let manager = makeManager()
+
+        await runOnce(manager)
+
+        XCTAssertEqual(hud.outcomes, [.init(text: "辅助功能权限未生效，请重启应用或到系统设置检查授权", isFailure: true)])
+        XCTAssertTrue(service.receivedInputs.isEmpty)
+        XCTAssertTrue(hud.runningTexts.isEmpty, "预检失败不闪「优化中」")
+    }
+
     func test_noSelection_showsErrorWithoutRequest() async {
-        reader.stubbedText = nil
+        reader.stubbedResult = .failure(.noSelection)
         let manager = makeManager()
 
         await runOnce(manager)
@@ -251,7 +263,7 @@ final class PromptOptimizerManagerTests: XCTestCase {
     // MARK: - 服务错误映射
 
     func test_serviceErrorKind_mapsToDedicatedText() async {
-        reader.stubbedText = "文本"
+        reader.stubbedResult = .success("文本")
         service.stubbedError = PromptOptimizerErrorKind.timeout
         let manager = makeManager()
 
@@ -262,7 +274,7 @@ final class PromptOptimizerManagerTests: XCTestCase {
     }
 
     func test_unexpectedServiceError_fallsBackToGeneric() async {
-        reader.stubbedText = "文本"
+        reader.stubbedResult = .success("文本")
         struct Surprise: Error {}
         service.stubbedError = Surprise()
         let manager = makeManager()
@@ -275,7 +287,7 @@ final class PromptOptimizerManagerTests: XCTestCase {
     // MARK: - 状态机
 
     func test_runningPhaseIgnoresRepeatedTriggers() async {
-        reader.stubbedText = "文本"
+        reader.stubbedResult = .success("文本")
         // 用未完成的优化请求占住 running 态。
         let gate = PromptOptimizerTestGate()
         let slowService = SlowGateService(gate: gate)

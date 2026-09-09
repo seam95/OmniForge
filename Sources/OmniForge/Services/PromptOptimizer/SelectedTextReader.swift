@@ -1,10 +1,19 @@
 import ApplicationServices
 import Foundation
 
+/// 取词失败类别 — 区分「权限未生效」与「无可读选区」，驱动 HUD 文案与排查方向。
+enum SelectedTextReadFailure: Error, Equatable {
+    /// 辅助功能权限缺失或未生效（TCC 假阳性：trusted 检查通过但 AX 调用
+    /// 返回 cannotComplete/apiDisabled——典型于授权后未重启应用）。
+    case accessibilityInactive
+    /// 链路可达但目标元素无选中文本或不支持该属性。
+    case noSelection
+}
+
 /// 选中文本读取边界（决策 D3：AX 直读，无 ⌘C 模拟兜底）。
 protocol SelectedTextReading: AnyObject {
-    /// 读取当前焦点应用的选中文本；无选中或无法读取 → nil。
-    func readSelectedText() -> String?
+    /// 读取当前焦点应用的选中文本；失败携带可判别类别。
+    func readSelectedText() -> Result<String, SelectedTextReadFailure>
 }
 
 /// 经辅助功能 API 直读其他应用（含本应用自身）的选中文本：
@@ -17,30 +26,48 @@ final class AXSelectedTextReader: SelectedTextReading {
         self.isTrusted = isTrusted
     }
 
-    func readSelectedText() -> String? {
-        guard isTrusted() else { return nil }
+    func readSelectedText() -> Result<String, SelectedTextReadFailure> {
+        guard isTrusted() else {
+            return .failure(.accessibilityInactive)
+        }
 
         let systemWide = AXUIElementCreateSystemWide()
         var focusedAppValue: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
+        let appError = AXUIElementCopyAttributeValue(
             systemWide,
             kAXFocusedApplicationAttribute as CFString,
             &focusedAppValue
-        ) == .success, let focusedAppValue else { return nil }
+        )
+        guard appError == .success, let focusedAppValue else {
+            // trusted 通过但链路级调用失败：权限假阳性（授权未生效），非「无选区」。
+            if appError == .cannotComplete || appError == .apiDisabled {
+                return .failure(.accessibilityInactive)
+            }
+            return .failure(.noSelection)
+        }
         let focusedApp = focusedAppValue as! AXUIElement
 
         var focusedElementValue: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
+        let elementError = AXUIElementCopyAttributeValue(
             focusedApp,
             kAXFocusedUIElementAttribute as CFString,
             &focusedElementValue
-        ) == .success, let focusedElementValue else { return nil }
+        )
+        guard elementError == .success, let focusedElementValue else {
+            if elementError == .cannotComplete || elementError == .apiDisabled {
+                return .failure(.accessibilityInactive)
+            }
+            return .failure(.noSelection)
+        }
         let element = focusedElementValue as! AXUIElement
 
         if let text = Self.selectedText(of: element), !text.isEmpty {
-            return text
+            return .success(text)
         }
-        return Self.selectedTextInRange(of: element)
+        if let text = Self.selectedTextInRange(of: element), !text.isEmpty {
+            return .success(text)
+        }
+        return .failure(.noSelection)
     }
 
     // MARK: - 私有

@@ -147,25 +147,28 @@ final class PromptOptimizerManager: ObservableObject {
             hud.showOutcome(stringsProvider().promptOptimizerErrorNoAccessibility, isFailure: true)
             return
         }
-        guard let selectedText = reader.readSelectedText() else {
-            hud.showOutcome(stringsProvider().promptOptimizerErrorNoSelection, isFailure: true)
-            return
-        }
-
-        hud.showRunning(stringsProvider().promptOptimizerRunning)
-        do {
-            let enhanced = try await service.optimize(selectedText: selectedText)
-            writer.clearContents()
-            writer.setString(enhanced, forType: .string)
-            if isAutoReplaceEnabled {
-                // 粘贴作用于返回时刻焦点应用的当前选区/光标（决策 D6 的预期行为语义）。
-                keyPoster.postCommandV()
+        switch reader.readSelectedText() {
+        case .success(let selectedText):
+            hud.showRunning(stringsProvider().promptOptimizerRunning)
+            do {
+                let enhanced = try await service.optimize(selectedText: selectedText)
+                writer.clearContents()
+                writer.setString(enhanced, forType: .string)
+                if isAutoReplaceEnabled {
+                    // 粘贴作用于返回时刻焦点应用的当前选区/光标（决策 D6 的预期行为语义）。
+                    keyPoster.postCommandV()
+                }
+                hud.showOutcome(stringsProvider().promptOptimizerSuccess, isFailure: false)
+            } catch let error as PromptOptimizerErrorKind {
+                hud.showOutcome(Self.failureText(for: error, strings: stringsProvider()), isFailure: true)
+            } catch {
+                hud.showOutcome(stringsProvider().promptOptimizerErrorGeneric, isFailure: true)
             }
-            hud.showOutcome(stringsProvider().promptOptimizerSuccess, isFailure: false)
-        } catch let error as PromptOptimizerErrorKind {
-            hud.showOutcome(Self.failureText(for: error, strings: stringsProvider()), isFailure: true)
-        } catch {
-            hud.showOutcome(stringsProvider().promptOptimizerErrorGeneric, isFailure: true)
+        case .failure(.accessibilityInactive):
+            // trusted 通过但 AX 调用失败（授权未生效的假阳性）——与预检未授权同文案。
+            hud.showOutcome(stringsProvider().promptOptimizerErrorNoAccessibility, isFailure: true)
+        case .failure(.noSelection):
+            hud.showOutcome(stringsProvider().promptOptimizerErrorNoSelection, isFailure: true)
         }
     }
 
