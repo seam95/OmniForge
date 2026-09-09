@@ -8,8 +8,6 @@ enum PetBehaviorState: Equatable {
     case idle
     /// 行走：沿地面移动，`direction` 为水平朝向。
     case walk(direction: PetDirection)
-    /// 掉落：拖到空中松手后的重力下落。
-    case fall
     /// 被拖拽：窗口跟随鼠标。
     case drag
     /// 被抚摸：播放一次性动画，播完回到 `resumeState`。

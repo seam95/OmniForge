@@ -93,13 +93,8 @@ final class PetBehaviorEngine {
         state = .drag
     }
 
-    /// 拖拽结束：在空中的松手会进入掉落，贴地松手回 idle。
-    func endDrag(onGround: Bool) {
-        state = onGround ? .idle : .fall
-    }
-
-    /// 落地。
-    func land() {
+    /// 拖拽结束：宠物悬停在松手处并回到 idle（无重力掉落）。
+    func endDrag() {
         state = .idle
     }
 

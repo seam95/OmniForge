@@ -20,21 +20,8 @@ final class PetPositionPlannerTests: XCTestCase {
     // MARK: - 地面
 
     func test_groundYIsVisibleFrameBottom() {
+        // 地面仅用于默认落点（重置位置 / 首次出现），不再参与重力掉落。
         XCTAssertEqual(mainScreen.groundY, 25)
-    }
-
-    func test_snapToGroundKeepsXAndSetsGroundY() {
-        let position = CGPoint(x: 300, y: 500)
-
-        let snapped = PetPositionPlanner.snapToGround(position, to: mainScreen)
-
-        XCTAssertEqual(snapped.x, 300)
-        XCTAssertEqual(snapped.y, 25)
-    }
-
-    func test_isOnGroundDetectsExactGround() {
-        XCTAssertTrue(PetPositionPlanner.isOnGround(CGPoint(x: 100, y: 25), to: mainScreen))
-        XCTAssertFalse(PetPositionPlanner.isOnGround(CGPoint(x: 100, y: 26), to: mainScreen))
     }
 
     // MARK: - 夹紧
@@ -77,45 +64,70 @@ final class PetPositionPlannerTests: XCTestCase {
         XCTAssertEqual(clamped.y, 0)
     }
 
-    // MARK: - 重力
+    // MARK: - 行走活动范围
 
-    func test_gravityAcceleratesDownward() {
-        let result = PetPositionPlanner.applyGravity(
-            position: CGPoint(x: 100, y: 500),
-            velocity: 0,
-            dt: 0.1,
-            acceleration: -1000,
+    func test_walkRangeIsCentredOnAnchorWithinRadius() {
+        let range = PetPositionPlanner.walkRange(
+            anchorX: 500,
+            radius: 120,
+            petSize: petSize,
             screen: mainScreen
         )
 
-        XCTAssertLessThan(result.position.y, 500)
-        XCTAssertLessThan(result.velocity, 0)
-        XCTAssertFalse(result.landed)
+        XCTAssertEqual(range.lowerBound, 380)
+        XCTAssertEqual(range.upperBound, 620)
     }
 
-    func test_gravityLandsOnGroundAndResetsVelocity() {
-        let result = PetPositionPlanner.applyGravity(
-            position: CGPoint(x: 100, y: 30),
-            velocity: -500,
-            dt: 0.5,
-            acceleration: -1000,
+    func test_walkRangeClampsToScreenVisibleFrame() {
+        // 锚点贴近屏幕左边缘：下界不得超出可见区。
+        let range = PetPositionPlanner.walkRange(
+            anchorX: 10,
+            radius: 120,
+            petSize: petSize,
             screen: mainScreen
         )
 
-        XCTAssertEqual(result.position.y, 25)
-        XCTAssertEqual(result.velocity, 0)
-        XCTAssertTrue(result.landed)
+        XCTAssertEqual(range.lowerBound, mainScreen.visibleFrame.minX)
+        XCTAssertEqual(range.upperBound, 130)
     }
 
-    // MARK: - 行走
+    func test_walkRangeClampsToRightEdgeAccountingPetWidth() {
+        let rightmost = mainScreen.visibleFrame.maxX - petSize.width
+        let range = PetPositionPlanner.walkRange(
+            anchorX: rightmost,
+            radius: 120,
+            petSize: petSize,
+            screen: mainScreen
+        )
+
+        XCTAssertEqual(range.upperBound, rightmost)
+        XCTAssertEqual(range.lowerBound, rightmost - 120)
+    }
+
+    func test_walkRangeStaysValidOnNarrowScreen() {
+        // 屏幕比宠物还窄：退化为整屏区间，不产生非法 range。
+        let narrow = PetScreenGeometry(
+            visibleFrame: CGRect(x: 0, y: 0, width: 40, height: 40),
+            identifier: "narrow"
+        )
+        let range = PetPositionPlanner.walkRange(
+            anchorX: 20,
+            radius: 120,
+            petSize: petSize,
+            screen: narrow
+        )
+
+        XCTAssertLessThanOrEqual(range.lowerBound, range.upperBound)
+    }
+
+    // MARK: - 行走步进
 
     func test_stepWalkMovesRightWithoutTurning() {
         let result = PetPositionPlanner.stepWalk(
             position: CGPoint(x: 500, y: 25),
             direction: .right,
             distance: 20,
-            petSize: petSize,
-            screen: mainScreen
+            walkRange: 400...600
         )
 
         XCTAssertEqual(result.position.x, 520)
@@ -127,51 +139,59 @@ final class PetPositionPlannerTests: XCTestCase {
             position: CGPoint(x: 500, y: 25),
             direction: .left,
             distance: 20,
-            petSize: petSize,
-            screen: mainScreen
+            walkRange: 400...600
         )
 
         XCTAssertEqual(result.position.x, 480)
         XCTAssertEqual(result.direction, .left)
     }
 
-    func test_stepWalkTurnsAtRightEdge() {
+    func test_stepWalkTurnsAtRightBoundary() {
         let result = PetPositionPlanner.stepWalk(
-            position: CGPoint(x: 1440 - 96, y: 25),
+            position: CGPoint(x: 600, y: 25),
             direction: .right,
             distance: 30,
-            petSize: petSize,
-            screen: mainScreen
+            walkRange: 400...600
         )
 
         XCTAssertEqual(result.direction, .left)
-        XCTAssertLessThanOrEqual(result.position.x, 1440 - 96)
+        XCTAssertLessThanOrEqual(result.position.x, 600)
     }
 
-    func test_stepWalkTurnsAtLeftEdge() {
+    func test_stepWalkTurnsAtLeftBoundary() {
         let result = PetPositionPlanner.stepWalk(
-            position: CGPoint(x: 0, y: 25),
+            position: CGPoint(x: 400, y: 25),
             direction: .left,
             distance: 30,
-            petSize: petSize,
-            screen: mainScreen
+            walkRange: 400...600
         )
 
         XCTAssertEqual(result.direction, .right)
-        XCTAssertGreaterThanOrEqual(result.position.x, 0)
+        XCTAssertGreaterThanOrEqual(result.position.x, 400)
     }
 
-    func test_stepWalkNeverLeavesVisibleFrame() {
+    func test_stepWalkNeverLeavesWalkRange() {
         let result = PetPositionPlanner.stepWalk(
-            position: CGPoint(x: 10, y: 25),
+            position: CGPoint(x: 410, y: 25),
             direction: .left,
             distance: 500,
-            petSize: petSize,
-            screen: mainScreen
+            walkRange: 400...600
         )
 
-        XCTAssertGreaterThanOrEqual(result.position.x, mainScreen.visibleFrame.minX)
-        XCTAssertLessThanOrEqual(result.position.x, mainScreen.visibleFrame.maxX - petSize.width)
+        XCTAssertGreaterThanOrEqual(result.position.x, 400)
+        XCTAssertLessThanOrEqual(result.position.x, 600)
+    }
+
+    func test_stepWalkPreservesVerticalPosition() {
+        // 悬停位置（非地面）行走时高度不变。
+        let result = PetPositionPlanner.stepWalk(
+            position: CGPoint(x: 500, y: 300),
+            direction: .right,
+            distance: 10,
+            walkRange: 400...600
+        )
+
+        XCTAssertEqual(result.position.y, 300)
     }
 
     // MARK: - 多屏

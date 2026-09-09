@@ -32,59 +32,51 @@ enum PetPositionPlanner {
         return CGPoint(x: x, y: y)
     }
 
-    /// 吸附到地面（可见区底边）。
-    static func snapToGround(_ position: CGPoint, to screen: PetScreenGeometry) -> CGPoint {
-        CGPoint(x: position.x, y: screen.groundY)
-    }
-
-    /// 是否站在地面上。
-    static func isOnGround(_ position: CGPoint, to screen: PetScreenGeometry) -> Bool {
-        abs(position.y - screen.groundY) < 0.5
-    }
-
-    /// 一步重力下落：返回新位置与是否已落地。
-    /// - Parameters:
-    ///   - velocity: 当前下落速度（点/秒，向下为负）。
-    ///   - dt: 时间步长（秒）。
-    ///   - acceleration: 重力加速度（点/秒²，向下为负）。
-    static func applyGravity(
-        position: CGPoint,
-        velocity: CGFloat,
-        dt: TimeInterval,
-        acceleration: CGFloat,
+    /// 行走活动范围：以锚点为中心、左右半径受限的水平区间（宠物左下角可取值的区间），
+    /// 再与屏幕可见区求交，保证宠物整体不出屏。
+    /// 锚点即宠物最近一次被放置的位置——拖拽松手后它就在这附近活动，不会满屏乱走。
+    static func walkRange(
+        anchorX: CGFloat,
+        radius: CGFloat,
+        petSize: CGSize,
         screen: PetScreenGeometry
-    ) -> (position: CGPoint, velocity: CGFloat, landed: Bool) {
-        let newVelocity = velocity + acceleration * CGFloat(dt)
-        let candidate = CGPoint(x: position.x, y: position.y + newVelocity * CGFloat(dt))
-        if candidate.y <= screen.groundY {
-            return (CGPoint(x: position.x, y: screen.groundY), 0, true)
-        }
-        return (candidate, newVelocity, false)
+    ) -> ClosedRange<CGFloat> {
+        let frame = screen.visibleFrame
+        let minX = frame.minX
+        let maxX = max(frame.maxX - petSize.width, minX)
+        let lower = max(minX, anchorX - radius)
+        let upper = min(maxX, anchorX + radius)
+        // 屏幕过窄或半径过小时保证区间合法。
+        return lower <= upper ? lower...upper : minX...maxX
     }
 
-    /// 行走一步：抵达屏幕边缘时转身，返回新位置与实际方向。
+    /// 一步行走：抵达活动范围边缘时转身，返回新位置与实际方向。
     /// - Parameters:
     ///   - position: 当前位置。
     ///   - direction: 当前朝向。
     ///   - distance: 期望步长（正数）。
+    ///   - walkRange: 允许的 x 区间（宠物左下角）。
     static func stepWalk(
         position: CGPoint,
         direction: PetDirection,
         distance: CGFloat,
-        petSize: CGSize,
-        screen: PetScreenGeometry
+        walkRange: ClosedRange<CGFloat>
     ) -> (position: CGPoint, direction: PetDirection) {
-        let frame = screen.visibleFrame
-        let maxX = max(frame.maxX - petSize.width, frame.minX)
         let candidateX = position.x + distance * direction.horizontalSign
-        if candidateX < frame.minX {
-            // 撞左边缘：转身并镜像超出量，避免在边界处抖动。
-            let overflow = frame.minX - candidateX
-            return (CGPoint(x: min(frame.minX + overflow, maxX), y: position.y), .right)
+        if candidateX < walkRange.lowerBound {
+            // 撞左边界：转身并镜像超出量，避免在边界处抖动。
+            let overflow = walkRange.lowerBound - candidateX
+            return (
+                CGPoint(x: min(walkRange.lowerBound + overflow, walkRange.upperBound), y: position.y),
+                .right
+            )
         }
-        if candidateX > maxX {
-            let overflow = candidateX - maxX
-            return (CGPoint(x: max(frame.minX, maxX - overflow), y: position.y), .left)
+        if candidateX > walkRange.upperBound {
+            let overflow = candidateX - walkRange.upperBound
+            return (
+                CGPoint(x: max(walkRange.lowerBound, walkRange.upperBound - overflow), y: position.y),
+                .left
+            )
         }
         return (CGPoint(x: candidateX, y: position.y), direction)
     }

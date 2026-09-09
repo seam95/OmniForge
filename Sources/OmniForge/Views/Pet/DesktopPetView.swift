@@ -82,7 +82,7 @@ struct PetSpriteView: View {
         switch manager.behaviorState {
         case .idle: animationID = PetAnimationID.idle
         case .walk: animationID = PetAnimationID.walk
-        case .fall, .drag: animationID = PetAnimationID.fall
+        case .drag: animationID = PetAnimationID.fall  // 悬空姿态复用 fall 素材
         case .petted: animationID = PetAnimationID.petted
         }
         guard let animation = asset.animation(id: animationID), !animation.frames.isEmpty else {

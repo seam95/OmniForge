@@ -232,7 +232,7 @@ final class DesktopPetManagerTests: XCTestCase {
         XCTAssertEqual(manager.behaviorState, .idle)
     }
 
-    func test_beginDragThenEndDragOnGroundReturnsToIdle() {
+    func test_beginDragThenEndDragReturnsToIdle() {
         let manager = makeManager()
         manager.start()
 
@@ -244,7 +244,8 @@ final class DesktopPetManagerTests: XCTestCase {
         XCTAssertEqual(manager.behaviorState, .idle)
     }
 
-    func test_endDragInAirEntersFall() {
+    func test_endDragInAirHoversAtDropPoint() {
+        // 拖到空中松手：宠物悬停原处，不下落。
         let manager = makeManager()
         manager.start()
         manager.beginDrag()
@@ -252,24 +253,44 @@ final class DesktopPetManagerTests: XCTestCase {
 
         manager.endDrag()
 
-        XCTAssertEqual(manager.behaviorState, .fall)
+        XCTAssertEqual(manager.behaviorState, .idle)
+        XCTAssertEqual(manager.windowController.currentOrigin?.y, 600)
     }
 
-    func test_fallLandsAndReturnsToIdle() {
-        let manager = makeManager(tickInterval: 1.0 / 60.0)
+    func test_walkStaysWithinRadiusOfDropPoint() {
+        // 松手处成为活动锚点：长时间行走也不越出锚点 ± 半径。
+        let manager = makeManager(tickInterval: 1.0 / 30.0)
         manager.start()
         manager.beginDrag()
-        manager.windowController.move(to: CGPoint(x: 200, y: 400))
+        manager.windowController.move(to: CGPoint(x: 700, y: 400))
         manager.endDrag()
-        XCTAssertEqual(manager.behaviorState, .fall)
 
-        // 推进足够多帧直到落地。
-        for _ in 0..<300 where manager.behaviorState == .fall {
+        var minX = CGFloat.greatestFiniteMagnitude
+        var maxX = -CGFloat.greatestFiniteMagnitude
+        for _ in 0..<3000 {
             manager.tick()
+            if let x = manager.windowController.currentOrigin?.x {
+                minX = min(minX, x)
+                maxX = max(maxX, x)
+            }
         }
 
-        XCTAssertEqual(manager.behaviorState, .idle)
-        XCTAssertEqual(manager.windowController.currentOrigin?.y, screen.groundY)
+        // 活动半径 120，允许 1pt 浮点误差。
+        XCTAssertGreaterThanOrEqual(minX, 700 - 120 - 1)
+        XCTAssertLessThanOrEqual(maxX, 700 + 120 + 1)
+    }
+
+    func test_walkKeepsHoverHeightWhenNotOnGround() {
+        // 悬停在半空时行走只改 x，高度不变。
+        let manager = makeManager(tickInterval: 1.0 / 30.0)
+        manager.start()
+        manager.beginDrag()
+        manager.windowController.move(to: CGPoint(x: 600, y: 350))
+        manager.endDrag()
+
+        for _ in 0..<600 { manager.tick() }
+
+        XCTAssertEqual(manager.windowController.currentOrigin?.y, 350)
     }
 
     func test_screenConfigurationChangeClampsAndResetsToIdle() {

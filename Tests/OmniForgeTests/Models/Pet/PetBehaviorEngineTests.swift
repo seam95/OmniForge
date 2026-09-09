@@ -75,30 +75,22 @@ final class PetBehaviorEngineTests: XCTestCase {
         XCTAssertEqual(engine.state, .drag)
     }
 
-    func test_endDragInAirStartsFall() {
+    func test_endDragHoversAtDropPointAndReturnsToIdle() {
+        // 拖拽松手后宠物悬停在松手处（无重力掉落），直接回 idle。
         let engine = makeEngine(rolls: [0.1])
         engine.beginDrag()
 
-        engine.endDrag(onGround: false)
-
-        XCTAssertEqual(engine.state, .fall)
-    }
-
-    func test_endDragOnGroundReturnsToIdle() {
-        let engine = makeEngine(rolls: [0.1])
-        engine.beginDrag()
-
-        engine.endDrag(onGround: true)
+        engine.endDrag()
 
         XCTAssertEqual(engine.state, .idle)
     }
 
-    func test_landReturnsToIdle() {
-        let engine = makeEngine(rolls: [0.1])
+    func test_endDragFromWalkReturnsToIdle() {
+        let engine = makeEngine(rolls: [0.9, 0.9, 0.0])
+        engine.apply(engine.nextIdleDecision())
         engine.beginDrag()
-        engine.endDrag(onGround: false)
 
-        engine.land()
+        engine.endDrag()
 
         XCTAssertEqual(engine.state, .idle)
     }

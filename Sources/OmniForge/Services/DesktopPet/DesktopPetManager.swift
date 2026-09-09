@@ -33,9 +33,14 @@ final class DesktopPetManager: ObservableObject {
     private var tickTask: Task<Void, Never>?
     private var persistTask: Task<Void, Never>?
     private var decisionRemaining: TimeInterval = 0
-    private var fallVelocity: CGFloat = 0
     /// 窗口拖动监听：拖拽中不跑行为循环，松手后按落地状态恢复。
     private var isDragging = false
+    /// 行走活动锚点（宠物左下角 x）：拖拽松手 / 重置位置时更新，
+    /// 宠物只在锚点左右 `walkRadius` 范围内活动，不会满屏乱走。
+    private var walkAnchorX: CGFloat?
+
+    /// 行走活动半径（点）：以锚点为中心的水平活动半宽。
+    private let walkRadius: CGFloat = 120
 
     init(
         userDefaults: UserDefaults = .standard,
@@ -68,8 +73,11 @@ final class DesktopPetManager: ObservableObject {
         behaviorState = .idle
         engine.resetToIdle()
         engine.drainExternalEvents()
+        let origin = restoredOrigin()
+        // 恢复位置即初始活动锚点，重启后不会跑到别处。
+        walkAnchorX = origin?.x
         windowController.show(
-            initialOrigin: restoredOrigin(),
+            initialOrigin: origin,
             rootView: PetSpriteView(manager: self, asset: asset)
         )
         windowController.setClickThrough(isClickThrough)
@@ -83,8 +91,8 @@ final class DesktopPetManager: ObservableObject {
         persistTask?.cancel()
         persistTask = nil
         decisionRemaining = 0
-        fallVelocity = 0
         isDragging = false
+        walkAnchorX = nil
         behaviorState = .idle
         engine.drainExternalEvents()
         windowController.close()
@@ -124,6 +132,7 @@ final class DesktopPetManager: ObservableObject {
             y: screen.groundY
         )
         windowController.move(to: origin)
+        walkAnchorX = origin.x
         persistPositionDebounced()
         engine.resetToIdle()
         behaviorState = .idle
@@ -174,12 +183,18 @@ final class DesktopPetManager: ObservableObject {
         case .walk(let direction):
             decisionRemaining -= dt
             // walkDelta 已含方向符号，位置规划需要正数步长。
+            let anchorX = walkAnchorX ?? origin.x
+            let range = PetPositionPlanner.walkRange(
+                anchorX: anchorX,
+                radius: walkRadius,
+                petSize: petSize,
+                screen: screen
+            )
             let step = PetPositionPlanner.stepWalk(
                 position: origin,
                 direction: direction,
                 distance: abs(engine.walkDelta(dt: dt)),
-                petSize: petSize,
-                screen: screen
+                walkRange: range
             )
             windowController.move(to: step.position)
             persistPositionDebounced()
@@ -194,24 +209,6 @@ final class DesktopPetManager: ObservableObject {
             } else if decisionRemaining <= 0 {
                 engine.apply(PetBehaviorDecision(state: .idle, horizontalDelta: 0, duration: 0))
                 behaviorState = .idle
-            }
-
-        case .fall:
-            let result = PetPositionPlanner.applyGravity(
-                position: origin,
-                velocity: fallVelocity,
-                dt: dt,
-                acceleration: -1800,
-                screen: screen
-            )
-            fallVelocity = result.velocity
-            windowController.move(to: result.position)
-            if result.landed {
-                fallVelocity = 0
-                engine.land()
-                behaviorState = .idle
-                decisionRemaining = 0
-                persistPositionDebounced()
             }
 
         case .drag:
@@ -247,26 +244,14 @@ final class DesktopPetManager: ObservableObject {
         behaviorState = .drag
     }
 
-    /// 拖拽结束：贴地回 idle，空中则下落。
+    /// 拖拽结束：宠物悬停在松手处并回到 idle，该处成为新的行走活动锚点。
     func endDrag() {
         guard isDragging else { return }
         isDragging = false
-        let petSize = CGSize(width: size.pointSize, height: size.pointSize)
-        let screens = visibleScreensProvider()
-        let origin = windowController.currentOrigin ?? .zero
-        let onGround: Bool
-        if let screen = PetPositionPlanner.screenContaining(
-            position: origin,
-            petSize: petSize,
-            screens: screens
-        ) ?? screens.first {
-            onGround = PetPositionPlanner.isOnGround(origin, to: screen)
-        } else {
-            onGround = false
-        }
-        engine.endDrag(onGround: onGround)
+        // 以松手处为活动锚点：之后只在附近走动，不再满屏游走。
+        walkAnchorX = windowController.currentOrigin?.x
+        engine.endDrag()
         behaviorState = engine.state
-        fallVelocity = 0
         decisionRemaining = 0
         persistPositionDebounced()
     }
