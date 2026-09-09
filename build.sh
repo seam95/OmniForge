@@ -53,8 +53,11 @@ if (( INSTALL )) && [[ -z "$SIGNING_IDENTITY" ]]; then
 fi
 
 # Step 1: SPM 编译
-echo "▸ Building with SPM (release)…"
-swift build -c release
+# -Osize 替代默认 -O：-O 下 SwiftUI ViewBuilder 闭包被 WMO 内联展开成巨型函数
+#（__text 56.5MB，其中 44MB 来自 156 个 >16KB 函数），-Osize 抑制内联后 __text 降至
+# 16.7MB，DMG 实测 34.6MB→15.7MB，且全量编译由 8-12 分钟缩短到约 3.5 分钟。
+echo "▸ Building with SPM (release, -Osize)…"
+swift build -c release -Xswiftc -Osize
 
 BUILD_DIR=".build/release"
 
