@@ -54,7 +54,6 @@ struct FeatureHubView: View {
             }
         }
         .settingsPageStyle()
-        .id(runtime.revision)
     }
 
     @ViewBuilder
