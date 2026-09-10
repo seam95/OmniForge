@@ -92,6 +92,8 @@ struct Strings: Equatable {
     let controlcenterClipboardDisabled: String
     let controlcenterOpenSettings: String
     let controlcenterTabUtilities: String
+    /// 控制中心 footer「功能」入口（直达设置窗特性页）。
+    let controlcenterFooterFeatures: String
     let controlcenterNavMonitor: String
     let controlcenterNavKeepAwake: String
     let controlcenterNavUtilities: String
