@@ -106,4 +106,5 @@ enum UserDefaultsKeys {
     static let petPositionScreen = "desktopPet.position.screen"
     static let petSelectedSlug = "desktopPet.selectedSlug"
     static let petActivityLevel = "desktopPet.activityLevel"
+    static let petReactionsEnabled = "desktopPet.reactionsEnabled"
 }

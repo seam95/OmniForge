@@ -99,13 +99,25 @@ final class DesktopPetManagerTests: XCTestCase {
         XCTAssertNil(manager.windowController.panel)
     }
 
-    func test_submitExternalEventDoesNotChangeBehavior() {
+    func test_submitMappedEventEntersReaction() {
         let manager = makeManager()
         manager.start()
 
-        manager.submit(.celebrationTriggered)
+        let accepted = manager.submit(.celebrationTriggered)
 
-        // 一期：事件只入队，不影响行为状态。
+        // 二期：已映射事件即时分发为反应态。
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(manager.behaviorState, .reaction(kind: .celebrate, resumeState: .idle))
+    }
+
+    func test_submitUnmappedEventLeavesBehaviorUnchanged() {
+        let manager = makeManager()
+        manager.start()
+
+        let accepted = manager.submit(.activityStarted(kind: .thinking))
+
+        // 未映射事件（三期 Agent 预留）仍只入队。
+        XCTAssertFalse(accepted)
         XCTAssertEqual(manager.behaviorState, .idle)
     }
 

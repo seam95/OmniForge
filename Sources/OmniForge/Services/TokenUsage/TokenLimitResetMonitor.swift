@@ -11,6 +11,15 @@ final class TokenLimitResetMonitor {
     private let now: () -> Date
     /// 庆祝副作用（showsToast / showsConfetti 已按配置解析；双关时不回调）。
     var onCelebrate: ((LimitResetEvent, _ showsToast: Bool, _ showsConfetti: Bool) -> Void)?
+    /// 附加订阅者（宠物反应等）：与 `onCelebrate` 同时收到通知，互不影响。
+    private var celebrateObservers: [(LimitResetEvent, _ showsToast: Bool, _ showsConfetti: Bool) -> Void] = []
+
+    /// 追加订阅限额重置（多播；原 `onCelebrate` 单播保留兼容）。
+    func addCelebrateObserver(
+        _ observer: @escaping (LimitResetEvent, _ showsToast: Bool, _ showsConfetti: Bool) -> Void
+    ) {
+        celebrateObservers.append(observer)
+    }
 
     init(
         configuration: @escaping () -> TokenUsageConfiguration,
@@ -45,5 +54,8 @@ final class TokenLimitResetMonitor {
         let showsConfetti = configuration.resetConfettiEnabled
         guard showsToast || showsConfetti else { return }
         onCelebrate?(first, showsToast, showsConfetti)
+        for observer in celebrateObservers {
+            observer(first, showsToast, showsConfetti)
+        }
     }
 }

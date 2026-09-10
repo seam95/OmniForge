@@ -1416,5 +1416,7 @@ extension Strings {
         desktopPetActivityQuiet: "安静",
         desktopPetActivityBalanced: "适中",
         desktopPetActivityLively: "活泼",
+        desktopPetReactionsSection: "状态反应",
+        desktopPetReactionsToggle: "对系统状态做出反应",
     )
 }

@@ -200,14 +200,13 @@ final class PetBehaviorEngineTests: XCTestCase {
 
     // MARK: - 外部事件入口（形状锁定）
 
-    func test_submitEventEnqueuesWithoutChangingBehavior() {
+    func test_submitUnmappedEventsEnqueueWithoutChangingBehavior() {
         let engine = makeEngine(rolls: [0.1])
 
         engine.submit(.activityStarted(kind: .thinking))
-        engine.submit(.celebrationTriggered)
+        engine.submit(.activityEnded(kind: .working))
 
         XCTAssertEqual(engine.pendingExternalEvents.count, 2)
-        // 一期：事件不影响行为状态。
         XCTAssertEqual(engine.state, .idle)
     }
 
@@ -228,6 +227,79 @@ final class PetBehaviorEngineTests: XCTestCase {
 
         XCTAssertEqual(engine.state, .idle)
         XCTAssertEqual(engine.autonomy, .idle)
+    }
+
+    // MARK: - 反应（二期事件分发）
+
+    func test_submitMappedEventInterruptsIdle() {
+        let engine = makeEngine(rolls: [0.1])
+
+        let accepted = engine.submit(.celebrationTriggered)
+
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(engine.state, .reaction(kind: .celebrate, resumeState: .idle))
+        XCTAssertTrue(engine.pendingExternalEvents.isEmpty)
+    }
+
+    func test_submitMappedEventInterruptsWalkAndResumes() {
+        let engine = makeEngine(rolls: [0.9, 0.0])
+        engine.apply(engine.nextAutonomousDecision())
+        XCTAssertEqual(engine.state, .walk(direction: .right))
+
+        XCTAssertTrue(engine.submit(.attentionRequested))
+        XCTAssertEqual(engine.state, .reaction(kind: .attention, resumeState: .walk(direction: .right)))
+
+        engine.finishReaction()
+        XCTAssertEqual(engine.state, .walk(direction: .right))
+    }
+
+    func test_submitUnmappedEventOnlyEnqueues() {
+        let engine = makeEngine(rolls: [0.1])
+
+        let accepted = engine.submit(.activityStarted(kind: .thinking))
+
+        XCTAssertFalse(accepted)
+        XCTAssertEqual(engine.pendingExternalEvents.count, 1)
+        XCTAssertEqual(engine.state, .idle)
+    }
+
+    func test_reactionIsDroppedDuringDragAndPetted() {
+        let engine = makeEngine(rolls: [0.1])
+        engine.beginDrag()
+        XCTAssertFalse(engine.submit(.celebrationTriggered))
+        XCTAssertEqual(engine.state, .drag)
+
+        engine.endDrag()
+        engine.pet()
+        XCTAssertFalse(engine.submit(.loadSurged))
+        XCTAssertEqual(engine.state, .petted(resumeState: .idle))
+    }
+
+    func test_newReactionReplacesCurrentAndKeepsResume() {
+        let engine = makeEngine(rolls: [0.9, 0.0])
+        engine.apply(engine.nextAutonomousDecision())
+        XCTAssertTrue(engine.submit(.attentionRequested))
+        XCTAssertTrue(engine.submit(.loadSurged))
+
+        XCTAssertEqual(engine.state, .reaction(kind: .heat, resumeState: .walk(direction: .right)))
+    }
+
+    func test_reactionKindMapping() {
+        XCTAssertEqual(PetExternalEvent.celebrationTriggered.reactionKind, .celebrate)
+        XCTAssertEqual(PetExternalEvent.attentionRequested.reactionKind, .attention)
+        XCTAssertEqual(PetExternalEvent.loadSurged.reactionKind, .heat)
+        XCTAssertEqual(PetExternalEvent.clipboardActivity.reactionKind, .noticed)
+        XCTAssertEqual(PetExternalEvent.inputLockChanged(locked: true).reactionKind, .salute)
+        XCTAssertEqual(PetExternalEvent.inputLockChanged(locked: false).reactionKind, .celebrate)
+        XCTAssertNil(PetExternalEvent.activityStarted(kind: .working).reactionKind)
+    }
+
+    func test_reactionFallbackChainEndsAtIdle() {
+        // 降级链最后一项必须是 idle（任何资产都有兜底）。
+        for kind in PetReactionKind.allCases {
+            XCTAssertEqual(kind.animationFallbacks.last, PetAnimationID.idle)
+            XCTAssertGreaterThan(kind.duration, 0)
+        }
     }
 
     // MARK: - 调参热更新

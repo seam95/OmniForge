@@ -49,6 +49,13 @@ final class TokenUsageManager: ObservableObject {
     private let alerts: TokenUsageAlertManager?
     /// 限额重置监控 — 窗口 rollover 后触发庆祝（toast/撒花，按用户开关）。
     private let resetMonitor: TokenLimitResetMonitor?
+
+    /// 追加订阅限额重置事件（多播；烟花走既有 `onCelebrate`，附加订阅者走此处）。
+    func addLimitResetObserver(
+        _ observer: @escaping (LimitResetEvent, _ showsToast: Bool, _ showsConfetti: Bool) -> Void
+    ) {
+        resetMonitor?.addCelebrateObserver(observer)
+    }
     private var refreshTimer: AnyCancellable?
     /// 单飞合并：并发未命中共享同一次上游拉取，避免打爆 Claude OAuth 端点。
     private var inFlight = Set<TokenUsageProvider>()

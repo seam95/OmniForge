@@ -38,6 +38,10 @@ final class DesktopPetManager: ObservableObject {
     /// 打开设置页回调（组合根接线）。
     var openSettingsHandler: (() -> Void)?
 
+    /// 事件协调器与订阅（二期反应联动；随 start/teardown 启停）。
+    private var reactionCoordinator: PetEventCoordinator?
+    private var reactionCancellables: Set<AnyCancellable> = []
+
     private var tickTask: Task<Void, Never>?
     private var persistTask: Task<Void, Never>?
     private var decisionRemaining: TimeInterval = 0
@@ -107,6 +111,7 @@ final class DesktopPetManager: ObservableObject {
         )
         windowController.setClickThrough(isClickThrough)
         startTicking()
+        startReactionCoordinator()
     }
 
     /// 功能停用 / 卸载 / App 退出：窗口立即消失并停止所有定时器。
@@ -120,6 +125,7 @@ final class DesktopPetManager: ObservableObject {
         walkAnchorX = nil
         behaviorState = .idle
         engine.drainExternalEvents()
+        stopReactionCoordinator()
         windowController.close()
     }
 
@@ -347,6 +353,16 @@ final class DesktopPetManager: ObservableObject {
                 behaviorState = engine.state
                 decisionRemaining = 0
             }
+
+        case .reaction(let kind, _):
+            // 反应期间自主层挂起：只倒计时，不位移不掷骰。
+            decisionRemaining -= dt
+            if decisionRemaining <= 0 {
+                engine.finishReaction()
+                behaviorState = engine.state
+                decisionRemaining = 0
+            }
+            _ = kind
         }
     }
 
@@ -391,11 +407,91 @@ final class DesktopPetManager: ObservableObject {
         persistPositionDebounced()
     }
 
+    // MARK: - 事件反应联动（二期）
+
+    /// 状态反应总开关（默认开）。
+    var isReactionsEnabled: Bool {
+        userDefaults.bool(forKey: UserDefaultsKeys.petReactionsEnabled)
+    }
+
+    /// 启动反应联动：订阅四源 + 重置多播，并激活 CPU 采样。
+    /// 门控：宠物已启用（start 才会走到这）且总开关开。
+    private func startReactionCoordinator() {
+        guard reactionCoordinator == nil, isReactionsEnabled else { return }
+        let coordinator = PetEventCoordinator { [weak self] event in
+            self?.submit(event) ?? false
+        }
+        reactionCoordinator = coordinator
+
+        // CPU：订阅监控快照（快照常驻 0…1，换算 0…100）。
+        if let monitor = FeatureRuntime.shared.manager(for: .systemMonitor, as: SystemMonitorManager.self) {
+            monitor.petReactionDemand = true
+            monitor.$snapshot
+                .receive(on: RunLoop.main)
+                .sink { [weak coordinator] snapshot in
+                    coordinator?.handleCPUSample(percent: (snapshot.cpuUsage?.total ?? 0) * 100)
+                }
+                .store(in: &reactionCancellables)
+        }
+
+        // 限额：最小剩余百分比（0…100）喂下降沿判定；重置多播喂庆祝。
+        if let token = FeatureRuntime.shared.manager(for: .tokenUsage, as: TokenUsageManager.self) {
+            token.$limits
+                .receive(on: RunLoop.main)
+                .sink { [weak coordinator] limits in
+                    let minRemaining = limits.values
+                        .flatMap { $0.windows.values }
+                        .map { 100 - $0.usedPercent }
+                        .min()
+                    coordinator?.handleLimitsUpdate(shortagePercent: minRemaining)
+                }
+                .store(in: &reactionCancellables)
+            token.addLimitResetObserver { [weak coordinator] _, _, _ in
+                coordinator?.handleLimitReset()
+            }
+        }
+
+        // 剪贴板：条目数增加视为新复制（功能关闭时 entries 不更新，联动自然静默）。
+        if let clipboard = FeatureRuntime.shared.manager(for: .clipboardHistory, as: ClipboardHistoryManager.self) {
+            clipboard.$entries
+                .receive(on: RunLoop.main)
+                .map(\.count)
+                .sink { [weak coordinator] count in
+                    coordinator?.handleClipboardEntries(count: count)
+                }
+                .store(in: &reactionCancellables)
+        }
+
+        // 输入法锁定边沿。
+        if let lock = FeatureRuntime.shared.manager(for: .inputLock, as: LockStateManager.self) {
+            lock.$isLocked
+                .receive(on: RunLoop.main)
+                .sink { [weak coordinator] locked in
+                    coordinator?.handleInputLock(locked: locked)
+                }
+                .store(in: &reactionCancellables)
+        }
+    }
+
+    /// 停止反应联动：撤全部订阅与 CPU 采样激活源（可插拔契约）。
+    private func stopReactionCoordinator() {
+        reactionCancellables.removeAll()
+        reactionCoordinator = nil
+        FeatureRuntime.shared.manager(for: .systemMonitor, as: SystemMonitorManager.self)?
+            .petReactionDemand = false
+    }
+
     // MARK: - 二期事件入口（形状锁定）
 
-    /// 提交外部事件。一期只入队，不影响行为。
-    func submit(_ event: PetExternalEvent) {
-        engine.submit(event)
+    /// 提交外部事件：已映射事件即时分发为反应（返回是否生效）。
+    @discardableResult
+    func submit(_ event: PetExternalEvent) -> Bool {
+        let accepted = engine.submit(event)
+        if accepted {
+            behaviorState = engine.state
+            decisionRemaining = engine.currentReaction?.duration ?? 3
+        }
+        return accepted
     }
 
     // MARK: - 菜单动作

@@ -179,6 +179,44 @@ final class PetBehaviorEngine {
         syncAutonomyIfNeeded()
     }
 
+    /// 外部反应：打断自主行为进入一次性反应态，播完回 `resumeState`。
+    /// 打断裁决：用户主动交互（拖拽/抚摸）进行中**丢弃**反应（不与用户争抢）；
+    /// 反应进行中到达的新反应**替换并刷新**；自主行为（idle/walk）一律可打断。
+    @discardableResult
+    func react(to kind: PetReactionKind) -> Bool {
+        switch state {
+        case .drag, .petted:
+            return false
+        case .reaction:
+            // 同级替换：保留原 resumeState（打断前的自主态语义不变）。
+            if case .reaction(_, let resume) = state {
+                state = .reaction(kind: kind, resumeState: resume)
+            }
+            return true
+        case .idle, .walk:
+            let resume: PetResumeState
+            switch state {
+            case .walk(let direction): resume = .walk(direction: direction)
+            default: resume = .idle
+            }
+            state = .reaction(kind: kind, resumeState: resume)
+            return true
+        }
+    }
+
+    /// 反应播完，回到被打断前的状态。
+    func finishReaction() {
+        guard case .reaction(_, let resume) = state else { return }
+        state = resume.behaviorState
+        syncAutonomyIfNeeded()
+    }
+
+    /// 当前反应种类（非反应态返回 nil）。
+    var currentReaction: PetReactionKind? {
+        guard case .reaction(let kind, _) = state else { return nil }
+        return kind
+    }
+
     /// 显示器配置变更等外部原因强制回到 idle。
     func resetToIdle() {
         state = .idle
@@ -187,10 +225,14 @@ final class PetBehaviorEngine {
 
     // MARK: - 二期事件入口（形状锁定）
 
-    /// 提交外部事件。一期只入队，不产生行为影响；
-    /// 二期在此扩展为真实反应分发。
-    func submit(_ event: PetExternalEvent) {
+    /// 提交外部事件：已映射事件即时分发为反应；未映射事件（三期 Agent 预留）只入队。
+    @discardableResult
+    func submit(_ event: PetExternalEvent) -> Bool {
+        if let kind = event.reactionKind {
+            return react(to: kind)
+        }
         pendingExternalEvents.append(event)
+        return false
     }
 
     /// 清空待处理事件（测试与生命周期收尾用）。
@@ -205,7 +247,7 @@ final class PetBehaviorEngine {
         switch state {
         case .idle: autonomy = .idle
         case .walk(let direction): autonomy = direction == .left ? .walkLeft : .walkRight
-        case .drag, .petted: break
+        case .drag, .petted, .reaction: break
         }
     }
 
@@ -226,22 +268,3 @@ final class PetBehaviorEngine {
     }
 }
 
-/// 二期事件入口：外部状态（系统负载、Agent 会话等）驱动宠物反应的提交形状。
-/// 一期无调用方、无分发逻辑，仅锁定接口以免后续接入时改动引擎内核。
-enum PetExternalEvent: Equatable {
-    /// 外部活动开始（如 Agent 开始思考）。
-    case activityStarted(kind: PetActivityKind)
-    /// 外部活动结束。
-    case activityEnded(kind: PetActivityKind)
-    /// 需要提醒（如等待用户确认）。
-    case attentionRequested
-    /// 庆祝（如任务完成）。
-    case celebrationTriggered
-}
-
-/// 外部活动类别（二期扩展位，一期不产生）。
-enum PetActivityKind: String, Equatable {
-    case thinking
-    case working
-    case waiting
-}

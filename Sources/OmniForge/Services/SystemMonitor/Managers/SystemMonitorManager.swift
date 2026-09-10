@@ -9,6 +9,10 @@ final class SystemMonitorManager: ObservableObject {
     @Published private(set) var history = MetricHistory()
     @Published private(set) var processState = ProcessBreakdownState.collapsed
     @Published private(set) var isSampling = false
+    /// 宠物反应联动激活源：联动开启且宠物启用时置位，撤除即停采样（不留常驻开销）。
+    var petReactionDemand = false {
+        didSet { updateSampling() }
+    }
     @Published private(set) var speedTestState: SpeedTestState = .idle
 
     private let scheduler: RepeatingScheduling
@@ -180,6 +184,7 @@ final class SystemMonitorManager: ObservableObject {
         let shouldBeActive = demand != .none
             || !menuBarMetrics.isEmpty
             || !alertRequirements.isEmpty
+            || petReactionDemand
         if shouldBeActive && !isSampling {
             startSampling()
             return true

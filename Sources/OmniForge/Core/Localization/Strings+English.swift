@@ -1416,5 +1416,7 @@ extension Strings {
         desktopPetActivityQuiet: "Quiet",
         desktopPetActivityBalanced: "Balanced",
         desktopPetActivityLively: "Lively",
+        desktopPetReactionsSection: "State Reactions",
+        desktopPetReactionsToggle: "React to system state",
     )
 }

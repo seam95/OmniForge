@@ -58,8 +58,31 @@ private struct DesktopPetContent: View {
 
             FlatHairline()
 
+            reactionsSection
+
+            FlatHairline()
+
             sizeSection
         }
+    }
+
+    // MARK: - 状态反应
+
+    private var reactionsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle(strings.desktopPetReactionsToggle, isOn: Binding(
+                get: { FeatureRuntime.shared.injectedDefaults.bool(forKey: UserDefaultsKeys.petReactionsEnabled) },
+                set: { enabled in
+                    // 写键后经 binding 重启宠物，使协调器订阅与 CPU 采样激活源即时增减。
+                    FeatureRuntime.shared.injectedDefaults.set(enabled, forKey: UserDefaultsKeys.petReactionsEnabled)
+                    FeatureRuntime.shared.sync([.desktopPet])
+                }
+            ))
+            .toggleStyle(.switch)
+            .font(Theme.Stats.font12Medium)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     // MARK: - 好动程度

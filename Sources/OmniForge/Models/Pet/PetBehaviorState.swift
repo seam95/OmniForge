@@ -12,6 +12,8 @@ enum PetBehaviorState: Equatable {
     case drag
     /// 被抚摸：播放一次性动画，播完回到 `resumeState`。
     case petted(resumeState: PetResumeState)
+    /// 反应中：外部事件触发的一次性状态，播完回到 `resumeState`（与被抚摸同族）。
+    case reaction(kind: PetReactionKind, resumeState: PetResumeState)
 }
 
 /// 水平朝向。

@@ -100,6 +100,15 @@ struct PetSpriteView: View {
 
         case .petted:
             return asset.animation(id: PetAnimationID.petted).map { ($0, false) }
+
+        case .reaction(let kind, _):
+            // 降级链：专用动画 → 抚摸 → 空闲（内置猫缺专用素材时逐级回退）。
+            for id in kind.animationFallbacks {
+                if let animation = asset.animation(id: id) {
+                    return (animation, false)
+                }
+            }
+            return nil
         }
     }
 

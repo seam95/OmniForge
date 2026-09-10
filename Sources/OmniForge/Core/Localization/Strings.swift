@@ -1562,6 +1562,8 @@ struct Strings: Equatable {
     let desktopPetActivityQuiet: String
     let desktopPetActivityBalanced: String
     let desktopPetActivityLively: String
+    let desktopPetReactionsSection: String
+    let desktopPetReactionsToggle: String
 }
 
 // MARK: - 派生文案
