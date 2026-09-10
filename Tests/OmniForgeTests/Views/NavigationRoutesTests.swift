@@ -3,14 +3,15 @@ import XCTest
 
 final class NavigationRoutesTests: XCTestCase {
     func test_menuPanels_followFeatureAvailabilityAndStableOrder() {
+        // 终态 4 tab（信息架构重构阶段③）：唤醒降级为实用工具详情页。
         XCTAssertEqual(
             MenuPanel.primaryCases,
-            [.systemMonitor, .tokenUsage, .keepAwake, .providerSwitch, .utilities]
+            [.systemMonitor, .tokenUsage, .providerSwitch, .utilities]
         )
 
         XCTAssertEqual(
             MenuPanel.visibleCases(isAvailable: { _ in true }),
-            [.systemMonitor, .tokenUsage, .keepAwake, .providerSwitch, .utilities]
+            [.systemMonitor, .tokenUsage, .providerSwitch, .utilities]
         )
 
         XCTAssertEqual(
@@ -20,11 +21,12 @@ final class NavigationRoutesTests: XCTestCase {
             [.systemMonitor, .utilities]
         )
 
+        // 唤醒不再产生独立 panel：并入实用工具（阶段③）。
         XCTAssertEqual(
             MenuPanel.visibleCases(isAvailable: { feature in
                 [.systemMonitor, .networkDiagnostics, .keepAwake].contains(feature)
             }),
-            [.systemMonitor, .keepAwake, .utilities]
+            [.systemMonitor, .utilities]
         )
 
         // 仅 tokenUsage 可用 → 独立页签出现，不并入实用工具
@@ -46,9 +48,10 @@ final class NavigationRoutesTests: XCTestCase {
             [.utilities]
         )
 
+        // 仅 keepAwake 可用 → 只有实用工具 tab（唤醒本体在工具详情页）。
         XCTAssertEqual(
             MenuPanel.visibleCases(isAvailable: { $0 == .keepAwake }),
-            [.keepAwake]
+            [.utilities]
         )
 
         // 仅网络诊断可用 → 实用工具 tab 可见（不再是独立 panel）
@@ -108,7 +111,7 @@ final class NavigationRoutesTests: XCTestCase {
             .utilities
         )
         XCTAssertEqual(
-            MenuPanel.resolvedSelection(.keepAwake, in: visibleCases),
+            MenuPanel.resolvedSelection(.tokenUsage, in: visibleCases),
             .systemMonitor
         )
         XCTAssertEqual(
@@ -118,10 +121,18 @@ final class NavigationRoutesTests: XCTestCase {
         XCTAssertNil(MenuPanel.resolvedSelection(.utilities, in: []))
     }
 
+    /// 升级无迁移：旧版本持久化的 `lastControlCenterPanel = "keepAwake"` 在
+    /// 唤醒 tab 移除后解析为 nil，自动回退首个可见面板（监控）。SPEC §7。
+    func test_menuPanelSelection_repairsLegacyKeepAwakePersistedValue() {
+        XCTAssertNil(MenuPanel(rawValue: "keepAwake"))
+        XCTAssertEqual(
+            MenuPanel.resolvedSelection(MenuPanel(rawValue: "keepAwake"), in: [.systemMonitor, .utilities]),
+            .systemMonitor
+        )
+    }
+
     func test_menuPanelSelection_usesPerformanceAsFirstOpenDefaultAndRepairsSavedUnavailablePanel() {
-        let allPanels: [MenuPanel] = [
-            .systemMonitor, .keepAwake, .utilities,
-        ]
+        let allPanels: [MenuPanel] = [.systemMonitor, .utilities]
 
         XCTAssertEqual(
             MenuPanel.resolvedSelection(nil, in: allPanels),
@@ -132,12 +143,8 @@ final class NavigationRoutesTests: XCTestCase {
             .utilities
         )
         XCTAssertEqual(
-            MenuPanel.resolvedSelection(.utilities, in: [.systemMonitor, .keepAwake]),
-            .systemMonitor
-        )
-        XCTAssertEqual(
             MenuPanel.resolvedSelection(
-                .keepAwake,
+                .tokenUsage,
                 in: [.systemMonitor, .utilities]
             ),
             .systemMonitor
@@ -148,41 +155,62 @@ final class NavigationRoutesTests: XCTestCase {
         XCTAssertEqual(MenuPanel.utilities.id, "utilities")
         XCTAssertEqual(MenuPanel.systemMonitor.symbolName, "waveform.path.ecg")
         XCTAssertEqual(MenuPanel.tokenUsage.symbolName, "chart.line.uptrend.xyaxis")
-        XCTAssertEqual(MenuPanel.keepAwake.symbolName, "moon.fill")
         XCTAssertEqual(MenuPanel.providerSwitch.symbolName, "arrow.triangle.swap")
         XCTAssertEqual(MenuPanel.utilities.symbolName, "wrench.fill")
         XCTAssertEqual(MenuPanel.systemMonitor.title(in: .zhHans), Strings.zhHans.controlcenterTabSystemMonitor)
         XCTAssertEqual(MenuPanel.utilities.title(in: .en), Strings.en.controlcenterTabUtilities)
-        XCTAssertEqual(MenuPanel.keepAwake.title(in: .en), Strings.en.featureHubNameKeepAwake)
         XCTAssertEqual(MenuPanel.providerSwitch.title(in: .zhHans), Strings.zhHans.controlcenterTabProviderSwitch)
         XCTAssertEqual(MenuPanel.providerSwitch.navTitle(in: .en), "Provider")
         XCTAssertEqual(MenuPanel.providerSwitch.navTitle(in: .zhHans), "供应商")
         XCTAssertEqual(MenuPanel.tokenUsage.title(in: .en), "Token")
         XCTAssertEqual(MenuPanel.tokenUsage.navTitle(in: .zhHans), "Token")
         XCTAssertEqual(MenuPanel.systemMonitor.navTitle(in: .zhHans), "监控")
-        XCTAssertEqual(MenuPanel.keepAwake.navTitle(in: .zhHans), "唤醒")
         XCTAssertEqual(MenuPanel.utilities.navTitle(in: .zhHans), "工具")
     }
 
     func test_settingsTabs_followFeatureAvailabilityAndStableOrder() {
+        // 终态 12 项（信息架构重构阶段③）：清理/卸载全页壳移除，功能本体在工具详情页。
         XCTAssertEqual(
             SettingsToolbarTab.visibleCases(isAvailable: { _ in true }),
             [
                 .general, .features, .inputMethod, .clipboard, .shelf, .screenshot, .mouse,
-                .performance, .tokenUsage, .keepAwake, .providerSwitch, .promptOptimizer, .cleaner, .uninstaller
+                .performance, .tokenUsage, .keepAwake, .providerSwitch, .promptOptimizer
             ]
+        )
+
+        // 清理/卸载可用也不再产生设置项（功能本体托管于控制中心工具页）。
+        XCTAssertEqual(
+            SettingsToolbarTab.visibleCases(isAvailable: { feature in
+                [.cleaner, .uninstaller].contains(feature)
+            }),
+            [.general, .features]
         )
 
         XCTAssertEqual(
             SettingsToolbarTab.visibleCases(isAvailable: { feature in
-                [.inputLock, .shelf, .smoothScroll, .systemMonitor, .uninstaller].contains(feature)
+                [.inputLock, .shelf, .smoothScroll, .systemMonitor].contains(feature)
             }),
-            [.general, .features, .inputMethod, .shelf, .mouse, .performance, .uninstaller]
+            [.general, .features, .inputMethod, .shelf, .mouse, .performance]
         )
 
         XCTAssertEqual(
             SettingsToolbarTab.visibleCases(isAvailable: { $0 == .keepAwake }),
             [.general, .features, .keepAwake]
+        )
+    }
+
+    /// 升级无迁移：旧版本持久化的设置选中项 `cleaner`/`uninstaller` 已不存在，
+    /// 解析为 nil 并回退首个可见项（general）。SPEC §7。
+    func test_settingsSelection_repairsLegacyCleanerAndUninstallerPersistedValues() {
+        XCTAssertNil(SettingsToolbarTab(rawValue: "cleaner"))
+        XCTAssertNil(SettingsToolbarTab(rawValue: "uninstaller"))
+        XCTAssertEqual(
+            SettingsToolbarTab.resolvedSelection(SettingsToolbarTab(rawValue: "cleaner"), in: [.general, .features]),
+            .general
+        )
+        XCTAssertEqual(
+            SettingsToolbarTab.resolvedSelection(SettingsToolbarTab(rawValue: "uninstaller"), in: [.general, .features]),
+            .general
         )
     }
 

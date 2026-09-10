@@ -81,7 +81,7 @@ final class PageSwitchHostBarrierTests: XCTestCase {
 
         box.panel = .tokenUsage
         try await tick(0.15) // B 挂载，屏障等待
-        box.panel = .keepAwake
+        box.panel = .providerSwitch
         try await tick(0.15) // C 透明替换挂载（B 从未展示）
 
         // 迟到的 B proceed：不得产生任何进入。
@@ -90,7 +90,7 @@ final class PageSwitchHostBarrierTests: XCTestCase {
         let harness = host.rootView as! BarrierHarness
         let swapCount = harness.recorder.events.filter { $0.0 == "routeSwapped" }.count
         // B 的 proceed 被忽略（displayed 已是 C）。
-        proceedFor[.keepAwake]?()
+        proceedFor[.providerSwitch]?()
         try await tick(0.2)
         XCTAssertTrue(harness.recorder.events.contains { $0.0 == "enterCompleted" })
         XCTAssertGreaterThanOrEqual(swapCount, 1)

@@ -1,15 +1,8 @@
 import SwiftUI
 
-/// 卸载器，作为 Settings 页面嵌入：拖入一个 app（或选择一个），
-/// 审查它找到的遗留文件及其大小，然后把选中的移到废纸篓并查看释放的空间。
-struct UninstallerView: View {
-    let strings: Strings
-
-    var body: some View {
-        UninstallerContentView(strings: strings, layout: .settings)
-    }
-}
-
+/// 卸载器：拖入一个 app（或选择一个），审查它找到的遗留文件及其大小，
+/// 然后把选中的移到废纸篓并查看释放的空间。功能本体托管于控制中心实用工具详情页。
+///
 /// 卸载器共享内容。宽版与紧凑版复用同一任务会话，仅调整可用空间。
 struct UninstallerContentView: View {
     @Environment(\.colorScheme) private var colorScheme

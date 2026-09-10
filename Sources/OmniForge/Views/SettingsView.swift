@@ -128,12 +128,6 @@ struct SettingsView: View {
         case .promptOptimizer:
             PromptOptimizerSettingsView(state: state)
                 .navigationTitle(tab.title(in: state.l10n.s))
-        case .cleaner:
-            CleanerView(strings: state.l10n.s)
-                .navigationTitle(tab.title(in: state.l10n.s))
-        case .uninstaller:
-            UninstallerView(strings: state.l10n.s)
-                .navigationTitle(tab.title(in: state.l10n.s))
         case .features:
             FeatureHubView(l10n: state.l10n)
                 .navigationTitle(tab.title(in: state.l10n.s))

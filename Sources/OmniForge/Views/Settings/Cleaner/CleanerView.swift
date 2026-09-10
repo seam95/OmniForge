@@ -21,15 +21,8 @@ struct CleanerNotificationStatusGate {
 
 /// 垃圾清理器，为一眼而设计：一个完全选中、单击即就的安全区，以及一个默认不勾选、
 /// 折叠收起、留给愿意深挖的人的可选区。每组都有通俗解释；逐文件细节在一个箭头之外而非眼前。
-/// 作为 Settings 页面托管（全尺寸）。
-struct CleanerView: View {
-    let strings: Strings
-
-    var body: some View {
-        CleanerContentView(strings: strings, layout: .settings)
-    }
-}
-
+/// 功能本体托管于控制中心实用工具详情页（紧凑布局）。
+///
 /// 清理器共享内容。宽版与紧凑版只改变空间策略，始终观察同一个会话对象。
 struct CleanerContentView: View {
     @Environment(\.colorScheme) private var colorScheme

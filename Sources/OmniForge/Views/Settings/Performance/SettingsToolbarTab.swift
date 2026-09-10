@@ -14,8 +14,6 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
     case keepAwake
     case providerSwitch
     case promptOptimizer
-    case cleaner
-    case uninstaller
 
     static func visibleCases(isAvailable: (AppFeature) -> Bool) -> [SettingsToolbarTab] {
         allCases.filter { tab in
@@ -42,10 +40,6 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
                 return isAvailable(.providerSwitch)
             case .promptOptimizer:
                 return isAvailable(.promptOptimizer)
-            case .cleaner:
-                return isAvailable(.cleaner)
-            case .uninstaller:
-                return isAvailable(.uninstaller)
             }
         }
     }
@@ -78,7 +72,7 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
             return .input
         case .clipboard:
             return .clipboard
-        case .shelf, .cleaner, .uninstaller:
+        case .shelf:
             return .productivity
         case .screenshot:
             return .capture
@@ -106,8 +100,6 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
         case .keepAwake: return "moon.zzz.fill"
         case .providerSwitch: return "arrow.triangle.swap"
         case .promptOptimizer: return "wand.and.stars"
-        case .cleaner: return "sparkles"
-        case .uninstaller: return "trash"
         case .features: return "puzzlepiece.extension"
         }
     }
@@ -120,8 +112,6 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
         case .inputMethod: return .blue
         case .clipboard: return .green
         case .shelf: return .orange
-        case .cleaner: return .mint
-        case .uninstaller: return .red
         case .screenshot: return .teal
         case .mouse: return .indigo
         case .performance: return .green
@@ -145,8 +135,6 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
         case .keepAwake: return strings.featureHubNameKeepAwake
         case .providerSwitch: return strings.settingsTabProviderSwitch
         case .promptOptimizer: return strings.settingsTabPromptOptimizer
-        case .cleaner: return strings.cleanerName
-        case .uninstaller: return strings.uninstallerName
         case .features: return strings.settingsTabFeatures
         }
     }

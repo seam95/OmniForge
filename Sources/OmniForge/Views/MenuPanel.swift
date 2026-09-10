@@ -3,16 +3,15 @@ import Foundation
 enum MenuPanel: String, CaseIterable, Identifiable {
     case systemMonitor
     case tokenUsage
-    case keepAwake
     case providerSwitch
     case clipboard = "utilities"
 
     /// 兼容历史命名；控制中心实用工具页。
     static let utilities: MenuPanel = .clipboard
 
-    /// 系统监控 → Token 用量 → 保持唤醒 → 供应商切换 → 实用工具
+    /// 系统监控 → Token 用量 → 供应商切换 → 实用工具
     static let primaryCases: [MenuPanel] = [
-        .systemMonitor, .tokenUsage, .keepAwake, .providerSwitch, .utilities,
+        .systemMonitor, .tokenUsage, .providerSwitch, .utilities,
     ]
 
     static func visibleCases(isAvailable: (AppFeature) -> Bool) -> [MenuPanel] {
@@ -24,9 +23,6 @@ enum MenuPanel: String, CaseIterable, Identifiable {
         if isAvailable(.tokenUsage) {
             result.append(.tokenUsage)
         }
-        if isAvailable(.keepAwake) {
-            result.append(.keepAwake)
-        }
         if isAvailable(.providerSwitch) {
             result.append(.providerSwitch)
         }
@@ -37,7 +33,8 @@ enum MenuPanel: String, CaseIterable, Identifiable {
             || isAvailable(.dshWeb)
             || isAvailable(.cleaningMode)
             || isAvailable(.stickyNotes)
-            || isAvailable(.desktopPet) {
+            || isAvailable(.desktopPet)
+            || isAvailable(.keepAwake) {
             result.append(.utilities)
         }
 
@@ -59,7 +56,6 @@ enum MenuPanel: String, CaseIterable, Identifiable {
         switch self {
         case .systemMonitor: return "waveform.path.ecg"
         case .tokenUsage: return "chart.line.uptrend.xyaxis"
-        case .keepAwake: return "moon.fill"
         case .providerSwitch: return "arrow.triangle.swap"
         case .clipboard: return "wrench.fill"
         }
@@ -69,7 +65,6 @@ enum MenuPanel: String, CaseIterable, Identifiable {
         switch self {
         case .systemMonitor: return strings.controlcenterTabSystemMonitor
         case .tokenUsage: return strings.controlcenterTabTokenUsage
-        case .keepAwake: return strings.featureHubNameKeepAwake
         case .providerSwitch: return strings.controlcenterTabProviderSwitch
         case .clipboard: return strings.controlcenterTabUtilities
         }
@@ -79,7 +74,6 @@ enum MenuPanel: String, CaseIterable, Identifiable {
         switch self {
         case .systemMonitor: return strings.controlcenterNavMonitor
         case .tokenUsage: return strings.controlcenterNavTokenUsage
-        case .keepAwake: return strings.controlcenterNavKeepAwake
         case .providerSwitch: return strings.controlcenterNavProviderSwitch
         case .clipboard: return strings.controlcenterNavUtilities
         }
@@ -90,7 +84,7 @@ enum MenuPanel: String, CaseIterable, Identifiable {
     /// 宿主转场层 surface 不重复给白底（见 ControlCenterContainerView.panelSurface）。
     var usesFlatChrome: Bool {
         switch self {
-        case .systemMonitor, .tokenUsage, .keepAwake, .providerSwitch, .clipboard:
+        case .systemMonitor, .tokenUsage, .providerSwitch, .clipboard:
             return true
         }
     }

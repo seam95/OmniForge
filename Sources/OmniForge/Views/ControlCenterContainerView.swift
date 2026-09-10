@@ -55,7 +55,6 @@ struct ControlCenterContainerView: View {
     private var selectedPanelRawValue = MenuPanel.systemMonitor.rawValue
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var keepAwakeConfigError: String?
     @State private var topChromeHeight: CGFloat = 0
     @State private var bottomChromeHeight: CGFloat = 0
     @Namespace private var navIndicator
@@ -258,7 +257,7 @@ struct ControlCenterContainerView: View {
                 || !runtime.isAvailable(.tokenUsage)
         case .providerSwitch:
             return state.providerSwitchManager == nil || !runtime.isAvailable(.providerSwitch)
-        case .keepAwake, .clipboard:
+        case .clipboard:
             return false
         }
     }
@@ -343,8 +342,6 @@ struct ControlCenterContainerView: View {
                 } else {
                     unavailablePanel
                 }
-            case .keepAwake:
-                keepAwakePanel
             case .clipboard:
                 UtilityToolsView(
                     strings: state.l10n.s,
@@ -366,130 +363,6 @@ struct ControlCenterContainerView: View {
                     unavailablePanel
                 }
             }
-    }
-
-    @ViewBuilder
-    private var keepAwakePanel: some View {
-        if let manager = state.keepAwakeManager, runtime.isAvailable(.keepAwake) {
-            // 倒计时由 KeepAwakeControlView 内部基于 countdownEndDate 局部刷新，避免整页秒级重建。
-            let blocksStart = state.clamshellRecoveryCoordinator?.blocksKeepAwakeStart ?? false
-            let presentation = KeepAwakeControlPresentationBuilder.build(
-                session: manager.state,
-                clamshell: manager.clamshellState,
-                lastError: manager.lastOperationError,
-                blocksStart: blocksStart,
-                isFeatureAvailable: true,
-                now: Date(),
-                pointerError: manager.pointerActivityError,
-                batteryError: manager.batteryMonitoringError,
-                strings: state.l10n.s
-            )
-            KeepAwakeControlView(
-                presentation: presentation,
-                config: makeKeepAwakeConfigBindings(manager: manager),
-                strings: state.l10n.s,
-                onStart: { manager.start() },
-                onStop: { manager.stop(reason: .manual) },
-                onRetryCleanup: {
-                    Task { await manager.retryCleanup() }
-                },
-                onExtend: { minutes in manager.extend(byMinutes: minutes) },
-                onSetDuration: { duration in manager.setDuration(duration) }
-            )
-        } else {
-            KeepAwakeControlView(
-                presentation: KeepAwakeControlPresentationBuilder.build(
-                    session: .inactive,
-                    clamshell: .off,
-                    lastError: nil,
-                    blocksStart: false,
-                    isFeatureAvailable: false,
-                    strings: state.l10n.s
-                ),
-                config: .previewDisabled,
-                strings: state.l10n.s
-            )
-        }
-    }
-
-    private func makeKeepAwakeConfigBindings(manager: KeepAwakeManager) -> KeepAwakeControlConfigBindings {
-        let defaults = UserDefaults.standard
-        return KeepAwakeControlConfigBindings(
-            defaultDurationMinutes: Binding(
-                get: {
-                    if defaults.object(forKey: UserDefaultsKeys.keepAwakeDefaultDurationMinutes) == nil {
-                        return 0
-                    }
-                    return defaults.integer(forKey: UserDefaultsKeys.keepAwakeDefaultDurationMinutes)
-                },
-                set: { newValue in
-                    do {
-                        _ = try KeepAwakeDuration.parse(newValue)
-                        defaults.set(newValue, forKey: UserDefaultsKeys.keepAwakeDefaultDurationMinutes)
-                        keepAwakeConfigError = nil
-                    } catch {
-                        keepAwakeConfigError = String(describing: error)
-                    }
-                }
-            ),
-            autoStart: Binding(
-                get: {
-                    if defaults.object(forKey: UserDefaultsKeys.keepAwakeAutoStart) == nil { return false }
-                    return defaults.bool(forKey: UserDefaultsKeys.keepAwakeAutoStart)
-                },
-                set: { defaults.set($0, forKey: UserDefaultsKeys.keepAwakeAutoStart) }
-            ),
-            mouseJiggleEnabled: Binding(
-                get: {
-                    if defaults.object(forKey: UserDefaultsKeys.keepAwakeMouseJiggleEnabled) == nil {
-                        return false
-                    }
-                    return defaults.bool(forKey: UserDefaultsKeys.keepAwakeMouseJiggleEnabled)
-                },
-                set: { newValue in
-                    defaults.set(newValue, forKey: UserDefaultsKeys.keepAwakeMouseJiggleEnabled)
-                    manager.resyncPointerActivityFromConfiguration()
-                }
-            ),
-            mouseJiggleIntervalMinutes: Binding(
-                get: {
-                    if defaults.object(forKey: UserDefaultsKeys.keepAwakeMouseJiggleIntervalMinutes) == nil {
-                        return 5
-                    }
-                    return defaults.integer(forKey: UserDefaultsKeys.keepAwakeMouseJiggleIntervalMinutes)
-                },
-                set: { newValue in
-                    do {
-                        _ = try KeepAwakePointerInterval.parse(newValue)
-                        defaults.set(newValue, forKey: UserDefaultsKeys.keepAwakeMouseJiggleIntervalMinutes)
-                        keepAwakeConfigError = nil
-                        manager.resyncPointerActivityFromConfiguration()
-                    } catch {
-                        keepAwakeConfigError = String(describing: error)
-                    }
-                }
-            ),
-            clamshellPreferred: Binding(
-                get: {
-                    if defaults.object(forKey: UserDefaultsKeys.keepAwakeClamshellPreferred) == nil {
-                        return false
-                    }
-                    return defaults.bool(forKey: UserDefaultsKeys.keepAwakeClamshellPreferred)
-                },
-                set: { newValue in
-                    defaults.set(newValue, forKey: UserDefaultsKeys.keepAwakeClamshellPreferred)
-                    Task { await manager.setClamshellPreferred(newValue) }
-                }
-            ),
-            onRequestAccessibility: {
-                let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-                _ = AXIsProcessTrustedWithOptions(options)
-            },
-            onOpenKeepAwakeSettings: {
-                onOpenSettings(.keepAwake)
-            },
-            configError: keepAwakeConfigError
-        )
     }
 
     private var unavailablePanel: some View {

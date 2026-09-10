@@ -90,7 +90,7 @@ final class ControlCenterViewportStabilityTests: XCTestCase {
         try await tick(0.05)
         sample()
 
-        for panel in [MenuPanel.tokenUsage, .keepAwake, .providerSwitch, .clipboard, .systemMonitor] {
+        for panel in [MenuPanel.tokenUsage, .providerSwitch, .clipboard, .systemMonitor] {
             box.panel = panel
             try await tick(0.03)
             sample()
@@ -204,7 +204,6 @@ private struct ViewportStabilityHarness: View {
         switch panel {
         case .systemMonitor: 560
         case .tokenUsage: 900
-        case .keepAwake: 200
         case .clipboard: 120
         case .providerSwitch: 400
         }
@@ -274,7 +273,7 @@ final class ControlCenterShellSizeStabilityTests: XCTestCase {
         let initial = currentHeight()
 
         var settledHeights: [CGFloat] = []
-        for panel in [MenuPanel.tokenUsage, .keepAwake, .providerSwitch, .clipboard, .systemMonitor] {
+        for panel in [MenuPanel.tokenUsage, .providerSwitch, .clipboard, .systemMonitor] {
             UserDefaults.standard.set(panel.rawValue, forKey: panelKey)
             hosting.needsLayout = true
             try await tick(0.6) // 转场 + 改高 + 淡入 + 稳定
