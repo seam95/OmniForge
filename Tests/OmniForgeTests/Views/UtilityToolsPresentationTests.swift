@@ -54,33 +54,37 @@ final class UtilityToolsPresentationTests: XCTestCase {
         }
     }
 
-    func test_toolRowMetrics_areCompactAndInternallyConsistent() {
-        // 紧凑化契约：图标徽章小于文字块原尺寸（38pt），行高由徽章与内边距推导，
-        // 且比改造前（38 + 10×2 = 58pt）明显更低，保证列表更紧凑。
-        XCTAssertLessThan(UtilityToolRowMetrics.iconBadgeSize, 38)
-        XCTAssertLessThan(UtilityToolRowMetrics.verticalPadding, 10)
+    func test_toolGridMetrics_areRegularAndFitPanelWidth() {
+        // 3×3 宫格契约：固定列数保证新增工具进入下一行而不破坏排布；
+        // 卡片宽度由面板宽、外边距与间距推导，且为正值。
+        XCTAssertEqual(UtilityToolGrid.columnCount, 3)
+        XCTAssertEqual(UtilityToolGrid.columns.count, 3)
+        XCTAssertEqual(UtilityToolGrid.horizontalPadding, 16)
+        XCTAssertEqual(UtilityToolGrid.verticalPadding, 12)
+        XCTAssertEqual(UtilityToolGrid.spacing, 8)
+        XCTAssertGreaterThan(UtilityToolGrid.cardWidth, 0)
+        // 3 列卡片 + 2 个列间距 + 两侧外边距 必须恰好等于面板宽。
         XCTAssertEqual(
-            UtilityToolRowMetrics.rowHeight,
-            UtilityToolRowMetrics.iconBadgeSize + UtilityToolRowMetrics.verticalPadding * 2
+            UtilityToolGrid.cardWidth * 3 + UtilityToolGrid.spacing * 2 + UtilityToolGrid.horizontalPadding * 2,
+            ControlCenterContentMetrics.panelWidth
         )
-        XCTAssertLessThan(UtilityToolRowMetrics.rowHeight, 58)
-        // 图标必须留在徽章内，否则缩小徽章后字形会溢出并与标题错位。
-        XCTAssertLessThanOrEqual(UtilityToolRowMetrics.iconGlyphSize, UtilityToolRowMetrics.iconBadgeSize)
-        XCTAssertLessThanOrEqual(UtilityToolRowMetrics.iconCornerRadius, UtilityToolRowMetrics.iconBadgeSize / 2)
-        // 气泡按内容换行而非无限拉宽，避免在窄面板上溢出屏幕。
-        XCTAssertGreaterThan(UtilityToolRowMetrics.hintMaxWidth, 0)
+        // 卡片高度必须容纳图标徽章 + 标题 + 内边距，且与宫格节奏一致。
+        XCTAssertGreaterThanOrEqual(
+            UtilityToolGrid.cardHeight,
+            UtilityToolCardVisual.iconBadgeSize + 24
+        )
+        XCTAssertGreaterThan(UtilityToolCardVisual.hintMaxWidth, 0)
     }
 
-    func test_toolRowHint_visibleWhileHoveringOrKeyboardFocused() {
+    func test_toolCardVisual_visibleWhileHoveringOrKeyboardFocused() {
         // 描述只在悬浮/聚焦时出现，两者都退出才隐藏；键盘因此与指针走同一条
-        // 查看路径，行高亮也共用该判定。
-        XCTAssertTrue(UtilityToolRowHint.isActive(hovered: true, focused: false))
-        XCTAssertTrue(UtilityToolRowHint.isActive(hovered: false, focused: true))
-        XCTAssertTrue(UtilityToolRowHint.isActive(hovered: true, focused: true))
-        XCTAssertFalse(UtilityToolRowHint.isActive(hovered: false, focused: false))
-        // 气泡贴行右侧，不覆盖列表中的其他工具项。
-        XCTAssertEqual(UtilityToolRowHint.placementEdge, .trailing)
-        XCTAssertGreaterThan(UtilityToolRowHint.hoverRevealDelay, 0)
+        // 查看路径，卡片高亮也共用该判定。
+        XCTAssertTrue(UtilityToolCardVisual.isActive(hovered: true, focused: false))
+        XCTAssertTrue(UtilityToolCardVisual.isActive(hovered: false, focused: true))
+        XCTAssertTrue(UtilityToolCardVisual.isActive(hovered: true, focused: true))
+        XCTAssertFalse(UtilityToolCardVisual.isActive(hovered: false, focused: false))
+        // 气泡贴卡片上方，避免遮挡相邻卡片。
+        XCTAssertEqual(UtilityToolCardVisual.placementEdge, .top)
     }
 
     func test_persistedToolSelectionUsesStoredValueAndRepairsUnavailableValue() {
