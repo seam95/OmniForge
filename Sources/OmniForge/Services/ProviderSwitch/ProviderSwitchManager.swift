@@ -221,6 +221,11 @@ final class ProviderSwitchManager: ObservableObject {
         refresh()
     }
 
+    /// 读取某份备份的内容，供用户在恢复前核对（只读，不改动任何状态）。
+    func backupContent(_ backup: ProviderBackup) throws -> String {
+        try backupStore.content(of: backup)
+    }
+
     // MARK: - 损坏配置重建（SPEC 2.8.2）
 
     /// 损坏配置「备份并重建」：坏文件复制到备份目录后移除，回到无 override 状态

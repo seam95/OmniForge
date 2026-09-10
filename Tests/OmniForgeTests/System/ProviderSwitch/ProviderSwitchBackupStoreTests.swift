@@ -86,6 +86,52 @@ final class ProviderSwitchBackupStoreTests: XCTestCase {
         XCTAssertNil(ProviderBackupStore.parse(fileName: "no-date.json"))
     }
 
+    // MARK: - 读取内容
+
+    func test_content_returnsSnapshotText() throws {
+        let store = makeStore()
+        try writeConfig("{\"env\": {\"TOKEN\": \"abc\"}}")
+        let backup = try store.snapshot(tool: .claudeCode, of: configURL)
+        XCTAssertEqual(try store.content(of: backup), "{\"env\": {\"TOKEN\": \"abc\"}}")
+    }
+
+    /// 读取内容不得改动快照或配置文件（纯只读操作）。
+    func test_content_isReadOnly() throws {
+        let store = makeStore()
+        try writeConfig("{\"before\": true}")
+        let backup = try store.snapshot(tool: .claudeCode, of: configURL)
+        try writeConfig("{\"after\": true}")
+
+        _ = try store.content(of: backup)
+
+        XCTAssertEqual(try String(contentsOf: configURL), "{\"after\": true}", "读取备份不得改写当前配置")
+        XCTAssertEqual(store.list(tool: .claudeCode).count, 1, "读取备份不得增删快照")
+    }
+
+    func test_content_missingBackupThrows() {
+        let store = makeStore()
+        let backup = ProviderBackup(id: "claudeCode-2026-08-26_12-00-00-1A2B.json", tool: .claudeCode, date: Date())
+        XCTAssertThrowsError(try store.content(of: backup)) { error in
+            XCTAssertEqual(
+                error as? ProviderBackupError,
+                .backupMissing(path: backupDir.appendingPathComponent(backup.id).path)
+            )
+        }
+    }
+
+    /// 非 UTF-8 字节不应抛错，降级为可读文本（避免查看内容时崩溃/报错）。
+    func test_content_nonUTF8FallsBackToLossyDecoding() throws {
+        let store = makeStore()
+        try FileManager.default.createDirectory(at: backupDir, withIntermediateDirectories: true)
+        let backup = ProviderBackup(
+            id: "claudeCode-2026-08-26_12-00-00-1A2B.json",
+            tool: .claudeCode,
+            date: Date()
+        )
+        try Data([0x7B, 0xFF, 0xFE, 0x7D]).write(to: backupDir.appendingPathComponent(backup.id))
+        XCTAssertNoThrow(try store.content(of: backup))
+    }
+
     // MARK: - 恢复
 
     func test_restore_writesSnapshotContentAtomically() throws {

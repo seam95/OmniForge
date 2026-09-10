@@ -16,6 +16,8 @@ protocol ProviderBackupStoring: AnyObject {
     func snapshot(tool: ProviderTool, of configURL: URL) throws -> ProviderBackup
     /// 按工具列出历史快照（最新在前）。
     func list(tool: ProviderTool) -> [ProviderBackup]
+    /// 读取指定快照的内容（文本），供用户在恢复前查看将要恢复的内容。
+    func content(of backup: ProviderBackup) throws -> String
     /// 恢复指定快照：快照内容经 tmp+rename 原子写回目标配置文件（`0600`）。
     func restore(_ backup: ProviderBackup, to configURL: URL) throws
 }
@@ -69,6 +71,17 @@ final class ProviderBackupStore: ProviderBackupStoring {
             }
             .filter { $0.tool == tool }
             .sorted { $0.sortDate > $1.sortDate }
+    }
+
+    func content(of backup: ProviderBackup) throws -> String {
+        let source = backupDirectory.appendingPathComponent(backup.id)
+        guard fileManager.fileExists(atPath: source.path) else {
+            throw ProviderBackupError.backupMissing(path: source.path)
+        }
+        let data = try Data(contentsOf: source)
+        // 配置文件均为 UTF-8 文本（JSON / TOML）；非 UTF-8 时给出可读降级而非抛错。
+        return String(data: data, encoding: .utf8)
+            ?? String(decoding: data, as: UTF8.self)
     }
 
     func restore(_ backup: ProviderBackup, to configURL: URL) throws {

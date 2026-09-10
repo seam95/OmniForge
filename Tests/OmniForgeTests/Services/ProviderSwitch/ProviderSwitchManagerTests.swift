@@ -65,6 +65,8 @@ final class ProviderSwitchManagerTests: XCTestCase {
         var snapshots: [ProviderTool] = []
         var restored: [ProviderBackup] = []
         var failRestore = false
+        var contents: [String: String] = [:]
+        var failContent = false
 
         func snapshot(tool: ProviderTool, of configURL: URL) throws -> ProviderBackup {
             snapshots.append(tool)
@@ -76,6 +78,11 @@ final class ProviderSwitchManagerTests: XCTestCase {
         }
 
         func list(tool: ProviderTool) -> [ProviderBackup] { [] }
+
+        func content(of backup: ProviderBackup) throws -> String {
+            if failContent { throw ProviderBackupError.backupMissing(path: backup.id) }
+            return contents[backup.id] ?? ""
+        }
 
         func restore(_ backup: ProviderBackup, to configURL: URL) throws {
             if failRestore { throw ProviderBackupError.backupMissing(path: backup.id) }
@@ -374,6 +381,25 @@ final class ProviderSwitchManagerTests: XCTestCase {
         )
         try manager.restoreBackup(backup)
         XCTAssertEqual(backupStore.restored.map(\.id), [backup.id])
+    }
+
+    /// 查看备份内容：委托给存储层，且不改动任何状态（不触发恢复）。
+    func test_backupContent_delegatesToStoreWithoutRestoring() throws {
+        let backup = ProviderBackup(
+            id: "claudeCode-2026-08-26_12-00-00-1A2B.json",
+            tool: .claudeCode,
+            date: Date()
+        )
+        backupStore.contents[backup.id] = "{\"env\": {\"A\": \"1\"}}"
+
+        XCTAssertEqual(try manager.backupContent(backup), "{\"env\": {\"A\": \"1\"}}")
+        XCTAssertTrue(backupStore.restored.isEmpty, "仅查看内容不应触发恢复")
+    }
+
+    func test_backupContent_propagatesStoreFailure() {
+        let backup = ProviderBackup(id: "missing.json", tool: .claudeCode, date: Date())
+        backupStore.failContent = true
+        XCTAssertThrowsError(try manager.backupContent(backup))
     }
 
     // MARK: - 损坏配置重建（SPEC 2.8.2）

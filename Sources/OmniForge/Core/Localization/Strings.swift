@@ -1412,6 +1412,14 @@ struct Strings: Equatable {
     let providerBackupRestoreConfirmMessageFormat: String
     let providerBackupRestore: String
     let providerBackupRestoreFailed: String
+    /// 展开查看某份备份的内容。
+    let providerBackupViewContent: String
+    /// 收起备份内容。
+    let providerBackupHideContent: String
+    /// 备份内容读取中的占位文案。
+    let providerBackupContentLoading: String
+    /// 备份内容读取失败提示。
+    let providerBackupContentFailed: String
 
     // MARK: - Sticky Notes（桌面便签）
     /// 实用工具列表行副标题。

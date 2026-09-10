@@ -22,6 +22,42 @@ final class ProfileEditorViewTests: XCTestCase {
         XCTAssertLessThan(scrollHeight, maxHeight)
     }
 
+    /// 回归：ScrollView 垂直方向无固有高度，若只给 `maxHeight` 会被压成 0，
+    /// 表单塌缩到「分隔线 + footer」约 57pt（再由系统兜到 330pt）导致内容显示不全。
+    /// 因此滚动区必须拿到**明确**高度，且与 footer/分隔线精确闭合为总高。
+    func test_layout_givesScrollViewExplicitHeightSoFormDoesNotCollapse() {
+        for screenHeight in [600, 900, 1200] as [CGFloat] {
+            let maxH = ProfileEditorLayout.maxHeight(for: screenHeight)
+            let scrollH = ProfileEditorLayout.scrollViewportHeight(for: screenHeight)
+
+            XCTAssertGreaterThan(
+                scrollH, 0,
+                "滚动区高度必须为正，否则表单会塌缩（屏幕 \(screenHeight)）"
+            )
+            XCTAssertEqual(
+                scrollH + ProfileEditorLayout.footerHeight + ProfileEditorLayout.separatorHeight,
+                maxH,
+                accuracy: 0.001,
+                "滚动区 + 分隔线 + footer 必须精确等于表单总高（屏幕 \(screenHeight)）"
+            )
+        }
+    }
+
+    /// 表单内容需求高度约 634pt（实测新增模式 fittingSize）；在常见屏幕上
+    /// 可用高度应能容纳大部分内容，不应把上限压到远低于需求。
+    func test_layout_availableHeightAccommodatesFormContentOnCommonScreens() {
+        XCTAssertGreaterThanOrEqual(
+            ProfileEditorLayout.scrollViewportHeight(for: 900),
+            500,
+            "标准屏幕上滚动视口应足够大，新增表单主体基本一屏可见"
+        )
+        XCTAssertLessThanOrEqual(
+            ProfileEditorLayout.maxHeight(for: 900),
+            ProfileEditorLayout.preferredMaximumHeight,
+            "高度上限不得超过首选最大值"
+        )
+    }
+
     func test_brandVisual_knownBrands() {
         let glm = ProviderBrandVisual.visual(name: "GLM 智谱", baseURL: "https://open.bigmodel.cn/api/anthropic")
         XCTAssertEqual(glm.letter, "G")

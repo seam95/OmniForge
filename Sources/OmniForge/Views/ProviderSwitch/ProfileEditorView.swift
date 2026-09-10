@@ -75,7 +75,10 @@ struct ProfileEditorView: View {
                 formContent
                     .padding(20)
             }
-            .frame(maxHeight: scrollViewportHeight)
+            // 明确高度而非上限：ScrollView 垂直方向无固有高度，若只给 maxHeight
+            // 会被压成 0，整个表单塌缩到「分隔线 + footer」（实测 57pt），
+            // 再由系统 sheet 最小高度兜底成 330pt，内容显示不全。
+            .frame(height: scrollViewportHeight)
 
             Divider()
                 .padding(.horizontal, 20)
@@ -85,7 +88,8 @@ struct ProfileEditorView: View {
                 .frame(maxWidth: .infinity, minHeight: ProfileEditorLayout.footerHeight)
         }
         .frame(width: ProfileEditorLayout.editorWidth)
-        .frame(maxHeight: maxEditorHeight)
+        // 同理：显式高度，保证滚动区 + 分隔线 + footer 精确闭合为预期总高。
+        .frame(height: maxEditorHeight)
         .background(editorBackground)
         .onAppear(perform: loadInitialValues)
     }

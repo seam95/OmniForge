@@ -1278,6 +1278,10 @@ extension Strings {
         providerBackupRestoreConfirmMessageFormat: "The current config file will be replaced with “%@”.",
         providerBackupRestore: "Restore",
         providerBackupRestoreFailed: "Restore failed; please try again",
+        providerBackupViewContent: "View",
+        providerBackupHideContent: "Hide",
+        providerBackupContentLoading: "Loading…",
+        providerBackupContentFailed: "Failed to read backup content",
 
         // MARK: - Sticky Notes (Sticky Notes)
         utilityStickyNotesSubtitle: "Desktop sticky notes with pin and reminders",

@@ -1278,6 +1278,10 @@ extension Strings {
         providerBackupRestoreConfirmMessageFormat: "将用备份「%@」覆盖当前配置文件。",
         providerBackupRestore: "恢复",
         providerBackupRestoreFailed: "恢复失败，请稍后重试",
+        providerBackupViewContent: "查看内容",
+        providerBackupHideContent: "收起",
+        providerBackupContentLoading: "正在读取…",
+        providerBackupContentFailed: "读取备份内容失败",
 
         // MARK: - Sticky Notes（桌面便签）
         utilityStickyNotesSubtitle: "贴在桌面的随手备忘，支持置顶与定时提醒",
