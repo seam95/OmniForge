@@ -159,7 +159,6 @@ enum Defaults {
         [
             UserDefaultsKeys.petEnabled: false,
             UserDefaultsKeys.petSize: DesktopPetSize.medium.rawValue,
-            UserDefaultsKeys.petClickThrough: false,
             UserDefaultsKeys.petPositionX: 0.0,
             UserDefaultsKeys.petPositionY: 0.0,
             UserDefaultsKeys.petPositionScreen: "",

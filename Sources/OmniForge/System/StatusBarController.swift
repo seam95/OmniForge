@@ -489,7 +489,7 @@ final class StatusBarController: NSObject, NSWindowDelegate {
             }
         }
 
-        // 桌面宠物：点击穿透后宠物不可交互，此处是切回的唯一入口。
+        // 桌面宠物：状态项菜单提供「显示/隐藏宠物」总开关。
         if hasDesktopPet {
             let isPetEnabled = UserDefaults.standard.bool(forKey: UserDefaultsKeys.petEnabled)
             let title = isPetEnabled ? s.desktopPetHide : s.desktopPetShow

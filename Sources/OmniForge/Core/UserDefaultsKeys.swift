@@ -100,7 +100,6 @@ enum UserDefaultsKeys {
     // Desktop Pet — 桌面宠物（持久化字符串必须稳定，不得重命名）
     static let petEnabled = "desktopPet.enabled"
     static let petSize = "desktopPet.size"
-    static let petClickThrough = "desktopPet.clickThrough"
     static let petPositionX = "desktopPet.position.x"
     static let petPositionY = "desktopPet.position.y"
     static let petPositionScreen = "desktopPet.position.screen"

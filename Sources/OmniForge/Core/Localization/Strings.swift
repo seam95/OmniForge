@@ -1540,12 +1540,10 @@ struct Strings: Equatable {
     let desktopPetSizeSmall: String
     let desktopPetSizeMedium: String
     let desktopPetSizeLarge: String
-    let desktopPetClickThrough: String
     let desktopPetResetPosition: String
     let desktopPetHide: String
     let desktopPetOpenSettings: String
     let desktopPetShow: String
-    let desktopPetClickThroughHint: String
     let desktopPetBuiltIn: String
     let desktopPetAppearanceSection: String
     let desktopPetImportButton: String

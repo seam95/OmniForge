@@ -26,19 +26,10 @@ struct PetSpriteView: View {
         }
     }
 
-    /// 右键菜单四项：点击穿透 / 重置位置 / 隐藏宠物 / 打开设置。
+    /// 右键菜单三项：重置位置 / 隐藏宠物 / 打开设置。
     @ViewBuilder
     private var contextMenuItems: some View {
         let strings = manager.strings
-        Button {
-            manager.setClickThrough(!manager.isClickThrough)
-        } label: {
-            Label(
-                strings.desktopPetClickThrough,
-                systemImage: manager.isClickThrough ? "checkmark.circle.fill" : "circle"
-            )
-        }
-        Divider()
         Button(strings.desktopPetResetPosition) { manager.resetPosition() }
         Button(strings.desktopPetHide) { manager.requestHide() }
         Button(strings.desktopPetOpenSettings) { manager.requestOpenSettings() }

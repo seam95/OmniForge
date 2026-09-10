@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// 桌面宠物详情页（实用工具 compact 布局，平面分区）：
-/// 启用开关 + 外观（内置 / 社区宠物选择、导入、移除）+ 尺寸三档 + 点击穿透提示。
+/// 启用开关 + 外观（内置 / 社区宠物选择、导入、移除）+ 尺寸三档。
 @MainActor
 struct DesktopPetDetailView: View {
     let strings: Strings
@@ -211,18 +211,6 @@ private struct DesktopPetContent: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .disabled(!isEnabled)
-
-            if manager.isClickThrough {
-                HStack(spacing: 6) {
-                    Image(systemName: "hand.raised.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                    Text(strings.desktopPetClickThroughHint)
-                        .font(Theme.Stats.font11Regular)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)

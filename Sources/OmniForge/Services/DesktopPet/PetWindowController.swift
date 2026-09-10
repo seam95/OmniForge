@@ -13,7 +13,6 @@ final class PetHostingView<Content: View>: NSHostingView<Content> {
 @MainActor
 final class PetWindowController {
     private(set) var panel: NSPanel?
-    private(set) var isClickThrough = false
 
     /// 当前窗口尺寸（非正方形：按素材宽高比，高度为档位尺寸）。
     private(set) var petSize: CGSize
@@ -45,7 +44,6 @@ final class PetWindowController {
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isReleasedWhenClosed = false
-        panel.ignoresMouseEvents = isClickThrough
         panel.contentView = PetHostingView(rootView: AnyView(rootView))
 
         self.panel = panel
@@ -100,14 +98,6 @@ final class PetWindowController {
         ) else { return }
         let clamped = PetPositionPlanner.clamp(panel.frame.origin, petSize: petSize, to: screen)
         move(to: clamped)
-    }
-
-    // MARK: - 点击穿透
-
-    /// 设置点击穿透。开启后宠物不响应任何鼠标事件，切回入口只有菜单栏。
-    func setClickThrough(_ enabled: Bool) {
-        isClickThrough = enabled
-        panel?.ignoresMouseEvents = enabled
     }
 
     // MARK: - 屏幕几何

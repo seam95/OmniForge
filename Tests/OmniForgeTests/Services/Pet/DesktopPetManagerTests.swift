@@ -2,7 +2,7 @@ import XCTest
 @testable import OmniForge
 
 /// 桌面宠物 Manager 生命周期与偏好测试：
-/// 建窗 / 拆窗、尺寸与穿透持久化、位置恢复与夹屏、可插拔停用契约。
+/// 建窗 / 拆窗、尺寸持久化、帧时钟启停、位置恢复与夹屏、可插拔停用契约。
 @MainActor
 final class DesktopPetManagerTests: XCTestCase {
     private var defaults: UserDefaults!
@@ -11,6 +11,8 @@ final class DesktopPetManagerTests: XCTestCase {
     private var assetRoot: URL!
     /// 本用例创建的 Manager，tearDown 统一 teardown 停表。
     private var managers: [DesktopPetManager] = []
+    /// 本用例注入的假帧时钟，按创建顺序与 managers 对应。
+    private var frameClocks: [ManualFrameClock] = []
 
     private let screen = PetScreenGeometry(
         visibleFrame: CGRect(x: 0, y: 25, width: 1440, height: 800),
@@ -30,6 +32,7 @@ final class DesktopPetManagerTests: XCTestCase {
         // 先停掉所有行为循环，再释放 defaults，避免残留任务访问已失效对象。
         for manager in managers { manager.teardown() }
         managers.removeAll()
+        frameClocks.removeAll()
         defaults.removePersistentDomain(forName: suiteName)
         defaults = nil
         suiteName = nil
@@ -42,7 +45,10 @@ final class DesktopPetManagerTests: XCTestCase {
         windowController: PetWindowController? = nil,
         tickInterval: TimeInterval = 3600
     ) -> DesktopPetManager {
-        // 字符串源不捕获 self，避免测试结束后残留 tick 任务访问已释放的 defaults。
+        // 注入假帧时钟：隔离真实 CADisplayLink 对屏幕 / runloop 的依赖，保证时序确定。
+        let clock = ManualFrameClock()
+        frameClocks.append(clock)
+        // 字符串源不捕获 self，避免测试结束后残留帧回调访问已释放的 defaults。
         let manager = DesktopPetManager(
             userDefaults: defaults,
             windowController: windowController
@@ -53,11 +59,15 @@ final class DesktopPetManagerTests: XCTestCase {
                 visibleFrame: CGRect(x: 0, y: 25, width: 1440, height: 800),
                 identifier: "display-1"
             )] },
-            tickInterval: tickInterval
+            tickInterval: tickInterval,
+            frameClock: clock
         )
         managers.append(manager)
         return manager
     }
+
+    /// 当前用例最后一次创建的假帧时钟。
+    private var lastClock: ManualFrameClock? { frameClocks.last }
 
     // MARK: - 生命周期
 
@@ -150,23 +160,56 @@ final class DesktopPetManagerTests: XCTestCase {
         XCTAssertEqual(manager.size, .medium)
     }
 
-    func test_clickThroughPersists() {
+    // MARK: - 帧时钟
+
+    func test_startStartsFrameClockAndTeardownStopsIt() {
         let manager = makeManager()
+        let clock = lastClock
+
         manager.start()
 
-        manager.setClickThrough(true)
+        XCTAssertEqual(clock?.startCount, 1, "start 应启动帧时钟")
+        XCTAssertEqual(clock?.isRunning, true)
 
-        XCTAssertTrue(manager.isClickThrough)
-        XCTAssertTrue(defaults.bool(forKey: UserDefaultsKeys.petClickThrough))
-        XCTAssertTrue(manager.windowController.isClickThrough)
+        manager.teardown()
+
+        XCTAssertEqual(clock?.stopCount, 1, "teardown 应停止帧时钟")
+        XCTAssertEqual(clock?.isRunning, false)
     }
 
-    func test_clickThroughRestoredOnInit() {
-        defaults.set(true, forKey: UserDefaultsKeys.petClickThrough)
-
+    func test_repeatedStartDoesNotRestartFrameClock() {
         let manager = makeManager()
 
-        XCTAssertTrue(manager.isClickThrough)
+        manager.start()
+        manager.start()
+
+        XCTAssertEqual(lastClock?.startCount, 1, "重复 start 不应重复启动时钟")
+    }
+
+    func test_frameClockAdvancesBehaviorWithFrameDelta() {
+        let manager = makeManager()
+        manager.start()
+        manager.pet()
+        XCTAssertEqual(manager.behaviorState, .petted(resumeState: .idle))
+
+        // 单帧真实 delta 超过抚摸动画时长 → 回到 idle。
+        lastClock?.emit(delta: 5.0)
+
+        XCTAssertEqual(manager.behaviorState, .idle)
+    }
+
+    func test_tickUsesExplicitDeltaOverDefaultInterval() {
+        let manager = makeManager(tickInterval: 3600)
+        manager.start()
+        manager.pet()
+
+        // 显式小 delta 不足以播完抚摸动画。
+        manager.tick(delta: 0.001)
+        XCTAssertEqual(manager.behaviorState, .petted(resumeState: .idle))
+
+        // 显式大 delta 立即播完。
+        manager.tick(delta: 3600)
+        XCTAssertEqual(manager.behaviorState, .idle)
     }
 
     // MARK: - 位置恢复

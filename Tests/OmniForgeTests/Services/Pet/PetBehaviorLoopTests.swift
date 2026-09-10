@@ -36,7 +36,8 @@ final class PetBehaviorLoopTests: XCTestCase {
             assetStore: PetAssetStore(rootDirectory: assetRoot),
             stringsProvider: { .zhHans },
             visibleScreensProvider: { [screen] },
-            tickInterval: 1.0 / 30.0
+            tickInterval: 1.0 / 30.0,
+            frameClock: ManualFrameClock()
         )
         manager.start()
         defer { manager.teardown() }

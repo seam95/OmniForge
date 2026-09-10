@@ -4,7 +4,7 @@ import CoreGraphics
 import Foundation
 import SwiftUI
 
-/// 桌面宠物领域服务：窗口、行为循环、资产选择、位置 / 尺寸 / 穿透持久化。
+/// 桌面宠物领域服务：窗口、行为循环、资产选择、位置 / 尺寸持久化。
 /// 重接线 feature：install 时按 `petEnabled` 建窗并恢复状态，teardown 时窗口消失 + 循环停止。
 @MainActor
 final class DesktopPetManager: ObservableObject {
@@ -12,8 +12,6 @@ final class DesktopPetManager: ObservableObject {
     @Published private(set) var behaviorState: PetBehaviorState = .idle
     /// 当前尺寸档位。
     @Published private(set) var size: DesktopPetSize
-    /// 是否点击穿透。
-    @Published private(set) var isClickThrough: Bool
     /// 当前宠物资产（nil 表示资产缺失，窗口显示占位）。
     @Published private(set) var asset: PetSpriteAsset?
     /// 当前选中的宠物 slug（内置宠物固定为 `PetAssetLocator.builtInPetID`）。
@@ -23,10 +21,12 @@ final class DesktopPetManager: ObservableObject {
     /// 社区宠物浏览器（清单与下载）。
     let community: PetCommunityBrowser
 
-    /// 行为循环 tick 间隔（秒）；测试注入更长间隔避免时序抖动。
+    /// 无帧时钟驱动时的固定推进步长（秒）；测试注入更长间隔避免时序抖动。
     private let tickInterval: TimeInterval
     /// 位置持久化防抖间隔。
     private let persistDebounce: TimeInterval
+    /// 注入的帧时钟；nil 时使用默认 `DisplayLinkFrameClock`。
+    private let injectedFrameClock: PetFrameClock?
 
     private let userDefaults: UserDefaults
     /// 窗口控制器（测试断言窗口生命周期与位置用；外部不应直接改窗口状态）。
@@ -42,7 +42,10 @@ final class DesktopPetManager: ObservableObject {
     private var reactionCoordinator: PetEventCoordinator?
     private var reactionCancellables: Set<AnyCancellable> = []
 
-    private var tickTask: Task<Void, Never>?
+    /// 当前帧时钟（首次启动时解析，start / stop 之间复用同一实例）。
+    private var frameClock: PetFrameClock?
+    /// 行为循环是否在运行（原 `tickTask != nil` 的等价判据）。
+    private var isRunning = false
     private var persistTask: Task<Void, Never>?
     private var decisionRemaining: TimeInterval = 0
     /// 窗口拖动监听：拖拽中不跑行为循环，松手后按落地状态恢复。
@@ -65,7 +68,8 @@ final class DesktopPetManager: ObservableObject {
         stringsProvider: @escaping () -> Strings = { L10n(userDefaults: .standard).s },
         visibleScreensProvider: (() -> [PetScreenGeometry])? = nil,
         tickInterval: TimeInterval = 1.0 / 30.0,
-        persistDebounce: TimeInterval = 0.5
+        persistDebounce: TimeInterval = 0.5,
+        frameClock: PetFrameClock? = nil
     ) {
         self.userDefaults = userDefaults
         self.stringsProvider = stringsProvider
@@ -75,13 +79,13 @@ final class DesktopPetManager: ObservableObject {
         self.engine.apply(tuning: resolvedTuning)
         self.tickInterval = tickInterval
         self.persistDebounce = persistDebounce
+        self.injectedFrameClock = frameClock
         let store = assetStore ?? PetAssetStore(rootDirectory: PetAssetStore.defaultRootDirectory())
         self.assetStore = store
         self.community = community ?? PetCommunityBrowser(store: store)
 
         let resolvedSize = DesktopPetSize.from(userDefaults.integer(forKey: UserDefaultsKeys.petSize))
         self.size = resolvedSize
-        self.isClickThrough = userDefaults.bool(forKey: UserDefaultsKeys.petClickThrough)
 
         let storedSlug = userDefaults.string(forKey: UserDefaultsKeys.petSelectedSlug)
         let slug = (storedSlug?.isEmpty == false) ? storedSlug! : PetAssetLocator.builtInPetID
@@ -97,7 +101,7 @@ final class DesktopPetManager: ObservableObject {
 
     /// 功能启用：建窗、恢复位置与偏好、启动行为循环。
     func start() {
-        guard tickTask == nil else { return }
+        guard !isRunning else { return }
         behaviorState = .idle
         engine.resetToIdle()
         engine.drainExternalEvents()
@@ -109,15 +113,14 @@ final class DesktopPetManager: ObservableObject {
             initialOrigin: origin,
             rootView: PetSpriteView(manager: self, asset: asset)
         )
-        windowController.setClickThrough(isClickThrough)
-        startTicking()
+        startFrameClock()
         startReactionCoordinator()
     }
 
     /// 功能停用 / 卸载 / App 退出：窗口立即消失并停止所有定时器。
     func teardown() {
-        tickTask?.cancel()
-        tickTask = nil
+        // 先停帧时钟再关窗：时钟绑定在窗口 contentView 上，顺序颠倒会残留回调。
+        stopFrameClock()
         persistTask?.cancel()
         persistTask = nil
         decisionRemaining = 0
@@ -165,14 +168,6 @@ final class DesktopPetManager: ObservableObject {
         size = newSize
         userDefaults.set(newSize.rawValue, forKey: UserDefaultsKeys.petSize)
         windowController.apply(petSize: petSize)
-    }
-
-    /// 切换点击穿透并持久化。
-    func setClickThrough(_ enabled: Bool) {
-        guard enabled != isClickThrough else { return }
-        isClickThrough = enabled
-        userDefaults.set(enabled, forKey: UserDefaultsKeys.petClickThrough)
-        windowController.setClickThrough(enabled)
     }
 
     /// 切换当前宠物：解析资产并（若在运行）重建窗口以应用新尺寸。
@@ -270,27 +265,36 @@ final class DesktopPetManager: ObservableObject {
 
     // MARK: - 行为循环
 
-    private func startTicking() {
-        tickTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: UInt64(self.tickInterval * 1_000_000_000))
-                guard !Task.isCancelled else { return }
-                self.tick()
-            }
+    /// 启动行为循环：在宠物视图上挂帧时钟，按真实帧间隔推进。
+    /// 视图离屏 / 隐藏时原生时钟自动挂起（零空转功耗）。
+    private func startFrameClock() {
+        guard let view = windowController.panel?.contentView else { return }
+        let clock = frameClock ?? injectedFrameClock ?? DisplayLinkFrameClock()
+        clock.onTick = { [weak self] delta in
+            self?.tick(delta: delta)
         }
+        clock.start(in: view)
+        frameClock = clock
+        isRunning = true
+    }
+
+    /// 停止行为循环：清空回调并解除时钟对视图 / runloop 的持有。
+    private func stopFrameClock() {
+        frameClock?.onTick = nil
+        frameClock?.stop()
+        isRunning = false
     }
 
     /// 单次行为推进：按当前状态驱动位移与状态转移。
-    func tick() {
-        // 窗口已消失（teardown 后）时自愈停表，避免残留任务空转。
+    /// - Parameter delta: 距上一帧的秒数；nil 时回退到固定步长 `tickInterval`（无时钟驱动 / 测试）。
+    func tick(delta: TimeInterval? = nil) {
+        // 窗口已消失（teardown 后）时自愈停表，避免残留时钟空转。
         guard windowController.panel != nil else {
-            tickTask?.cancel()
-            tickTask = nil
+            stopFrameClock()
             return
         }
         guard !isDragging else { return }
-        let dt = tickInterval
+        let dt = delta ?? tickInterval
         let currentPetSize = petSize
         let screens = visibleScreensProvider()
         guard let origin = windowController.currentOrigin,
@@ -510,7 +514,7 @@ final class DesktopPetManager: ObservableObject {
 
     /// 重启行为循环（资产切换后应用新尺寸与视图）。
     private func restartIfRunning() {
-        guard tickTask != nil else { return }
+        guard isRunning else { return }
         teardown()
         start()
     }
