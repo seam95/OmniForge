@@ -59,7 +59,7 @@ final class PetCommunityBrowser: ObservableObject {
         }
     }
 
-    /// 搜索当前清单（空关键词返回前 `limit` 条）。
+    /// 搜索当前清单（空关键词返回前 `limit` 条；匹配规则与清单侧一致：精确优先）。
     func search(_ keyword: String, limit: Int = 30) -> [PetdexPet] {
         guard case .loaded(let pets) = state else { return [] }
         let trimmed = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -67,10 +67,7 @@ final class PetCommunityBrowser: ObservableObject {
         if trimmed.isEmpty {
             matched = pets
         } else {
-            let lowered = trimmed.lowercased()
-            matched = pets.filter {
-                $0.displayName.lowercased().contains(lowered) || $0.slug.contains(lowered)
-            }
+            matched = PetdexManifest.matching(pets, keyword: trimmed)
         }
         return Array(matched.prefix(max(0, limit)))
     }

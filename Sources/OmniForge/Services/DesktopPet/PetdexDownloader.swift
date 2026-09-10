@@ -7,6 +7,7 @@ enum PetdexDownloadError: Error, Equatable, LocalizedError {
     case badStatus(Int, resource: String)
     case writeFailed
     case notFound(String)
+    case tooLarge(resource: String)
 
     var errorDescription: String? {
         switch self {
@@ -15,6 +16,8 @@ enum PetdexDownloadError: Error, Equatable, LocalizedError {
         case .badStatus(let code, let resource): return "下载 \(resource) 失败（\(code)）"
         case .writeFailed: return "写入宠物文件失败"
         case .notFound(let name): return "没有找到「\(name)」"
+        case .tooLarge(let resource):
+            return "下载 \(resource) 超出大小上限（\(PetdexDownloader.maxResourceBytes / 1024 / 1024)MB）"
         }
     }
 }
@@ -98,7 +101,7 @@ final class PetdexDownloader {
             throw PetdexDownloadError.badStatus(http.statusCode, resource: resource)
         }
         guard data.count <= Self.maxResourceBytes else {
-            throw PetdexDownloadError.badStatus(0, resource: resource)
+            throw PetdexDownloadError.tooLarge(resource: resource)
         }
         return data
     }

@@ -284,6 +284,19 @@ final class PetBehaviorEngineTests: XCTestCase {
         XCTAssertEqual(engine.state, .reaction(kind: .heat, resumeState: .walk(direction: .right)))
     }
 
+    func test_petDuringReactionCarriesResumeStateThrough() {
+        // 反应进行中被抚摸打断：petted 沿用反应记录的恢复态，不丢被打断的行走。
+        let engine = makeEngine(rolls: [0.9, 0.0])
+        engine.apply(engine.nextAutonomousDecision())
+        XCTAssertTrue(engine.submit(.attentionRequested))
+
+        engine.pet()
+        XCTAssertEqual(engine.state, .petted(resumeState: .walk(direction: .right)))
+
+        engine.finishPetted()
+        XCTAssertEqual(engine.state, .walk(direction: .right))
+    }
+
     func test_reactionKindMapping() {
         XCTAssertEqual(PetExternalEvent.celebrationTriggered.reactionKind, .celebrate)
         XCTAssertEqual(PetExternalEvent.attentionRequested.reactionKind, .attention)

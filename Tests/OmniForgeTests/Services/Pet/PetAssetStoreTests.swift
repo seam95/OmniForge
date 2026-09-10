@@ -127,6 +127,54 @@ final class PetAssetStoreTests: XCTestCase {
         XCTAssertEqual(pets.first?.displayName, "Second")
     }
 
+    func test_importRejectsSourceInsideLibrary() throws {
+        let store = makeStore()
+        try store.importPet(from: try makeSourcePet(slug: "inside", displayName: "Inside"))
+
+        // 从库自身导入（source 即已安装目录）：拒绝，且不破坏现有条目。
+        XCTAssertThrowsError(try store.importPet(from: root.appendingPathComponent("inside"))) { error in
+            XCTAssertEqual(error as? PetdexAssetError, .sourceInsideLibrary)
+        }
+        XCTAssertEqual(store.installedPets().map(\.slug), ["inside"])
+    }
+
+    func test_failedReimportKeepsOldVersionIntact() throws {
+        let store = makeStore()
+        try store.importPet(from: try makeSourcePet(slug: "keep", displayName: "Good"))
+
+        // 用坏目录重导同 id：失败后旧版本应完整保留。
+        let broken = sourceRoot.appendingPathComponent("broken-reimport", isDirectory: true)
+        try FileManager.default.createDirectory(at: broken, withIntermediateDirectories: true)
+        try Data(#"{"id":"keep","displayName":"Bad"}"#.utf8)
+            .write(to: broken.appendingPathComponent("pet.json"))
+
+        XCTAssertThrowsError(try store.importPet(from: broken))
+        let pets = store.installedPets()
+        XCTAssertEqual(pets.map(\.displayName), ["Good"], "校验失败不得丢旧版本")
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: root.appendingPathComponent("keep/spritesheet.png").path
+        ))
+    }
+
+    func test_importAcceptsOwnFormatAsset() throws {
+        // 自有格式（含 animations 清单 + 自定义图集名）：与运行时加载同口径，导入应通过。
+        let directory = sourceRoot.appendingPathComponent("ownfmt", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let manifest = """
+        {"id":"ownfmt","name":"ownfmt","displayName":"自有格式","atlas":"sheet.png",
+         "grid":{"columns":2,"rows":1,"cellSize":[16,16]},
+         "animations":[{"id":"idle","frames":"0-1","fps":4,"loop":true}]}
+        """
+        try Data(manifest.utf8).write(to: directory.appendingPathComponent("pet.json"))
+        // 校验只解析清单不解码图集，图集文件可以缺省（运行时回退占位）。
+        let store = makeStore()
+
+        let pet = try store.importPet(from: directory)
+
+        XCTAssertEqual(pet.slug, "ownfmt")
+        XCTAssertEqual(store.installedPets().map(\.slug), ["ownfmt"])
+    }
+
     // MARK: - 列出与删除
 
     func test_installedPetsSortedByDisplayName() throws {

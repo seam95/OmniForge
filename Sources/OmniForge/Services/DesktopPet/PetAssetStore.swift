@@ -63,10 +63,15 @@ struct PetAssetStore {
         .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
     }
 
-    /// 导入宠物目录：校验后复制到库中，返回条目。同名已存在则覆盖。
-    /// - Parameter source: 含 `pet.json` 与图集的目录。
+    /// 导入宠物目录：复制到临时目录校验通过后替换入库，返回条目。同名已存在则覆盖。
+    /// 校验 / 替换失败都不动旧版本（覆盖前旧宠物始终完整）。
+    /// - Parameter source: 含 `pet.json` 与图集的目录（不得位于宠物库内）。
     @discardableResult
     func importPet(from source: URL) throws -> InstalledPet {
+        // 库内路径拒绝：覆盖语义会先删目标，源即目标时等于把源删掉。
+        guard !Self.isInside(source, root: rootDirectory) else {
+            throw PetdexAssetError.sourceInsideLibrary
+        }
         let manifestURL = source.appendingPathComponent("pet.json")
         guard fileManager.fileExists(atPath: manifestURL.path) else {
             throw PetdexAssetError.missingPetJSON
@@ -78,20 +83,33 @@ struct PetAssetStore {
         )
         guard !slug.isEmpty else { throw PetdexAssetError.missingPetJSON }
 
-        let destination = directory(for: slug)
-        if fileManager.fileExists(atPath: destination.path) {
-            try fileManager.removeItem(at: destination)
-        }
         try fileManager.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
-        try fileManager.copyItem(at: source, to: destination)
-
-        // 复制后校验资产确实可用，避免把坏目录留在库里。
+        // 临时目录以「.」开头：installedPets 的 skipsHiddenFiles 天然忽略，异常退出也不污染列表。
+        let staging = rootDirectory
+            .appendingPathComponent(".importing-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
+        let staged = staging.appendingPathComponent(slug, isDirectory: true)
         do {
-            _ = try PetdexAssetAdapter.load(from: destination)
+            try fileManager.copyItem(at: source, to: staged)
+            // 校验与运行时加载同口径：自有格式（含 animations 清单）优先，petdex 兜底。
+            _ = try PetAssetLocator.load(from: staged)
         } catch {
-            try? fileManager.removeItem(at: destination)
+            try? fileManager.removeItem(at: staging)
             throw error
         }
+
+        let destination = directory(for: slug)
+        do {
+            if fileManager.fileExists(atPath: destination.path) {
+                try fileManager.removeItem(at: destination)
+            }
+            // 同卷 rename，remove 之后失败窗口极小；失败时旧版本已不在，如实抛错。
+            try fileManager.moveItem(at: staged, to: destination)
+        } catch {
+            try? fileManager.removeItem(at: staging)
+            throw error
+        }
+        try? fileManager.removeItem(at: staging)
 
         return InstalledPet(
             slug: slug,
@@ -119,6 +137,13 @@ struct PetAssetStore {
             .split(separator: "-", omittingEmptySubsequences: true)
             .joined(separator: "-")
         return collapsed
+    }
+
+    /// URL 是否位于库根目录内（含根本身；标准化后按路径前缀判定）。
+    static func isInside(_ url: URL, root: URL) -> Bool {
+        let rootPath = root.standardizedFileURL.path
+        let path = url.standardizedFileURL.path
+        return path == rootPath || path.hasPrefix(rootPath + "/")
     }
 
     private struct ManifestName: Decodable {

@@ -9,6 +9,7 @@ enum PetdexAssetError: Error, Equatable, LocalizedError {
     case unreadableSpritesheet
     case unsupportedAtlasSize(width: Int, height: Int)
     case noAnimationFrames
+    case sourceInsideLibrary
 
     var errorDescription: String? {
         switch self {
@@ -22,6 +23,8 @@ enum PetdexAssetError: Error, Equatable, LocalizedError {
             return "图集尺寸不受支持：\(width)×\(height)"
         case .noAnimationFrames:
             return "图集中没有任何可用帧"
+        case .sourceInsideLibrary:
+            return "不能从宠物库自身导入（请选择库外的宠物目录）"
         }
     }
 }

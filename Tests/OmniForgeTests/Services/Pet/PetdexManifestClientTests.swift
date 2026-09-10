@@ -130,6 +130,26 @@ final class PetdexManifestClientTests: XCTestCase {
         XCTAssertTrue(manifest.search("missing", limit: 10).isEmpty)
     }
 
+    func test_searchPrefersExactMatchOverPrefixContenders() throws {
+        // 清单序 catgirl 在前：搜 cat 应精确命中 cat，不被子串命中的 catgirl 抢走。
+        let pets = [
+            PetdexPet(slug: "catgirl", displayName: "Catgirl", kind: "creature",
+                      submittedBy: "A", spritesheetURL: nil, petJsonURL: nil, zipURL: nil,
+                      spriteVersionNumber: 1),
+            PetdexPet(slug: "cat", displayName: "Cat", kind: "creature",
+                      submittedBy: "B", spritesheetURL: nil, petJsonURL: nil, zipURL: nil,
+                      spriteVersionNumber: 1),
+        ]
+
+        XCTAssertEqual(PetdexManifest.matching(pets, keyword: "cat").map(\.slug), ["cat"])
+        XCTAssertEqual(PetdexManifest.matching(pets, keyword: "Cat").map(\.slug), ["cat"])
+        // 无精确命中才回退子串包含（保序）。
+        XCTAssertEqual(
+            PetdexManifest.matching(pets, keyword: "catg").map(\.slug),
+            ["catgirl"]
+        )
+    }
+
     // MARK: - 网络与缓存
 
     func test_loadFetchesThenServesFromCacheWithoutNetwork() async throws {

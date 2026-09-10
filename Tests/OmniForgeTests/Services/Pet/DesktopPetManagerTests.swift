@@ -43,6 +43,7 @@ final class DesktopPetManagerTests: XCTestCase {
 
     private func makeManager(
         windowController: PetWindowController? = nil,
+        engine: PetBehaviorEngine? = nil,
         tickInterval: TimeInterval = 3600
     ) -> DesktopPetManager {
         // 注入假帧时钟：隔离真实 CADisplayLink 对屏幕 / runloop 的依赖，保证时序确定。
@@ -53,6 +54,7 @@ final class DesktopPetManagerTests: XCTestCase {
             userDefaults: defaults,
             windowController: windowController
                 ?? PetWindowController(petSize: CGSize(width: 96, height: 96)),
+            engine: engine,
             assetStore: PetAssetStore(rootDirectory: assetRoot),
             stringsProvider: { Strings.zhHans },
             visibleScreensProvider: { [PetScreenGeometry(
@@ -401,5 +403,140 @@ final class DesktopPetManagerTests: XCTestCase {
         manager.requestHide()
 
         XCTAssertFalse(defaults.bool(forKey: UserDefaultsKeys.petEnabled))
+    }
+
+    // MARK: - 反应总开关运行期切换
+
+    func test_reactionsToggleTakesEffectWhileRunning() {
+        // 开关关闭时启动：协调器不建。
+        defaults.set(false, forKey: UserDefaultsKeys.petReactionsEnabled)
+        let manager = makeManager()
+        manager.start()
+        XCTAssertNil(manager.reactionCoordinator, "开关关闭时不应建立协调器")
+
+        // 运行中开开关（模拟设置页 Toggle 写键后 sync → start 重入）：即时补订阅。
+        defaults.set(true, forKey: UserDefaultsKeys.petReactionsEnabled)
+        manager.start()
+        XCTAssertNotNil(manager.reactionCoordinator, "运行中开开关应即时建立协调器")
+
+        // 运行中关开关：即时撤订阅。
+        defaults.set(false, forKey: UserDefaultsKeys.petReactionsEnabled)
+        manager.start()
+        XCTAssertNil(manager.reactionCoordinator, "运行中关开关应即时撤掉协调器")
+    }
+
+    func test_reactionsDisabledAtStartHasNoCoordinator() {
+        defaults.set(false, forKey: UserDefaultsKeys.petReactionsEnabled)
+        let manager = makeManager()
+        manager.start()
+
+        XCTAssertNil(manager.reactionCoordinator)
+    }
+
+    // MARK: - 一次性状态打断保留剩余行走时长
+
+    func test_reactionInterruptingWalkRestoresRemainingDuration() {
+        // 种子随机：首掷 0.7 → idle 行选中 walkLeft；次掷 0.0 → 时长下限 1s。
+        let engine = PetBehaviorEngine(randomSource: SeededPetRandomSource(values: [0.7, 0.0]))
+        let manager = makeManager(engine: engine, tickInterval: 1.0 / 30.0)
+        manager.start()
+
+        manager.tick(delta: 0.001)
+        XCTAssertEqual(manager.behaviorState, .walk(direction: .left))
+
+        // 走 0.5s 后被反应打断：剩 0.5s。
+        manager.tick(delta: 0.5)
+        XCTAssertTrue(manager.submit(.celebrationTriggered))
+        XCTAssertEqual(
+            manager.behaviorState,
+            .reaction(kind: .celebrate, resumeState: .walk(direction: .left))
+        )
+
+        // 反应 3s 播完：恢复行走且剩余时长还在（再走 0.1s 不应结束）。
+        manager.tick(delta: 5.0)
+        XCTAssertEqual(manager.behaviorState, .walk(direction: .left))
+        manager.tick(delta: 0.1)
+        XCTAssertEqual(manager.behaviorState, .walk(direction: .left), "剩余行走时长被打断吞掉")
+
+        // 剩余 0.4s 走完转 idle（小步推进，避免单帧大位移撞活动边界触发转身分支）。
+        manager.tick(delta: 0.5)
+        XCTAssertEqual(manager.behaviorState, .idle)
+    }
+
+    func test_petInterruptingWalkRestoresRemainingDuration() {
+        let engine = PetBehaviorEngine(randomSource: SeededPetRandomSource(values: [0.7, 0.0]))
+        let manager = makeManager(engine: engine, tickInterval: 1.0 / 30.0)
+        manager.start()
+
+        manager.tick(delta: 0.001)
+        manager.tick(delta: 0.5)
+        manager.pet()
+        XCTAssertEqual(manager.behaviorState, .petted(resumeState: .walk(direction: .left)))
+
+        // 抚摸播完（无资产兜底 0.6s）：恢复行走且剩余 ~0.5s 仍在。
+        manager.tick(delta: 1.0)
+        XCTAssertEqual(manager.behaviorState, .walk(direction: .left))
+        manager.tick(delta: 0.1)
+        XCTAssertEqual(manager.behaviorState, .walk(direction: .left))
+        manager.tick(delta: 0.5)
+        XCTAssertEqual(manager.behaviorState, .idle)
+    }
+
+    // MARK: - 屏幕变更
+
+    func test_screenConfigurationChangeRefreshesWalkAnchor() {
+        var screens = [screen]
+        let clock = ManualFrameClock()
+        frameClocks.append(clock)
+        // 种子随机 [0.7, 1.0]：从 idle / walk 行都会持续选 walkLeft（时长 2.5s），长走必到左边界。
+        let engine = PetBehaviorEngine(randomSource: SeededPetRandomSource(values: [0.7, 1.0]))
+        let manager = DesktopPetManager(
+            userDefaults: defaults,
+            windowController: PetWindowController(petSize: CGSize(width: 96, height: 96)),
+            engine: engine,
+            assetStore: PetAssetStore(rootDirectory: assetRoot),
+            stringsProvider: { Strings.zhHans },
+            visibleScreensProvider: { screens },
+            tickInterval: 1.0 / 30.0,
+            frameClock: clock
+        )
+        managers.append(manager)
+        manager.start()
+
+        // 宽屏上锚定 1200。
+        manager.beginDrag()
+        manager.windowController.move(to: CGPoint(x: 1200, y: 400))
+        manager.endDrag()
+
+        // 换窄屏（可见区 0…500）：夹回到 ~404，活动锚点应随之更新。
+        screens = [PetScreenGeometry(
+            visibleFrame: CGRect(x: 0, y: 25, width: 500, height: 800),
+            identifier: "display-1"
+        )]
+        manager.handleScreenConfigurationChange()
+        let clampedX = manager.windowController.currentOrigin?.x ?? 0
+
+        // 40s 持续行走：新锚点下最左只能到 clampedX - 120；旧锚点（1200）会使范围退化到全屏 0…404。
+        var minX = CGFloat.greatestFiniteMagnitude
+        for _ in 0..<400 {
+            manager.tick(delta: 0.1)
+            if let x = manager.windowController.currentOrigin?.x {
+                minX = min(minX, x)
+            }
+        }
+        XCTAssertGreaterThan(minX, clampedX - 120 - 1, "屏幕变更后行走锚点未更新，范围退化为全屏")
+    }
+
+    // MARK: - 位置持久化
+
+    func test_teardownPersistsCurrentPosition() {
+        let manager = makeManager()
+        manager.start()
+        manager.windowController.move(to: CGPoint(x: 300, y: 400))
+
+        manager.teardown()
+
+        XCTAssertEqual(defaults.double(forKey: UserDefaultsKeys.petPositionX), 300)
+        XCTAssertEqual(defaults.double(forKey: UserDefaultsKeys.petPositionY), 400)
     }
 }

@@ -140,6 +140,28 @@ final class PetdexDownloaderTests: XCTestCase {
         }
     }
 
+    func test_downloadRejectsOversizedResourceWithDedicatedError() async {
+        // 超限资源应抛独立 tooLarge 错误（而非复用 badStatus(0) 的误导文案）。
+        let oversized = Data(count: PetdexDownloader.maxResourceBytes + 1)
+        let stub = PetdexHTTPStub(routes: [
+            "https://assets.petdex.dev/pets/boba/petjson.json": .init(data: Self.petJSON, status: 200),
+            "https://assets.petdex.dev/pets/boba/sprite.webp": .init(data: oversized, status: 200),
+        ])
+        let store = makeStore()
+
+        do {
+            _ = try await PetdexDownloader(client: stub).download(
+                makePet(), into: store, stagingDirectory: staging
+            )
+            XCTFail("应当抛错")
+        } catch {
+            XCTAssertEqual(
+                error as? PetdexDownloadError,
+                .tooLarge(resource: "spritesheet")
+            )
+        }
+    }
+
     func test_sanitizedFileNameStripsPaths() {
         XCTAssertEqual(PetdexDownloader.sanitizedFileName("a/b/spritesheet.webp"), "spritesheet.webp")
         XCTAssertEqual(PetdexDownloader.sanitizedFileName("evil\\name.png"), "evilname.png")

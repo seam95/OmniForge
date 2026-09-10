@@ -8,8 +8,8 @@ struct PetSpriteView: View {
     /// 宠物资产（nil 时显示占位色块，便于资产缺失时仍可调试窗口行为）。
     var asset: PetSpriteAsset?
 
-    /// 当前动画累计时间，用于推导非循环动画的帧序号。
-    @State private var elapsed: TimeInterval = 0
+    /// 当前行为状态的进入时刻，作为一次性动画（抚摸 / 反应）的时间轴原点。
+    @State private var stateEnteredAt = Date()
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
@@ -22,7 +22,7 @@ struct PetSpriteView: View {
         .contextMenu { contextMenuItems }
         .onChange(of: manager.behaviorState) { _, _ in
             // 状态切换时重置动画时间轴，避免沿用上一段动画的帧进度。
-            elapsed = 0
+            stateEnteredAt = Date()
         }
     }
 
@@ -40,7 +40,11 @@ struct PetSpriteView: View {
     @ViewBuilder
     private func sprite(at date: Date) -> some View {
         if let asset, let resolved = resolveAnimation(asset: asset),
-           let frameIndex = frameIndex(at: date, animation: resolved.animation),
+           let frameIndex = PetFrameSequencer.frameIndex(
+               now: date,
+               stateEnteredAt: stateEnteredAt,
+               animation: resolved.animation
+           ),
            let image = SpriteAtlasImageProvider.shared.image(asset: asset, frameIndex: frameIndex) {
             Image(nsImage: image)
                 .interpolation(.none)  // 像素最近邻采样，Retina 下保持锐利
@@ -101,24 +105,6 @@ struct PetSpriteView: View {
             }
             return nil
         }
-    }
-
-    /// 依据已播时间推导图集帧序号。
-    private func frameIndex(at date: Date, animation: PetSpriteAsset.Animation) -> Int? {
-        guard !animation.frames.isEmpty else { return nil }
-        let frameCount = animation.frames.count
-        let total = animation.frameDuration * Double(frameCount)
-        let phase: TimeInterval
-        if animation.loops {
-            phase = total > 0
-                ? date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: total)
-                : 0
-        } else {
-            // 一次性动画：播完停在最后一帧。
-            phase = min(elapsed, total)
-        }
-        let index = animation.frameDuration > 0 ? Int(phase / animation.frameDuration) : 0
-        return animation.frames[min(index, frameCount - 1)]
     }
 
     // MARK: - 拖拽

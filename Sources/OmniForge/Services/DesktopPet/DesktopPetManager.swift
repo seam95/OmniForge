@@ -38,9 +38,12 @@ final class DesktopPetManager: ObservableObject {
     /// 打开设置页回调（组合根接线）。
     var openSettingsHandler: (() -> Void)?
 
-    /// 事件协调器与订阅（二期反应联动；随 start/teardown 启停）。
-    private var reactionCoordinator: PetEventCoordinator?
+    /// 事件协调器与订阅（二期反应联动；随 start/teardown 启停，开关切换走 `syncReactions` 增量同步）。
+    /// 内部可写供测试断言订阅的即时增减，外部不应触碰。
+    private(set) var reactionCoordinator: PetEventCoordinator?
     private var reactionCancellables: Set<AnyCancellable> = []
+    /// 屏幕配置变更监听（拔屏 / 改分辨率时夹回可见区）。
+    private var screenChangeObserver: NSObjectProtocol?
 
     /// 当前帧时钟（首次启动时解析，start / stop 之间复用同一实例）。
     private var frameClock: PetFrameClock?
@@ -50,9 +53,11 @@ final class DesktopPetManager: ObservableObject {
     private var decisionRemaining: TimeInterval = 0
     /// 窗口拖动监听：拖拽中不跑行为循环，松手后按落地状态恢复。
     private var isDragging = false
-    /// 行走活动锚点（宠物左下角 x）：拖拽松手 / 重置位置时更新，
+    /// 行走活动锚点（宠物左下角 x）：拖拽松手 / 重置位置 / 屏幕夹回时更新，
     /// 宠物只在锚点左右 `walkRadius` 范围内活动，不会满屏乱走。
     private var walkAnchorX: CGFloat?
+    /// 被一次性状态（抚摸 / 反应）打断的自主行为剩余时长；恢复自主态时归还，避免打断吞时长。
+    private var interruptedRemaining: TimeInterval?
 
     /// 行走活动半径（点）：以锚点为中心的水平活动半宽。
     private let walkRadius: CGFloat = 120
@@ -75,7 +80,8 @@ final class DesktopPetManager: ObservableObject {
         self.stringsProvider = stringsProvider
         self.visibleScreensProvider = visibleScreensProvider ?? { PetWindowController.screenGeometries() }
         let resolvedTuning = tuning ?? Self.storedTuning(userDefaults: userDefaults)
-        self.engine = engine ?? PetBehaviorEngine(tuning: resolvedTuning)
+        // 调参统一由下方 apply 注入（含注入 engine 的场景），构造处不再重复传。
+        self.engine = engine ?? PetBehaviorEngine()
         self.engine.apply(tuning: resolvedTuning)
         self.tickInterval = tickInterval
         self.persistDebounce = persistDebounce
@@ -100,8 +106,12 @@ final class DesktopPetManager: ObservableObject {
     // MARK: - 生命周期
 
     /// 功能启用：建窗、恢复位置与偏好、启动行为循环。
+    /// 已在运行时（如反应开关切换触发的 sync 重入）：只做反应联动增量同步，不重建窗口。
     func start() {
-        guard !isRunning else { return }
+        guard !isRunning else {
+            syncReactions()
+            return
+        }
         behaviorState = .idle
         engine.resetToIdle()
         engine.drainExternalEvents()
@@ -115,6 +125,7 @@ final class DesktopPetManager: ObservableObject {
         )
         startFrameClock()
         startReactionCoordinator()
+        installScreenChangeObserver()
     }
 
     /// 功能停用 / 卸载 / App 退出：窗口立即消失并停止所有定时器。
@@ -123,12 +134,16 @@ final class DesktopPetManager: ObservableObject {
         stopFrameClock()
         persistTask?.cancel()
         persistTask = nil
+        // 关窗前把当前位置落盘（停用 / 换宠 / 退出都经此），下次启动恢复不失真。
+        persistPositionNow()
         decisionRemaining = 0
+        interruptedRemaining = nil
         isDragging = false
         walkAnchorX = nil
         behaviorState = .idle
         engine.drainExternalEvents()
         stopReactionCoordinator()
+        removeScreenChangeObserver()
         windowController.close()
     }
 
@@ -182,6 +197,7 @@ final class DesktopPetManager: ObservableObject {
     @discardableResult
     func importPet(from source: URL) throws -> PetAssetStore.InstalledPet {
         let pet = try assetStore.importPet(from: source)
+        invalidateSpriteCache()
         refreshInstalledPets()
         selectPet(slug: pet.slug)
         return pet
@@ -192,6 +208,7 @@ final class DesktopPetManager: ObservableObject {
     func downloadCommunityPet(_ pet: PetdexPet) async -> Result<PetAssetStore.InstalledPet, Error> {
         let result = await community.download(pet)
         if case .success(let installed) = result {
+            invalidateSpriteCache()
             refreshInstalledPets()
             selectPet(slug: installed.slug)
         }
@@ -203,6 +220,7 @@ final class DesktopPetManager: ObservableObject {
     func installCommunityPet(byName name: String) async -> Result<PetAssetStore.InstalledPet, Error> {
         let result = await community.install(byName: name)
         if case .success(let installed) = result {
+            invalidateSpriteCache()
             refreshInstalledPets()
             selectPet(slug: installed.slug)
         }
@@ -213,6 +231,7 @@ final class DesktopPetManager: ObservableObject {
     func removePet(slug: String) throws {
         guard slug != PetAssetLocator.builtInPetID else { return }
         try assetStore.remove(slug: slug)
+        invalidateSpriteCache()
         refreshInstalledPets()
         if selectedPetSlug == slug {
             selectPet(slug: PetAssetLocator.builtInPetID)
@@ -261,6 +280,7 @@ final class DesktopPetManager: ObservableObject {
         persistPositionDebounced()
         engine.resetToIdle()
         behaviorState = .idle
+        interruptedRemaining = nil
     }
 
     // MARK: - 行为循环
@@ -332,7 +352,7 @@ final class DesktopPetManager: ObservableObject {
                 walkRange: range
             )
             windowController.move(to: step.position)
-            persistPositionDebounced()
+            // 位置持久化只在离散转换点（转身 / 行走结束）落盘，避免每帧调度防抖任务。
             // 边缘转身后方向改变，需同步状态。
             if step.direction != direction {
                 engine.apply(PetBehaviorDecision(
@@ -341,9 +361,11 @@ final class DesktopPetManager: ObservableObject {
                     duration: max(decisionRemaining, 0.5)
                 ))
                 behaviorState = .walk(direction: step.direction)
+                persistPositionDebounced()
             } else if decisionRemaining <= 0 {
                 engine.apply(PetBehaviorDecision(state: .idle, horizontalDelta: 0, duration: 0))
                 behaviorState = .idle
+                persistPositionDebounced()
             }
 
         case .drag:
@@ -355,7 +377,8 @@ final class DesktopPetManager: ObservableObject {
             if decisionRemaining <= 0 {
                 engine.finishPetted()
                 behaviorState = engine.state
-                decisionRemaining = 0
+                decisionRemaining = interruptedRemaining ?? 0
+                interruptedRemaining = nil
             }
 
         case .reaction(let kind, _):
@@ -364,7 +387,8 @@ final class DesktopPetManager: ObservableObject {
             if decisionRemaining <= 0 {
                 engine.finishReaction()
                 behaviorState = engine.state
-                decisionRemaining = 0
+                decisionRemaining = interruptedRemaining ?? 0
+                interruptedRemaining = nil
             }
             _ = kind
         }
@@ -372,8 +396,9 @@ final class DesktopPetManager: ObservableObject {
 
     // MARK: - 交互
 
-    /// 单击抚摸。
+    /// 单击抚摸。已在抚摸中再次点击视为连击：延长抚摸时长（引擎态不变，仅重置计时）。
     func pet() {
+        captureInterruptedRemaining()
         engine.pet()
         guard case .petted = engine.state else { return }
         behaviorState = engine.state
@@ -398,16 +423,28 @@ final class DesktopPetManager: ObservableObject {
         engine.endDrag()
         behaviorState = engine.state
         decisionRemaining = 0
+        interruptedRemaining = nil
         persistPositionDebounced()
     }
 
     /// 显示器配置变更：夹回可见区并回到 idle。
+    /// 夹回用与 tick 同源的 `visibleScreensProvider`（单一几何口径）；
+    /// 夹回后的落点即新活动锚点（旧屏坐标在新屏上已无意义）。
     func handleScreenConfigurationChange() {
-        guard windowController.panel != nil else { return }
-        windowController.clampToVisibleScreen()
+        guard let origin = windowController.currentOrigin else { return }
+        let screens = visibleScreensProvider()
+        guard let screen = PetPositionPlanner.screenContaining(
+            position: origin,
+            petSize: petSize,
+            screens: screens
+        ) ?? screens.first else { return }
+        let clamped = PetPositionPlanner.clamp(origin, petSize: petSize, to: screen)
+        windowController.move(to: clamped)
+        walkAnchorX = clamped.x
         engine.resetToIdle()
         behaviorState = .idle
         decisionRemaining = 0
+        interruptedRemaining = nil
         persistPositionDebounced()
     }
 
@@ -416,6 +453,17 @@ final class DesktopPetManager: ObservableObject {
     /// 状态反应总开关（默认开）。
     var isReactionsEnabled: Bool {
         userDefaults.bool(forKey: UserDefaultsKeys.petReactionsEnabled)
+    }
+
+    /// 反应联动总开关切换后的增量同步（幂等）：开→补订阅与 CPU 采样激活源，关→全撤。
+    /// 供 `start()` 在已运行分支与设置页 Toggle 的手动 sync 调用。
+    func syncReactions() {
+        guard isRunning else { return }
+        if isReactionsEnabled {
+            startReactionCoordinator()
+        } else {
+            stopReactionCoordinator()
+        }
     }
 
     /// 启动反应联动：订阅四源 + 重置多播，并激活 CPU 采样。
@@ -455,13 +503,16 @@ final class DesktopPetManager: ObservableObject {
             }
         }
 
-        // 剪贴板：条目数增加视为新复制（功能关闭时 entries 不更新，联动自然静默）。
+        // 剪贴板：首条目出现新 id 且时间戳更新视为新复制。
+        // （条目数判据有盲区：达上限去旧不增计数；清空历史会误判为增加。）
         if let clipboard = FeatureRuntime.shared.manager(for: .clipboardHistory, as: ClipboardHistoryManager.self) {
             clipboard.$entries
                 .receive(on: RunLoop.main)
-                .map(\.count)
-                .sink { [weak coordinator] count in
-                    coordinator?.handleClipboardEntries(count: count)
+                .sink { [weak coordinator] entries in
+                    coordinator?.handleClipboardHead(
+                        id: entries.first?.id,
+                        createdAt: entries.first?.createdAt
+                    )
                 }
                 .store(in: &reactionCancellables)
         }
@@ -490,6 +541,7 @@ final class DesktopPetManager: ObservableObject {
     /// 提交外部事件：已映射事件即时分发为反应（返回是否生效）。
     @discardableResult
     func submit(_ event: PetExternalEvent) -> Bool {
+        captureInterruptedRemaining()
         let accepted = engine.submit(event)
         if accepted {
             behaviorState = engine.state
@@ -511,6 +563,40 @@ final class DesktopPetManager: ObservableObject {
     }
 
     // MARK: - 私有
+
+    /// 记录被打断的自主行为剩余时长（仅行走有意义；反应态续期沿用首次记录）。
+    private func captureInterruptedRemaining() {
+        if case .walk = behaviorState {
+            interruptedRemaining = max(decisionRemaining, 0)
+        }
+    }
+
+    /// 订阅屏幕配置变更（通知在主线程投递，经 Task 落回主actor）。
+    private func installScreenChangeObserver() {
+        guard screenChangeObserver == nil else { return }
+        screenChangeObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                self.handleScreenConfigurationChange()
+            }
+        }
+    }
+
+    private func removeScreenChangeObserver() {
+        if let screenChangeObserver {
+            NotificationCenter.default.removeObserver(screenChangeObserver)
+            self.screenChangeObserver = nil
+        }
+    }
+
+    /// 图集切片缓存失效：同名宠物覆盖更新 / 删除后，旧帧不得残留。
+    private func invalidateSpriteCache() {
+        SpriteAtlasImageProvider.shared.clearCache()
+    }
 
     /// 重启行为循环（资产切换后应用新尺寸与视图）。
     private func restartIfRunning() {

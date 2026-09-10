@@ -27,19 +27,29 @@ struct PetdexManifest: Equatable {
     let total: Int
     let pets: [PetdexPet]
 
-    /// 按关键词过滤（匹配展示名或 slug，大小写不敏感）。
+    /// 按关键词过滤（精确命中优先，其余子串包含；大小写不敏感）。
     func search(_ keyword: String, limit: Int) -> [PetdexPet] {
         let trimmed = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
         let matched: [PetdexPet]
         if trimmed.isEmpty {
             matched = pets
         } else {
-            let lowered = trimmed.lowercased()
-            matched = pets.filter {
-                $0.displayName.lowercased().contains(lowered) || $0.slug.contains(lowered)
-            }
+            matched = Self.matching(pets, keyword: trimmed)
         }
         return Array(matched.prefix(max(0, limit)))
+    }
+
+    /// 精确命中（slug 或展示名全等）优先；无精确命中才回退子串包含（保序）。
+    /// 按名安装「cat」不应被清单序靠前的「catgirl」抢走。
+    static func matching(_ pets: [PetdexPet], keyword: String) -> [PetdexPet] {
+        let lowered = keyword.lowercased()
+        let exact = pets.filter {
+            $0.slug.lowercased() == lowered || $0.displayName.lowercased() == lowered
+        }
+        if !exact.isEmpty { return exact }
+        return pets.filter {
+            $0.displayName.lowercased().contains(lowered) || $0.slug.contains(lowered)
+        }
     }
 }
 

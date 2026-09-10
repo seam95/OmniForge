@@ -159,12 +159,14 @@ final class PetBehaviorEngine {
     }
 
     /// 单击抚摸：从当前状态进入一次性动画，记录恢复目标。
-    /// 已在抚摸中则忽略（不重入）。
+    /// 已在抚摸中则引擎态不变（不重入；连击由 Manager 重置计时实现）。
+    /// 反应进行中被抚摸打断时，沿用反应记录的恢复态（不丢被打断的自主行为）。
     func pet() {
         guard case .petted = state else {
             let resume: PetResumeState
             switch state {
             case .walk(let direction): resume = .walk(direction: direction)
+            case .reaction(_, let reactionResume): resume = reactionResume
             default: resume = .idle
             }
             state = .petted(resumeState: resume)

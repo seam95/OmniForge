@@ -29,19 +29,25 @@ final class PetEventCoordinator {
 
     // 告急下降沿：上次已知的最小剩余百分比（nil = 尚无数据）。
     private var lastShortagePercent: Double?
-    // CPU 连续超阈计数与冷却武装。
-    private var highLoadStreak = 0
+    // CPU 高负载累计时长（秒）与上次采样时刻；冷却武装标记。
+    private var highLoadAccumulated: TimeInterval = 0
+    private var lastCPUSampleAt: Date?
     private var loadCooldownActive = false
     // 输入法边沿。
     private var lastInputLocked: Bool?
-    // 剪贴板条目数基线。
-    private var lastEntryCount: Int?
+    // 剪贴板首条目基线（id + 时间戳）；首帧发射只建基线不触发。
+    private var clipboardBaselineEstablished = false
+    private var lastHeadID: UUID?
+    private var lastHeadCreatedAt: Date?
 
     /// 判定阈值（点值便于测试覆盖）。
     static let shortageThresholdPercent = 10.0
     static let highLoadThresholdPercent = 80.0
     static let loadRecoveryThresholdPercent = 60.0
-    static let highLoadStreakLimit = 5
+    /// 高负载持续窗口（秒）：按真实时长累计，判定不随采样频率漂移。
+    static let highLoadSustainDuration: TimeInterval = 10
+    /// 可计入持续窗口的采样间隔上限（秒）：超过视为采样中断，间隙时长不计（高负载状态未知）。
+    static let maxSampleGap: TimeInterval = 5
 
     init(
         now: @escaping () -> Date = Date.init,
@@ -71,12 +77,18 @@ final class PetEventCoordinator {
         }
     }
 
-    /// CPU 采样：连续 `highLoadStreakLimit` 次 ≥80% 触发（显式持续窗口，业界教训：单次采样即触发是反例）；
-    /// 触发后 600s 冷却；降至 ≤60% 清零计数并解除冷却（施密特回滞）。
+    /// CPU 采样：按真实时长累计高负载（≥80% 累计满 `highLoadSustainDuration` 秒触发，
+    /// 判定口径不随采样频率漂移——面板打开导致的刷新加速不会缩短时间窗）；
+    /// 采样间隔超过 `maxSampleGap` 视为中断，该段时长不计入（暂停期状态未知）；
+    /// 触发后 600s 冷却；降至 ≤60% 清零累计并解除冷却（施密特回滞）。
     func handleCPUSample(percent: Double) {
+        let timestamp = now()
+        let gap = lastCPUSampleAt.map { timestamp.timeIntervalSince($0) } ?? 0
+        lastCPUSampleAt = timestamp
+
         if percent <= Self.loadRecoveryThresholdPercent {
-            // 回滞清零：计数与冷却一并解除（SPEC：降至 60% 以下后下次再高可再触发）。
-            highLoadStreak = 0
+            // 回滞清零：累计与冷却一并解除（SPEC：降至 60% 以下后下次再高可再触发）。
+            highLoadAccumulated = 0
             loadCooldownActive = false
             lastFired[.load] = nil
             return
@@ -85,9 +97,12 @@ final class PetEventCoordinator {
             // 60%-80% 之间：不累计也不清零（回滞缓冲区）。
             return
         }
-        highLoadStreak += 1
-        guard highLoadStreak >= Self.highLoadStreakLimit else { return }
-        highLoadStreak = 0
+        // 只累计连续覆盖的采样时长：间隔异常大说明采样中断过，不计入窗口。
+        if gap > 0, gap <= Self.maxSampleGap {
+            highLoadAccumulated += gap
+        }
+        guard highLoadAccumulated >= Self.highLoadSustainDuration else { return }
+        highLoadAccumulated = 0
         guard !loadCooldownActive, passCooldown(.load) else { return }
         if sink(.loadSurged) {
             markFired(.load)
@@ -95,10 +110,20 @@ final class PetEventCoordinator {
         }
     }
 
-    /// 剪贴板条目数变化：数量增加视为新复制（粘贴回写可接受），60s 冷却。
-    func handleClipboardEntries(count: Int) {
-        defer { lastEntryCount = count }
-        guard let last = lastEntryCount, count > last, passCooldown(.clipboard) else { return }
+    /// 剪贴板首条目变化：出现新 id 且时间戳不早于旧首条视为新复制，60s 冷却。
+    /// 判据取「首条目 id 边沿 + 时间戳不回退」而非条目数：达上限去旧时数量不增（不漏报），
+    /// 清空历史时首条换成旧条目、时间戳回退（不误报），去重置顶时 id 复用（不误报）。
+    /// 首帧发射只建基线不触发（订阅瞬间不得因已有历史而反应）。
+    func handleClipboardHead(id: UUID?, createdAt: Date?) {
+        defer {
+            lastHeadID = id
+            lastHeadCreatedAt = createdAt
+            clipboardBaselineEstablished = true
+        }
+        guard clipboardBaselineEstablished, let id, let createdAt, id != lastHeadID else { return }
+        // 时间戳回退 = 清空历史后旧条目回填首位的假边沿。
+        if let lastCreatedAt = lastHeadCreatedAt, createdAt < lastCreatedAt { return }
+        guard passCooldown(.clipboard) else { return }
         if sink(.clipboardActivity) {
             markFired(.clipboard)
         }
@@ -126,9 +151,12 @@ final class PetEventCoordinator {
     func resetState() {
         lastFired.removeAll()
         lastShortagePercent = nil
-        highLoadStreak = 0
+        highLoadAccumulated = 0
+        lastCPUSampleAt = nil
         loadCooldownActive = false
         lastInputLocked = nil
-        lastEntryCount = nil
+        clipboardBaselineEstablished = false
+        lastHeadID = nil
+        lastHeadCreatedAt = nil
     }
 }

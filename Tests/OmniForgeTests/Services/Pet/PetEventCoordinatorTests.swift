@@ -90,76 +90,146 @@ final class PetEventCoordinatorTests: XCTestCase {
         XCTAssertEqual(spy.events.count, 2)
     }
 
-    // MARK: - CPU 高负载（持续窗口 + 回滞 + 冷却）
+    // MARK: - CPU 高负载（持续时间窗 + 回滞 + 冷却）
 
-    func test_highLoadRequiresSustainedStreak() {
-        // 4 次不够，第 5 次触发。
-        for _ in 0..<4 { coordinator.handleCPUSample(percent: 85) }
+    /// 按固定间隔喂高负载采样，模拟真实采样节奏。
+    private func feedHighLoad(samples: Int, interval: TimeInterval = 2) {
+        for _ in 0..<samples {
+            coordinator.handleCPUSample(percent: 85)
+            now += interval
+        }
+    }
+
+    func test_highLoadRequiresSustainedDuration() {
+        // 连续覆盖 8s 不足 10s：不触发（首采样不计时，5 个采样覆盖 4×2s）。
+        feedHighLoad(samples: 5, interval: 2)
         XCTAssertTrue(spy.events.isEmpty)
+
+        // 再覆盖 2s 满 10s：触发。
         coordinator.handleCPUSample(percent: 85)
 
         XCTAssertEqual(spy.events, [.loadSurged])
     }
 
+    func test_highLoadWindowDoesNotShrinkWithFasterSampling() {
+        // 0.5s 高频采样（面板打开加速刷新）：同样需要累计满 10s，加速不应缩短时间窗。
+        feedHighLoad(samples: 20, interval: 0.5)
+        XCTAssertTrue(spy.events.isEmpty, "9.5s 高负载不应触发")
+
+        coordinator.handleCPUSample(percent: 85)
+        XCTAssertEqual(spy.events, [.loadSurged])
+    }
+
+    func test_sampleGapIsCapped() {
+        // 采样暂停很久后恢复：间隙不得一次性计入持续窗口。
+        coordinator.handleCPUSample(percent: 85)
+        now += 3600
+        coordinator.handleCPUSample(percent: 85)
+        XCTAssertTrue(spy.events.isEmpty, "单帧 + 巨大间隙不应触发")
+    }
+
     func test_singleSpikeDoesNotFire() {
         coordinator.handleCPUSample(percent: 95)
+        now += 2
         coordinator.handleCPUSample(percent: 40)
 
         XCTAssertTrue(spy.events.isEmpty)
     }
 
     func test_hysteresisBandDoesNotAccumulateOrReset() {
-        for _ in 0..<3 { coordinator.handleCPUSample(percent: 85) }
-        // 60-80% 缓冲区：不清零也不累计。
+        feedHighLoad(samples: 3, interval: 2)
+        // 60-80% 缓冲区：不清零也不累计（但采样时刻照常刷新）。
+        now += 2
         coordinator.handleCPUSample(percent: 70)
+        now += 2
         coordinator.handleCPUSample(percent: 85)
-        XCTAssertTrue(spy.events.isEmpty, "3+1+1 次超阈但 streak 中断于缓冲区语义未清零")
+        XCTAssertTrue(spy.events.isEmpty, "4+4s 超阈覆盖但缓冲区期间语义未清零")
 
-        // 明确回落清零后需重新累计满 5 次。
+        // 明确回落清零后需重新覆盖满 10s。
+        now += 2
         coordinator.handleCPUSample(percent: 40)
-        for _ in 0..<4 { coordinator.handleCPUSample(percent: 85) }
+        feedHighLoad(samples: 5, interval: 2)
         XCTAssertTrue(spy.events.isEmpty)
         coordinator.handleCPUSample(percent: 85)
         XCTAssertEqual(spy.events, [.loadSurged])
     }
 
     func test_loadCooldownBlocksUntilRecovery() {
-        for _ in 0..<5 { coordinator.handleCPUSample(percent: 85) }
+        feedHighLoad(samples: 6, interval: 2)
         XCTAssertEqual(spy.events.count, 1)
 
-        // 冷却期内再次满 5 次：不触发。
+        // 冷却期内再次满 10s：不触发。
         now += 100
-        for _ in 0..<5 { coordinator.handleCPUSample(percent: 85) }
+        feedHighLoad(samples: 6, interval: 2)
         XCTAssertEqual(spy.events.count, 1)
 
         // 回落到 ≤60% 解除武装后：可再次触发。
+        now += 2
         coordinator.handleCPUSample(percent: 50)
-        for _ in 0..<5 { coordinator.handleCPUSample(percent: 85) }
+        feedHighLoad(samples: 6, interval: 2)
         XCTAssertEqual(spy.events.count, 2)
     }
 
-    // MARK: - 剪贴板
+    // MARK: - 剪贴板（首条目 id 边沿 + 时间戳不回退）
 
-    func test_clipboardFiresOnCountIncreaseOnly() {
-        coordinator.handleClipboardEntries(count: 10)
+    func test_clipboardFiresOnNewHeadEntryOnly() {
+        let t0 = Date(timeIntervalSince1970: 2_000_000)
+        // 建基线：不触发。
+        coordinator.handleClipboardHead(id: UUID(), createdAt: t0)
         XCTAssertTrue(spy.events.isEmpty)
 
-        coordinator.handleClipboardEntries(count: 11)
+        // 新条目入首（新 id + 时间戳更新）：触发。
+        coordinator.handleClipboardHead(id: UUID(), createdAt: t0.addingTimeInterval(5))
         XCTAssertEqual(spy.events, [.clipboardActivity])
 
-        // 数量不减（去重置顶不触发）：无事件。
-        coordinator.handleClipboardEntries(count: 11)
-        XCTAssertEqual(spy.events.count, 1)
+        // 去重置顶：id 复用（ClipboardHistoryManager 去重保持原 id），不触发。
+        let head = UUID()
+        coordinator.handleClipboardHead(id: head, createdAt: t0.addingTimeInterval(10))
+        coordinator.handleClipboardHead(id: head, createdAt: t0.addingTimeInterval(20))
+        XCTAssertEqual(spy.events.count, 1, "同 id 置顶（去重）不应触发")
+    }
+
+    func test_clipboardCapReplacementStillFires() {
+        // 达上限去旧：条目数不变，但首条目是新 id 且时间戳更新 → 应触发（旧计数判据的盲区）。
+        let t0 = Date(timeIntervalSince1970: 2_000_000)
+        coordinator.handleClipboardHead(id: UUID(), createdAt: t0)
+        XCTAssertTrue(spy.events.isEmpty)
+
+        coordinator.handleClipboardHead(id: UUID(), createdAt: t0.addingTimeInterval(5))
+        XCTAssertEqual(spy.events, [.clipboardActivity])
+    }
+
+    func test_clipboardClearingHistoryDoesNotFire() {
+        // 清空历史：首条目换成旧条目（id 变了但时间戳回退）→ 不触发。
+        let t0 = Date(timeIntervalSince1970: 2_000_000)
+        coordinator.handleClipboardHead(id: UUID(), createdAt: t0)
+
+        coordinator.handleClipboardHead(id: UUID(), createdAt: t0.addingTimeInterval(-60))
+        XCTAssertTrue(spy.events.isEmpty)
+
+        // 清空后的首次新复制（时间戳超过基线）：触发。
+        coordinator.handleClipboardHead(id: UUID(), createdAt: t0.addingTimeInterval(5))
+        XCTAssertEqual(spy.events, [.clipboardActivity])
+    }
+
+    func test_clipboardNilHeadDoesNotArmEdge() {
+        // 首次为空（历史为空）：建基线不触发；随后新条目触发。
+        coordinator.handleClipboardHead(id: nil, createdAt: nil)
+        XCTAssertTrue(spy.events.isEmpty)
+
+        coordinator.handleClipboardHead(id: UUID(), createdAt: Date(timeIntervalSince1970: 2_000_000))
+        XCTAssertEqual(spy.events, [.clipboardActivity])
     }
 
     func test_clipboardCooldown() {
-        coordinator.handleClipboardEntries(count: 10)
-        coordinator.handleClipboardEntries(count: 11)
-        coordinator.handleClipboardEntries(count: 12)
+        let t0 = Date(timeIntervalSince1970: 2_000_000)
+        coordinator.handleClipboardHead(id: UUID(), createdAt: t0)
+        coordinator.handleClipboardHead(id: UUID(), createdAt: t0.addingTimeInterval(5))
+        coordinator.handleClipboardHead(id: UUID(), createdAt: t0.addingTimeInterval(6))
         XCTAssertEqual(spy.events.count, 1, "60s 冷却内不重复")
 
         now += 61
-        coordinator.handleClipboardEntries(count: 13)
+        coordinator.handleClipboardHead(id: UUID(), createdAt: t0.addingTimeInterval(7))
         XCTAssertEqual(spy.events.count, 2)
     }
 

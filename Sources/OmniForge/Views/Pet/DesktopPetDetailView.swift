@@ -73,7 +73,8 @@ private struct DesktopPetContent: View {
             Toggle(strings.desktopPetReactionsToggle, isOn: Binding(
                 get: { FeatureRuntime.shared.injectedDefaults.bool(forKey: UserDefaultsKeys.petReactionsEnabled) },
                 set: { enabled in
-                    // 写键后经 binding 重启宠物，使协调器订阅与 CPU 采样激活源即时增减。
+                    // 写键后经 binding 同步：宠物运行中走 start 的增量路径（syncReactions），
+                    // 未运行则在下次 start 时按开关建 / 不建协调器订阅。
                     FeatureRuntime.shared.injectedDefaults.set(enabled, forKey: UserDefaultsKeys.petReactionsEnabled)
                     FeatureRuntime.shared.sync([.desktopPet])
                 }
