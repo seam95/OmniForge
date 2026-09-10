@@ -8,6 +8,8 @@ struct PromptOptimizerSettingsView: View {
     @State private var apiKeyInput = ""
     @State private var hasStoredKey = false
     @State private var saveFailed = false
+    /// 保存成功后主动失焦，让输入框以掩码回显而非聚焦编辑态呈现。
+    @FocusState private var apiKeyFieldFocused: Bool
 
     @State private var baseURLText = ""
     @State private var modelText = ""
@@ -78,6 +80,7 @@ struct PromptOptimizerSettingsView: View {
                 feedback: saveFailed ? .error(strings.promptOptimizerErrorGeneric) : .none,
                 onSave: save,
                 onClear: clearKey,
+                focus: $apiKeyFieldFocused,
                 strings: strings
             )
             .onChange(of: apiKeyInput) { _, _ in
@@ -212,9 +215,10 @@ struct PromptOptimizerSettingsView: View {
         guard !cleaned.isEmpty else { return }
         do {
             try keychain.writeAPIKey(cleaned)
-            // 保存完成后回归空框并失焦出编辑态，占位文本切换为「已保存」提示
-            // （hasStoredKey 驱动），既明示成功又避免掩码残留被误读为仍在输入。
-            apiKeyInput = ""
+            // 保存成功后回显已保存的 key（SecureField 以掩码圆点显示）并主动失焦：
+            // 内容不空白证明已落盘，退出聚焦态避免"仍在输入"的观感。
+            apiKeyInput = cleaned
+            apiKeyFieldFocused = false
             saveFailed = false
             hasStoredKey = true
         } catch {

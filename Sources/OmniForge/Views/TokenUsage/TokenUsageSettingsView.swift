@@ -354,6 +354,8 @@ struct TokenCredentialRow: View {
     var feedback: Feedback = .none
     let onSave: () -> Void
     let onClear: () -> Void
+    /// 外部焦点绑定（如保存成功后失焦退出编辑态）；nil 时输入框焦点不受控。
+    var focus: FocusState<Bool>.Binding? = nil
     let strings: Strings
     var fieldID: String? = nil
     var saveID: String? = nil
@@ -367,8 +369,7 @@ struct TokenCredentialRow: View {
                     .foregroundStyle(.secondary)
             }
             // grouped Form 会把 SecureField 首参提升为行 label，须置空并走 prompt 防 placeholder 泄漏。
-            SecureField("", text: $text, prompt: Text(effectivePlaceholder))
-                .textFieldStyle(.roundedBorder)
+            secureField
                 .accessibilityIdentifier(fieldID ?? "")
             HStack(spacing: 8) {
                 if hasStoredValue {
@@ -410,6 +411,18 @@ struct TokenCredentialRow: View {
     /// 已存凭证时优先用「已保存」占位明示状态，避免空框被误读为未配置。
     private var effectivePlaceholder: String {
         hasStoredValue ? (savedPlaceholder ?? placeholder) : placeholder
+    }
+
+    /// 焦点绑定是可选参数，`.focused` 只能在有绑定时挂上，故按参数拆分支。
+    @ViewBuilder
+    private var secureField: some View {
+        let base = SecureField("", text: $text, prompt: Text(effectivePlaceholder))
+            .textFieldStyle(.roundedBorder)
+        if let focus {
+            base.focused(focus)
+        } else {
+            base
+        }
     }
 }
 
