@@ -45,7 +45,10 @@ struct ProviderSwitchSettingsPopover: View {
             }
         }
         .padding(.bottom, 6)
-        .frame(width: 240)
+        // 宽度贴合内容（由最宽一行决定：中文约 100pt / 英文约 136pt），
+        // 不照搬 Token 弹层 240pt 固定宽——那边每行含 logo 与开关需要横向空间，
+        // 此处为纯文字动作列表，固定宽会留下过半空白。
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     /// 主体动作行（对齐 Token 弹层 toggle 行规格：body 主色 + h12/v6 紧凑密度；
