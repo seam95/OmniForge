@@ -6,6 +6,7 @@ enum PetdexDownloadError: Error, Equatable, LocalizedError {
     case network
     case badStatus(Int, resource: String)
     case writeFailed
+    case notFound(String)
 
     var errorDescription: String? {
         switch self {
@@ -13,6 +14,7 @@ enum PetdexDownloadError: Error, Equatable, LocalizedError {
         case .network: return "下载失败，请检查网络"
         case .badStatus(let code, let resource): return "下载 \(resource) 失败（\(code)）"
         case .writeFailed: return "写入宠物文件失败"
+        case .notFound(let name): return "没有找到「\(name)」"
         }
     }
 }

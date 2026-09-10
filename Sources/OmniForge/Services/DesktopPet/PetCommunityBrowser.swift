@@ -99,6 +99,24 @@ final class PetCommunityBrowser: ObservableObject {
         }
     }
 
+    /// 按名字安装社区宠物：在清单中匹配（展示名或 slug，取第一个命中）并下载入库。
+    /// 浏览挑选交给 petdex 网站，这里只负责「看中后按名字装」。
+    func install(byName name: String) async -> Result<PetAssetStore.InstalledPet, Error> {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return .failure(PetdexDownloadError.notFound(name))
+        }
+        do {
+            let manifest = try await manifestClient.load()
+            guard let pet = manifest.search(trimmed, limit: 1).first else {
+                return .failure(PetdexDownloadError.notFound(trimmed))
+            }
+            return await download(pet)
+        } catch {
+            return .failure(error)
+        }
+    }
+
     /// 该 slug 是否已安装。
     func isInstalled(_ slug: String) -> Bool {
         store.installedPets().contains { $0.slug == slug }

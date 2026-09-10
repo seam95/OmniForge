@@ -194,6 +194,17 @@ final class DesktopPetManager: ObservableObject {
         return result
     }
 
+    /// 按名字安装社区宠物（在 petdex 网站上看中后回来输入名字）。
+    @discardableResult
+    func installCommunityPet(byName name: String) async -> Result<PetAssetStore.InstalledPet, Error> {
+        let result = await community.install(byName: name)
+        if case .success(let installed) = result {
+            refreshInstalledPets()
+            selectPet(slug: installed.slug)
+        }
+        return result
+    }
+
     /// 删除已安装的社区宠物；若正被使用则切回内置。
     func removePet(slug: String) throws {
         guard slug != PetAssetLocator.builtInPetID else { return }

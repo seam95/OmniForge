@@ -231,4 +231,75 @@ final class PetdexDownloaderTests: XCTestCase {
         XCTAssertNotNil(browser.downloadErrors["boba"])
         XCTAssertTrue(browser.downloadingSlugs.isEmpty)
     }
+
+    func test_browserInstallByNameMatchesAndDownloads() async {
+        let manifestJSON = """
+        {"total":1,"pets":[{"slug":"boba","displayName":"Boba","kind":"creature",
+        "submittedBy":"A","spritesheetUrl":"https://assets.petdex.dev/pets/boba/sprite.webp",
+        "petJsonUrl":"https://assets.petdex.dev/pets/boba/petjson.json",
+        "zipUrl":null,"spriteVersionNumber":1}]}
+        """
+        let stub = PetdexHTTPStub(
+            routes: [
+                "https://petdex.dev/api/manifest": .init(data: Data(manifestJSON.utf8), status: 200),
+                "https://assets.petdex.dev/pets/boba/petjson.json": .init(data: Self.petJSON, status: 200),
+                "https://assets.petdex.dev/pets/boba/sprite.webp": .init(data: Self.miniAtlasPNG(), status: 200),
+            ],
+            defaultResponse: .init(data: Data(manifestJSON.utf8), status: 200)
+        )
+        let store = makeStore()
+        let browser = PetCommunityBrowser(
+            manifestClient: PetdexManifestClient(client: stub, cacheURL: nil),
+            downloader: PetdexDownloader(client: stub),
+            store: store,
+            stagingDirectory: staging
+        )
+
+        // 展示名与 slug 均可命中。
+        let byDisplayName = await browser.install(byName: "Boba")
+        guard case .success(let petA) = byDisplayName else {
+            return XCTFail("按展示名安装应成功，实际 \(byDisplayName)")
+        }
+        XCTAssertEqual(petA.slug, "boba")
+
+        let bySlug = await browser.install(byName: "boba")
+        guard case .success = bySlug else {
+            return XCTFail("按 slug 安装应成功，实际 \(bySlug)")
+        }
+    }
+
+    func test_browserInstallByNameReportsNotFound() async {
+        let stub = PetdexHTTPStub(defaultResponse: .init(
+            data: Data(#"{"total":1,"pets":[{"slug":"only","displayName":"Only"}]}"#.utf8),
+            status: 200
+        ))
+        let browser = PetCommunityBrowser(
+            manifestClient: PetdexManifestClient(client: stub, cacheURL: nil),
+            downloader: PetdexDownloader(client: stub),
+            store: makeStore(),
+            stagingDirectory: staging
+        )
+
+        let result = await browser.install(byName: "不存在")
+
+        guard case .failure(let error) = result else {
+            return XCTFail("应当失败")
+        }
+        XCTAssertEqual(error as? PetdexDownloadError, .notFound("不存在"))
+    }
+
+    func test_browserInstallByNameRejectsBlankInput() async {
+        let browser = PetCommunityBrowser(
+            manifestClient: PetdexManifestClient(client: PetdexHTTPStub(), cacheURL: nil),
+            downloader: PetdexDownloader(client: PetdexHTTPStub()),
+            store: makeStore(),
+            stagingDirectory: staging
+        )
+
+        let result = await browser.install(byName: "   ")
+
+        guard case .failure = result else {
+            return XCTFail("空输入应当失败")
+        }
+    }
 }

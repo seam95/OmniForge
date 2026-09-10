@@ -1551,14 +1551,10 @@ struct Strings: Equatable {
     let desktopPetRemoveButton: String
     let desktopPetCommunitySection: String
     let desktopPetBrowseButton: String
-    let desktopPetCollapse: String
-    let desktopPetSearchPlaceholder: String
-    let desktopPetDownloadButton: String
-    let desktopPetDownloadedBadge: String
+    let desktopPetInstallByNameHint: String
+    let desktopPetInstallNamePlaceholder: String
+    let desktopPetInstallButton: String
     let desktopPetDownloading: String
-    let desktopPetRetryButton: String
-    let desktopPetCommunityLoading: String
-    let desktopPetCommunityEmpty: String
     let desktopPetCommunityDisclaimer: String
 }
 
