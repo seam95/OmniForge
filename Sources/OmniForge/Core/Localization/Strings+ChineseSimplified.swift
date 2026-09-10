@@ -382,6 +382,8 @@ extension Strings {
         featureHubGroupClipboard: "剪贴板与短语",
         featureHubGroupMonitor: "系统监控",
         featureHubGroupProductivity: "生产力",
+        featureHubGroupMaintenance: "系统维护",
+        featureHubGroupDesktop: "桌面常驻",
         featureHubGroupSystem: "系统",
         featureHubGroupMouse: "鼠标与触控板",
         featureHubGroupEnergy: "电源与唤醒",

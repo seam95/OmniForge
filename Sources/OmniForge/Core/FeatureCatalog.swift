@@ -34,12 +34,16 @@ enum AppFeature: String, CaseIterable {
 }
 
 /// 特性分组，用于 Settings UI 展示；case 顺序即侧栏与功能目录的分组展示顺序。
+/// 分组用于给长列表提供定位锚点：每组保持 2–6 项，避免出现几十项一组的“巨组”
+/// （巨组会让用户滚过整组才能找到目标，分组即失去导航意义）。
 enum FeatureGroup: String, CaseIterable {
     case input        // 输入法相关
     case clipboard    // 剪贴板与快捷短语
     case monitor      // 系统监控
     case ai           // AI CLI 供应商切换
     case productivity // 生产力工具
+    case maintenance  // 系统维护（清理、卸载、诊断类一次性操作）
+    case desktop      // 桌面常驻（便签、桌宠等陪伴型）
     case system       // 系统集成
     case mouse        // 鼠标与触控板
     case energy       // 电源与唤醒
@@ -72,12 +76,15 @@ extension AppFeature {
         case .systemMonitor, .tokenUsage: return .monitor
         case .shelf: return .productivity
         case .launchAtLogin: return .system
-        case .cleaner, .uninstaller, .colorPicker, .networkDiagnostics, .dshWeb: return .productivity
+        // 系统维护：对系统做一次性操作的诊断/清理/卸载类工具。
+        case .cleaner, .uninstaller, .colorPicker, .networkDiagnostics, .dshWeb, .cleaningMode:
+            return .maintenance
+        // 桌面常驻：留在桌面上陪伴或随手使用的窗口类功能。
+        case .stickyNotes, .desktopPet: return .desktop
         case .scrollInverter, .smoothScroll, .mouseNavigation, .dockClick: return .mouse
         case .keepAwake: return .energy
         case .screenshot: return .capture
         case .providerSwitch, .promptOptimizer: return .ai
-        case .stickyNotes, .cleaningMode, .desktopPet: return .productivity
         }
     }
 
@@ -286,6 +293,8 @@ extension FeatureGroup {
         case .clipboard: return strings.featureHubGroupClipboard
         case .monitor: return strings.featureHubGroupMonitor
         case .productivity: return strings.featureHubGroupProductivity
+        case .maintenance: return strings.featureHubGroupMaintenance
+        case .desktop: return strings.featureHubGroupDesktop
         case .system: return strings.featureHubGroupSystem
         case .mouse: return strings.featureHubGroupMouse
         case .energy: return strings.featureHubGroupEnergy

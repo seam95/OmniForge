@@ -73,7 +73,7 @@ final class FeatureCatalogTests: XCTestCase {
         XCTAssertEqual(AppFeature.clipboardHistory.group, .clipboard)
         XCTAssertEqual(AppFeature.quickPhrase.group, .clipboard)
         XCTAssertEqual(AppFeature.systemMonitor.group, .monitor)
-        XCTAssertEqual(AppFeature.networkDiagnostics.group, .productivity)
+        XCTAssertEqual(AppFeature.networkDiagnostics.group, .maintenance)
         XCTAssertEqual(AppFeature.launchAtLogin.group, .system)
         XCTAssertEqual(AppFeature.scrollInverter.group, .mouse)
         XCTAssertEqual(AppFeature.smoothScroll.group, .mouse)
@@ -171,7 +171,7 @@ final class FeatureCatalogTests: XCTestCase {
 
     func test_networkDiagnostics_catalogContract() {
         XCTAssertEqual(AppFeature.networkDiagnostics.rawValue, "networkDiagnostics")
-        XCTAssertEqual(AppFeature.networkDiagnostics.group, .productivity)
+        XCTAssertEqual(AppFeature.networkDiagnostics.group, .maintenance)
         XCTAssertTrue(AppFeature.networkDiagnostics.enabledKeys.isEmpty)
         XCTAssertEqual(AppFeature.networkDiagnostics.possiblePermissions, [])
         XCTAssertEqual(AppFeature.networkDiagnostics.permissions, [])
@@ -273,14 +273,14 @@ final class FeatureCatalogTests: XCTestCase {
     }
 
     func test_cleanerFeatureContract() {
-        XCTAssertEqual(AppFeature.cleaner.group, .productivity)
+        XCTAssertEqual(AppFeature.cleaner.group, .maintenance)
         XCTAssertTrue(AppFeature.cleaner.enabledKeys.isEmpty, "工具型特性无 enable 键")
         XCTAssertEqual(AppFeature.cleaner.permissions, [.fullDiskAccess])
         XCTAssertEqual(AppFeature.cleaner.symbolName, "sparkles")
     }
 
     func test_uninstallerFeatureContract() {
-        XCTAssertEqual(AppFeature.uninstaller.group, .productivity)
+        XCTAssertEqual(AppFeature.uninstaller.group, .maintenance)
         XCTAssertTrue(AppFeature.uninstaller.enabledKeys.isEmpty, "工具型特性无 enable 键")
         XCTAssertEqual(AppFeature.uninstaller.permissions, [.fullDiskAccess])
         XCTAssertEqual(AppFeature.uninstaller.symbolName, "trash")
@@ -293,13 +293,28 @@ final class FeatureCatalogTests: XCTestCase {
         XCTAssertFalse(AppPermission.fullDiskAccess.hubName(in: .zhHans).isEmpty)
     }
 
-    func test_productivityGroupContainsTools() {
-        // productivity 组含 networkDiagnostics、shelf、工具型特性 cleaner/uninstaller/colorPicker/dshWeb、stickyNotes、cleaningMode 与 desktopPet
+    /// 分组均衡契约（信息架构：长列表靠分组定位，单组过大会让分组失去导航意义）。
+    func test_groupsStayBalanced_soLongListRemainsNavigable() {
+        // 生产力组收敛为暂存架（其余成员按语义迁往维护/桌面常驻）。
+        XCTAssertEqual(FeatureGroup.features(in: .productivity), [.shelf])
+
+        // 系统维护：对系统做一次性操作的诊断/清理/卸载类工具。
         XCTAssertEqual(
-            FeatureGroup.features(in: .productivity),
-            [.networkDiagnostics, .dshWeb, .shelf, .cleaner, .uninstaller, .colorPicker, .stickyNotes, .cleaningMode, .desktopPet]
+            FeatureGroup.features(in: .maintenance),
+            [.networkDiagnostics, .dshWeb, .cleaner, .uninstaller, .colorPicker, .cleaningMode]
         )
-        XCTAssertTrue(FeatureGroup.features(in: .productivity).contains(.networkDiagnostics))
+
+        // 桌面常驻：留在桌面上的陪伴型窗口。
+        XCTAssertEqual(
+            FeatureGroup.features(in: .desktop),
+            [.stickyNotes, .desktopPet]
+        )
+
+        // 每组不超过 6 项（回归保护：新增特性时若把巨组重新撑大，此断言会失败）。
+        for group in FeatureGroup.allCases {
+            let count = FeatureGroup.features(in: group).count
+            XCTAssertLessThanOrEqual(count, 6, "\(group.rawValue) 有 \(count) 项，单组过大将削弱分组的定位作用")
+        }
     }
 
     func test_providerSwitch_catalogContract() {

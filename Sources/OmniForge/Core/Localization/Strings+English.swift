@@ -382,6 +382,8 @@ extension Strings {
         featureHubGroupClipboard: "Clipboard & Snippets",
         featureHubGroupMonitor: "System Monitor",
         featureHubGroupProductivity: "Productivity",
+        featureHubGroupMaintenance: "Maintenance",
+        featureHubGroupDesktop: "On-Desktop",
         featureHubGroupSystem: "System",
         featureHubGroupMouse: "Mouse & Trackpad",
         featureHubGroupEnergy: "Energy",

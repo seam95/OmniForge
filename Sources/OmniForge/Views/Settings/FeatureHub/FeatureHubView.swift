@@ -54,11 +54,37 @@ struct FeatureHubView: View {
             }
         }
         .settingsPageStyle()
+        // 批量操作常驻窗口工具栏：长列表滚动到任意位置都能触达，
+        // 不再需要滚回顶部（特性页内容约 3.4 屏）。
+        .toolbar {
+            if tab == .overview {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    Button(strings.featureHubInstallAll) {
+                        Task { @MainActor in
+                            for feature in AppFeature.allCases {
+                                _ = await runtime.setAvailableAsync(feature, true)
+                            }
+                        }
+                    }
+                    .disabled(runtime.availableCount == AppFeature.allCases.count)
+
+                    Button(strings.featureHubUninstallAll) {
+                        Task { @MainActor in
+                            for feature in AppFeature.allCases
+                            where uninstallGuard.canSetAvailability(of: feature, to: false) {
+                                _ = await runtime.setAvailableAsync(feature, false)
+                            }
+                        }
+                    }
+                    .disabled(runtime.availableCount == 0 || !uninstallGuard.canUninstallAll)
+                }
+            }
+        }
     }
 
     @ViewBuilder
     private var overviewSections: some View {
-        // 计数 + 批量操作同一行；短提示放 footer，去掉原先两段重复说明
+        // 计数留在页内顶部；批量安装/卸载已上移到窗口工具栏（滚动时始终可达）。
         Section {
             HStack {
                 Text(String(format: strings.featureHubActiveCount,
@@ -66,25 +92,7 @@ struct FeatureHubView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button(strings.featureHubInstallAll) {
-                    Task { @MainActor in
-                        for feature in AppFeature.allCases {
-                            _ = await runtime.setAvailableAsync(feature, true)
-                        }
-                    }
-                }
-                .disabled(runtime.availableCount == AppFeature.allCases.count)
-                Button(strings.featureHubUninstallAll) {
-                    Task { @MainActor in
-                        for feature in AppFeature.allCases
-                        where uninstallGuard.canSetAvailability(of: feature, to: false) {
-                            _ = await runtime.setAvailableAsync(feature, false)
-                        }
-                    }
-                }
-                .disabled(runtime.availableCount == 0 || !uninstallGuard.canUninstallAll)
             }
-            .controlSize(.small)
 
             if !uninstallGuard.canUninstallAll {
                 Text(strings.utilityUninstallBusy)

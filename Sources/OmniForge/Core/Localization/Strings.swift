@@ -406,6 +406,8 @@ struct Strings: Equatable {
     let featureHubGroupClipboard: String
     let featureHubGroupMonitor: String
     let featureHubGroupProductivity: String
+    let featureHubGroupMaintenance: String
+    let featureHubGroupDesktop: String
     let featureHubGroupSystem: String
     let featureHubGroupMouse: String
     let featureHubGroupEnergy: String
