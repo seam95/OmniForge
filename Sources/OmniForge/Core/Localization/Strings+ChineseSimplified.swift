@@ -1412,5 +1412,9 @@ extension Strings {
         desktopPetInstallButton: "安装",
         desktopPetDownloading: "正在安装…",
         desktopPetCommunityDisclaimer: "社区宠物是用户提交的同人作品，版权归各自作者；下载内容仅供本地个人使用。",
+        desktopPetActivitySection: "好动程度",
+        desktopPetActivityQuiet: "安静",
+        desktopPetActivityBalanced: "适中",
+        desktopPetActivityLively: "活泼",
     )
 }

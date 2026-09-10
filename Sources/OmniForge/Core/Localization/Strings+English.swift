@@ -1412,5 +1412,9 @@ extension Strings {
         desktopPetInstallButton: "Install",
         desktopPetDownloading: "Installing…",
         desktopPetCommunityDisclaimer: "Community pets are user-submitted fan art; rights belong to their creators. Downloaded content is for local personal use only.",
+        desktopPetActivitySection: "Activity Level",
+        desktopPetActivityQuiet: "Quiet",
+        desktopPetActivityBalanced: "Balanced",
+        desktopPetActivityLively: "Lively",
     )
 }

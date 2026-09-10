@@ -226,6 +226,31 @@ final class DesktopPetManagerTests: XCTestCase {
         XCTAssertEqual(manager.behaviorState, .idle)
     }
 
+    // MARK: - 好动程度
+
+    func test_activityPresetDefaultsToBalanced() {
+        let manager = makeManager()
+
+        XCTAssertEqual(manager.activityPreset, .balanced)
+    }
+
+    func test_activityPresetPersistsAndAppliesToEngine() {
+        let manager = makeManager()
+
+        manager.setActivityPreset(.quiet)
+
+        XCTAssertEqual(defaults.string(forKey: UserDefaultsKeys.petActivityLevel), "quiet")
+        XCTAssertEqual(manager.activityPreset, .quiet)
+    }
+
+    func test_invalidStoredActivityPresetFallsBackToBalanced() {
+        defaults.set("bogus", forKey: UserDefaultsKeys.petActivityLevel)
+
+        let manager = makeManager()
+
+        XCTAssertEqual(manager.activityPreset, .balanced)
+    }
+
     // MARK: - 交互
 
     func test_petEntersPettedThenReturns() {

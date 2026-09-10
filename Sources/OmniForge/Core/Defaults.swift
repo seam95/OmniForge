@@ -164,6 +164,7 @@ enum Defaults {
             UserDefaultsKeys.petPositionY: 0.0,
             UserDefaultsKeys.petPositionScreen: "",
             UserDefaultsKeys.petSelectedSlug: "cat",
+            UserDefaultsKeys.petActivityLevel: "balanced",
         ]
     }
 

@@ -54,8 +54,33 @@ private struct DesktopPetContent: View {
 
             FlatHairline()
 
+            activitySection
+
+            FlatHairline()
+
             sizeSection
         }
+    }
+
+    // MARK: - 好动程度
+
+    private var activitySection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            FlatSectionHeader(title: strings.desktopPetActivitySection, accent: tint)
+
+            Picker(strings.desktopPetActivitySection, selection: Binding(
+                get: { manager.activityPreset },
+                set: { manager.setActivityPreset($0) }
+            )) {
+                Text(strings.desktopPetActivityQuiet).tag(PetBehaviorTuning.ActivityPreset.quiet)
+                Text(strings.desktopPetActivityBalanced).tag(PetBehaviorTuning.ActivityPreset.balanced)
+                Text(strings.desktopPetActivityLively).tag(PetBehaviorTuning.ActivityPreset.lively)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     // MARK: - 启用开关

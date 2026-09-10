@@ -57,6 +57,7 @@ final class DesktopPetManager: ObservableObject {
         assetStore: PetAssetStore? = nil,
         community: PetCommunityBrowser? = nil,
         asset: PetSpriteAsset? = nil,
+        tuning: PetBehaviorTuning? = nil,
         stringsProvider: @escaping () -> Strings = { L10n(userDefaults: .standard).s },
         visibleScreensProvider: (() -> [PetScreenGeometry])? = nil,
         tickInterval: TimeInterval = 1.0 / 30.0,
@@ -65,7 +66,9 @@ final class DesktopPetManager: ObservableObject {
         self.userDefaults = userDefaults
         self.stringsProvider = stringsProvider
         self.visibleScreensProvider = visibleScreensProvider ?? { PetWindowController.screenGeometries() }
-        self.engine = engine ?? PetBehaviorEngine()
+        let resolvedTuning = tuning ?? Self.storedTuning(userDefaults: userDefaults)
+        self.engine = engine ?? PetBehaviorEngine(tuning: resolvedTuning)
+        self.engine.apply(tuning: resolvedTuning)
         self.tickInterval = tickInterval
         self.persistDebounce = persistDebounce
         let store = assetStore ?? PetAssetStore(rootDirectory: PetAssetStore.defaultRootDirectory())
@@ -215,6 +218,31 @@ final class DesktopPetManager: ObservableObject {
         }
     }
 
+    /// 当前好动程度档位。
+    var activityPreset: PetBehaviorTuning.ActivityPreset {
+        PetBehaviorTuning.ActivityPreset(
+            rawValue: userDefaults.string(forKey: UserDefaultsKeys.petActivityLevel) ?? ""
+        ) ?? .balanced
+    }
+
+    /// 切换好动程度档位并立即生效。
+    func setActivityPreset(_ preset: PetBehaviorTuning.ActivityPreset) {
+        userDefaults.set(preset.rawValue, forKey: UserDefaultsKeys.petActivityLevel)
+        var tuning = Self.storedTuning(userDefaults: userDefaults)
+        tuning.activityLevel = preset.activityLevel
+        engine.apply(tuning: tuning)
+    }
+
+    /// 从持久化构造调参（非法值回退默认档）。
+    static func storedTuning(userDefaults: UserDefaults) -> PetBehaviorTuning {
+        var tuning = PetBehaviorTuning.default
+        let preset = PetBehaviorTuning.ActivityPreset(
+            rawValue: userDefaults.string(forKey: UserDefaultsKeys.petActivityLevel) ?? ""
+        ) ?? .balanced
+        tuning.activityLevel = preset.activityLevel
+        return tuning
+    }
+
     /// 重置到所在屏默认位置（右侧地面）。
     func resetPosition() {
         let screens = visibleScreensProvider()
@@ -270,7 +298,8 @@ final class DesktopPetManager: ObservableObject {
         case .idle:
             decisionRemaining -= dt
             if decisionRemaining <= 0 {
-                let decision = engine.nextIdleDecision()
+                // 矩阵决策：idle 与 walk 行分布不同（行走后更倾向回归 idle）。
+                let decision = engine.nextAutonomousDecision()
                 engine.apply(decision)
                 decisionRemaining = decision.duration
                 behaviorState = decision.state

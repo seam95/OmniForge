@@ -1558,6 +1558,10 @@ struct Strings: Equatable {
     let desktopPetInstallButton: String
     let desktopPetDownloading: String
     let desktopPetCommunityDisclaimer: String
+    let desktopPetActivitySection: String
+    let desktopPetActivityQuiet: String
+    let desktopPetActivityBalanced: String
+    let desktopPetActivityLively: String
 }
 
 // MARK: - 派生文案
