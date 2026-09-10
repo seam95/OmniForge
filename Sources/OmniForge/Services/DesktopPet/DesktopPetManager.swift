@@ -18,6 +18,10 @@ final class DesktopPetManager: ObservableObject {
     @Published private(set) var asset: PetSpriteAsset?
     /// 当前选中的宠物 slug（内置宠物固定为 `PetAssetLocator.builtInPetID`）。
     @Published private(set) var selectedPetSlug: String
+    /// 已安装社区宠物缓存（库内容变化时刷新，供视图即时更新）。
+    @Published private(set) var installedPets: [PetAssetStore.InstalledPet] = []
+    /// 社区宠物浏览器（清单与下载）。
+    let community: PetCommunityBrowser
 
     /// 行为循环 tick 间隔（秒）；测试注入更长间隔避免时序抖动。
     private let tickInterval: TimeInterval
@@ -51,6 +55,7 @@ final class DesktopPetManager: ObservableObject {
         windowController: PetWindowController? = nil,
         engine: PetBehaviorEngine? = nil,
         assetStore: PetAssetStore? = nil,
+        community: PetCommunityBrowser? = nil,
         asset: PetSpriteAsset? = nil,
         stringsProvider: @escaping () -> Strings = { L10n(userDefaults: .standard).s },
         visibleScreensProvider: (() -> [PetScreenGeometry])? = nil,
@@ -65,6 +70,7 @@ final class DesktopPetManager: ObservableObject {
         self.persistDebounce = persistDebounce
         let store = assetStore ?? PetAssetStore(rootDirectory: PetAssetStore.defaultRootDirectory())
         self.assetStore = store
+        self.community = community ?? PetCommunityBrowser(store: store)
 
         let resolvedSize = DesktopPetSize.from(userDefaults.integer(forKey: UserDefaultsKeys.petSize))
         self.size = resolvedSize
@@ -77,6 +83,7 @@ final class DesktopPetManager: ObservableObject {
         self.asset = resolvedAsset
         self.windowController = windowController
             ?? PetWindowController(petSize: Self.petSize(for: resolvedSize, asset: resolvedAsset))
+        self.installedPets = store.installedPets()
     }
 
     // MARK: - 生命周期
@@ -132,10 +139,15 @@ final class DesktopPetManager: ObservableObject {
                 displayName: strings.desktopPetBuiltIn
             ),
         ]
-        list.append(contentsOf: assetStore.installedPets().filter {
+        list.append(contentsOf: installedPets.filter {
             $0.slug != PetAssetLocator.builtInPetID
         })
         return list
+    }
+
+    /// 重新读取宠物库内容（导入 / 下载 / 删除后调用）。
+    func refreshInstalledPets() {
+        installedPets = assetStore.installedPets()
     }
 
     /// 切换尺寸档位并持久化。
@@ -166,14 +178,27 @@ final class DesktopPetManager: ObservableObject {
     @discardableResult
     func importPet(from source: URL) throws -> PetAssetStore.InstalledPet {
         let pet = try assetStore.importPet(from: source)
+        refreshInstalledPets()
         selectPet(slug: pet.slug)
         return pet
+    }
+
+    /// 从社区清单下载宠物、入库并切换为当前宠物。
+    @discardableResult
+    func downloadCommunityPet(_ pet: PetdexPet) async -> Result<PetAssetStore.InstalledPet, Error> {
+        let result = await community.download(pet)
+        if case .success(let installed) = result {
+            refreshInstalledPets()
+            selectPet(slug: installed.slug)
+        }
+        return result
     }
 
     /// 删除已安装的社区宠物；若正被使用则切回内置。
     func removePet(slug: String) throws {
         guard slug != PetAssetLocator.builtInPetID else { return }
         try assetStore.remove(slug: slug)
+        refreshInstalledPets()
         if selectedPetSlug == slug {
             selectPet(slug: PetAssetLocator.builtInPetID)
         }

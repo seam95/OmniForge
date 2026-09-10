@@ -50,6 +50,10 @@ private struct DesktopPetContent: View {
 
             FlatHairline()
 
+            PetCommunitySection(strings: strings, manager: manager, browser: manager.community)
+
+            FlatHairline()
+
             sizeSection
         }
     }

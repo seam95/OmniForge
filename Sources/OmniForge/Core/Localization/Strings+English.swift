@@ -1404,5 +1404,16 @@ extension Strings {
         desktopPetImportSuccessFormat: "Imported “%@”",
         desktopPetImportFailedFormat: "Import failed: %@",
         desktopPetRemoveButton: "Remove",
+        desktopPetCommunitySection: "Community Pets",
+        desktopPetBrowseButton: "Browse Community Pets",
+        desktopPetCollapse: "Collapse",
+        desktopPetSearchPlaceholder: "Search pets…",
+        desktopPetDownloadButton: "Download",
+        desktopPetDownloadedBadge: "Installed",
+        desktopPetDownloading: "Downloading…",
+        desktopPetRetryButton: "Retry",
+        desktopPetCommunityLoading: "Loading community pets…",
+        desktopPetCommunityEmpty: "No matching pets",
+        desktopPetCommunityDisclaimer: "Community pets are user-submitted fan art; rights belong to their creators. Downloaded content is for local personal use only.",
     )
 }

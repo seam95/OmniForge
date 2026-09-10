@@ -8,7 +8,6 @@ enum PetdexAssetError: Error, Equatable, LocalizedError {
     case missingSpritesheet
     case unreadableSpritesheet
     case unsupportedAtlasSize(width: Int, height: Int)
-    case unsupportedSpriteVersion(Int)
     case noAnimationFrames
 
     var errorDescription: String? {
@@ -21,8 +20,6 @@ enum PetdexAssetError: Error, Equatable, LocalizedError {
             return "无法解码宠物图集"
         case .unsupportedAtlasSize(let width, let height):
             return "图集尺寸不受支持：\(width)×\(height)"
-        case .unsupportedSpriteVersion(let version):
-            return "暂不支持该宠物图集版本（v\(version)）"
         case .noAnimationFrames:
             return "图集中没有任何可用帧"
         }
@@ -40,6 +37,8 @@ enum PetdexAssetAdapter {
     static let columns = 8
     /// v1 状态行数。
     static let v1StateRows = 9
+    /// v2 图集物理行数（前 9 行同 v1 语义，多 2 行留给消费端，忽略）。
+    static let v2StateRows = 11
 
     /// 行号 → 本应用动画 id（v1 九行约定）。
     /// 行 5/6/8（failed / waiting / review）一期不驱动，保留供二期接 Agent 状态反应。
@@ -75,11 +74,6 @@ enum PetdexAssetAdapter {
         }
         let meta = try? JSONDecoder().decode(Manifest.self, from: manifestData)
 
-        let version = meta?.spriteVersionNumber ?? 1
-        guard version == 1 else {
-            throw PetdexAssetError.unsupportedSpriteVersion(version)
-        }
-
         let sheetURL = try locateSpritesheet(in: directory, declared: meta?.spritesheetPath)
         guard let image = NSImage(contentsOf: sheetURL),
               let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
@@ -88,12 +82,22 @@ enum PetdexAssetAdapter {
 
         let width = cgImage.width
         let height = cgImage.height
-        let rows = v1StateRows
-        guard width % columns == 0, height % rows == 0, width > 0, height > 0 else {
+        // 行数按图集实际尺寸判定（manifest 与 pet.json 的版本字段均不可靠，
+        // 实测存在 manifest 标 v1 而图集为 8×11 的情况）。
+        // v2（8×11）的前 9 行与 v1 同语义，仅多 2 行消费端自定义行，忽略即可。
+        let rows: Int
+        if height % v1StateRows == 0 {
+            rows = v1StateRows
+        } else if height % v2StateRows == 0 {
+            rows = v1StateRows
+        } else {
+            throw PetdexAssetError.unsupportedAtlasSize(width: width, height: height)
+        }
+        guard width % columns == 0, width > 0, height > 0 else {
             throw PetdexAssetError.unsupportedAtlasSize(width: width, height: height)
         }
         let cellWidth = width / columns
-        let cellHeight = height / rows
+        let cellHeight = height / Self.atlasRows(forHeight: height)
 
         guard let (alpha, bytesPerRow) = alphaBuffer(cgImage) else {
             throw PetdexAssetError.unreadableSpritesheet
@@ -153,7 +157,8 @@ enum PetdexAssetAdapter {
             atlasFileName: sheetURL.lastPathComponent,
             grid: PetSpriteAsset.Grid(
                 columns: columns,
-                rows: rows,
+                // 裁剪按图集物理行数（v2 = 11），语义行数（9）只决定扫描哪些行。
+                rows: Self.atlasRows(forHeight: height),
                 cellWidth: cellWidth,
                 cellHeight: cellHeight
             ),
@@ -162,6 +167,11 @@ enum PetdexAssetAdapter {
     }
 
     // MARK: - 私有
+
+    /// 图集物理行数：高 %9==0 为 v1（9 行），否则按 %11 判为 v2（11 行）。
+    private static func atlasRows(forHeight height: Int) -> Int {
+        height % v1StateRows == 0 ? v1StateRows : v2StateRows
+    }
 
     /// 定位图集：优先 pet.json 声明，其次常见文件名。
     private static func locateSpritesheet(in directory: URL, declared: String?) throws -> URL {
@@ -236,12 +246,11 @@ enum PetdexAssetAdapter {
         return frames
     }
 
-    /// pet.json 结构（极简，字段均可选以容错）。
+    /// pet.json 结构（极简，字段均可选以容错；spriteVersionNumber 不可靠，忽略）。
     private struct Manifest: Decodable {
         let id: String?
         let displayName: String?
         let description: String?
         let spritesheetPath: String?
-        let spriteVersionNumber: Int?
     }
 }

@@ -1549,6 +1549,17 @@ struct Strings: Equatable {
     let desktopPetImportSuccessFormat: String
     let desktopPetImportFailedFormat: String
     let desktopPetRemoveButton: String
+    let desktopPetCommunitySection: String
+    let desktopPetBrowseButton: String
+    let desktopPetCollapse: String
+    let desktopPetSearchPlaceholder: String
+    let desktopPetDownloadButton: String
+    let desktopPetDownloadedBadge: String
+    let desktopPetDownloading: String
+    let desktopPetRetryButton: String
+    let desktopPetCommunityLoading: String
+    let desktopPetCommunityEmpty: String
+    let desktopPetCommunityDisclaimer: String
 }
 
 // MARK: - 派生文案

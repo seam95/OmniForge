@@ -1404,5 +1404,16 @@ extension Strings {
         desktopPetImportSuccessFormat: "已导入「%@」",
         desktopPetImportFailedFormat: "导入失败：%@",
         desktopPetRemoveButton: "移除",
+        desktopPetCommunitySection: "社区宠物",
+        desktopPetBrowseButton: "浏览社区宠物",
+        desktopPetCollapse: "收起",
+        desktopPetSearchPlaceholder: "搜索宠物名…",
+        desktopPetDownloadButton: "下载",
+        desktopPetDownloadedBadge: "已安装",
+        desktopPetDownloading: "下载中…",
+        desktopPetRetryButton: "重试",
+        desktopPetCommunityLoading: "正在加载社区宠物…",
+        desktopPetCommunityEmpty: "没有匹配的宠物",
+        desktopPetCommunityDisclaimer: "社区宠物是用户提交的同人作品，版权归各自作者；下载内容仅供本地个人使用。",
     )
 }

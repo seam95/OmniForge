@@ -31,13 +31,14 @@ final class PetdexAssetAdapterTests: XCTestCase {
         cellWidth: Int = 24,
         cellHeight: Int = 26,
         version: Int? = nil,
+        atlasRows: Int = 9,
         declaredSheetName: String = "spritesheet.png"
     ) throws -> URL {
         let directory = workDirectory.appendingPathComponent(slug, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let columns = 8
-        let rows = 9
+        let rows = atlasRows
         let width = columns * cellWidth
         let height = rows * cellHeight
 
@@ -186,12 +187,23 @@ final class PetdexAssetAdapterTests: XCTestCase {
         }
     }
 
-    func test_loadRejectsV2Atlas() throws {
-        let directory = try makePet(slug: "v2", framesByRow: [0: 2], version: 2)
+    func test_loadSupportsV2AtlasWithElevenRows() throws {
+        // v2（8×11）图集：前 9 行同 v1 语义，扫描与裁剪按 11 物理行。
+        // pet.json 的版本字段不可靠，适配以图集实际尺寸为准。
+        let directory = try makePet(
+            slug: "v2pet",
+            framesByRow: [0: 3],
+            cellWidth: 24,
+            cellHeight: 26,
+            version: 2,
+            atlasRows: 11
+        )
 
-        XCTAssertThrowsError(try PetdexAssetAdapter.load(from: directory)) { error in
-            XCTAssertEqual(error as? PetdexAssetError, .unsupportedSpriteVersion(2))
-        }
+        let asset = try PetdexAssetAdapter.load(from: directory)
+
+        XCTAssertEqual(asset.grid.rows, 11)
+        XCTAssertEqual(asset.grid.cellHeight, 26)
+        XCTAssertEqual(asset.animation(id: PetAnimationID.idle)?.frames, [0, 1, 2])
     }
 
     // MARK: - 真实资产（网络产物已缓存时）
