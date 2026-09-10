@@ -1322,6 +1322,8 @@ struct Strings: Equatable {
     let providerLaunchCommandCopyFailed: String
     /// 顶部新增供应商按钮。
     let providerAddProvider: String
+    /// 齿轮弹层「新增供应商」动作行文案（无「+」前缀：列表项不带头部符号）。
+    let providerAddProviderAction: String
     /// 新增按钮（%@ = 工具名）。
     let providerAddProfileFormat: String
     /// 无 profile 时的引导文案。

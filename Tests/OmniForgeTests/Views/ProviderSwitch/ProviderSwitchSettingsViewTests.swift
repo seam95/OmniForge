@@ -82,13 +82,18 @@ final class ProviderSwitchSettingsViewTests: XCTestCase {
         }
     }
 
-    /// 齿轮弹层（收纳原底部三链接动作）标题与动作文案中英齐全。
+    /// 齿轮弹层（收纳原底部三链接动作）标题与动作文案中英齐全；
+    /// 弹层动作行为列表项，不带「+」前缀（该前缀仅顶部主按钮使用）。
     func test_settingsPopoverLocalization_isAvailable() {
         for strings in [Strings.zhHans, Strings.en] {
             XCTAssertFalse(strings.providerSettingsPopoverTitle.isEmpty)
-            XCTAssertFalse(strings.providerAddProvider.isEmpty)
+            XCTAssertFalse(strings.providerAddProviderAction.isEmpty)
             XCTAssertFalse(strings.providerEditConfigFile.isEmpty)
             XCTAssertFalse(strings.providerRestoreBackup.isEmpty)
+            XCTAssertFalse(
+                strings.providerAddProviderAction.hasPrefix("+"),
+                "弹层动作行不应带「+」前缀（前缀由顶部主按钮文案 providerAddProvider 承担）"
+            )
         }
     }
 

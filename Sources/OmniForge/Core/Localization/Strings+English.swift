@@ -1211,6 +1211,7 @@ extension Strings {
         providerLaunchCommandCopied: "Launch command copied",
         providerLaunchCommandCopyFailed: "Failed to copy launch command",
         providerAddProvider: "+ Add Provider",
+        providerAddProviderAction: "Add Provider",
         providerAddProfileFormat: "Add %@ Provider",
         providerEmptyProfilesHint: "No profiles yet. Tap “Add” to create one from a preset or from scratch",
         providerUnmanagedAdopt: "Adopt as Profile",

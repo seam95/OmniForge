@@ -1211,6 +1211,7 @@ extension Strings {
         providerLaunchCommandCopied: "启动命令已复制",
         providerLaunchCommandCopyFailed: "启动命令复制失败",
         providerAddProvider: "+ 新增供应商",
+        providerAddProviderAction: "新增供应商",
         providerAddProfileFormat: "新增 %@ 供应商",
         providerEmptyProfilesHint: "暂无供应商档案，点「新增」从预设或自定义创建",
         providerUnmanagedAdopt: "收编为供应商",
