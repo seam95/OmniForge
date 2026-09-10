@@ -1360,6 +1360,7 @@ extension Strings {
         promptOptimizerModel: "模型名",
         promptOptimizerAPIKey: "API Key",
         promptOptimizerAPIKeyPlaceholder: "sk-…",
+        promptOptimizerKeySavedPlaceholder: "已保存至钥匙串，输入新 Key 可覆盖",
         promptOptimizerBehaviorSection: "行为",
         promptOptimizerAutoReplace: "自动替换选中文本",
         promptOptimizerAutoReplaceHint: "开启后优化结果除复制到剪贴板外，还会自动粘贴覆盖原选中文本",

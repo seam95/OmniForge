@@ -1360,6 +1360,7 @@ extension Strings {
         promptOptimizerModel: "Model",
         promptOptimizerAPIKey: "API Key",
         promptOptimizerAPIKeyPlaceholder: "sk-…",
+        promptOptimizerKeySavedPlaceholder: "Saved to Keychain. Type a new key to replace",
         promptOptimizerBehaviorSection: "Behavior",
         promptOptimizerAutoReplace: "Auto-replace selected text",
         promptOptimizerAutoReplaceHint: "When enabled, the enhanced prompt is pasted over the original selection in addition to being copied",

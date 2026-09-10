@@ -344,6 +344,8 @@ struct TokenCredentialRow: View {
     /// 小标题（如「API Key」）；nil 不显示。
     var title: String? = nil
     let placeholder: String
+    /// 钥匙串已存凭证时的占位文本（如「已保存至钥匙串，输入可覆盖」）；nil 沿用通用 placeholder。
+    var savedPlaceholder: String? = nil
     @Binding var text: String
     /// 钥匙串中是否已存凭证（驱动「已保存/未配置密钥」状态与清除按钮）。
     let hasStoredValue: Bool
@@ -365,7 +367,7 @@ struct TokenCredentialRow: View {
                     .foregroundStyle(.secondary)
             }
             // grouped Form 会把 SecureField 首参提升为行 label，须置空并走 prompt 防 placeholder 泄漏。
-            SecureField("", text: $text, prompt: Text(placeholder))
+            SecureField("", text: $text, prompt: Text(effectivePlaceholder))
                 .textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier(fieldID ?? "")
             HStack(spacing: 8) {
@@ -403,6 +405,11 @@ struct TokenCredentialRow: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    /// 已存凭证时优先用「已保存」占位明示状态，避免空框被误读为未配置。
+    private var effectivePlaceholder: String {
+        hasStoredValue ? (savedPlaceholder ?? placeholder) : placeholder
     }
 }
 

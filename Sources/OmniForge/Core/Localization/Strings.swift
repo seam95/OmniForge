@@ -1505,6 +1505,7 @@ struct Strings: Equatable {
     let promptOptimizerModel: String
     let promptOptimizerAPIKey: String
     let promptOptimizerAPIKeyPlaceholder: String
+    let promptOptimizerKeySavedPlaceholder: String
     let promptOptimizerBehaviorSection: String
     let promptOptimizerAutoReplace: String
     let promptOptimizerAutoReplaceHint: String

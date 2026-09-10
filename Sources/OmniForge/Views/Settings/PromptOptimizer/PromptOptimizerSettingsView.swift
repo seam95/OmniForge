@@ -70,6 +70,7 @@ struct PromptOptimizerSettingsView: View {
             TokenCredentialRow(
                 title: strings.promptOptimizerAPIKey,
                 placeholder: strings.promptOptimizerAPIKeyPlaceholder,
+                savedPlaceholder: strings.promptOptimizerKeySavedPlaceholder,
                 text: $apiKeyInput,
                 hasStoredValue: hasStoredKey,
                 caption: strings.promptOptimizerPrivacyHint,
@@ -211,7 +212,9 @@ struct PromptOptimizerSettingsView: View {
         guard !cleaned.isEmpty else { return }
         do {
             try keychain.writeAPIKey(cleaned)
-            // 保存后保留输入（SecureField 掩码显示），清空会让用户误以为没有输入成功。
+            // 保存完成后回归空框并失焦出编辑态，占位文本切换为「已保存」提示
+            // （hasStoredKey 驱动），既明示成功又避免掩码残留被误读为仍在输入。
+            apiKeyInput = ""
             saveFailed = false
             hasStoredKey = true
         } catch {
