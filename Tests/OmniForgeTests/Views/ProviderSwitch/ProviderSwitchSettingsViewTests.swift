@@ -9,10 +9,6 @@ final class ProviderSwitchSettingsViewTests: XCTestCase {
         XCTAssertFalse(ProviderSwitchPresentation.settings.showsSettingsPopoverAddProvider)
         XCTAssertTrue(ProviderSwitchPresentation.settings.showsProfileManagementMenu)
         XCTAssertFalse(ProviderSwitchPresentation.settings.showsLaunchCommandCopyButton)
-        XCTAssertEqual(
-            ProviderSwitchPresentation.settings.addProviderRoute,
-            .profileEditor
-        )
     }
 
     func test_menuBarPresentation_properties() {
@@ -21,10 +17,18 @@ final class ProviderSwitchSettingsViewTests: XCTestCase {
         XCTAssertTrue(ProviderSwitchPresentation.menuBar.showsSettingsPopoverAddProvider)
         XCTAssertTrue(ProviderSwitchPresentation.menuBar.showsProfileManagementMenu)
         XCTAssertFalse(ProviderSwitchPresentation.menuBar.showsLaunchCommandCopyButton)
-        XCTAssertEqual(
-            ProviderSwitchPresentation.menuBar.addProviderRoute,
-            .providerSettings
-        )
+    }
+
+    /// 信息架构重构：两个场景都在自身容器内打开表单，不存在跨窗口路由分支；
+    /// 每个场景恰好暴露一个「新增」入口，避免双入口。
+    func test_eachPresentationExposesExactlyOneAddEntry() {
+        for presentation in [ProviderSwitchPresentation.settings, .menuBar] {
+            let entryCount = [
+                presentation.showsInlineAddProviderButton,
+                presentation.showsSettingsPopoverAddProvider,
+            ].filter { $0 }.count
+            XCTAssertEqual(entryCount, 1, "\(presentation) 应恰好暴露一个新增入口")
+        }
     }
 
     func test_providerBrandVisual_resolvesExpectedLetters() {

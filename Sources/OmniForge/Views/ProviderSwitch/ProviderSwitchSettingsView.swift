@@ -12,7 +12,8 @@ extension ProviderTool {
 
 /// 供应商页面的宿主场景。
 ///
-/// 菜单栏空间有限，只负责把新增操作路由到设置页；完整表单仅在设置窗口中展示。
+/// 两个场景都在自身容器内闭环新增：设置窗口用顶部主按钮，菜单栏用齿轮弹层动作，
+/// 均在当前容器弹出完整表单，不经设置窗中转（信息架构重构：数据管理跟随使用层）。
 enum ProviderSwitchPresentation: Equatable {
     case settings
     case menuBar
@@ -35,21 +36,6 @@ enum ProviderSwitchPresentation: Equatable {
     var showsLaunchCommandCopyButton: Bool {
         false
     }
-
-    var addProviderRoute: ProviderSwitchAddProviderRoute {
-        switch self {
-        case .settings:
-            return .profileEditor
-        case .menuBar:
-            return .providerSettings
-        }
-    }
-}
-
-/// 「新增供应商」入口的目标，用于保持菜单栏与设置页行为明确且可测试。
-enum ProviderSwitchAddProviderRoute: Equatable {
-    case profileEditor
-    case providerSettings
 }
 
 /// 供应商切换设置页（卡片列表风格）：
@@ -58,14 +44,13 @@ enum ProviderSwitchAddProviderRoute: Equatable {
 /// - 卡片列表：官方行 + Profile 行各自成独立卡片（白底大圆角），激活卡片带 accent 描边
 ///   并展示「使用中」绿色胶囊微章，Profile 卡片右侧均展示 `•••` 更多操作菜单
 /// - 设置窗口：展示全宽「+ 新增供应商」主按钮并打开新增表单
-/// - 菜单栏：齿轮弹层内「新增供应商」动作路由到供应商设置页
+/// - 菜单栏：齿轮弹层内「新增供应商」动作在本容器打开同款表单（不经设置窗中转）
 /// - 齿轮弹层动作（编辑配置文件 / 恢复备份 / 菜单栏新增）作用于当前展示 tool
 /// - 异常状态：未托管 / 损坏警示横幅以同款圆角卡片融入列表节奏
 struct ProviderSwitchSettingsView: View {
     @ObservedObject var manager: ProviderSwitchManager
     let strings: Strings
     var presentation: ProviderSwitchPresentation = .settings
-    var onOpenSettings: (SettingsToolbarTab?) -> Void = { _ in }
     var commandCopier: ProviderLaunchCommandCopying = ProviderLaunchCommandCopier()
 
     @State private var selectedTool: ProviderTool = .claudeCode
@@ -545,13 +530,12 @@ struct ProviderSwitchSettingsView: View {
 
     // MARK: - 动作
 
+    /// 新增供应商一律在**当前容器**弹出表单（设置窗走顶部主按钮，菜单栏走齿轮弹层
+    /// 动作，两者共用此路径），不再把菜单栏场景路由到设置窗——数据管理跟随使用层
+    /// （信息架构重构）。弹层动作先收起弹层再赋值，与同弹层的「编辑配置文件」
+    /// 「恢复备份」一致。
     private func addProvider(tool: ProviderTool) {
-        switch presentation.addProviderRoute {
-        case .profileEditor:
-            addingProfileForTool = tool
-        case .providerSettings:
-            onOpenSettings(.providerSwitch)
-        }
+        addingProfileForTool = tool
     }
 
     /// 收编确认弹层文案：按发起时捕获的 tool 取未托管摘要。
