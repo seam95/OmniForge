@@ -257,7 +257,7 @@ struct ControlCenterContainerView: View {
                 || !runtime.isAvailable(.tokenUsage)
         case .providerSwitch:
             return state.providerSwitchManager == nil || !runtime.isAvailable(.providerSwitch)
-        case .clipboard:
+        case .utilities:
             return false
         }
     }
@@ -342,7 +342,7 @@ struct ControlCenterContainerView: View {
                 } else {
                     unavailablePanel
                 }
-            case .clipboard:
+            case .utilities:
                 UtilityToolsView(
                     strings: state.l10n.s,
                     route: $utilityRoute,

@@ -16,18 +16,15 @@ struct SettingsView: View {
     @ObservedObject var state: AppState
     @ObservedObject var navigation: SettingsNavigationModel
     @ObservedObject private var runtime = FeatureRuntime.shared
-    /// 固定显示侧栏，避免切换到非 Form 全页 detail（清理/卸载）时系统自动收起 primary 列。
+    /// 固定显示侧栏，避免切换到非 Form 全页 detail 时系统自动收起 primary 列。
     @State private var columnVisibility = NavigationSplitViewVisibility.all
 
     init(
         state: AppState,
-        navigation: SettingsNavigationModel? = nil,
-        useScrollContainer: Bool = true
+        navigation: SettingsNavigationModel? = nil
     ) {
         self.state = state
         self.navigation = navigation ?? SettingsNavigationModel()
-        // 保留参数以兼容 EmbeddedSettingsView；侧边栏外壳自身处理滚动。
-        _ = useScrollContainer
     }
 
     var body: some View {

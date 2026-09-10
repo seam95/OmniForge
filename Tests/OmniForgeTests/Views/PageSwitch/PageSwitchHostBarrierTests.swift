@@ -114,14 +114,14 @@ final class PageSwitchHostBarrierTests: XCTestCase {
         try await tick(0.15)
         box.panel = .providerSwitch
         try await tick(0.15)
-        box.panel = .clipboard
+        box.panel = .utilities
         try await tick(0.15)
 
         let harness = host.rootView as! BarrierHarness
         // 三次挂载全部发生（透明替换链），displayed 停在最后请求。
         let swapCount = harness.recorder.events.filter { $0.0 == "routeSwapped" }.count
         XCTAssertGreaterThanOrEqual(swapCount, 1)
-        XCTAssertEqual(harness.displayedPanel, .clipboard, "透明替换链收敛到最后请求")
+        XCTAssertEqual(harness.displayedPanel, .utilities, "透明替换链收敛到最后请求")
     }
 
     private func tick(_ duration: TimeInterval) async throws {

@@ -90,7 +90,7 @@ final class ControlCenterViewportStabilityTests: XCTestCase {
         try await tick(0.05)
         sample()
 
-        for panel in [MenuPanel.tokenUsage, .providerSwitch, .clipboard, .systemMonitor] {
+        for panel in [MenuPanel.tokenUsage, .providerSwitch, .utilities, .systemMonitor] {
             box.panel = panel
             try await tick(0.03)
             sample()
@@ -103,7 +103,7 @@ final class ControlCenterViewportStabilityTests: XCTestCase {
 
         // A1 核心：切到已知短页（合成内容 120pt），settle 后总高必须等于
         // chrome(44+36) + 120（自适应收缩生效的直接证据）。
-        box.panel = .clipboard
+        box.panel = .utilities
         try await tick(0.8)
         sample()
         let heights2 = recorder.samples.map(\.totalHeight)
@@ -204,7 +204,7 @@ private struct ViewportStabilityHarness: View {
         switch panel {
         case .systemMonitor: 560
         case .tokenUsage: 900
-        case .clipboard: 120
+        case .utilities: 120
         case .providerSwitch: 400
         }
     }
@@ -273,7 +273,7 @@ final class ControlCenterShellSizeStabilityTests: XCTestCase {
         let initial = currentHeight()
 
         var settledHeights: [CGFloat] = []
-        for panel in [MenuPanel.tokenUsage, .providerSwitch, .clipboard, .systemMonitor] {
+        for panel in [MenuPanel.tokenUsage, .providerSwitch, .utilities, .systemMonitor] {
             UserDefaults.standard.set(panel.rawValue, forKey: panelKey)
             hosting.needsLayout = true
             try await tick(0.6) // 转场 + 改高 + 淡入 + 稳定
@@ -293,7 +293,19 @@ final class ControlCenterShellSizeStabilityTests: XCTestCase {
         // 自适应生效证据：面板间高度分化（不再全程固定 chrome+580）。
         let distinct = Set(settledHeights.map { ($0 / 5).rounded() })
         XCTAssertGreaterThan(distinct.count, 1, "各面板应按自然高度分化，实测 \(settledHeights)")
-        XCTAssertLessThan(settledHeights.min() ?? 0, 500, "存在短页收缩（实测 \(settledHeights)）")
+
+        // 短页收缩证据（信息架构重构后重建）：唤醒 tab 已移除，其会话控制在
+        // 实用工具详情页。仅保留唤醒可用时，工具页为单工具并直达详情（短页），
+        // 外壳总高应显著收缩到上限以下。
+        for feature in AppFeature.allCases {
+            UserDefaults.standard.set(feature == .keepAwake, forKey: feature.availabilityKey)
+        }
+        UserDefaults.standard.set(MenuPanel.utilities.rawValue, forKey: panelKey)
+        hosting.needsLayout = true
+        try await tick(0.8)
+        let shortPageHeight = currentHeight()
+        print("[shell-adaptive] keepAwake-detail: \(shortPageHeight)")
+        XCTAssertLessThan(shortPageHeight, 500, "短页应收缩（实测 \(shortPageHeight)）")
         _ = initial
     }
 

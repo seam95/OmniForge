@@ -4,10 +4,8 @@ enum MenuPanel: String, CaseIterable, Identifiable {
     case systemMonitor
     case tokenUsage
     case providerSwitch
-    case clipboard = "utilities"
-
-    /// 兼容历史命名；控制中心实用工具页。
-    static let utilities: MenuPanel = .clipboard
+    /// 实用工具页（rawValue 保持 "utilities" 以兼容历史持久化）。
+    case utilities
 
     /// 系统监控 → Token 用量 → 供应商切换 → 实用工具
     static let primaryCases: [MenuPanel] = [
@@ -57,7 +55,7 @@ enum MenuPanel: String, CaseIterable, Identifiable {
         case .systemMonitor: return "waveform.path.ecg"
         case .tokenUsage: return "chart.line.uptrend.xyaxis"
         case .providerSwitch: return "arrow.triangle.swap"
-        case .clipboard: return "wrench.fill"
+        case .utilities: return "wrench.fill"
         }
     }
 
@@ -66,7 +64,7 @@ enum MenuPanel: String, CaseIterable, Identifiable {
         case .systemMonitor: return strings.controlcenterTabSystemMonitor
         case .tokenUsage: return strings.controlcenterTabTokenUsage
         case .providerSwitch: return strings.controlcenterTabProviderSwitch
-        case .clipboard: return strings.controlcenterTabUtilities
+        case .utilities: return strings.controlcenterTabUtilities
         }
     }
 
@@ -75,7 +73,7 @@ enum MenuPanel: String, CaseIterable, Identifiable {
         case .systemMonitor: return strings.controlcenterNavMonitor
         case .tokenUsage: return strings.controlcenterNavTokenUsage
         case .providerSwitch: return strings.controlcenterNavProviderSwitch
-        case .clipboard: return strings.controlcenterNavUtilities
+        case .utilities: return strings.controlcenterNavUtilities
         }
     }
 
@@ -84,7 +82,7 @@ enum MenuPanel: String, CaseIterable, Identifiable {
     /// 宿主转场层 surface 不重复给白底（见 ControlCenterContainerView.panelSurface）。
     var usesFlatChrome: Bool {
         switch self {
-        case .systemMonitor, .tokenUsage, .providerSwitch, .clipboard:
+        case .systemMonitor, .tokenUsage, .providerSwitch, .utilities:
             return true
         }
     }
