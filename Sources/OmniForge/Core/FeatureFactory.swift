@@ -372,10 +372,15 @@ struct FeatureFactory {
             }
         case .desktopPet:
             // 重接线 feature（对齐便签）：install 时按 petEnabled 建窗并恢复位置。
+            // 社区宠物库目录注册进资产搜索根，使 petdex 资产可被定位与加载。
             if runtime.manager(for: .desktopPet, as: DesktopPetManager.self) == nil {
+                let petRoot = PetAssetStore.defaultRootDirectory()
+                if !PetAssetLocator.additionalSearchRoots.contains(petRoot) {
+                    PetAssetLocator.additionalSearchRoots.append(petRoot)
+                }
                 let manager = DesktopPetManager(
                     userDefaults: userDefaults,
-                    asset: PetAssetLocator.loadBuiltIn(),
+                    assetStore: PetAssetStore(rootDirectory: petRoot),
                     stringsProvider: { L10n(userDefaults: userDefaults).s }
                 )
                 runtime.register(.desktopPet, manager: manager)

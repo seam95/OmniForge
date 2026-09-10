@@ -1396,6 +1396,13 @@ extension Strings {
         desktopPetHide: "隐藏宠物",
         desktopPetOpenSettings: "打开设置",
         desktopPetShow: "显示宠物",
-        desktopPetClickThroughHint: "开启后鼠标完全穿过宠物，需从菜单栏切回"
+        desktopPetClickThroughHint: "开启后鼠标完全穿过宠物，需从菜单栏切回",
+        desktopPetBuiltIn: "内置猫",
+        desktopPetAppearanceSection: "外观",
+        desktopPetImportButton: "导入宠物…",
+        desktopPetImportHint: "选择含 pet.json 与精灵图集的宠物文件夹（兼容 Petdex 格式）",
+        desktopPetImportSuccessFormat: "已导入「%@」",
+        desktopPetImportFailedFormat: "导入失败：%@",
+        desktopPetRemoveButton: "移除",
     )
 }

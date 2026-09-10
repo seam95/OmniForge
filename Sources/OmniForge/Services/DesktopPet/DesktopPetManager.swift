@@ -4,7 +4,7 @@ import CoreGraphics
 import Foundation
 import SwiftUI
 
-/// 桌面宠物领域服务：窗口、行为循环、位置 / 尺寸 / 穿透持久化。
+/// 桌面宠物领域服务：窗口、行为循环、资产选择、位置 / 尺寸 / 穿透持久化。
 /// 重接线 feature：install 时按 `petEnabled` 建窗并恢复状态，teardown 时窗口消失 + 循环停止。
 @MainActor
 final class DesktopPetManager: ObservableObject {
@@ -14,6 +14,10 @@ final class DesktopPetManager: ObservableObject {
     @Published private(set) var size: DesktopPetSize
     /// 是否点击穿透。
     @Published private(set) var isClickThrough: Bool
+    /// 当前宠物资产（nil 表示资产缺失，窗口显示占位）。
+    @Published private(set) var asset: PetSpriteAsset?
+    /// 当前选中的宠物 slug（内置宠物固定为 `PetAssetLocator.builtInPetID`）。
+    @Published private(set) var selectedPetSlug: String
 
     /// 行为循环 tick 间隔（秒）；测试注入更长间隔避免时序抖动。
     private let tickInterval: TimeInterval
@@ -24,7 +28,7 @@ final class DesktopPetManager: ObservableObject {
     /// 窗口控制器（测试断言窗口生命周期与位置用；外部不应直接改窗口状态）。
     let windowController: PetWindowController
     private let engine: PetBehaviorEngine
-    private let asset: PetSpriteAsset?
+    private let assetStore: PetAssetStore
     private let visibleScreensProvider: () -> [PetScreenGeometry]
     private let stringsProvider: () -> Strings
     /// 打开设置页回调（组合根接线）。
@@ -46,6 +50,7 @@ final class DesktopPetManager: ObservableObject {
         userDefaults: UserDefaults = .standard,
         windowController: PetWindowController? = nil,
         engine: PetBehaviorEngine? = nil,
+        assetStore: PetAssetStore? = nil,
         asset: PetSpriteAsset? = nil,
         stringsProvider: @escaping () -> Strings = { L10n(userDefaults: .standard).s },
         visibleScreensProvider: (() -> [PetScreenGeometry])? = nil,
@@ -56,13 +61,22 @@ final class DesktopPetManager: ObservableObject {
         self.stringsProvider = stringsProvider
         self.visibleScreensProvider = visibleScreensProvider ?? { PetWindowController.screenGeometries() }
         self.engine = engine ?? PetBehaviorEngine()
-        self.asset = asset
         self.tickInterval = tickInterval
         self.persistDebounce = persistDebounce
+        let store = assetStore ?? PetAssetStore(rootDirectory: PetAssetStore.defaultRootDirectory())
+        self.assetStore = store
+
         let resolvedSize = DesktopPetSize.from(userDefaults.integer(forKey: UserDefaultsKeys.petSize))
         self.size = resolvedSize
         self.isClickThrough = userDefaults.bool(forKey: UserDefaultsKeys.petClickThrough)
-        self.windowController = windowController ?? PetWindowController(size: resolvedSize)
+
+        let storedSlug = userDefaults.string(forKey: UserDefaultsKeys.petSelectedSlug)
+        let slug = (storedSlug?.isEmpty == false) ? storedSlug! : PetAssetLocator.builtInPetID
+        self.selectedPetSlug = slug
+        let resolvedAsset = asset ?? Self.resolveAsset(slug: slug, store: store)
+        self.asset = resolvedAsset
+        self.windowController = windowController
+            ?? PetWindowController(petSize: Self.petSize(for: resolvedSize, asset: resolvedAsset))
     }
 
     // MARK: - 生命周期
@@ -76,6 +90,7 @@ final class DesktopPetManager: ObservableObject {
         let origin = restoredOrigin()
         // 恢复位置即初始活动锚点，重启后不会跑到别处。
         walkAnchorX = origin?.x
+        windowController.apply(petSize: petSize)
         windowController.show(
             initialOrigin: origin,
             rootView: PetSpriteView(manager: self, asset: asset)
@@ -98,17 +113,37 @@ final class DesktopPetManager: ObservableObject {
         windowController.close()
     }
 
-    // MARK: - 偏好
+    // MARK: - 偏好与资产
 
     /// 当前语言字符串（视图层取文案用）。
     var strings: Strings { stringsProvider() }
+
+    /// 当前宠物窗口尺寸（高度 = 档位尺寸，宽度按素材宽高比）。
+    var petSize: CGSize { Self.petSize(for: size, asset: asset) }
+
+    /// 当前是否使用自定义（社区）宠物。
+    var isCustomPet: Bool { selectedPetSlug != PetAssetLocator.builtInPetID }
+
+    /// 可选择的宠物：内置 + 已安装社区宠物。
+    var availablePets: [PetAssetStore.InstalledPet] {
+        var list: [PetAssetStore.InstalledPet] = [
+            PetAssetStore.InstalledPet(
+                slug: PetAssetLocator.builtInPetID,
+                displayName: strings.desktopPetBuiltIn
+            ),
+        ]
+        list.append(contentsOf: assetStore.installedPets().filter {
+            $0.slug != PetAssetLocator.builtInPetID
+        })
+        return list
+    }
 
     /// 切换尺寸档位并持久化。
     func setSize(_ newSize: DesktopPetSize) {
         guard newSize != size else { return }
         size = newSize
         userDefaults.set(newSize.rawValue, forKey: UserDefaultsKeys.petSize)
-        windowController.apply(size: newSize)
+        windowController.apply(petSize: petSize)
     }
 
     /// 切换点击穿透并持久化。
@@ -119,16 +154,41 @@ final class DesktopPetManager: ObservableObject {
         windowController.setClickThrough(enabled)
     }
 
+    /// 切换当前宠物：解析资产并（若在运行）重建窗口以应用新尺寸。
+    func selectPet(slug: String) {
+        selectedPetSlug = slug
+        userDefaults.set(slug, forKey: UserDefaultsKeys.petSelectedSlug)
+        asset = Self.resolveAsset(slug: slug, store: assetStore)
+        restartIfRunning()
+    }
+
+    /// 导入社区宠物目录并切换为当前宠物。
+    @discardableResult
+    func importPet(from source: URL) throws -> PetAssetStore.InstalledPet {
+        let pet = try assetStore.importPet(from: source)
+        selectPet(slug: pet.slug)
+        return pet
+    }
+
+    /// 删除已安装的社区宠物；若正被使用则切回内置。
+    func removePet(slug: String) throws {
+        guard slug != PetAssetLocator.builtInPetID else { return }
+        try assetStore.remove(slug: slug)
+        if selectedPetSlug == slug {
+            selectPet(slug: PetAssetLocator.builtInPetID)
+        }
+    }
+
     /// 重置到所在屏默认位置（右侧地面）。
     func resetPosition() {
         let screens = visibleScreensProvider()
         guard let screen = PetPositionPlanner.screenContaining(
             position: windowController.currentOrigin ?? .zero,
-            petSize: CGSize(width: size.pointSize, height: size.pointSize),
+            petSize: petSize,
             screens: screens
         ) ?? screens.first else { return }
         let origin = CGPoint(
-            x: screen.visibleFrame.maxX - size.pointSize - 40,
+            x: screen.visibleFrame.maxX - petSize.width - 40,
             y: screen.groundY
         )
         windowController.move(to: origin)
@@ -151,7 +211,7 @@ final class DesktopPetManager: ObservableObject {
         }
     }
 
-    /// 单次行为推进：按当前状态驱动位移、重力与状态转移。
+    /// 单次行为推进：按当前状态驱动位移与状态转移。
     func tick() {
         // 窗口已消失（teardown 后）时自愈停表，避免残留任务空转。
         guard windowController.panel != nil else {
@@ -161,12 +221,12 @@ final class DesktopPetManager: ObservableObject {
         }
         guard !isDragging else { return }
         let dt = tickInterval
-        let petSize = CGSize(width: size.pointSize, height: size.pointSize)
+        let currentPetSize = petSize
         let screens = visibleScreensProvider()
         guard let origin = windowController.currentOrigin,
               let screen = PetPositionPlanner.screenContaining(
                 position: origin,
-                petSize: petSize,
+                petSize: currentPetSize,
                 screens: screens
               ) ?? screens.first else { return }
 
@@ -187,7 +247,7 @@ final class DesktopPetManager: ObservableObject {
             let range = PetPositionPlanner.walkRange(
                 anchorX: anchorX,
                 radius: walkRadius,
-                petSize: petSize,
+                petSize: currentPetSize,
                 screen: screen
             )
             let step = PetPositionPlanner.stepWalk(
@@ -287,6 +347,33 @@ final class DesktopPetManager: ObservableObject {
 
     // MARK: - 私有
 
+    /// 重启行为循环（资产切换后应用新尺寸与视图）。
+    private func restartIfRunning() {
+        guard tickTask != nil else { return }
+        teardown()
+        start()
+    }
+
+    /// 计算窗口尺寸：高度取档位尺寸，宽度按素材宽高比。
+    static func petSize(for size: DesktopPetSize, asset: PetSpriteAsset?) -> CGSize {
+        let height = size.pointSize
+        let ratio = asset?.aspectRatio ?? 1
+        return CGSize(width: max(1, (height * ratio).rounded()), height: height)
+    }
+
+    /// 解析指定 slug 的资产：自定义优先查宠物库目录，否则回退内置。
+    static func resolveAsset(slug: String, store: PetAssetStore) -> PetSpriteAsset? {
+        if slug != PetAssetLocator.builtInPetID {
+            let directory = store.directory(for: slug)
+            let manifest = directory.appendingPathComponent("pet.json")
+            if FileManager.default.fileExists(atPath: manifest.path),
+               let asset = try? PetAssetLocator.load(from: directory) {
+                return asset
+            }
+        }
+        return PetAssetLocator.builtInAsset
+    }
+
     /// 恢复上次位置：屏幕标识命中则用之，否则回退默认落点。
     private func restoredOrigin() -> CGPoint? {
         let screens = visibleScreensProvider()
@@ -303,10 +390,9 @@ final class DesktopPetManager: ObservableObject {
             x: userDefaults.double(forKey: UserDefaultsKeys.petPositionX),
             y: userDefaults.double(forKey: UserDefaultsKeys.petPositionY)
         )
-        let petSize = CGSize(width: size.pointSize, height: size.pointSize)
         guard hasStoredPosition else {
             return CGPoint(
-                x: screen.visibleFrame.maxX - size.pointSize - 40,
+                x: screen.visibleFrame.maxX - petSize.width - 40,
                 y: screen.groundY
             )
         }
@@ -325,12 +411,12 @@ final class DesktopPetManager: ObservableObject {
     private func persistPositionNow() {
         guard let origin = windowController.currentOrigin else { return }
         let screens = visibleScreensProvider()
-        let petSize = CGSize(width: size.pointSize, height: size.pointSize)
+        let currentPetSize = petSize
         userDefaults.set(Double(origin.x), forKey: UserDefaultsKeys.petPositionX)
         userDefaults.set(Double(origin.y), forKey: UserDefaultsKeys.petPositionY)
         if let screen = PetPositionPlanner.screenContaining(
             position: origin,
-            petSize: petSize,
+            petSize: currentPetSize,
             screens: screens
         ) {
             userDefaults.set(screen.identifier, forKey: UserDefaultsKeys.petPositionScreen)

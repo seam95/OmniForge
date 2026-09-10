@@ -1396,6 +1396,13 @@ extension Strings {
         desktopPetHide: "Hide Pet",
         desktopPetOpenSettings: "Open Settings",
         desktopPetShow: "Show Pet",
-        desktopPetClickThroughHint: "The mouse passes through the pet entirely; turn it back on from the menu bar"
+        desktopPetClickThroughHint: "The mouse passes through the pet entirely; turn it back on from the menu bar",
+        desktopPetBuiltIn: "Built-in Cat",
+        desktopPetAppearanceSection: "Appearance",
+        desktopPetImportButton: "Import Pet…",
+        desktopPetImportHint: "Choose a pet folder containing pet.json and a spritesheet (Petdex format)",
+        desktopPetImportSuccessFormat: "Imported “%@”",
+        desktopPetImportFailedFormat: "Import failed: %@",
+        desktopPetRemoveButton: "Remove",
     )
 }

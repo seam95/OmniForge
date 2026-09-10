@@ -8,16 +8,14 @@ struct PetSpriteView: View {
     /// 宠物资产（nil 时显示占位色块，便于资产缺失时仍可调试窗口行为）。
     var asset: PetSpriteAsset?
 
-    /// 当前动画累计时间，用于推导帧序号。
+    /// 当前动画累计时间，用于推导非循环动画的帧序号。
     @State private var elapsed: TimeInterval = 0
 
-    private var frameTimer: some TimelineSchedule { .animation(minimumInterval: 1.0 / 30.0) }
-
     var body: some View {
-        TimelineView(frameTimer) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
             sprite(at: context.date)
         }
-        .frame(width: manager.size.pointSize, height: manager.size.pointSize)
+        .frame(width: manager.petSize.width, height: manager.petSize.height)
         .contentShape(Rectangle())
         .onTapGesture { manager.pet() }
         .gesture(dragGesture)
@@ -50,18 +48,15 @@ struct PetSpriteView: View {
 
     @ViewBuilder
     private func sprite(at date: Date) -> some View {
-        if let asset, let frameIndex = currentFrameIndex(at: date, asset: asset) {
-            if let image = SpriteAtlasImageProvider.shared.image(
-                asset: asset,
-                frameIndex: frameIndex
-            ) {
-                Image(nsImage: image)
-                    .interpolation(.none)  // 像素最近邻采样，Retina 下保持锐利
-                    .resizable()
-                    .frame(width: manager.size.pointSize, height: manager.size.pointSize)
-            } else {
-                placeholder
-            }
+        if let asset, let resolved = resolveAnimation(asset: asset),
+           let frameIndex = frameIndex(at: date, animation: resolved.animation),
+           let image = SpriteAtlasImageProvider.shared.image(asset: asset, frameIndex: frameIndex) {
+            Image(nsImage: image)
+                .interpolation(.none)  // 像素最近邻采样，Retina 下保持锐利
+                .resizable()
+                .frame(width: manager.petSize.width, height: manager.petSize.height)
+                // 单朝向行走素材在向左行走时水平镜像。
+                .scaleEffect(x: resolved.mirrored ? -1 : 1, y: 1)
         } else {
             placeholder
         }
@@ -76,23 +71,48 @@ struct PetSpriteView: View {
             )
     }
 
-    /// 依据当前状态与已播时间推导图集帧序号。
-    private func currentFrameIndex(at date: Date, asset: PetSpriteAsset) -> Int? {
-        let animationID: String
+    /// 依据当前状态选择动画。
+    /// 优先用左右分行的素材（社区资产），否则用单朝向 `walk` + 镜像（内置资产）。
+    private func resolveAnimation(
+        asset: PetSpriteAsset
+    ) -> (animation: PetSpriteAsset.Animation, mirrored: Bool)? {
         switch manager.behaviorState {
-        case .idle: animationID = PetAnimationID.idle
-        case .walk: animationID = PetAnimationID.walk
-        case .drag: animationID = PetAnimationID.fall  // 悬空姿态复用 fall 素材
-        case .petted: animationID = PetAnimationID.petted
+        case .idle:
+            return asset.animation(id: PetAnimationID.idle).map { ($0, false) }
+                ?? asset.animations.first.map { ($0, false) }
+
+        case .walk(let direction):
+            if direction == .right, let animation = asset.animation(id: PetAnimationID.walkRight) {
+                return (animation, false)
+            }
+            if direction == .left, let animation = asset.animation(id: PetAnimationID.walkLeft) {
+                return (animation, false)
+            }
+            if let animation = asset.animation(id: PetAnimationID.walk) {
+                return (animation, direction == .left && animation.mirrorX)
+            }
+            return asset.animations.first.map { ($0, direction == .left) }
+
+        case .drag:
+            let animation = asset.animation(id: PetAnimationID.drag)
+                ?? asset.animation(id: PetAnimationID.fall)
+            return animation.map { ($0, false) }
+
+        case .petted:
+            return asset.animation(id: PetAnimationID.petted).map { ($0, false) }
         }
-        guard let animation = asset.animation(id: animationID), !animation.frames.isEmpty else {
-            return nil
-        }
+    }
+
+    /// 依据已播时间推导图集帧序号。
+    private func frameIndex(at date: Date, animation: PetSpriteAsset.Animation) -> Int? {
+        guard !animation.frames.isEmpty else { return nil }
         let frameCount = animation.frames.count
         let total = animation.frameDuration * Double(frameCount)
         let phase: TimeInterval
         if animation.loops {
-            phase = total > 0 ? date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: total) : 0
+            phase = total > 0
+                ? date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: total)
+                : 0
         } else {
             // 一次性动画：播完停在最后一帧。
             phase = min(elapsed, total)
@@ -186,37 +206,5 @@ final class SpriteAtlasImageProvider {
         cropped.unlockFocus()
         cropped.capInsets = NSEdgeInsets()
         return cropped
-    }
-}
-
-/// 宠物资产定位：内置资产随 App 发布在 Bundle 的 `Pets/<id>/` 下。
-/// 测试进程无 app bundle 时，可回退到源码树路径（`searchRoots` 注入）。
-enum PetAssetLocator {
-    /// 额外搜索根（测试注入源码树 Resources 目录）。
-    static var additionalSearchRoots: [URL] = []
-
-    /// 内置宠物资产目录。
-    static func directory(for petID: String) -> URL? {
-        if let bundled = Bundle.main.url(forResource: petID, withExtension: nil, subdirectory: "Pets") {
-            return bundled
-        }
-        for root in additionalSearchRoots {
-            let candidate = root.appendingPathComponent(petID, isDirectory: true)
-            if FileManager.default.fileExists(atPath: candidate.appendingPathComponent("pet.json").path) {
-                return candidate
-            }
-        }
-        return nil
-    }
-
-    /// 图集文件 URL。
-    static func atlasURL(asset: PetSpriteAsset) -> URL? {
-        directory(for: asset.id)?.appendingPathComponent(asset.atlasFileName)
-    }
-
-    /// 加载内置宠物资产（默认 `cat`）。
-    static func loadBuiltIn(petID: String = "cat") -> PetSpriteAsset? {
-        guard let directory = directory(for: petID) else { return nil }
-        return try? PetSpriteAsset.load(from: directory)
     }
 }

@@ -52,14 +52,30 @@ struct PetSpriteAsset: Equatable {
     func animation(id: String) -> Animation? {
         animations.first { $0.id == id }
     }
+
+    /// 单元格宽高比（宽 / 高）。桌宠窗口按此比例呈现，避免拉伸变形。
+    var aspectRatio: CGFloat {
+        guard grid.cellHeight > 0 else { return 1 }
+        return CGFloat(grid.cellWidth) / CGFloat(grid.cellHeight)
+    }
 }
 
 /// 行为状态与动画标识的对应关系（状态机不依赖资产，此处做映射）。
+/// 内置资产使用 `walk` + `mirrorX` 表达左右；社区资产（petdex）左右各一行，用 `walkLeft`/`walkRight`。
 enum PetAnimationID {
     static let idle = "idle"
+    /// 单朝向行走（配合 `mirrorX` 翻转实现左右）。
     static let walk = "walk"
+    static let walkRight = "walk-right"
+    static let walkLeft = "walk-left"
     static let fall = "fall"
     static let petted = "petted"
+    /// 拖拽悬空姿态（petdex 的 jumping 行）。
+    static let drag = "drag"
+    // 以下为社区资产保留、一期不驱动（二期接 Agent 状态反应时启用）。
+    static let failed = "failed"
+    static let waiting = "waiting"
+    static let review = "review"
 }
 
 // MARK: - 解码

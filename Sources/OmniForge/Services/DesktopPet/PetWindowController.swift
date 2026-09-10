@@ -15,19 +15,19 @@ final class PetWindowController {
     private(set) var panel: NSPanel?
     private(set) var isClickThrough = false
 
-    private var size: DesktopPetSize
+    /// 当前窗口尺寸（非正方形：按素材宽高比，高度为档位尺寸）。
+    private(set) var petSize: CGSize
 
-    init(size: DesktopPetSize) {
-        self.size = size
+    init(petSize: CGSize) {
+        self.petSize = petSize
     }
 
     // MARK: - 窗口生命周期
 
     /// 创建并显示窗口。`initialOrigin` 为窗口左下角坐标（nil 时落到主屏地面右侧）。
     func show(initialOrigin: CGPoint?, rootView: some View) {
-        let side = size.pointSize
-        let origin = initialOrigin ?? defaultOrigin(side: side)
-        let frame = NSRect(origin: origin, size: NSSize(width: side, height: side))
+        let origin = initialOrigin ?? defaultOrigin(size: petSize)
+        let frame = NSRect(origin: origin, size: petSize)
 
         let panel = NSPanel(
             contentRect: frame,
@@ -62,13 +62,15 @@ final class PetWindowController {
 
     // MARK: - 尺寸与位置
 
-    /// 切换尺寸档位：保持左下角不动、按新边长改窗口大小。
-    func apply(size newSize: DesktopPetSize) {
-        guard let panel, newSize != size else { return }
-        size = newSize
-        let side = newSize.pointSize
+    /// 更新窗口尺寸：保持左下角不动、按新尺寸改窗口大小。
+    func apply(petSize newSize: CGSize) {
+        guard let panel, newSize != petSize else {
+            petSize = newSize
+            return
+        }
+        petSize = newSize
         var frame = panel.frame
-        frame.size = NSSize(width: side, height: side)
+        frame.size = newSize
         panel.setFrame(frame, display: true)
         clampToVisibleScreen()
     }
@@ -135,8 +137,8 @@ final class PetWindowController {
     }
 
     /// 默认落点：主屏可见区右下角内侧。
-    private func defaultOrigin(side: CGFloat) -> CGPoint {
+    private func defaultOrigin(size: CGSize) -> CGPoint {
         let frame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        return CGPoint(x: frame.maxX - side - 40, y: frame.minY)
+        return CGPoint(x: frame.maxX - size.width - 40, y: frame.minY)
     }
 }

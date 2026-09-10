@@ -7,6 +7,8 @@ import XCTest
 final class DesktopPetManagerTests: XCTestCase {
     private var defaults: UserDefaults!
     private var suiteName: String!
+    /// 测试用宠物资产库根目录（隔离临时目录，避免写入真实库）。
+    private var assetRoot: URL!
     /// 本用例创建的 Manager，tearDown 统一 teardown 停表。
     private var managers: [DesktopPetManager] = []
 
@@ -19,6 +21,9 @@ final class DesktopPetManagerTests: XCTestCase {
         super.setUp()
         suiteName = "DesktopPetManagerTests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)
+        assetRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pet-assets-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: assetRoot, withIntermediateDirectories: true)
     }
 
     override func tearDown() {
@@ -28,6 +33,8 @@ final class DesktopPetManagerTests: XCTestCase {
         defaults.removePersistentDomain(forName: suiteName)
         defaults = nil
         suiteName = nil
+        try? FileManager.default.removeItem(at: assetRoot)
+        assetRoot = nil
         super.tearDown()
     }
 
@@ -38,7 +45,9 @@ final class DesktopPetManagerTests: XCTestCase {
         // 字符串源不捕获 self，避免测试结束后残留 tick 任务访问已释放的 defaults。
         let manager = DesktopPetManager(
             userDefaults: defaults,
-            windowController: windowController ?? PetWindowController(size: .medium),
+            windowController: windowController
+                ?? PetWindowController(petSize: CGSize(width: 96, height: 96)),
+            assetStore: PetAssetStore(rootDirectory: assetRoot),
             stringsProvider: { Strings.zhHans },
             visibleScreensProvider: { [PetScreenGeometry(
                 visibleFrame: CGRect(x: 0, y: 25, width: 1440, height: 800),
