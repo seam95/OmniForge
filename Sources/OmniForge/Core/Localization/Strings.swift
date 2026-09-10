@@ -1346,6 +1346,8 @@ struct Strings: Equatable {
     let providerRestartRunningHintFormat: String
     /// 切换失败 toast（%@ = 错误描述）。
     let providerSwitchFailedFormat: String
+    /// 齿轮弹层标题（收纳编辑配置文件 / 恢复备份等动作）。
+    let providerSettingsPopoverTitle: String
     let providerEditConfigFile: String
     let providerRestoreBackup: String
     /// 恢复备份成功 toast。

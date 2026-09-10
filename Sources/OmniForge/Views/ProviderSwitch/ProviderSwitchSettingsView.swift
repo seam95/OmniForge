@@ -21,7 +21,8 @@ enum ProviderSwitchPresentation: Equatable {
         self == .settings
     }
 
-    var showsFooterAddProviderLink: Bool {
+    /// 齿轮弹层是否提供「新增供应商」动作（菜单栏场景无顶部主按钮，收入弹层）。
+    var showsSettingsPopoverAddProvider: Bool {
         self == .menuBar
     }
 
@@ -52,12 +53,13 @@ enum ProviderSwitchAddProviderRoute: Equatable {
 }
 
 /// 供应商切换设置页（卡片列表风格）：
-/// - 分段选择器：Claude Code / Codex 复用 `PanelSegmentedControl`
+/// - 分段选择器：Claude Code / Codex 复用 `PanelSegmentedControl`，右端齿轮
+///   设置入口（对齐 Token 面板「限额显示」齿轮：popover 收纳底部链接动作）
 /// - 卡片列表：官方行 + Profile 行各自成独立卡片（白底大圆角），激活卡片带 accent 描边
 ///   并展示「使用中」绿色胶囊微章，Profile 卡片右侧均展示 `•••` 更多操作菜单
 /// - 设置窗口：展示全宽「+ 新增供应商」主按钮并打开新增表单
-/// - 菜单栏：将新增操作放入底部链接（「编辑配置文件」左侧）并路由到供应商设置页
-/// - 底部辅助：居中展示供应商相关文字链接
+/// - 菜单栏：齿轮弹层内「新增供应商」动作路由到供应商设置页
+/// - 齿轮弹层动作（编辑配置文件 / 恢复备份 / 菜单栏新增）作用于当前展示 tool
 /// - 异常状态：未托管 / 损坏警示横幅以同款圆角卡片融入列表节奏
 struct ProviderSwitchSettingsView: View {
     @ObservedObject var manager: ProviderSwitchManager
@@ -67,6 +69,11 @@ struct ProviderSwitchSettingsView: View {
     var commandCopier: ProviderLaunchCommandCopying = ProviderLaunchCommandCopier()
 
     @State private var selectedTool: ProviderTool = .claudeCode
+    /// 齿轮弹层（供应商设置）展示状态。
+    @State private var showsSettingsPopover = false
+    /// 当前展示 tool 的快照：齿轮位于 Host 外，经 `onDisplayedSurfaceChange`
+    /// 在挂载点（交换点）同步，保持弹层动作目标与内容展示一致（SPEC §6.3.1）。
+    @State private var displayedTool: ProviderTool = .claudeCode
     @State private var addingProfileForTool: ProviderTool?
     @State private var editingProfile: ProviderProfile?
     @State private var deletingProfile: ProviderProfile?
@@ -94,6 +101,7 @@ struct ProviderSwitchSettingsView: View {
                     .lateral(from: from, to: to, order: ProviderTool.allCases)
                 },
                 surface: { _ in .clear },
+                onDisplayedSurfaceChange: { tool, _ in displayedTool = tool },
                 onRouteMountedBarrier: sizingContext.map { context in
                     { tool, proceed in
                         context.mountStarted(path: "provider/\(tool)", proceed: proceed)
@@ -112,8 +120,6 @@ struct ProviderSwitchSettingsView: View {
                     if presentation.showsInlineAddProviderButton {
                         addProviderButton(for: tool)
                     }
-
-                    footerLinks(for: tool)
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
@@ -166,18 +172,62 @@ struct ProviderSwitchSettingsView: View {
         }
     }
 
-    // MARK: - 分段选择器
+    // MARK: - 分段选择器与齿轮
 
-    /// 「Claude Code / Codex」分段行：复用 Token 面板分段控件（底块滑移与内容淡切同享一套曲线）。
+    /// 「Claude Code / Codex」分段行：等分分段 + 右端齿轮设置入口
+    /// （与 Token 面板「余额 / 用量」分段行同构）。
     private var sectionSwitcherRow: some View {
-        PanelSegmentedControl(
-            options: ProviderTool.allCases.map { tool in
-                .init(tag: tool, title: tool.displayName(in: strings))
-            },
-            selection: $selectedTool
-        )
+        HStack(spacing: 8) {
+            PanelSegmentedControl(
+                options: ProviderTool.allCases.map { tool in
+                    .init(tag: tool, title: tool.displayName(in: strings))
+                },
+                selection: $selectedTool
+            )
+
+            settingsButton
+        }
         .padding(.horizontal, 12)
         .padding(.bottom, 6)
+    }
+
+    /// 齿轮按钮（「供应商设置」弹层）：新增供应商（菜单栏）、编辑配置文件、恢复备份。
+    private var settingsButton: some View {
+        Button {
+            showsSettingsPopover.toggle()
+        } label: {
+            Image(systemName: "gearshape")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
+                .frame(width: 22, height: 22)
+                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Theme.Stats.cardInset)
+                )
+        }
+        .buttonStyle(.plain)
+        .help(strings.providerSettingsPopoverTitle)
+        .accessibilityLabel(strings.providerSettingsPopoverTitle)
+        .accessibilityIdentifier(SettingsAccessibilityID.providerSwitchGearButton.rawValue)
+        .popover(isPresented: $showsSettingsPopover, arrowEdge: .bottom) {
+            ProviderSwitchSettingsPopover(
+                strings: strings,
+                showsAddProviderAction: presentation.showsSettingsPopoverAddProvider,
+                onAddProvider: {
+                    showsSettingsPopover = false
+                    addProvider(tool: displayedTool)
+                },
+                onEditConfigFile: {
+                    showsSettingsPopover = false
+                    editorTool = displayedTool
+                },
+                onRestoreBackup: {
+                    showsSettingsPopover = false
+                    backupTool = displayedTool
+                }
+            )
+        }
     }
 
     // MARK: - 卡片列表
@@ -457,43 +507,6 @@ struct ProviderSwitchSettingsView: View {
         .padding(.top, 12)
     }
 
-    // MARK: - 居中辅助链接
-
-    /// 快捷操作行：强调蓝链接 + 3×3 圆点分隔（#D1D1D6），间距 14。
-    private func footerLinks(for tool: ProviderTool) -> some View {
-        HStack(spacing: 14) {
-            if presentation.showsFooterAddProviderLink {
-                Button(strings.providerAddProvider) {
-                    addProvider(tool: tool)
-                }
-                .buttonStyle(ProviderFooterLinkButtonStyle())
-
-                linkDot
-            }
-
-            Button(strings.providerEditConfigFile) {
-                editorTool = tool
-            }
-            .buttonStyle(ProviderFooterLinkButtonStyle())
-
-            linkDot
-
-            Button(strings.providerRestoreBackup) {
-                backupTool = tool
-            }
-            .buttonStyle(ProviderFooterLinkButtonStyle())
-        }
-        .frame(maxWidth: .infinity, alignment: .center)
-        .padding(.top, 12)
-    }
-
-    /// 链接间分隔圆点（3×3，#D1D1D6）。
-    private var linkDot: some View {
-        Circle()
-            .fill(ProviderCardVisual.linkDot)
-            .frame(width: 3, height: 3)
-    }
-
     // MARK: - 未托管 / 损坏警示
 
     @ViewBuilder
@@ -685,9 +698,6 @@ enum ProviderCardVisual {
             : Color(red: 0xEB / 255.0, green: 0xF7 / 255.0, blue: 0xF0 / 255.0)
     }
 
-    /// 快捷操作行分隔圆点 #D1D1D6。
-    static let linkDot = Color(red: 0xD1 / 255.0, green: 0xD1 / 255.0, blue: 0xD6 / 255.0)
-
     /// 普通卡片：纯白 + 黑 4% y1 blur4 轻投影。
     static let normalCardFill = Color.white
     static func normalCardShadow(_ scheme: ColorScheme) -> Color {
@@ -708,20 +718,6 @@ private struct ProviderAddButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .opacity(configuration.isPressed ? 0.75 : (isHovered ? 0.88 : 1.0))
-            .onHover { isHovered = $0 }
-    }
-}
-
-/// 底部副操作链接按钮样式（强调蓝 #0066CC 12px，Hover 提亮反馈）
-private struct ProviderFooterLinkButtonStyle: ButtonStyle {
-    @Environment(\.colorScheme) private var colorScheme
-    @State private var isHovered = false
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 12, weight: .regular))
-            .foregroundStyle(ProviderCardVisual.accent(colorScheme).opacity(isHovered ? 0.7 : 1.0))
-            .opacity(configuration.isPressed ? 0.6 : 1.0)
             .onHover { isHovered = $0 }
     }
 }

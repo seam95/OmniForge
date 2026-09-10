@@ -5,7 +5,8 @@ import SwiftUI
 final class ProviderSwitchSettingsViewTests: XCTestCase {
     func test_settingsPresentation_properties() {
         XCTAssertTrue(ProviderSwitchPresentation.settings.showsInlineAddProviderButton)
-        XCTAssertFalse(ProviderSwitchPresentation.settings.showsFooterAddProviderLink)
+        // 设置窗口顶部已有「+ 新增供应商」主按钮，弹层内不重复提供。
+        XCTAssertFalse(ProviderSwitchPresentation.settings.showsSettingsPopoverAddProvider)
         XCTAssertTrue(ProviderSwitchPresentation.settings.showsProfileManagementMenu)
         XCTAssertFalse(ProviderSwitchPresentation.settings.showsLaunchCommandCopyButton)
         XCTAssertEqual(
@@ -16,7 +17,8 @@ final class ProviderSwitchSettingsViewTests: XCTestCase {
 
     func test_menuBarPresentation_properties() {
         XCTAssertFalse(ProviderSwitchPresentation.menuBar.showsInlineAddProviderButton)
-        XCTAssertTrue(ProviderSwitchPresentation.menuBar.showsFooterAddProviderLink)
+        // 菜单栏无顶部主按钮，「新增供应商」收入齿轮弹层。
+        XCTAssertTrue(ProviderSwitchPresentation.menuBar.showsSettingsPopoverAddProvider)
         XCTAssertTrue(ProviderSwitchPresentation.menuBar.showsProfileManagementMenu)
         XCTAssertFalse(ProviderSwitchPresentation.menuBar.showsLaunchCommandCopyButton)
         XCTAssertEqual(
@@ -78,5 +80,26 @@ final class ProviderSwitchSettingsViewTests: XCTestCase {
             XCTAssertFalse(strings.providerLaunchCommandCopied.isEmpty)
             XCTAssertFalse(strings.providerLaunchCommandCopyFailed.isEmpty)
         }
+    }
+
+    /// 齿轮弹层（收纳原底部三链接动作）标题与动作文案中英齐全。
+    func test_settingsPopoverLocalization_isAvailable() {
+        for strings in [Strings.zhHans, Strings.en] {
+            XCTAssertFalse(strings.providerSettingsPopoverTitle.isEmpty)
+            XCTAssertFalse(strings.providerAddProvider.isEmpty)
+            XCTAssertFalse(strings.providerEditConfigFile.isEmpty)
+            XCTAssertFalse(strings.providerRestoreBackup.isEmpty)
+        }
+    }
+
+    /// 齿轮与弹层动作的无障碍标识（UI 测试 / 自动化探针定位用）。
+    func test_settingsPopoverAccessibilityIDs_areDistinct() {
+        let ids = [
+            SettingsAccessibilityID.providerSwitchGearButton,
+            SettingsAccessibilityID.providerSwitchPopoverAddProvider,
+            SettingsAccessibilityID.providerSwitchPopoverEditConfig,
+            SettingsAccessibilityID.providerSwitchPopoverRestoreBackup,
+        ]
+        XCTAssertEqual(Set(ids.map(\.rawValue)).count, ids.count)
     }
 }

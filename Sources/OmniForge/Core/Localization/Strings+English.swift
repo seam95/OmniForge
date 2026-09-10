@@ -1225,6 +1225,7 @@ extension Strings {
         providerRestartHint: "Restart CLI after switching to take effect",
         providerRestartRunningHintFormat: "%@ is running; restart it for changes to take effect",
         providerSwitchFailedFormat: "Switch failed: %@",
+        providerSettingsPopoverTitle: "Provider Settings",
         providerEditConfigFile: "Edit Config File",
         providerRestoreBackup: "Restore Backup",
         providerBackupRestored: "Restored from backup",

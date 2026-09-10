@@ -1225,6 +1225,7 @@ extension Strings {
         providerRestartHint: "切换后需重启 CLI 生效",
         providerRestartRunningHintFormat: "%@ 正在运行，需重启后才生效",
         providerSwitchFailedFormat: "切换失败：%@",
+        providerSettingsPopoverTitle: "供应商设置",
         providerEditConfigFile: "编辑配置文件",
         providerRestoreBackup: "恢复备份",
         providerBackupRestored: "已从备份恢复",
