@@ -35,7 +35,9 @@ enum MenuPanel: String, CaseIterable, Identifiable {
             || isAvailable(.colorPicker)
             || isAvailable(.networkDiagnostics)
             || isAvailable(.dshWeb)
-            || isAvailable(.cleaningMode) {
+            || isAvailable(.cleaningMode)
+            || isAvailable(.stickyNotes)
+            || isAvailable(.desktopPet) {
             result.append(.utilities)
         }
 

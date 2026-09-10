@@ -103,6 +103,7 @@ extension Strings {
         utilityUninstaller: "卸载器",
         utilityUninstallBusy: "操作完成后可卸载",
         utilityCleanerSubtitle: "清理残留、缓存、日志与废纸篓",
+        utilityKeepAwakeSubtitle: "阻止系统与显示器睡眠，定时会话可控",
         utilityUninstallerSubtitle: "彻底卸载应用及其关联文件",
         utilityColorPickerSubtitle: "从屏幕拾取颜色并复制色值",
         utilityNetworkDiagnosticsSubtitle: "查看本机网络身份与端口占用",

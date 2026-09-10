@@ -109,6 +109,7 @@ struct Strings: Equatable {
     let utilityUninstaller: String
     let utilityUninstallBusy: String
     let utilityCleanerSubtitle: String
+    let utilityKeepAwakeSubtitle: String
     let utilityUninstallerSubtitle: String
     let utilityColorPickerSubtitle: String
     let utilityNetworkDiagnosticsSubtitle: String

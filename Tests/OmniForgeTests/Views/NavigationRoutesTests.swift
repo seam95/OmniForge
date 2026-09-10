@@ -87,6 +87,19 @@ final class NavigationRoutesTests: XCTestCase {
         )
     }
 
+    /// 回归：仅便签或仅桌宠可用时，实用工具 tab 必须可见（此前判断遗漏这两项，
+    /// 导致只启用便签/桌宠的用户整个工具 tab 消失）。详见 SPEC §5.2。
+    func test_menuPanels_showUtilitiesForStickyNotesAndDesktopPet() {
+        XCTAssertEqual(
+            MenuPanel.visibleCases(isAvailable: { $0 == .stickyNotes }),
+            [.utilities]
+        )
+        XCTAssertEqual(
+            MenuPanel.visibleCases(isAvailable: { $0 == .desktopPet }),
+            [.utilities]
+        )
+    }
+
     func test_menuPanelSelection_preservesValidSelectionAndRepairsInvalidSelection() {
         let visibleCases: [MenuPanel] = [.systemMonitor, .utilities]
 
@@ -215,7 +228,7 @@ final class NavigationRoutesTests: XCTestCase {
     func test_utilityTools_followFeatureAvailabilityAndStableOrder() {
         XCTAssertEqual(
             UtilityTool.visibleCases(isAvailable: { _ in true }),
-            [.stickyNotes, .dshWeb, .networkDiagnostics, .colorPicker, .uninstaller, .cleaner, .cleaningMode, .desktopPet]
+            [.stickyNotes, .dshWeb, .networkDiagnostics, .colorPicker, .uninstaller, .cleaner, .cleaningMode, .desktopPet, .keepAwake]
         )
         XCTAssertEqual(
             UtilityTool.visibleCases(isAvailable: { $0 == .cleaningMode }),
@@ -236,6 +249,11 @@ final class NavigationRoutesTests: XCTestCase {
         XCTAssertEqual(
             UtilityTool.visibleCases(isAvailable: { $0 == .networkDiagnostics }),
             [.networkDiagnostics]
+        )
+        // 保持唤醒：工具页详情承载会话控制（信息架构重构阶段②）。
+        XCTAssertEqual(
+            UtilityTool.visibleCases(isAvailable: { $0 == .keepAwake }),
+            [.keepAwake]
         )
         XCTAssertEqual(
             UtilityTool.visibleCases(isAvailable: { $0 == .inputLock }),

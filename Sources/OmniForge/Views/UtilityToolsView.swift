@@ -112,6 +112,11 @@ struct UtilityToolsView: View {
     let strings: Strings
     @ObservedObject var runtime: FeatureRuntime
     @Binding var route: UtilityToolsRoute
+    /// 唤醒详情页依赖（信息架构重构阶段②）：会话控制迁入工具页后由宿主注入；
+    /// 其余工具不依赖，默认 nil。
+    var keepAwakeManager: KeepAwakeManager?
+    var clamshellRecoveryCoordinator: ClamshellRecoveryCoordinator?
+    var onOpenSettings: (SettingsToolbarTab?) -> Void = { _ in }
     @AppStorage(UserDefaultsKeys.lastUtilityTool) private var storedTool = UtilityTool.cleaner.rawValue
 
     init(strings: Strings, route: Binding<UtilityToolsRoute>) {
@@ -122,6 +127,23 @@ struct UtilityToolsView: View {
         self.strings = strings
         self._route = route
         self.runtime = runtime
+    }
+
+    /// 控制中心装配：额外注入唤醒详情页依赖（阶段②）。
+    init(
+        strings: Strings,
+        route: Binding<UtilityToolsRoute>,
+        runtime: FeatureRuntime = .shared,
+        keepAwakeManager: KeepAwakeManager?,
+        clamshellRecoveryCoordinator: ClamshellRecoveryCoordinator?,
+        onOpenSettings: @escaping (SettingsToolbarTab?) -> Void
+    ) {
+        self.strings = strings
+        self._route = route
+        self.runtime = runtime
+        self.keepAwakeManager = keepAwakeManager
+        self.clamshellRecoveryCoordinator = clamshellRecoveryCoordinator
+        self.onOpenSettings = onOpenSettings
     }
 
     private var visibleTools: [UtilityTool] {
@@ -237,6 +259,14 @@ struct UtilityToolsView: View {
             CleaningModeView(strings: strings)
         case .desktopPet:
             DesktopPetDetailView(strings: strings)
+        case .keepAwake:
+            KeepAwakeUtilityDetailView(
+                manager: keepAwakeManager,
+                clamshellRecoveryCoordinator: clamshellRecoveryCoordinator,
+                strings: strings,
+                isFeatureAvailable: runtime.isAvailable(.keepAwake),
+                onOpenSettings: onOpenSettings
+            )
         }
     }
 

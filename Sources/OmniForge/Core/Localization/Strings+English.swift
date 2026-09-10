@@ -103,6 +103,7 @@ extension Strings {
         utilityUninstaller: "Uninstaller",
         utilityUninstallBusy: "Available after the current operation finishes",
         utilityCleanerSubtitle: "Clean leftovers, caches, logs, and trash",
+        utilityKeepAwakeSubtitle: "Prevent system and display sleep with timed sessions",
         utilityUninstallerSubtitle: "Completely remove apps and related files",
         utilityColorPickerSubtitle: "Sample pixel colors from screen",
         utilityNetworkDiagnosticsSubtitle: "Inspect network identity and ports",

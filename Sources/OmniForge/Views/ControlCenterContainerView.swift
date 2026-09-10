@@ -346,7 +346,13 @@ struct ControlCenterContainerView: View {
             case .keepAwake:
                 keepAwakePanel
             case .clipboard:
-                UtilityToolsView(strings: state.l10n.s, route: $utilityRoute)
+                UtilityToolsView(
+                    strings: state.l10n.s,
+                    route: $utilityRoute,
+                    keepAwakeManager: state.keepAwakeManager,
+                    clamshellRecoveryCoordinator: state.clamshellRecoveryCoordinator,
+                    onOpenSettings: onOpenSettings
+                )
             case .providerSwitch:
                 if let manager = state.providerSwitchManager,
                    runtime.isAvailable(.providerSwitch) {
