@@ -83,7 +83,7 @@ struct UninstallerContentView: View {
             Spacer()
         }
         .padding(layout.horizontalPadding)
-        .frame(maxWidth: .infinity, minHeight: layout == .compact ? 420 : 480)
+        .frame(maxWidth: .infinity, minHeight: layout.stageMinHeight)
         .sheet(isPresented: $showingAppPicker) {
             UninstallerAppPickerView(strings: strings) {
                 showingAppPicker = false
@@ -121,6 +121,9 @@ struct UninstallerContentView: View {
 
     // MARK: Busy
 
+    /// 扫描/移除进行态：与其他阶段同一最小高度契约（`stageMinHeight`）。
+    /// 无保底时 Spacer 在 ScrollView 内容轴上塌缩，本态自然高度仅 ~100pt，
+    /// 与 empty/results 落差 ~350pt，阶段推进会触发面板窗口反复大幅改高。
     private func busyState(_ message: String) -> some View {
         VStack(spacing: 14) {
             Spacer()
@@ -145,6 +148,8 @@ struct UninstallerContentView: View {
             }
             Spacer()
         }
+        .padding(layout.horizontalPadding)
+        .frame(maxWidth: .infinity, minHeight: layout.stageMinHeight)
     }
 
     // MARK: Results

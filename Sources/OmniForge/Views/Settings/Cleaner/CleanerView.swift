@@ -215,7 +215,7 @@ struct CleanerContentView: View {
             Spacer()
         }
         .padding(layout.horizontalPadding)
-        .frame(maxWidth: .infinity, minHeight: layout == .compact ? 420 : 480)
+        .frame(maxWidth: .infinity, minHeight: layout.stageMinHeight)
     }
 
     // MARK: Automatic cleanup
@@ -486,7 +486,10 @@ struct CleanerContentView: View {
             }
             Spacer()
         }
-        .frame(maxWidth: .infinity, minHeight: 320)
+        // 与 empty/done 同一最小高度契约（stageMinHeight）：保底 320 时 busy 与
+        // empty(420/480) 仍有 ~100pt 以上落差，扫描开始/完成会触发面板改高。
+        .padding(layout.horizontalPadding)
+        .frame(maxWidth: .infinity, minHeight: layout.stageMinHeight)
     }
 
     // MARK: Results

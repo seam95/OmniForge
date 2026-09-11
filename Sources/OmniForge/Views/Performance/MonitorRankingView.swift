@@ -22,6 +22,7 @@ struct MonitorRankingView: View {
     private static var ownPID: pid_t { ProcessInfo.processInfo.processIdentifier }
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.controlCenterSizing) private var sizingContext
 
     var body: some View {
         VStack(spacing: 0) {
@@ -32,8 +33,16 @@ struct MonitorRankingView: View {
             }
             .padding(12)
         }
-        // 高度由 MonitorContainerView 固定外壳决定（避免 loading/loaded 之间跳变）。
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // 高度契约：内容至少撑满当前 viewport，loading/empty/failed/loaded 各态
+        // 同高，首开排行不再触发面板改高。注意 `maxHeight: .infinity` 在外层
+        // ScrollView 滚动轴的无限提议下会塌回内容理想高度（实测探针 16pt），
+        // 不能承担撑满职责，必须显式 minHeight 绑定 viewport。
+        .frame(
+            maxWidth: .infinity,
+            minHeight: sizingContext?.viewportHeight ?? 0,
+            maxHeight: .infinity,
+            alignment: .topLeading
+        )
         // armed 态超过窗口期未确认则自动复位，避免误留可终止状态。
         .task(id: armedPID) {
             guard armedPID != nil else { return }

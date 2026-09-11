@@ -9,6 +9,17 @@ enum UtilityContentLayout: Equatable {
     /// `List` 嵌在 `AdaptiveHeightScroll` 内不会自报固有高度，会塌成接近 0；compact 必须显式给定。
     static let compactResultsListHeight: CGFloat = 300
 
+    /// 阶段式工具页（清理/卸载器）各阶段统一的最小高度契约：empty/busy/done
+    /// 对齐到同一值，阶段切换不再改变页面自然高度（结果列表等超契约内容仍
+    /// 随内容增长）。自适应高度管线对稳定期内容高度变化会忠实改高，阶段间
+    /// 高度若不对齐，每次状态推进都会表现为面板窗口反复伸缩。
+    var stageMinHeight: CGFloat {
+        switch self {
+        case .settings: 480
+        case .compact: 420
+        }
+    }
+
     var contentWidth: CGFloat? {
         switch self {
         case .settings: nil

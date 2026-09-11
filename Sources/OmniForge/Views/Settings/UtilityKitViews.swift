@@ -133,7 +133,9 @@ struct UtilityDoneView<Buttons: View>: View {
             .padding(layout.horizontalPadding)
             .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity, minHeight: layout == .compact ? 320 : 0)
+        // compact 完成态与 empty/busy 同一最小高度契约（stageMinHeight），
+        // removing→done 不再引起面板高度跳变；settings 由父级分栏分配高度。
+        .frame(maxWidth: .infinity, minHeight: layout == .compact ? layout.stageMinHeight : 0)
     }
 
     @ViewBuilder
