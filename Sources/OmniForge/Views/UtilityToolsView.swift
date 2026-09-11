@@ -206,17 +206,19 @@ struct UtilityToolsView: View {
             )
             .padding(.vertical, 24)
         } else {
-            // 3×3 宫格：固定 380pt 面板下 9 个工具恰好排满三行三列，
-            // 新增工具自动进入下一行，由滚动容器承载溢出部分。
-            LazyVGrid(columns: UtilityToolGrid.columns, spacing: UtilityToolGrid.spacing) {
-                ForEach(visibleTools) { tool in
-                    UtilityToolGridItem(tool: tool, strings: strings) {
+            // 平面分区：行直接平铺白底（背景由转场层持有），行间 separator 分隔。
+            VStack(spacing: 0) {
+                ForEach(Array(visibleTools.enumerated()), id: \.element.id) { index, tool in
+                    if index > 0 {
+                        Rectangle()
+                            .fill(colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08))
+                            .frame(height: 1)
+                    }
+                    UtilityToolRow(tool: tool, strings: strings) {
                         enterDetail(tool)
                     }
                 }
             }
-            .padding(.horizontal, UtilityToolGrid.horizontalPadding)
-            .padding(.vertical, UtilityToolGrid.verticalPadding)
         }
     }
 
@@ -276,57 +278,41 @@ struct UtilityToolsView: View {
     }
 }
 
-/// 宫格布局的几何契约：3 列 × 8pt 间距 × 12pt 外边距，卡片按内容等高。
-/// 固定列数保证新增工具进入下一行而不破坏整体排布。
-enum UtilityToolGrid {
-    /// 列数：380pt 面板下 3 列最规整。
-    static let columnCount = 3
-    /// 卡片间距（行列一致）。
-    static let spacing: CGFloat = 8
-    /// 宫格到面板左右边缘的外边距。
-    static let horizontalPadding: CGFloat = 16
-    /// 宫格到上下内容边缘的外边距。
-    static let verticalPadding: CGFloat = 12
-    /// 卡片高度：图标徽章 30 + 上下各 12 + 标题行高约 18。
-    static let cardHeight: CGFloat = 78
-
-    /// 卡片内容宽度：面板宽 - 两侧外边距 - 列间距后三等分。
-    static var cardWidth: CGFloat {
-        (ControlCenterContentMetrics.panelWidth - horizontalPadding * 2 - spacing * CGFloat(columnCount - 1))
-            / CGFloat(columnCount)
-    }
-
-    /// 列定义：等宽、固定 3 列。
-    static var columns: [GridItem] {
-        Array(repeating: GridItem(.flexible(), spacing: spacing), count: columnCount)
-    }
-}
-
-/// 宫格卡片的视觉状态。
-enum UtilityToolCardVisual {
-    /// 图标徽章边长，与列表版保持同一尺寸，视觉延续。
+/// 工具列表行的紧凑几何契约：行内只保留「图标徽章 + 标题」，
+/// 描述文案改为悬浮提示后不再参与行高，几何收敛到这里便于单点调参。
+enum UtilityToolRowMetrics {
+    /// 图标徽章边长。原为 38pt，与 13pt 标题并排时偏大，缩小以贴合文字比例。
     static let iconBadgeSize: CGFloat = 30
-    /// 徽章圆角。
+    /// 图标徽章圆角。
     static let iconCornerRadius: CGFloat = 8
     /// 徽章内 SF Symbol 字号。
     static let iconGlyphSize: CGFloat = 14
-    /// 卡片圆角，复用 Theme.Radius.card（12pt）。
-    static var cardCornerRadius: CGFloat { Theme.Radius.card }
-    /// 状态点直径。
-    static let statusDotSize: CGFloat = 6
-    /// 描述气泡的最大宽度；超出即换行。
+    /// 行上下内边距。原为 10pt。
+    static let verticalPadding: CGFloat = 8
+    /// 行高：图标徽章 + 上下内边距。
+    static var rowHeight: CGFloat { iconBadgeSize + verticalPadding * 2 }
+    /// 描述气泡的最大宽度；超出即换行，气泡本身按内容贴合尺寸。
     static let hintMaxWidth: CGFloat = 280
+}
 
-    /// 卡片处于「活跃态」：指针悬浮或键盘聚焦，统一驱动高亮与描述显示。
+/// 工具行描述的显示时机与位置契约。
+enum UtilityToolRowHint {
+    /// 悬浮显示前的防抖：鼠标扫过整列时不逐个闪气泡，感知上仍接近立即。
+    /// 键盘聚焦不防抖——焦点移动是明确意图，再等只会显得迟钝。
+    static let hoverRevealDelay: TimeInterval = 0.16
+
+    /// 行处于「活跃态」：指针悬浮或键盘聚焦。活跃态同时决定行背景高亮与
+    /// 描述可见——键盘与指针因此共用同一条查看路径；读屏另走无障碍提示。
     static func isActive(hovered: Bool, focused: Bool) -> Bool {
         hovered || focused
     }
 
-    /// 气泡停靠边：贴在卡片上方，箭头指向被悬浮的卡片，避免遮挡相邻卡片。
-    static let placementEdge: Edge = .top
+    /// 气泡停靠边：贴着整行右侧（面板外侧），箭头指向被悬浮的那一行。
+    /// 这样提示不会压住列表里的其他工具项；屏幕右侧放不下时由系统自动改边。
+    static let placementEdge: Edge = .trailing
 }
 
-/// 工具行描述气泡：宫格与列表共用同一配方。
+/// 工具行描述气泡：单条共享配方，行内 popover 与视觉核对都用它。
 /// 宽度按内容贴合（`fixedSize`），超过上限即换行，避免窄面板上溢出屏幕。
 struct UtilityToolHintBubble: View {
     let text: String
@@ -336,14 +322,15 @@ struct UtilityToolHintBubble: View {
             .font(Theme.Stats.font12Medium)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .frame(maxWidth: UtilityToolCardVisual.hintMaxWidth, alignment: .leading)
+            .frame(maxWidth: UtilityToolRowMetrics.hintMaxWidth, alignment: .leading)
             .fixedSize()
             .accessibilityLabel(text)
     }
 }
 
-/// 宫格卡片：图标徽章 + 名称 + 状态点，描述以悬浮气泡呈现。
-private struct UtilityToolGridItem: View {
+/// 实用工具列表行：多彩图标 + 标题 + chevron/状态药丸，整行可点。
+/// 描述文案默认不占位，鼠标悬浮或键盘聚焦时以气泡形式贴在行右侧显示。
+private struct UtilityToolRow: View {
     let tool: UtilityTool
     let strings: Strings
     let onTap: () -> Void
@@ -355,64 +342,55 @@ private struct UtilityToolGridItem: View {
     private var hintText: String { tool.hubDescription(in: strings) }
 
     private var isActive: Bool {
-        UtilityToolCardVisual.isActive(hovered: isHovered, focused: isFocused)
+        UtilityToolRowHint.isActive(hovered: isHovered, focused: isFocused)
     }
 
     var body: some View {
         Button(action: onTap) {
-            VStack(spacing: 6) {
+            HStack(alignment: .center, spacing: 12) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: UtilityToolCardVisual.iconCornerRadius, style: .continuous)
+                    RoundedRectangle(cornerRadius: UtilityToolRowMetrics.iconCornerRadius, style: .continuous)
                         .fill(tool.tintColor.opacity(colorScheme == .dark ? 0.20 : 0.12))
                         .frame(
-                            width: UtilityToolCardVisual.iconBadgeSize,
-                            height: UtilityToolCardVisual.iconBadgeSize
+                            width: UtilityToolRowMetrics.iconBadgeSize,
+                            height: UtilityToolRowMetrics.iconBadgeSize
                         )
 
                     Image(systemName: tool.symbolName())
-                        .font(.system(size: UtilityToolCardVisual.iconGlyphSize, weight: .semibold))
+                        .font(.system(size: UtilityToolRowMetrics.iconGlyphSize, weight: .semibold))
                         .foregroundStyle(tool.tintColor)
-                }
-                .overlay(alignment: .topTrailing) {
-                    if tool == .dshWeb {
-                        UtilityDSHWebStatusDot(strings: strings)
-                            .offset(x: 3, y: -3)
-                    }
                 }
 
                 Text(tool.title(in: strings))
-                    .font(Theme.Stats.font12Medium)
+                    .font(Theme.Stats.font13SemiBold)
                     .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                     .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity)
+
+                Spacer(minLength: 8)
+
+                if tool == .dshWeb {
+                    UtilityDSHWebStatusBadge(strings: strings)
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                }
             }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 6)
-            .frame(maxWidth: .infinity, minHeight: UtilityToolGrid.cardHeight, maxHeight: UtilityToolGrid.cardHeight)
-            .contentShape(RoundedRectangle(cornerRadius: UtilityToolCardVisual.cardCornerRadius, style: .continuous))
+            .padding(.horizontal, 16)
+            .padding(.vertical, UtilityToolRowMetrics.verticalPadding)
+            .background(
+                isActive ? MonitorOverviewPalette.hoverFill(colorScheme) : Color.clear
+            )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // 键盘可达：Tab 聚焦到某一卡片时同样高亮并弹出描述。
+        // 键盘可达：Tab 聚焦到某一行时同样高亮并弹出描述。
         .focusable()
         .focused($isFocused)
-        // 卡片样式与系统其他卡片一致；活跃态时由 omniCardStyle 的 isHovered
-        // 负责填充变化，这里仅在键盘聚焦时补同一层填充，保持视觉一致。
-        .omniCardStyle(
-            isSelected: false,
-            cornerRadius: UtilityToolCardVisual.cardCornerRadius,
-            isInteractive: false
-        )
-        .overlay {
-            if isActive {
-                RoundedRectangle(cornerRadius: UtilityToolCardVisual.cardCornerRadius, style: .continuous)
-                    .fill(MonitorOverviewPalette.hoverFill(colorScheme))
-            }
-        }
         .onHover { hovering in
             isHovered = hovering
             if hovering {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + UtilityToolRowHint.hoverRevealDelay) {
                     guard isHovered || isFocused else { return }
                     showsHint = true
                 }
@@ -427,7 +405,7 @@ private struct UtilityToolGridItem: View {
                 showsHint = false
             }
         }
-        .popover(isPresented: $showsHint, arrowEdge: UtilityToolCardVisual.placementEdge) {
+        .popover(isPresented: $showsHint, arrowEdge: UtilityToolRowHint.placementEdge) {
             UtilityToolHintBubble(text: hintText)
         }
         .accessibilityLabel(tool.title(in: strings))
@@ -436,39 +414,88 @@ private struct UtilityToolGridItem: View {
     }
 }
 
-/// DSH Web 卡片状态点：极简呈现运行状态，不抢占名称空间。
-private struct UtilityDSHWebStatusDot: View {
+/// DSH Web 服务列表行状态徽章
+private struct UtilityDSHWebStatusBadge: View {
     let strings: Strings
     @ObservedObject private var manager = DSHWebManager.shared
-
-    private var color: Color {
-        switch manager.state {
-        case .running: Theme.Stats.statusNormal
-        case .starting, .stopping: Theme.Stats.ram
-        case .failed: Theme.Stats.up
-        case .stopped: Color.secondary.opacity(0.5)
-        }
-    }
-
-    private var accessibilityText: String {
-        switch manager.state {
-        case .running: strings.dshWebStateRunning
-        case .starting: strings.dshWebStateStarting
-        case .stopping: strings.dshWebStateStopping
-        case .failed(let reason): String(format: strings.dshWebStateFailed, reason)
-        case .stopped: strings.runStateStopped
-        }
-    }
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        Circle()
-            .fill(color)
-            .frame(width: UtilityToolCardVisual.statusDotSize, height: UtilityToolCardVisual.statusDotSize)
-            .overlay(
+        switch manager.state {
+        case .running:
+            HStack(spacing: 4.5) {
                 Circle()
-                    .stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1)
+                    .fill(Theme.Stats.statusNormal)
+                    .frame(width: 5.5, height: 5.5)
+                Text(strings.dshWebStateRunning)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(Theme.Stats.statusNormal)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3.5)
+            .background(
+                Capsule()
+                    .fill(Theme.Stats.statusNormal.opacity(0.12))
             )
-            .accessibilityLabel(accessibilityText)
+        case .starting:
+            HStack(spacing: 4.5) {
+                ProgressView()
+                    .controlSize(.mini)
+                Text(strings.dshWebStateStarting)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(Theme.Stats.ram)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3.5)
+            .background(
+                Capsule()
+                    .fill(Theme.Stats.ram.opacity(0.12))
+            )
+        case .stopping:
+            HStack(spacing: 4.5) {
+                ProgressView()
+                    .controlSize(.mini)
+                Text(strings.dshWebStateStopping)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(Theme.Stats.ram)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3.5)
+            .background(
+                Capsule()
+                    .fill(Theme.Stats.ram.opacity(0.12))
+            )
+        case .failed:
+            HStack(spacing: 4.5) {
+                Circle()
+                    .fill(Theme.Stats.up)
+                    .frame(width: 5.5, height: 5.5)
+                Text("异常")
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(Theme.Stats.up)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3.5)
+            .background(
+                Capsule()
+                    .fill(Theme.Stats.up.opacity(0.12))
+            )
+        case .stopped:
+            HStack(spacing: 4.5) {
+                Circle()
+                    .fill(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                    .frame(width: 5.5, height: 5.5)
+                Text(strings.runStateStopped)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3.5)
+            .background(
+                Capsule()
+                    .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04))
+            )
+        }
     }
 }
 
