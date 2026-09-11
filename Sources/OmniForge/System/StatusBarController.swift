@@ -812,8 +812,16 @@ final class StatusBarController: NSObject, NSWindowDelegate {
         let totalHeight = installPanelContentIfNeeded()
         guard let button = statusItem.button, let window = button.window else { return }
         let anchor = window.convertToScreen(button.convert(button.bounds, to: nil))
-        let visibleFrame = (window.screen ?? NSScreen.main)?.visibleFrame
-            ?? CGRect(x: 0, y: 0, width: 1512, height: 1384)
+        // 多屏修复：clamp 基准必须与锚点同屏。活跃屏切换瞬间状态栏窗口
+        // 的 screen 归属可能滞后于锚点实际位置，直接取 window.screen 会
+        // 把面板 clamp 到错误屏幕（偏移或跳屏）。
+        let visibleFrame = Self.anchorVisibleFrame(anchor: anchor, screens: screenSnapshots)
+            ?? window.screen?.visibleFrame
+            ?? NSScreen.main?.visibleFrame
+        guard let visibleFrame else {
+            ControlCenterSizingLog.log("openPanel: 无可用屏幕，放弃打开面板")
+            return
+        }
         let frame = ControlCenterPanelWindow.panelFrame(
             anchorScreenFrame: anchor,
             panelSize: NSSize(width: ControlCenterContentMetrics.panelWidth, height: totalHeight),
@@ -1062,13 +1070,36 @@ final class StatusBarController: NSObject, NSWindowDelegate {
     private func panelAvailableHeight() -> CGFloat {
         guard
             let button = statusItem.button,
-            let window = button.window,
-            let screen = window.screen ?? NSScreen.main
+            let window = button.window
         else {
             return NSScreen.main?.visibleFrame.height ?? 1055
         }
         let anchor = window.convertToScreen(button.convert(button.bounds, to: nil))
-        return Self.availableHeight(anchorMinY: anchor.minY, visibleFrame: screen.visibleFrame)
+        // 与 openPanel 同一选屏口径：可用高度的纵向基准也须取锚点所在屏，
+        // 防多屏纵向排布时用错屏的 visibleFrame.minY。
+        let visibleFrame = Self.anchorVisibleFrame(anchor: anchor, screens: screenSnapshots)
+            ?? window.screen?.visibleFrame
+            ?? NSScreen.main?.visibleFrame
+        return Self.availableHeight(
+            anchorMinY: anchor.minY,
+            visibleFrame: visibleFrame ?? CGRect(x: 0, y: 0, width: 1512, height: 984)
+        )
+    }
+
+    /// 当前全部屏幕的 (全帧, 可见帧) 快照，供锚点屏解析。
+    private var screenSnapshots: [(frame: CGRect, visibleFrame: CGRect)] {
+        NSScreen.screens.map { (frame: $0.frame, visibleFrame: $0.visibleFrame) }
+    }
+
+    /// 解析锚点所在屏的可见帧（可测）：多屏下定位与可用高度的基准必须
+    /// 与锚点同屏。锚点位于菜单栏内——在各屏 frame 之内、visibleFrame
+    /// 之外，因此归属判定必须用全帧而非可见帧。
+    nonisolated static func anchorVisibleFrame(
+        anchor: CGRect,
+        screens: [(frame: CGRect, visibleFrame: CGRect)]
+    ) -> CGRect? {
+        let anchorMid = CGPoint(x: anchor.midX, y: anchor.midY)
+        return screens.first { NSPointInRect(anchorMid, $0.frame) }?.visibleFrame
     }
 
     /// 可用高度纯计算（可测）：锚点下沿 → 可见区底部，扣除顶边间隙与

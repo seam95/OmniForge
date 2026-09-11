@@ -179,3 +179,82 @@ final class StatusBarPanelAvailableHeightTests: XCTestCase {
         )
     }
 }
+
+/// 锚点屏解析：多屏下定位与可用高度的基准必须与锚点同屏。
+/// 回归背景（2026-09-11 诊断）：多显示器首开面板偶发偏移/跳屏，
+/// 根因是活跃屏切换瞬间 window.screen 归属滞后于锚点实际位置，
+/// clamp 基准取错屏。锚点在菜单栏内（frame 内、visibleFrame 外），
+/// 归属判定必须用全帧。
+final class StatusBarAnchorScreenTests: XCTestCase {
+
+    /// 主屏 1512×984 + 右侧副屏 1920×1080（菜单栏各占顶部 24pt）。
+    private let mainFrame = CGRect(x: 0, y: 0, width: 1512, height: 984)
+    private let mainVisible = CGRect(x: 0, y: 0, width: 1512, height: 960)
+    private let rightFrame = CGRect(x: 1512, y: 0, width: 1920, height: 1080)
+    private let rightVisible = CGRect(x: 1512, y: 0, width: 1920, height: 1056)
+
+    private var twoScreens: [(frame: CGRect, visibleFrame: CGRect)] {
+        [(frame: mainFrame, visibleFrame: mainVisible), (frame: rightFrame, visibleFrame: rightVisible)]
+    }
+
+    /// 菜单栏内锚点：屏顶部菜单栏区域的小矩形（frame 内、visibleFrame 外）。
+    private func menuBarAnchor(x: CGFloat) -> CGRect {
+        CGRect(x: x, y: 1058, width: 64, height: 20)
+    }
+
+    func test_anchorOnMainScreen_returnsMainVisibleFrame() {
+        let anchor = CGRect(x: 700, y: 958, width: 64, height: 22)
+        let result = StatusBarController.anchorVisibleFrame(anchor: anchor, screens: twoScreens)
+        XCTAssertEqual(result, mainVisible)
+    }
+
+    func test_anchorOnRightSecondaryScreen_returnsSecondaryVisibleFrame() {
+        // 回归核心：锚点在右侧副屏菜单栏，即使 window.screen 误报主屏，
+        // 解析结果也必须是副屏可见帧（面板 clamp 基准与锚点同屏）。
+        let anchor = menuBarAnchor(x: 2200)
+        let result = StatusBarController.anchorVisibleFrame(anchor: anchor, screens: twoScreens)
+        XCTAssertEqual(result, rightVisible)
+    }
+
+    func test_anchorOnLeftSecondaryScreenWithNegativeX_returnsSecondaryVisibleFrame() {
+        // 左侧副屏使用负 X 坐标（macOS 全局坐标系常见布局）。
+        let leftFrame = CGRect(x: -1920, y: 0, width: 1920, height: 1080)
+        let leftVisible = CGRect(x: -1920, y: 0, width: 1920, height: 1056)
+        let screens = [
+            (frame: leftFrame, visibleFrame: leftVisible),
+            (frame: mainFrame, visibleFrame: mainVisible)
+        ]
+        let anchor = CGRect(x: -800, y: 1058, width: 64, height: 20)
+        let result = StatusBarController.anchorVisibleFrame(anchor: anchor, screens: screens)
+        XCTAssertEqual(result, leftVisible)
+    }
+
+    func test_anchorOnVerticallyStackedScreen_keepsThatScreenMinY() {
+        // 纵向排布副屏（主屏下方，Y 为负）：可用高度依赖 visibleFrame.minY，
+        // 必须取锚点所在屏自己的可见帧，而非主屏的。
+        let belowFrame = CGRect(x: 0, y: -1080, width: 1920, height: 1080)
+        let belowVisible = CGRect(x: 0, y: -1080, width: 1920, height: 1056)
+        let screens = [
+            (frame: mainFrame, visibleFrame: mainVisible),
+            (frame: belowFrame, visibleFrame: belowVisible)
+        ]
+        let anchor = CGRect(x: 700, y: -22, width: 64, height: 20)
+        let result = StatusBarController.anchorVisibleFrame(anchor: anchor, screens: screens)
+        XCTAssertEqual(result, belowVisible)
+    }
+
+    func test_anchorInsideMenuBarButOutsideVisibleFrame_stillMatchesByFullScreenFrame() {
+        // 归属判定必须用全帧：锚点中心在副屏 visibleFrame 之外（菜单栏内）
+        // 仍应命中副屏，而非穿透匹配到主屏。
+        let anchor = menuBarAnchor(x: 3300)
+        let result = StatusBarController.anchorVisibleFrame(anchor: anchor, screens: twoScreens)
+        XCTAssertEqual(result, rightVisible)
+    }
+
+    func test_anchorOutsideAllScreens_returnsNilForCallerFallback() {
+        // 离屏锚点：返回 nil，由调用侧走 window.screen/mainScreen 兜底链。
+        let anchor = CGRect(x: 5000, y: 5000, width: 64, height: 20)
+        let result = StatusBarController.anchorVisibleFrame(anchor: anchor, screens: twoScreens)
+        XCTAssertNil(result)
+    }
+}
