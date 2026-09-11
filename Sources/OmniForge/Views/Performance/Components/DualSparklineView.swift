@@ -11,6 +11,8 @@ struct DualSparklineView: View {
     var lineWidth: CGFloat = 1.4
     /// 非 nil 启用悬浮取值；下行/上行共用同一格式化器（网络场景均为速率）。
     var hoverFormatter: ((Double) -> String)? = nil
+    /// 下行序列各采样点时刻（悬浮 index 按 downValues 定位）：非 nil 时气泡补一行 HH:mm:ss
+    var hoverTimestamps: [Date]? = nil
 
     @State private var hoveredIndex: Int?
 
@@ -44,7 +46,7 @@ struct DualSparklineView: View {
                     let point = CGPoint(x: hoverX(index: index, width: proxy.size.width),
                                         y: downY(index: index, height: proxy.size.height))
                     SparklineHoverIndicator(point: point, height: proxy.size.height, color: Theme.Stats.down)
-                    hoverBubble(point: point, width: proxy.size.width)
+                    hoverBubble(atX: point.x, height: proxy.size.height, width: proxy.size.width)
                 }
             }
             .contentShape(Rectangle())
@@ -80,34 +82,42 @@ struct DualSparklineView: View {
         return height * (1 - normalized[index])
     }
 
-    private func hoverBubble(point: CGPoint, width: CGFloat) -> some View {
+    /// 数值气泡：锚在选中点正下方（x 跟随、y 固定折线底边外侧），不遮挡双线走势本体。
+    private func hoverBubble(atX x: CGFloat, height: CGFloat, width: CGFloat) -> some View {
         Color.clear
             .frame(width: 1, height: 1)
-            .position(point)
-            .overlay(alignment: SparklineHoverLocator.bubbleAlignment(atX: point.x, width: width)) {
+            .position(x: x, y: height)
+            .overlay(alignment: SparklineHoverLocator.bubbleAlignment(atX: x, width: width)) {
                 if let formatter = hoverFormatter,
                    let index = hoveredIndex,
                    downValues.indices.contains(index) {
                     SparklineBubbleShell(colorScheme: colorScheme) {
-                        HStack(spacing: 6) {
-                            HStack(spacing: 2) {
-                                Image(systemName: "arrow.down")
-                                    .font(.system(size: 9, weight: .semibold))
-                                    .foregroundStyle(Theme.Stats.down)
-                                Text(formatter(downValues[index]))
-                                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                        VStack(alignment: .leading, spacing: 1) {
+                            HStack(spacing: 6) {
+                                HStack(spacing: 2) {
+                                    Image(systemName: "arrow.down")
+                                        .font(.system(size: 9, weight: .semibold))
+                                        .foregroundStyle(Theme.Stats.down)
+                                    Text(formatter(downValues[index]))
+                                        .font(.system(size: 11, weight: .medium).monospacedDigit())
+                                }
+                                HStack(spacing: 2) {
+                                    Image(systemName: "arrow.up")
+                                        .font(.system(size: 9, weight: .semibold))
+                                        .foregroundStyle(Theme.Stats.up)
+                                    Text(upValues.indices.contains(index)
+                                        ? formatter(upValues[index]) : "--")
+                                        .font(.system(size: 11, weight: .regular).monospacedDigit())
+                                }
                             }
-                            HStack(spacing: 2) {
-                                Image(systemName: "arrow.up")
-                                    .font(.system(size: 9, weight: .semibold))
-                                    .foregroundStyle(Theme.Stats.up)
-                                Text(upValues.indices.contains(index)
-                                    ? formatter(upValues[index]) : "--")
-                                    .font(.system(size: 11, weight: .regular).monospacedDigit())
+                            if let time = hoverTimestamps?[index] {
+                                Text(SparklineTimeText.time(time))
+                                    .font(.system(size: 10, weight: .regular).monospacedDigit())
+                                    .foregroundStyle(.secondary)
                             }
                         }
                     }
-                    .padding(.bottom, 10)
+                    .padding(.top, 4)
                 }
             }
             .allowsHitTesting(false)

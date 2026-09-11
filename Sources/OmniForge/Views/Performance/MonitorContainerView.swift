@@ -68,10 +68,12 @@ struct MonitorContainerView: View {
             }
         }
         .onDisappear {
-            // 本内容树卸载 = 离开监控面板或切到其他层级；折叠进程采样状态
-            // 并断开 toggle 绑定。面板级指标采样由宿主 route 协调，不受影响。
+            // 本内容树卸载 = 离开监控面板或切到其他层级；折叠进程采样状态。
+            // 不解绑 onToggle：自适应高度等流程会在面板打开期重建内容树，
+            // 旧实例的 onDisappear 可能晚于新实例的 onAppear 执行，解绑会把
+            // 新绑定一并清掉，导致展开请求永久丢失（排行页永卡 loading）。
+            // 绑定闭包仅捕获长命对象（manager/coordinator），保留无泄漏风险。
             coordinator.close()
-            coordinator.onToggle = nil
         }
         // 配置变化（展示分区/开关/功能可用性）重断言采样需求。
         .onChange(of: featureRuntime.revision) { _, _ in updateDemand() }

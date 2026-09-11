@@ -16,12 +16,16 @@ struct MonitorCardModel: Equatable, Identifiable {
     var opensDiskDetail: Bool = false
     /// 趋势折线数据（百分比卡 domain 0...1；网络为 bytes/s）
     var trend: [Double]? = nil
+    /// 趋势各采样点时刻，与 trend 逐点配对（悬浮气泡显示 HH:mm:ss 用）
+    var trendTimes: [Date]? = nil
     /// 第二序列（仅网络：上传）
     var secondaryTrend: [Double]? = nil
     /// 速率文本（磁盘读/写、网络下行/上行，纯文本无方向前缀）
     var chipTexts: [String] = []
     /// 大数字旁的次要文本（标签行右侧）：CPU/GPU 为温度，内存为已用量
     var accessoryText: String? = nil
+    /// 折线下方的明细行（小灰字，以中点分隔）：CPU 为系统/用户占比
+    var detailTexts: [String] = []
     /// 风扇卡专用：快照是否有风扇读数（无风扇机器/未采样轮不出分区）
     var hasFanData = true
     /// 风扇卡专用：无风扇但有传感器读数时仍出分区（展示温度传感器摘要）
@@ -103,6 +107,14 @@ enum MonitorCardModelBuilder {
         history: MetricHistory
     ) -> MonitorCardModel {
         let total = snapshot.cpuUsage?.total
+        // 明细行：`系统 8% · 用户 31%`（占比取 delta 口径，user+system==total）
+        var detailTexts: [String] = []
+        if let systemText = MetricFormat.percent(snapshot.cpuUsage?.system) {
+            detailTexts.append("\(strings.monitorCPUSystem) \(systemText)")
+        }
+        if let userText = MetricFormat.percent(snapshot.cpuUsage?.user) {
+            detailTexts.append("\(strings.monitorCPUUser) \(userText)")
+        }
         return MonitorCardModel(
             id: .cpu,
             title: strings.monitorMetricCpu,
@@ -115,7 +127,9 @@ enum MonitorCardModelBuilder {
             issueText: issueText(for: snapshot.issues[.cpu], strings: strings),
             processMetricKind: .cpu,
             trend: history.cpu,
-            accessoryText: MetricFormat.temperature(snapshot.cpuTemperature, unit: temperatureUnit)
+            trendTimes: history.cpuTimes,
+            accessoryText: MetricFormat.temperature(snapshot.cpuTemperature, unit: temperatureUnit),
+            detailTexts: detailTexts
         )
     }
 
@@ -142,6 +156,7 @@ enum MonitorCardModelBuilder {
             issueText: issueText(for: snapshot.issues[.memory], strings: strings),
             processMetricKind: .memory,
             trend: history.memory,
+            trendTimes: history.memoryTimes,
             accessoryText: MetricFormat.memoryUsedShort(used)
         )
     }
@@ -211,31 +226,27 @@ enum MonitorCardModelBuilder {
         snapshot: SystemSnapshot,
         strings: Strings
     ) -> MonitorCardModel {
-        // 大数字：已用量（total − free，base-1000，无前缀）
+        // 标题行右侧：已用量（total − free，base-1000），设计稿为「已用 297 GB」
         let free = snapshot.disk?.freeSpace
         let total = snapshot.disk?.totalSpace
-        let used: String? = {
+        let usedBadge: String? = {
             guard let free, let total, total > free else { return nil }
             return MetricFormat.diskBytes(total - free)
         }()
-        // 标题行徽标：可用量
-        let freeBadge: String? = free
-            .flatMap { MetricFormat.diskBytes($0) }
-            .map { "\(strings.monitorFreeLabel) \($0)" }
         let readRate = snapshot.disk?.readBytesPerSec
         let writeRate = snapshot.disk?.writeBytesPerSec
         let readText = (readRate ?? 0) > 0
-            ? MetricFormat.bytesPerSec(readRate!) : "--"
+            ? "\(strings.monitorMetricRead) \(MetricFormat.bytesPerSec(readRate!))" : "\(strings.monitorMetricRead) --"
         let writeText = (writeRate ?? 0) > 0
-            ? MetricFormat.bytesPerSec(writeRate!) : "--"
+            ? "\(strings.monitorMetricWrite) \(MetricFormat.bytesPerSec(writeRate!))" : "\(strings.monitorMetricWrite) --"
         return MonitorCardModel(
             id: .disk,
             title: strings.monitorCardDisk,
             systemImage: "internaldrive",
-            primaryText: used ?? "--",
+            primaryText: usedBadge.map { "\(strings.monitorDiskUsed) \($0)" } ?? "--",
             secondaryText: nil,
             progress: nil,
-            badgeText: freeBadge,
+            badgeText: nil,
             showsLiveDot: false,
             issueText: issueText(for: snapshot.issues[.disk], strings: strings),
             processMetricKind: nil,
@@ -270,6 +281,7 @@ enum MonitorCardModelBuilder {
             issueText: issueText(for: snapshot.issues[.network], strings: strings),
             processMetricKind: .network,
             trend: history.netDown,
+            trendTimes: history.netDownTimes,
             secondaryTrend: history.netUp,
             chipTexts: [down, up]
         )
@@ -293,6 +305,7 @@ enum MonitorCardModelBuilder {
             issueText: issueText(for: snapshot.issues[.gpu], strings: strings),
             processMetricKind: .gpu,
             trend: history.gpu,
+            trendTimes: history.gpuTimes,
             accessoryText: MetricFormat.temperature(snapshot.gpuTemperature, unit: temperatureUnit)
         )
     }

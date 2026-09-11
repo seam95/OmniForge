@@ -96,15 +96,11 @@ struct MonitorOverviewView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .center) {
-                // 面板名与设备名同字号拼标题：前半粗、后半常规
-                HStack(spacing: 6) {
-                    Text(strings.controlcenterNavMonitor)
-                        .font(.system(size: 20, weight: .semibold))
-                    Text(deviceSummary.hostName)
-                        .font(.system(size: 20, weight: .regular))
-                }
-                .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
-                .lineLimit(1)
+                // 设计稿：仅设备名，17pt semibold
+                Text(deviceSummary.hostName)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
+                    .lineLimit(1)
 
                 Spacer(minLength: 8)
 
@@ -213,8 +209,9 @@ private enum MonitorSectionStyle {
 }
 
 /// 可点区块外壳：内容 + hover 浅灰圆角底（无 chevron，对齐平面视觉）。
-/// hover 底向外扩 4pt（内容 padding 4），调用方据此把设计稿边距减 4 保持视觉位置。
+/// hover 底向外扩 `outset`（默认 4pt），调用方据此把设计稿边距减去 outset 保持视觉位置。
 private struct MonitorTappableSection<Content: View>: View {
+    var outset: CGFloat = 4
     let action: () -> Void
     @ViewBuilder var content: () -> Content
 
@@ -224,7 +221,7 @@ private struct MonitorTappableSection<Content: View>: View {
     var body: some View {
         Button(action: action) {
             content()
-                .padding(4)
+                .padding(outset)
                 .background(
                     RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
                         .fill(isHovered ? MonitorOverviewPalette.hoverFill(colorScheme) : Color.clear)
@@ -239,29 +236,28 @@ private struct MonitorTappableSection<Content: View>: View {
     }
 }
 
-/// CPU/GPU/内存三列指标区：每列等宽（标签+当前值 → 大数字 → 迷你折线），列可点进排名。
-/// 外层水平 padding 12 + hover 底外扩 4 → 文字视觉左缘 16，与全宽分区对齐。
+/// CPU/GPU/内存三列指标区：每列等宽（标签+附属值 → 大数字 → 迷你折线 → 明细行），列可点进排名。
+/// hover 底无外扩（outset 0），列内边距即设计稿值：左 16 / 右 12 / 上下 20。
 private struct MonitorMetricsSection: View {
     let models: [MonitorCardModel]
     let onSelectRankable: (ProcessMetricKind) -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: 0) {
             ForEach(models) { model in
                 // idealWidth 置 0 + maxWidth .infinity：各列严格等宽
                 metricColumn(model)
                     .frame(idealWidth: 0, maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 12)
     }
 
     @ViewBuilder
     private func metricColumn(_ model: MonitorCardModel) -> some View {
         let column = MonitorMetricColumn(model: model, accent: MonitorCardAccent.color(for: model.id))
+            .padding(EdgeInsets(top: 20, leading: 16, bottom: 20, trailing: 12))
         if let kind = model.processMetricKind {
-            MonitorTappableSection(action: { onSelectRankable(kind) }) {
+            MonitorTappableSection(outset: 0, action: { onSelectRankable(kind) }) {
                 column
             }
         } else {
@@ -270,7 +266,7 @@ private struct MonitorMetricsSection: View {
     }
 }
 
-/// 指标单列：标签行（灰标题 → 右侧强调色附属值）→ 大数字 → 迷你折线。
+/// 指标单列：标签行（灰标题 → 右侧强调色附属值）→ 大数字 → 迷你折线 → 明细行（如 CPU 系统/用户占比）。
 private struct MonitorMetricColumn: View {
     let model: MonitorCardModel
     let accent: Color
@@ -311,7 +307,7 @@ private struct MonitorMetricColumn: View {
             }
 
             Text(model.primaryText)
-                .font(.system(size: 20, weight: .semibold).monospacedDigit())
+                .font(.system(size: 28, weight: .semibold).monospacedDigit())
                 .tracking(-0.5)
                 .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                 .lineLimit(1)
@@ -328,12 +324,21 @@ private struct MonitorMetricColumn: View {
                     values: model.trend ?? [],
                     color: accent,
                     domain: trendDomain,
-                    lineWidth: 1.5,
+                    lineWidth: 1.3,
                     fillHeight: 0,
-                    endDotRadius: 2.5,
-                    hoverFormatter: hoverFormatter
+                    endDotRadius: 1.65,
+                    hoverFormatter: hoverFormatter,
+                    hoverTimestamps: model.trendTimes
                 )
                 .frame(height: 36)
+
+                if !model.detailTexts.isEmpty {
+                    Text(model.detailTexts.joined(separator: "  ·  "))
+                        .font(.system(size: 10, weight: .regular).monospacedDigit())
+                        .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
             }
         }
     }
@@ -401,7 +406,8 @@ private struct MonitorNetworkSection: View {
                     DualSparklineView(
                         downValues: model.trend ?? [],
                         upValues: model.secondaryTrend ?? [],
-                        hoverFormatter: { MetricFormat.bytesPerSec($0) }
+                        hoverFormatter: { MetricFormat.bytesPerSec($0) },
+                        hoverTimestamps: model.trendTimes
                     )
                     .frame(height: 44)
 
@@ -420,7 +426,7 @@ private struct MonitorNetworkSection: View {
     }
 }
 
-/// 磁盘区（全宽）：标题行（色标 + 名称 → 右侧「可用 xx」徽标）→ 已用大数字 + 读/写速率行。
+/// 磁盘区（全宽）：标题行（色标 + 名称 → 右侧「已用 xx GB」）→ 读/写速率行（读为强调态、写为次要态）。
 private struct MonitorDiskSection: View {
     let model: MonitorCardModel
     let strings: Strings
@@ -438,7 +444,7 @@ private struct MonitorDiskSection: View {
 
     var body: some View {
         MonitorTappableSection(action: action) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .center, spacing: 6) {
                     MonitorSectionStyle.accentMark(MonitorCardAccent.color(for: .disk))
                     Text(model.title)
@@ -449,12 +455,11 @@ private struct MonitorDiskSection: View {
 
                     Spacer(minLength: 8)
 
-                    if let badge = model.badgeText {
-                        Text(badge)
-                            .font(.system(size: 13, weight: .regular).monospacedDigit())
-                            .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
-                            .lineLimit(1)
-                    }
+                    // 设计稿：已用量直接在标题行右侧，15 semibold 主色
+                    Text(model.primaryText)
+                        .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
+                        .lineLimit(1)
                 }
 
                 if let issue = model.issueText {
@@ -464,28 +469,19 @@ private struct MonitorDiskSection: View {
                         .lineLimit(2)
                         .minimumScaleFactor(0.8)
                 } else {
-                    HStack(alignment: .firstTextBaseline, spacing: 16) {
-                        Text(model.primaryText)
-                            .font(.system(size: 20, weight: .semibold).monospacedDigit())
-                            .tracking(-0.5)
-                            .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-
-                        Spacer(minLength: 8)
-
+                    HStack(alignment: .firstTextBaseline, spacing: 20) {
                         ioRow(
                             systemImage: "arrow.down",
                             iconOpacity: 1,
                             text: readText,
-                            font: .system(size: 12, weight: .medium),
-                            color: MonitorOverviewPalette.secondary(colorScheme)
+                            font: .system(size: 14, weight: .medium),
+                            color: MonitorOverviewPalette.primary(colorScheme)
                         )
                         ioRow(
                             systemImage: "arrow.up",
                             iconOpacity: 0.6,
                             text: writeText,
-                            font: .system(size: 12, weight: .regular),
+                            font: .system(size: 14, weight: .regular),
                             color: MonitorOverviewPalette.secondary(colorScheme)
                         )
                     }

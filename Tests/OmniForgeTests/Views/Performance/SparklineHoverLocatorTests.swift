@@ -28,17 +28,17 @@ final class SparklineHoverLocatorTests: XCTestCase {
         XCTAssertNil(SparklineHoverLocator.index(atX: 50, width: 0, count: 3))
     }
 
-    // MARK: - 气泡对齐三档
+    // MARK: - 气泡对齐三档（锚点下方悬挂）
 
     func test_bubbleAlignment_leadsOnLeftThird() {
-        XCTAssertEqual(SparklineHoverLocator.bubbleAlignment(atX: 10, width: 300), .bottomLeading)
+        XCTAssertEqual(SparklineHoverLocator.bubbleAlignment(atX: 10, width: 300), .topLeading)
     }
 
     func test_bubbleAlignment_centersInMiddle() {
-        XCTAssertEqual(SparklineHoverLocator.bubbleAlignment(atX: 150, width: 300), .bottom)
+        XCTAssertEqual(SparklineHoverLocator.bubbleAlignment(atX: 150, width: 300), .top)
     }
 
     func test_bubbleAlignment_trailsOnRightThird() {
-        XCTAssertEqual(SparklineHoverLocator.bubbleAlignment(atX: 290, width: 300), .bottomTrailing)
+        XCTAssertEqual(SparklineHoverLocator.bubbleAlignment(atX: 290, width: 300), .topTrailing)
     }
 }

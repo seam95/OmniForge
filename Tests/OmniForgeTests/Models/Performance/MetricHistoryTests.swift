@@ -2,12 +2,14 @@ import XCTest
 @testable import OmniForge
 
 final class MetricHistoryTests: XCTestCase {
+    /// 默认固定 sampledAt，保证涉及时间戳/相等性的断言确定性
     private func snapshot(
         cpu: Double? = 0.5,
         gpu: Double? = 0.3,
         memory: Double? = 0.6,
         netDown: Double? = 100,
-        netUp: Double? = 50
+        netUp: Double? = 50,
+        sampledAt: Date = Date(timeIntervalSince1970: 0)
     ) -> SystemSnapshot {
         var snap = SystemSnapshot()
         snap.cpuUsage = cpu.map { CPUUsageReading(total: $0, user: $0 * 0.6, system: $0 * 0.4) }
@@ -18,6 +20,7 @@ final class MetricHistoryTests: XCTestCase {
         }
         snap.netDownBytesPerSec = netDown
         snap.netUpBytesPerSec = netUp
+        snap.sampledAt = sampledAt
         return snap
     }
 
@@ -82,6 +85,8 @@ final class MetricHistoryTests: XCTestCase {
         XCTAssertTrue(history.memory.isEmpty)
         XCTAssertTrue(history.netDown.isEmpty)
         XCTAssertTrue(history.netUp.isEmpty)
+        XCTAssertTrue(history.cpuTimes.isEmpty)
+        XCTAssertTrue(history.netDownTimes.isEmpty)
     }
 
     func test_equality() {
@@ -91,6 +96,71 @@ final class MetricHistoryTests: XCTestCase {
         b.append(snapshot())
         XCTAssertEqual(a, b)
         b.append(snapshot(cpu: 0.9))
+        XCTAssertNotEqual(a, b)
+    }
+
+    // MARK: - 采样时刻
+
+    /// 值与时刻逐点配对：append 后各序列时间戳等于 sampledAt
+    func test_appendPairsTimestampsWithValues() {
+        var history = MetricHistory()
+        let t1 = Date(timeIntervalSince1970: 1_700_000_000)
+        let t2 = Date(timeIntervalSince1970: 1_700_000_002)
+        history.append(snapshot(sampledAt: t1))
+        history.append(snapshot(cpu: 0.7, sampledAt: t2))
+
+        XCTAssertEqual(history.cpuTimes, [t1, t2])
+        XCTAssertEqual(history.gpuTimes, [t1, t2])
+        XCTAssertEqual(history.netDownTimes, [t1, t2])
+        XCTAssertEqual(history.netUpTimes, [t1, t2])
+    }
+
+    /// 缺读数跳过时该序列时间戳同步跳过，不同序列时刻集可不同
+    func test_appendSkipsTimestampsWithMissingValues() {
+        var history = MetricHistory()
+        let t1 = Date(timeIntervalSince1970: 1_700_000_000)
+        let t2 = Date(timeIntervalSince1970: 1_700_000_002)
+        history.append(snapshot(cpu: nil, sampledAt: t1))
+        history.append(snapshot(cpu: 0.6, sampledAt: t2))
+
+        XCTAssertEqual(history.cpu, [0.6])
+        XCTAssertEqual(history.cpuTimes, [t2])
+        XCTAssertEqual(history.gpuTimes, [t1, t2])
+    }
+
+    /// sampledAt 缺失回退当前时刻，时间戳恒可用
+    func test_appendFallsBackToNowWhenSampledAtMissing() {
+        var history = MetricHistory()
+        var snap = snapshot()
+        snap.sampledAt = nil
+        let before = Date()
+        history.append(snap)
+        let after = Date()
+
+        XCTAssertEqual(history.cpuTimes.count, 1)
+        if let time = history.cpuTimes.first {
+            XCTAssertTrue(time >= before && time <= after)
+        }
+    }
+
+    /// 超容量时值与时刻同步裁剪，最早的配对整点丢弃
+    func test_appendTruncatesTimestampsBeyondCapacity() {
+        var history = MetricHistory()
+        let base = Date(timeIntervalSince1970: 1_700_000_000)
+        for i in 0..<(MetricHistory.capacity + 10) {
+            history.append(snapshot(cpu: Double(i), sampledAt: base.addingTimeInterval(Double(i))))
+        }
+        XCTAssertEqual(history.cpuTimes.count, MetricHistory.capacity)
+        XCTAssertEqual(history.cpuTimes.first, base.addingTimeInterval(10))
+        XCTAssertEqual(history.cpuTimes.last, base.addingTimeInterval(Double(MetricHistory.capacity + 9)))
+    }
+
+    /// 时刻参与相等性判断：同值不同时刻的序列不相等
+    func test_equalityIncludesTimestamps() {
+        var a = MetricHistory()
+        a.append(snapshot(sampledAt: Date(timeIntervalSince1970: 1)))
+        var b = MetricHistory()
+        b.append(snapshot(sampledAt: Date(timeIntervalSince1970: 2)))
         XCTAssertNotEqual(a, b)
     }
 }

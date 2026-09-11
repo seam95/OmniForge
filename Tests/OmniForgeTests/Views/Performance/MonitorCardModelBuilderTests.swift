@@ -37,6 +37,8 @@ final class MonitorCardModelBuilderTests: XCTestCase {
         let models = build(snap, history: history)
         let cpu = models.first { $0.id == .cpu }
         XCTAssertEqual(cpu?.trend, [0.5, 0.5])
+        // 采样时刻随趋势注入（悬浮气泡显示时间用）
+        XCTAssertEqual(cpu?.trendTimes?.count, 2)
     }
 
     func test_cpuCard_temperatureGoesToAccessory() {
@@ -203,6 +205,8 @@ final class MonitorCardModelBuilderTests: XCTestCase {
         var snap = SystemSnapshot()
         snap.netDownBytesPerSec = 100
         snap.netUpBytesPerSec = 50
+        let time = Date(timeIntervalSince1970: 1_700_000_000)
+        snap.sampledAt = time
         var history = MetricHistory()
         history.append(snap)
         history.append(snap)
@@ -210,6 +214,8 @@ final class MonitorCardModelBuilderTests: XCTestCase {
         let network = models.first { $0.id == .network }
         XCTAssertEqual(network?.trend, [100, 100])
         XCTAssertEqual(network?.secondaryTrend, [50, 50])
+        // 双线悬浮以行序列时刻定位，注入下行序列时刻
+        XCTAssertEqual(network?.trendTimes, [time, time])
     }
 
     // MARK: - Disk
@@ -228,13 +234,15 @@ final class MonitorCardModelBuilderTests: XCTestCase {
         )
         let models = build(snap, strings: .zhHans)
         let disk = models.first { $0.id == .disk }
-        XCTAssertEqual(disk?.primaryText, "50 GB")
-        XCTAssertEqual(disk?.badgeText, "可用 50 GB")
+        // 设计稿：标题行右侧显示已用量（带「已用」前缀），不再单独展示可用徽标
+        XCTAssertEqual(disk?.primaryText, "已用 50 GB")
+        XCTAssertNil(disk?.badgeText)
         XCTAssertNil(disk?.secondaryText)
         XCTAssertNil(disk?.progress)
+        // 读/写速率带「读取/写入」前缀
         XCTAssertEqual(disk?.chipTexts, [
-            MetricFormat.bytesPerSec(1_000_000 as Double) ?? "--",
-            MetricFormat.bytesPerSec(500_000 as Double) ?? "--",
+            "读取 \(MetricFormat.bytesPerSec(1_000_000 as Double))",
+            "写入 \(MetricFormat.bytesPerSec(500_000 as Double))",
         ])
         XCTAssertNil(disk?.processMetricKind)
         XCTAssertTrue(disk?.opensDiskDetail == true)
@@ -254,9 +262,9 @@ final class MonitorCardModelBuilderTests: XCTestCase {
         )
         let models = build(snap, strings: .en)
         let disk = models.first { $0.id == .disk }
-        XCTAssertEqual(disk?.primaryText, "--") // total 缺失 → 无已用大数字
-        XCTAssertEqual(disk?.badgeText, "Free 50 GB") // 可用徽标只依赖 free
-        XCTAssertEqual(disk?.chipTexts, ["--", "--"])
+        XCTAssertEqual(disk?.primaryText, "--") // total 缺失 → 无已用量
+        XCTAssertNil(disk?.badgeText) // 新设计稿不再展示可用徽标
+        XCTAssertEqual(disk?.chipTexts, ["Read --", "Write --"])
         XCTAssertTrue(disk?.opensDiskDetail == true)
     }
 

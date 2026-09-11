@@ -14,6 +14,8 @@ struct SparklineView: View {
     var endDotRadius: CGFloat = 0
     /// 非 nil 启用悬浮取值：把悬停采样点的原始值转成气泡文本
     var hoverFormatter: ((Double) -> String)? = nil
+    /// 各采样点时刻（与 values 逐点配对）：非 nil 时气泡在数值下补一行 HH:mm:ss
+    var hoverTimestamps: [Date]? = nil
 
     @State private var hoveredIndex: Int?
 
@@ -40,7 +42,7 @@ struct SparklineView: View {
                    points.indices.contains(index) {
                     let tip = points[index]
                     hoverIndicator(point: tip, height: proxy.size.height)
-                    hoverBubble(point: tip, width: proxy.size.width)
+                    hoverBubble(atX: tip.x, height: proxy.size.height, width: proxy.size.width)
                 }
             }
             .contentShape(Rectangle())
@@ -120,20 +122,28 @@ struct SparklineView: View {
         SparklineHoverIndicator(point: point, height: height, color: color)
     }
 
-    /// 数值气泡：锚在选中点上方，水平按三档对齐避免出界。
-    private func hoverBubble(point: CGPoint, width: CGFloat) -> some View {
+    /// 数值气泡：锚在选中点正下方（x 跟随、y 固定折线底边外侧），悬浮于折线区域
+    /// 之外避免遮挡走势本体；指示线全高贯穿，气泡挂在其脚下保持视觉关联。
+    private func hoverBubble(atX x: CGFloat, height: CGFloat, width: CGFloat) -> some View {
         Color.clear
             .frame(width: 1, height: 1)
-            .position(point)
-            .overlay(alignment: SparklineHoverLocator.bubbleAlignment(atX: point.x, width: width)) {
+            .position(x: x, y: height)
+            .overlay(alignment: SparklineHoverLocator.bubbleAlignment(atX: x, width: width)) {
                 if let formatter = hoverFormatter,
                    let index = hoveredIndex,
                    values.indices.contains(index) {
                     SparklineBubbleShell(colorScheme: colorScheme) {
-                        Text(formatter(values[index]))
-                            .font(.system(size: 11, weight: .medium).monospacedDigit())
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(formatter(values[index]))
+                                .font(.system(size: 11, weight: .medium).monospacedDigit())
+                            if let time = hoverTimestamps?[index] {
+                                Text(SparklineTimeText.time(time))
+                                    .font(.system(size: 10, weight: .regular).monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     }
-                    .padding(.bottom, 10)
+                    .padding(.top, 4)
                 }
             }
             .allowsHitTesting(false)
@@ -217,10 +227,24 @@ enum SparklineHoverLocator {
         return min(Int((ratio * CGFloat(count - 1)).rounded()), count - 1)
     }
 
-    /// 气泡水平对齐三档：左 1/3 左贴、右 1/3 右贴、中间居中，避免气泡出界。
+    /// 气泡对齐三档（锚点下方悬挂）：左 1/3 左贴、右 1/3 右贴、中间居中，避免气泡出界。
     static func bubbleAlignment(atX x: CGFloat, width: CGFloat) -> Alignment {
-        if x < width / 3 { return .bottomLeading }
-        if x > width * 2 / 3 { return .bottomTrailing }
-        return .bottom
+        if x < width / 3 { return .topLeading }
+        if x > width * 2 / 3 { return .topTrailing }
+        return .top
+    }
+}
+
+/// 悬浮气泡时间文本 — HH:mm:ss 本地时区（秒级粒度可区分同一分钟内的多个采样点）。
+/// formatter 创建开销大，静态缓存；DateFormatter 非线程安全，仅主线程 UI 渲染调用。
+enum SparklineTimeText {
+    private static let formatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
+
+    static func time(_ date: Date) -> String {
+        formatter.string(from: date)
     }
 }
