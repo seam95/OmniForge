@@ -67,9 +67,6 @@ struct SettingsView: View {
         .onChange(of: runtime.revision) { _, _ in
             navigation.select(navigation.selectedTab, isAvailable: runtime.isAvailable)
         }
-        .toolbar {
-            SettingsToolbarReservation.item
-        }
         .omniNoFocusRing()
     }
 
@@ -131,29 +128,6 @@ struct SettingsView: View {
         case .features:
             FeatureHubView(l10n: state.l10n)
                 .navigationTitle(tab.title(in: state.l10n.s))
-        }
-    }
-}
-
-/// 设置窗口工具栏的恒定占位。
-///
-/// SwiftUI 在工具栏**一个 item 都没有**时会把整个工具栏移除，标题栏高度随之从
-/// 52pt 掉到 28pt。特性页的「全部安装 / 全部卸载」只在该页存在，于是切到其他
-/// 页面时标题栏会跳变 24pt（内容区反向跳变，视觉上像整页位移）。
-///
-/// 这里在窗口根层放置一个**不可见的 1pt item**：工具栏因此在所有设置页恒定存在，
-/// 标题栏高度稳定；各页面自己的工具栏按钮（如特性页的批量操作）照常并入，
-/// 显示与交互逻辑不受影响。
-enum SettingsToolbarReservation {
-    /// 占位不参与视觉效果，仅用于让工具栏保持存在。
-    static let placeholderSize: CGFloat = 1
-
-    @ToolbarContentBuilder
-    static var item: some ToolbarContent {
-        ToolbarItemGroup(placement: .primaryAction) {
-            Color.clear
-                .frame(width: placeholderSize, height: placeholderSize)
-                .accessibilityHidden(true)
         }
     }
 }
