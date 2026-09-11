@@ -33,21 +33,44 @@ enum AppFeature: String, CaseIterable {
     static let mouseFeatures: [AppFeature] = FeatureGroup.features(in: .mouse)
 }
 
-/// 特性分组，用于 Settings UI 展示；case 顺序即侧栏与功能目录的分组展示顺序。
-/// 分组用于给长列表提供定位锚点：每组保持 2–6 项，避免出现几十项一组的“巨组”
+/// 使用形态（信息架构四象）：决定功能目录页与设置侧栏的分组先后。
+///
+/// 依据是「用户怎么用它」而非「它属于哪个功能域」。声明顺序即排序优先级：
+/// **热键直达 → 参数配置 → 面板浏览 → 动作工具**——日常即用即走的排前面，
+/// 配置一次就长期放着的不该抢占前排。
+enum FeatureUsageForm: Int, CaseIterable, Comparable {
+    /// 呼出即用即走（剪贴板、快捷短语、暂存架、截图、提示词优化）。
+    case hotkey = 0
+    /// 一次配置长期生效（输入法锁定、开机自启、鼠标行为）。
+    case configuration = 1
+    /// 驻留扫视的状态面板（系统监控、Token 用量、供应商切换）。
+    case panel = 2
+    /// 进入→操作→离开的动作工具（清理、卸载、便签、桌宠、唤醒…）。
+    case tool = 3
+
+    static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
+}
+
+/// 特性分组，用于 Settings UI 展示；case 顺序即侧栏与功能目录的分组展示顺序，
+/// **按使用形态分层**（见 `FeatureUsageForm`）：热键直达 → 参数配置 → 面板浏览 → 动作工具。
+/// 分组同时给长列表提供定位锚点：每组保持 2–6 项，避免出现几十项一组的“巨组”
 /// （巨组会让用户滚过整组才能找到目标，分组即失去导航意义）。
 enum FeatureGroup: String, CaseIterable {
-    case input        // 输入法相关
+    // 热键直达型
     case clipboard    // 剪贴板与快捷短语
-    case monitor      // 系统监控
-    case ai           // AI CLI 供应商切换
-    case productivity // 生产力工具
-    case maintenance  // 系统维护（清理、卸载、诊断类一次性操作）
-    case desktop      // 桌面常驻（便签、桌宠等陪伴型）
+    case ai           // AI（提示词优化为热键直达，供应商切换为面板；按较高优先级归类）
+    case productivity // 生产力工具（暂存架）
+    case capture      // 截图与捕获
+    // 参数配置型
+    case input        // 输入法相关
     case system       // 系统集成
     case mouse        // 鼠标与触控板
+    // 面板浏览型
+    case monitor      // 系统监控
+    // 动作工具型
+    case maintenance  // 系统维护（清理、卸载、诊断类一次性操作）
+    case desktop      // 桌面常驻（便签、桌宠等陪伴型）
     case energy       // 电源与唤醒
-    case capture      // 截图与捕获
 }
 
 /// 权限用途：区分“可能使用 / 已配置 / 可选 / 当前未使用”
@@ -85,6 +108,23 @@ extension AppFeature {
         case .keepAwake: return .energy
         case .screenshot: return .capture
         case .providerSwitch, .promptOptimizer: return .ai
+        }
+    }
+
+    /// 使用形态：决定功能目录页与侧栏的分组先后（见 `FeatureUsageForm`）。
+    /// 判定看主用法而非附属快捷方式——便签虽可用 ⌘⇧N 新建，但本体是常驻桌面的窗口，归动作工具型。
+    var usageForm: FeatureUsageForm {
+        switch self {
+        case .clipboardHistory, .quickPhrase, .shelf, .screenshot, .promptOptimizer:
+            return .hotkey
+        case .inputLock, .launchAtLogin,
+             .scrollInverter, .smoothScroll, .mouseNavigation, .dockClick:
+            return .configuration
+        case .systemMonitor, .tokenUsage, .providerSwitch:
+            return .panel
+        case .networkDiagnostics, .dshWeb, .cleaner, .uninstaller, .colorPicker,
+             .keepAwake, .stickyNotes, .cleaningMode, .desktopPet:
+            return .tool
         }
     }
 
@@ -303,9 +343,26 @@ extension FeatureGroup {
         }
     }
 
-    /// 按分组返回该组下的所有特性（按声明顺序）
+    /// 分组的使用形态 = 组内优先级最高的成员形态（决定分组先后）。
+    var usageForm: FeatureUsageForm {
+        AppFeature.allCases
+            .filter { $0.group == self }
+            .map(\.usageForm)
+            .min() ?? .tool
+    }
+
+    /// 按分组返回该组下的所有特性，组内按使用形态排序（同形态保持声明顺序）。
     static func features(in group: FeatureGroup) -> [AppFeature] {
-        AppFeature.allCases.filter { $0.group == group }
+        // 装饰-排序-去装饰：Swift 的 sort 不保证稳定，显式带序号保证同形态的稳定排序。
+        AppFeature.allCases
+            .filter { $0.group == group }
+            .enumerated()
+            .sorted { lhs, rhs in
+                lhs.element.usageForm == rhs.element.usageForm
+                    ? lhs.offset < rhs.offset
+                    : lhs.element.usageForm < rhs.element.usageForm
+            }
+            .map(\.element)
     }
 }
 

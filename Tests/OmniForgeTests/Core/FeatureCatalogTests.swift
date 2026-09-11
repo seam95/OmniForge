@@ -317,12 +317,72 @@ final class FeatureCatalogTests: XCTestCase {
         }
     }
 
+    // MARK: - 使用形态排序（信息架构四象）
+
+    /// 分组顺序契约：按使用形态分层——热键直达 → 参数配置 → 面板浏览 → 动作工具。
+    /// 日常即用即走的排前面，配置一次长期放着的不抢占前排。
+    func test_featureGroupOrder_followsUsageFormPriority() {
+        let forms = FeatureGroup.allCases.map(\.usageForm)
+        XCTAssertEqual(
+            forms, forms.sorted(),
+            "分组必须按使用形态升序排列，实测 \(FeatureGroup.allCases.map { "\($0.rawValue):\($0.usageForm)" })"
+        )
+
+        // 逐组核对形态归属（防止新增分组时排错层）。
+        XCTAssertEqual(FeatureGroup.clipboard.usageForm, .hotkey)
+        XCTAssertEqual(FeatureGroup.ai.usageForm, .hotkey, "含提示词优化，按较高优先级归类")
+        XCTAssertEqual(FeatureGroup.productivity.usageForm, .hotkey, "含暂存架")
+        XCTAssertEqual(FeatureGroup.capture.usageForm, .hotkey, "含截图")
+        XCTAssertEqual(FeatureGroup.input.usageForm, .configuration)
+        XCTAssertEqual(FeatureGroup.system.usageForm, .configuration)
+        XCTAssertEqual(FeatureGroup.mouse.usageForm, .configuration)
+        XCTAssertEqual(FeatureGroup.monitor.usageForm, .panel)
+        XCTAssertEqual(FeatureGroup.maintenance.usageForm, .tool)
+        XCTAssertEqual(FeatureGroup.desktop.usageForm, .tool)
+        XCTAssertEqual(FeatureGroup.energy.usageForm, .tool)
+    }
+
+    /// 组内顺序契约：同一分组内也按使用形态排序（同形态保持声明顺序稳定）。
+    func test_featuresWithinGroup_areOrderedByUsageForm() {
+        for group in FeatureGroup.allCases {
+            let forms = FeatureGroup.features(in: group).map(\.usageForm)
+            XCTAssertEqual(
+                forms, forms.sorted(),
+                "\(group.rawValue) 组内必须按使用形态升序，实测 \(FeatureGroup.features(in: group).map { "\($0.rawValue):\($0.usageForm)" })"
+            )
+        }
+        // ai 组是唯一混合形态的组：提示词优化（热键）应在供应商切换（面板）之前。
+        XCTAssertEqual(FeatureGroup.features(in: .ai), [.promptOptimizer, .providerSwitch])
+    }
+
+    /// 全部 23 项都必须有明确的使用形态归属（穷尽 switch 的语义保障）。
+    func test_everyFeatureHasUsageForm() {
+        XCTAssertEqual(AppFeature.allCases.count, 23)
+        XCTAssertEqual(
+            AppFeature.allCases.filter { $0.usageForm == .hotkey }.count, 5,
+            "热键直达型：剪贴板历史/快捷短语/暂存架/截图/提示词优化"
+        )
+        XCTAssertEqual(
+            AppFeature.allCases.filter { $0.usageForm == .configuration }.count, 6,
+            "参数配置型：输入法锁定/开机自启/鼠标四项"
+        )
+        XCTAssertEqual(
+            AppFeature.allCases.filter { $0.usageForm == .panel }.count, 3,
+            "面板浏览型：系统监控/Token 用量/供应商切换"
+        )
+        XCTAssertEqual(
+            AppFeature.allCases.filter { $0.usageForm == .tool }.count, 9,
+            "动作工具型：网诊/DSH/清理/卸载/取色/唤醒/便签/清洁模式/桌宠"
+        )
+    }
+
     func test_providerSwitch_catalogContract() {
         // 独立一级功能，归新 FeatureGroup.ai，不归 .monitor（SPEC 2.1）
         XCTAssertEqual(AppFeature.providerSwitch.group, .ai)
+        // 组内按使用形态排序：提示词优化是热键直达型（优先级更高），排在面板型供应商切换之前。
         XCTAssertEqual(
             FeatureGroup.features(in: .ai),
-            [.providerSwitch, .promptOptimizer]
+            [.promptOptimizer, .providerSwitch]
         )
         XCTAssertTrue(AppFeature.providerSwitch.enabledKeys.isEmpty)
         XCTAssertTrue(AppFeature.providerSwitch.possiblePermissions.isEmpty)

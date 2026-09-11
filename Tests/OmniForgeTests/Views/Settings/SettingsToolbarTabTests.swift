@@ -15,17 +15,19 @@ final class SettingsToolbarTabTests: XCTestCase {
     }
 
     func test_visibleSections_groupsSettingsTabsByFeatureGroup() {
+        // 分区顺序 = FeatureGroup 声明序 = 使用形态分层：
+        // 热键直达 → 参数配置 → 面板浏览 → 动作工具。
         XCTAssertEqual(
             SettingsToolbarTab.visibleSections(isAvailable: { _ in true }),
             [
-                SettingsSidebarSection(group: .input, tabs: [.inputMethod]),
                 SettingsSidebarSection(group: .clipboard, tabs: [.clipboard]),
-                SettingsSidebarSection(group: .monitor, tabs: [.performance, .tokenUsage]),
                 SettingsSidebarSection(group: .ai, tabs: [.providerSwitch, .promptOptimizer]),
                 SettingsSidebarSection(group: .productivity, tabs: [.shelf]),
-                SettingsSidebarSection(group: .mouse, tabs: [.mouse]),
-                SettingsSidebarSection(group: .energy, tabs: [.keepAwake]),
                 SettingsSidebarSection(group: .capture, tabs: [.screenshot]),
+                SettingsSidebarSection(group: .input, tabs: [.inputMethod]),
+                SettingsSidebarSection(group: .mouse, tabs: [.mouse]),
+                SettingsSidebarSection(group: .monitor, tabs: [.performance, .tokenUsage]),
+                SettingsSidebarSection(group: .energy, tabs: [.keepAwake]),
             ]
         )
     }
