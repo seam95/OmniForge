@@ -11,6 +11,22 @@ enum WhatsNewReleaseCatalog {
     /// 历次版本的更新内容，新版本在前
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            version: "3.9.0",
+            entries: [
+                WhatsNewEntry(type: .added, text: "新增桌面宠物：像素猫常驻桌面，会散步休息，并对复制、低电量、高温等状态做出反应，支持导入社区宠物"),
+                WhatsNewEntry(type: .added, text: "新增提示词优化：任意应用选中文字，⌥⌘P 一键 AI 增强"),
+                WhatsNewEntry(type: .added, text: "新增主题外观切换：跟随系统 / 浅色 / 深色"),
+                WhatsNewEntry(type: .changed, text: "控制中心收敛为 4 大板块，特性与侧栏按使用形态重新分组"),
+                WhatsNewEntry(type: .changed, text: "供应商页底部链接收纳为齿轮菜单，新增供应商直接在面板内完成"),
+                WhatsNewEntry(type: .changed, text: "折线悬浮气泡改挂图表下方不再遮挡走势，并显示采样时间"),
+                WhatsNewEntry(type: .changed, text: "设置页 ⓘ 说明改为悬浮即时弹出"),
+                WhatsNewEntry(type: .changed, text: "安装包体积精简一半以上"),
+                WhatsNewEntry(type: .fixed, text: "修复切换页面时设置窗口标题栏高度跳变"),
+                WhatsNewEntry(type: .fixed, text: "修复特性页开关功能后滚动位置回顶"),
+                WhatsNewEntry(type: .fixed, text: "修复 GPU / 网络排行首次打开长时间空等"),
+            ]
+        ),
+        WhatsNewRelease(
             version: "3.8.2",
             entries: [
                 WhatsNewEntry(type: .fixed, text: "重设计 DMG 安装窗口：修复背景错位与图标不对齐，安装页焕新为放置槽引导布局"),
