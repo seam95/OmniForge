@@ -13,37 +13,6 @@ enum ControlCenterContentMetrics {
     static let emptyContentMinHeight: CGFloat = 120
 }
 
-/// 控制中心 footer 左区入口契约：功能目录（FeatureHub）与设置的显隐、样式与深链目标
-/// 收敛于此，避免在视图里散落字符串与跳转目标（信息架构重构 SPEC §5.1）。
-enum ControlCenterFooterEntry: CaseIterable {
-    /// 功能目录正门：直达设置窗特性页。
-    case features
-    /// 设置（默认落 设置窗 general 页，由 onOpenSettings(nil) 语义决定）。
-    case settings
-
-    var systemImage: String {
-        switch self {
-        case .features: return "puzzlepiece.extension"
-        case .settings: return "gearshape"
-        }
-    }
-
-    /// 深链目标：`nil` 表示设置窗默认页。
-    var settingsTab: SettingsToolbarTab? {
-        switch self {
-        case .features: return .features
-        case .settings: return nil
-        }
-    }
-
-    func label(in strings: Strings) -> String {
-        switch self {
-        case .features: return strings.controlcenterFooterFeatures
-        case .settings: return strings.settingsTitle
-        }
-    }
-}
-
 struct ControlCenterContainerView: View {
     @ObservedObject var state: AppState
     @ObservedObject private var runtime = FeatureRuntime.shared
@@ -386,15 +355,13 @@ struct ControlCenterContainerView: View {
         // footer 几何跨面板恒定（SPEC §3.1.3/§8.1）：flat 发丝线经 overlay 叠加，
         // 不占布局高度——非 flat 面板不再因少 1pt 分隔线改变 popover 总高。
         return HStack(spacing: 4) {
-            // 左区入口集合由 ControlCenterFooterEntry 驱动（顺序=声明序）：功能目录 + 设置。
-            ForEach(ControlCenterFooterEntry.allCases, id: \.self) { entry in
-                FooterButton(
-                    label: entry.label(in: state.l10n.s),
-                    systemImage: entry.systemImage,
-                    tint: tint
-                ) {
-                    onOpenSettings(entry.settingsTab)
-                }
+            // 左区仅「设置」（直达设置窗默认页）；功能目录入口已按反馈移除。
+            FooterButton(
+                label: state.l10n.s.settingsTitle,
+                systemImage: "gearshape",
+                tint: tint
+            ) {
+                onOpenSettings(nil)
             }
 
                 Spacer()

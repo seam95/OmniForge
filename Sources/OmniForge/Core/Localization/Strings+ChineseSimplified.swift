@@ -87,7 +87,6 @@ extension Strings {
         controlcenterClipboardDisabled: "已关闭，快捷键不会触发",
         controlcenterOpenSettings: "设置",
         controlcenterTabUtilities: "实用工具",
-        controlcenterFooterFeatures: "特性",
         controlcenterNavMonitor: "监控",
         controlcenterNavKeepAwake: "唤醒",
         controlcenterNavUtilities: "工具",

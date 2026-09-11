@@ -87,7 +87,6 @@ extension Strings {
         controlcenterClipboardDisabled: "Disabled, hotkey will be ignored",
         controlcenterOpenSettings: "Settings",
         controlcenterTabUtilities: "Utilities",
-        controlcenterFooterFeatures: "Features",
         controlcenterNavMonitor: "Monitor",
         controlcenterNavKeepAwake: "Awake",
         controlcenterNavUtilities: "Tools",
