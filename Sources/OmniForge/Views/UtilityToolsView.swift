@@ -278,8 +278,8 @@ struct UtilityToolsView: View {
     }
 }
 
-/// 工具列表行的紧凑几何契约：行内只保留「图标徽章 + 标题」，
-/// 描述文案改为悬浮提示后不再参与行高，几何收敛到这里便于单点调参。
+/// 工具列表行的紧凑几何契约：图标徽章尺寸与行内边距收敛到这里便于单点调参。
+/// 行高由内容（徽章与两行文字的较高者）自然撑开，不做硬性约束。
 enum UtilityToolRowMetrics {
     /// 图标徽章边长。原为 38pt，与 13pt 标题并排时偏大，缩小以贴合文字比例。
     static let iconBadgeSize: CGFloat = 30
@@ -289,61 +289,17 @@ enum UtilityToolRowMetrics {
     static let iconGlyphSize: CGFloat = 14
     /// 行上下内边距。原为 10pt。
     static let verticalPadding: CGFloat = 8
-    /// 行高：图标徽章 + 上下内边距。
-    static var rowHeight: CGFloat { iconBadgeSize + verticalPadding * 2 }
-    /// 描述气泡的最大宽度；超出即换行，气泡本身按内容贴合尺寸。
-    static let hintMaxWidth: CGFloat = 280
 }
 
-/// 工具行描述的显示时机与位置契约。
-enum UtilityToolRowHint {
-    /// 悬浮显示前的防抖：鼠标扫过整列时不逐个闪气泡，感知上仍接近立即。
-    /// 键盘聚焦不防抖——焦点移动是明确意图，再等只会显得迟钝。
-    static let hoverRevealDelay: TimeInterval = 0.16
-
-    /// 行处于「活跃态」：指针悬浮或键盘聚焦。活跃态同时决定行背景高亮与
-    /// 描述可见——键盘与指针因此共用同一条查看路径；读屏另走无障碍提示。
-    static func isActive(hovered: Bool, focused: Bool) -> Bool {
-        hovered || focused
-    }
-
-    /// 气泡停靠边：贴着整行右侧（面板外侧），箭头指向被悬浮的那一行。
-    /// 这样提示不会压住列表里的其他工具项；屏幕右侧放不下时由系统自动改边。
-    static let placementEdge: Edge = .trailing
-}
-
-/// 工具行描述气泡：单条共享配方，行内 popover 与视觉核对都用它。
-/// 宽度按内容贴合（`fixedSize`），超过上限即换行，避免窄面板上溢出屏幕。
-struct UtilityToolHintBubble: View {
-    let text: String
-
-    var body: some View {
-        Text(text)
-            .font(Theme.Stats.font12Medium)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .frame(maxWidth: UtilityToolRowMetrics.hintMaxWidth, alignment: .leading)
-            .fixedSize()
-            .accessibilityLabel(text)
-    }
-}
-
-/// 实用工具列表行：多彩图标 + 标题 + chevron/状态药丸，整行可点。
-/// 描述文案默认不占位，鼠标悬浮或键盘聚焦时以气泡形式贴在行右侧显示。
+/// 实用工具列表行：多彩图标 + 标题/描述 + chevron/状态药丸，整行可点。
+/// 描述以常驻小字呈现在标题下方；悬浮或键盘聚焦时行背景高亮。
 private struct UtilityToolRow: View {
     let tool: UtilityTool
     let strings: Strings
     let onTap: () -> Void
     @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered = false
-    @State private var showsHint = false
     @FocusState private var isFocused: Bool
-
-    private var hintText: String { tool.hubDescription(in: strings) }
-
-    private var isActive: Bool {
-        UtilityToolRowHint.isActive(hovered: isHovered, focused: isFocused)
-    }
 
     var body: some View {
         Button(action: onTap) {
@@ -361,10 +317,17 @@ private struct UtilityToolRow: View {
                         .foregroundStyle(tool.tintColor)
                 }
 
-                Text(tool.title(in: strings))
-                    .font(Theme.Stats.font13SemiBold)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tool.title(in: strings))
+                        .font(Theme.Stats.font13SemiBold)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
+                        .lineLimit(1)
+                    Text(tool.hubDescription(in: strings))
+                        .font(Theme.Stats.font11Regular)
+                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
 
                 Spacer(minLength: 8)
 
@@ -379,38 +342,19 @@ private struct UtilityToolRow: View {
             .padding(.horizontal, 16)
             .padding(.vertical, UtilityToolRowMetrics.verticalPadding)
             .background(
-                isActive ? MonitorOverviewPalette.hoverFill(colorScheme) : Color.clear
+                (isHovered || isFocused) ? MonitorOverviewPalette.hoverFill(colorScheme) : Color.clear
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // 键盘可达：Tab 聚焦到某一行时同样高亮并弹出描述。
+        // 键盘可达：Tab 聚焦到某一行时行背景高亮（根容器已禁用系统焦点环）。
         .focusable()
         .focused($isFocused)
         .onHover { hovering in
             isHovered = hovering
-            if hovering {
-                DispatchQueue.main.asyncAfter(deadline: .now() + UtilityToolRowHint.hoverRevealDelay) {
-                    guard isHovered || isFocused else { return }
-                    showsHint = true
-                }
-            } else if !isFocused {
-                showsHint = false
-            }
-        }
-        .onChange(of: isFocused) { _, focused in
-            if focused {
-                showsHint = true
-            } else if !isHovered {
-                showsHint = false
-            }
-        }
-        .popover(isPresented: $showsHint, arrowEdge: UtilityToolRowHint.placementEdge) {
-            UtilityToolHintBubble(text: hintText)
         }
         .accessibilityLabel(tool.title(in: strings))
-        // 描述只以气泡呈现，读屏 / 辅助触控仍要能取到，故挂在无障碍提示上。
-        .accessibilityHint(hintText)
+        .accessibilityHint(tool.hubDescription(in: strings))
     }
 }
 

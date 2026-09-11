@@ -44,8 +44,7 @@ final class UtilityToolsPresentationTests: XCTestCase {
         XCTAssertEqual(UtilityTool.keepAwake.feature, .keepAwake)
         XCTAssertEqual(UtilityTool.keepAwake.symbolName(), "moon.zzz.fill")
 
-        // 描述改为悬浮气泡后仍是唯一的信息出口（无障碍提示也取自它），
-        // 两种语言都必须有非空文案。
+        // 描述以常驻小字呈现在标题下方（同时挂无障碍提示），两种语言都必须有非空文案。
         for strings in [Strings.zhHans, Strings.en] {
             for tool in UtilityTool.allCases {
                 XCTAssertFalse(tool.hubName(in: strings).isEmpty, "\(tool)")
@@ -55,32 +54,13 @@ final class UtilityToolsPresentationTests: XCTestCase {
     }
 
     func test_toolRowMetrics_areCompactAndInternallyConsistent() {
-        // 紧凑化契约：图标徽章小于文字块原尺寸（38pt），行高由徽章与内边距推导，
-        // 且比改造前（38 + 10×2 = 58pt）明显更低，保证列表更紧凑。
+        // 紧凑化契约：图标徽章小于原尺寸（38pt），行内边距保持紧凑；
+        // 行高由内容自然撑开（描述常驻后不再做硬性约束）。
         XCTAssertLessThan(UtilityToolRowMetrics.iconBadgeSize, 38)
         XCTAssertLessThan(UtilityToolRowMetrics.verticalPadding, 10)
-        XCTAssertEqual(
-            UtilityToolRowMetrics.rowHeight,
-            UtilityToolRowMetrics.iconBadgeSize + UtilityToolRowMetrics.verticalPadding * 2
-        )
-        XCTAssertLessThan(UtilityToolRowMetrics.rowHeight, 58)
         // 图标必须留在徽章内，否则缩小徽章后字形会溢出并与标题错位。
         XCTAssertLessThanOrEqual(UtilityToolRowMetrics.iconGlyphSize, UtilityToolRowMetrics.iconBadgeSize)
         XCTAssertLessThanOrEqual(UtilityToolRowMetrics.iconCornerRadius, UtilityToolRowMetrics.iconBadgeSize / 2)
-        // 气泡按内容换行而非无限拉宽，避免在窄面板上溢出屏幕。
-        XCTAssertGreaterThan(UtilityToolRowMetrics.hintMaxWidth, 0)
-    }
-
-    func test_toolRowHint_visibleWhileHoveringOrKeyboardFocused() {
-        // 描述只在悬浮/聚焦时出现，两者都退出才隐藏；键盘因此与指针走同一条
-        // 查看路径，行高亮也共用该判定。
-        XCTAssertTrue(UtilityToolRowHint.isActive(hovered: true, focused: false))
-        XCTAssertTrue(UtilityToolRowHint.isActive(hovered: false, focused: true))
-        XCTAssertTrue(UtilityToolRowHint.isActive(hovered: true, focused: true))
-        XCTAssertFalse(UtilityToolRowHint.isActive(hovered: false, focused: false))
-        // 气泡贴行右侧，不覆盖列表中的其他工具项。
-        XCTAssertEqual(UtilityToolRowHint.placementEdge, .trailing)
-        XCTAssertGreaterThan(UtilityToolRowHint.hoverRevealDelay, 0)
     }
 
     func test_persistedToolSelectionUsesStoredValueAndRepairsUnavailableValue() {
