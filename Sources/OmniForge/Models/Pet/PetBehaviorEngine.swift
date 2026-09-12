@@ -7,6 +7,10 @@ enum PetAutonomyKind: String, CaseIterable, Hashable {
     case idle
     case walkLeft
     case walkRight
+    /// 玩耍（原地卖萌小动作）。
+    case frolic
+    /// 蹦跳（原地跳一下）。
+    case hop
 
     /// 转为对外行为状态。
     var behaviorState: PetBehaviorState {
@@ -14,6 +18,8 @@ enum PetAutonomyKind: String, CaseIterable, Hashable {
         case .idle: return .idle
         case .walkLeft: return .walk(direction: .left)
         case .walkRight: return .walk(direction: .right)
+        case .frolic: return .frolic
+        case .hop: return .hop
         }
     }
 }
@@ -29,6 +35,10 @@ struct PetBehaviorTuning: Equatable {
     var idleStep: ClosedRange<TimeInterval>
     /// 单次行走时长区间（秒）。
     var walkStep: ClosedRange<TimeInterval>
+    /// 单次玩耍时长区间（秒）。
+    var frolicStep: ClosedRange<TimeInterval>
+    /// 单次蹦跳时长区间（秒）。
+    var hopStep: ClosedRange<TimeInterval>
     /// 行走速度（点/秒）。
     var walkSpeed: CGFloat
 
@@ -53,6 +63,8 @@ struct PetBehaviorTuning: Equatable {
         activityLevel: ActivityPreset.balanced.activityLevel,
         idleStep: 2...6,
         walkStep: 1...2.5,
+        frolicStep: 1.2...2.2,
+        hopStep: 0.8...1.4,
         walkSpeed: 30
     )
 
@@ -60,9 +72,14 @@ struct PetBehaviorTuning: Equatable {
     /// 设计参照业界马尔可夫桌宠：idle 行自环为主；行走行以回归 idle 为主，
     /// 停留时长由自环权重的期望步数内生控制，而非独立的次数权重。
     private static let baseMatrix: [PetAutonomyKind: [PetAutonomyKind: Double]] = [
-        .idle: [.idle: 0.65, .walkLeft: 0.175, .walkRight: 0.175],
+        // idle 行小权重分给玩耍/蹦跳（自主小动作）；好动度缩放 idle 自环后归一化，
+        // 活泼档三者概率同步升高。
+        .idle: [.idle: 0.55, .walkLeft: 0.15, .walkRight: 0.15, .frolic: 0.075, .hop: 0.075],
         .walkLeft: [.idle: 0.70, .walkLeft: 0.15, .walkRight: 0.15],
         .walkRight: [.idle: 0.70, .walkLeft: 0.15, .walkRight: 0.15],
+        // 一次性自主小动作：播完必回 idle 重新掷骰。
+        .frolic: [.idle: 1],
+        .hop: [.idle: 1],
     ]
 
     /// 好动度对 idle 自环权重的乘数：0 → ×2（更安静），0.5 → ×1（基准），1 → ×0（idle 结束必走）。
@@ -71,9 +88,14 @@ struct PetBehaviorTuning: Equatable {
     }
 
     /// 含好动度缩放的转移权重行（已归一化，可直接加权随机）。
-    func transitionWeights(from kind: PetAutonomyKind) -> [PetAutonomyKind: Double] {
+    /// - Parameter availableKinds: 素材可支撑的自主态集合——缺素材的列置零后重归一化
+    ///   （对齐业界禁用列机制：素材缺行时矩阵自动收缩，相对比例不变）。
+    func transitionWeights(
+        from kind: PetAutonomyKind,
+        available: Set<PetAutonomyKind> = Set(PetAutonomyKind.allCases)
+    ) -> [PetAutonomyKind: Double] {
         let base = Self.baseMatrix[kind] ?? [:]
-        var row = base
+        var row = base.filter { available.contains($0.key) }
         if kind == .idle {
             row[.idle] = (base[.idle] ?? 0) * idleSelfWeightMultiplier
         }
@@ -84,7 +106,12 @@ struct PetBehaviorTuning: Equatable {
 
     /// 指定态的单步时长区间。
     func stepRange(for kind: PetAutonomyKind) -> ClosedRange<TimeInterval> {
-        kind == .idle ? idleStep : walkStep
+        switch kind {
+        case .idle: return idleStep
+        case .walkLeft, .walkRight: return walkStep
+        case .frolic: return frolicStep
+        case .hop: return hopStep
+        }
     }
 }
 
@@ -104,6 +131,8 @@ final class PetBehaviorEngine {
 
     private var randomSource: PetRandomSource
     private var tuning: PetBehaviorTuning
+    /// 素材可支撑的自主态（缺素材的行为从矩阵剔除；默认全量）。
+    private var availableKinds: Set<PetAutonomyKind> = Set(PetAutonomyKind.allCases)
 
     init(
         randomSource: PetRandomSource = SystemPetRandomSource(),
@@ -118,11 +147,16 @@ final class PetBehaviorEngine {
         tuning = newTuning
     }
 
+    /// 更新素材可支撑的自主态（换宠物后按素材行收缩矩阵）。
+    func apply(availableKinds kinds: Set<PetAutonomyKind>) {
+        availableKinds = kinds
+    }
+
     // MARK: - 决策
 
     /// 从当前自主态出发的下一步决策（矩阵行加权随机，时长按目标态采样）。
     func nextAutonomousDecision() -> PetBehaviorDecision {
-        let weights = tuning.transitionWeights(from: autonomy)
+        let weights = tuning.transitionWeights(from: autonomy, available: availableKinds)
         let next = pickWeighted(weights) ?? .idle
         autonomy = next
         let duration = randomDuration(in: tuning.stepRange(for: next))
@@ -195,7 +229,8 @@ final class PetBehaviorEngine {
                 state = .reaction(kind: kind, resumeState: resume)
             }
             return true
-        case .idle, .walk:
+        case .idle, .walk, .frolic, .hop:
+            // 一次性自主小动作（frolic/hop）被打断后回到 idle（无需续播小动作）。
             let resume: PetResumeState
             switch state {
             case .walk(let direction): resume = .walk(direction: direction)
@@ -249,6 +284,8 @@ final class PetBehaviorEngine {
         switch state {
         case .idle: autonomy = .idle
         case .walk(let direction): autonomy = direction == .left ? .walkLeft : .walkRight
+        case .frolic: autonomy = .frolic
+        case .hop: autonomy = .hop
         case .drag, .petted, .reaction: break
         }
     }

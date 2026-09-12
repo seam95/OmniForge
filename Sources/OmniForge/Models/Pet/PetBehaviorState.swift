@@ -14,6 +14,10 @@ enum PetBehaviorState: Equatable {
     case petted(resumeState: PetResumeState)
     /// 反应中：外部事件触发的一次性状态，播完回到 `resumeState`（与被抚摸同族）。
     case reaction(kind: PetReactionKind, resumeState: PetResumeState)
+    /// 玩耍：自主触发的原地卖萌小动作（复用挥手素材）。
+    case frolic
+    /// 蹦跳：自主触发的原地跳一下（复用悬空素材）。
+    case hop
 }
 
 /// 水平朝向。

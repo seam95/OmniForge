@@ -107,6 +107,16 @@ struct PetSpriteView: View {
                 }
             }
             return nil
+
+        case .frolic:
+            // 玩耍复用挥手（抚摸）素材。
+            return asset.animation(id: PetAnimationID.petted).map { ($0, false) }
+
+        case .hop:
+            // 蹦跳复用悬空素材（jumping 行优先，其次 fall）。
+            let animation = asset.animation(id: PetAnimationID.drag)
+                ?? asset.animation(id: PetAnimationID.fall)
+            return animation.map { ($0, false) }
         }
     }
 

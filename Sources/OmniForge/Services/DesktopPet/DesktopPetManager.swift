@@ -188,11 +188,31 @@ final class DesktopPetManager: ObservableObject {
         windowController.apply(petSize: petSize)
     }
 
+    /// 素材可支撑的自主态集合（缺素材的行为从矩阵剔除，防僵着滑行）。
+    static func availableAutonomyKinds(for asset: PetSpriteAsset?) -> Set<PetAutonomyKind> {
+        var kinds: Set<PetAutonomyKind> = [.idle, .walkLeft, .walkRight]
+        // 玩耍复用挥手（抚摸）素材；蹦跳复用悬空素材。
+        if asset?.animation(id: PetAnimationID.petted) != nil {
+            kinds.insert(.frolic)
+        }
+        if asset?.animation(id: PetAnimationID.drag) != nil
+            || asset?.animation(id: PetAnimationID.fall) != nil {
+            kinds.insert(.hop)
+        }
+        return kinds
+    }
+
+    /// 按当前资产收缩矩阵（换宠 / 启动后调用）。
+    func syncAutonomyAvailability() {
+        engine.apply(availableKinds: Self.availableAutonomyKinds(for: asset))
+    }
+
     /// 切换当前宠物：解析资产并（若在运行）重建窗口以应用新尺寸。
     func selectPet(slug: String) {
         selectedPetSlug = slug
         userDefaults.set(slug, forKey: UserDefaultsKeys.petSelectedSlug)
         asset = Self.resolveAsset(slug: slug, store: assetStore)
+        engine.apply(availableKinds: Self.availableAutonomyKinds(for: asset))
         restartIfRunning()
     }
 
@@ -328,10 +348,11 @@ final class DesktopPetManager: ObservableObject {
               ) ?? screens.first else { return }
 
         switch behaviorState {
-        case .idle:
+        case .idle, .frolic, .hop:
             decisionRemaining -= dt
             if decisionRemaining <= 0 {
-                // 矩阵决策：idle 与 walk 行分布不同（行走后更倾向回归 idle）。
+                // 矩阵决策：idle 与 walk 行分布不同（行走后更倾向回归 idle）；
+                // 玩耍/蹦跳是一次性自主小动作，播完同样回到矩阵重新掷骰。
                 let decision = engine.nextAutonomousDecision()
                 engine.apply(decision)
                 decisionRemaining = decision.duration

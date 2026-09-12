@@ -76,8 +76,9 @@ final class PetBehaviorEngineTests: XCTestCase {
     }
 
     func test_decisionFromIdleWithLowRollStaysIdle() {
-        // 基准档 idle 自环占比 ~0.65：roll 0.1 落在 idle；时长 roll 0 → 下界 2s。
-        let engine = makeEngine(rolls: [0.1, 0.0])
+        // 加权随机按枚举名排序分配区间：frolic[0,0.075) hop[0.075,0.15) idle[0.15,0.70)。
+        // roll 0.3 落 idle；时长 roll 0 → 下界 2s。
+        let engine = makeEngine(rolls: [0.3, 0.0])
 
         let decision = engine.nextAutonomousDecision()
 
@@ -315,17 +316,95 @@ final class PetBehaviorEngineTests: XCTestCase {
         }
     }
 
+    // MARK: - 自主小动作（frolic / hop）
+
+    func test_matrixIncludesFrolicAndHopFromIdle() {
+        let row = PetBehaviorTuning.default.transitionWeights(from: .idle)
+
+        XCTAssertNotNil(row[.frolic])
+        XCTAssertNotNil(row[.hop])
+        // 小动作权重明显低于行走。
+        XCTAssertLessThan(row[.frolic] ?? 0, row[.walkLeft] ?? 0)
+    }
+
+    func test_frolicAndHopRowsReturnToIdle() {
+        let frolicRow = PetBehaviorTuning.default.transitionWeights(from: .frolic)
+        let hopRow = PetBehaviorTuning.default.transitionWeights(from: .hop)
+
+        XCTAssertEqual(frolicRow[.idle] ?? 0, 1.0, accuracy: 0.0001)
+        XCTAssertEqual(hopRow[.idle] ?? 0, 1.0, accuracy: 0.0001)
+    }
+
+    func test_decisionCanProduceFrolicAndHop() {
+        // 区间按枚举名排序：frolic[0,0.075) hop[0.075,0.15) idle[0.15,0.70) walkL[0.70,0.85) walkR…
+        // roll 0.05 落 frolic；时长 roll 0 → frolicStep 下界 1.2s。
+        let engine = makeEngine(rolls: [0.05, 0.0])
+
+        let decision = engine.nextAutonomousDecision()
+
+        XCTAssertEqual(decision.state, .frolic)
+        XCTAssertEqual(engine.autonomy, .frolic)
+        XCTAssertEqual(decision.duration, 1.2, accuracy: 0.0001)
+
+        // frolic 行播完必回 idle：roll 0.3 → idle。
+        let next = engine.nextAutonomousDecision()
+        XCTAssertEqual(next.state, .idle)
+    }
+
+    func test_disabledColumnsRenormalize() {
+        // 素材缺 frolic 行：idle 行剔除 frolic 后重归一化，其余比例保持。
+        let full = PetBehaviorTuning.default.transitionWeights(from: .idle)
+        let withoutFrolic = PetBehaviorTuning.default.transitionWeights(
+            from: .idle,
+            available: [.idle, .walkLeft, .walkRight, .hop]
+        )
+
+        XCTAssertNil(withoutFrolic[.frolic])
+        XCTAssertEqual(withoutFrolic.values.reduce(0, +), 1.0, accuracy: 0.0001)
+        // 行走相对比例不变（两者分母差一个 frolic 权重）。
+        let ratio = (withoutFrolic[.walkLeft] ?? 0) / (full[.walkLeft] ?? 1)
+        XCTAssertGreaterThan(ratio, 1.0)
+        XCTAssertLessThan(ratio, 1.5)
+    }
+
+    func test_availableAutonomyKindsDerivedFromAsset() throws {
+        // 内置猫：有 petted（frolic 可用）与 fall（hop 可用）。
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        PetAssetLocator.additionalSearchRoots = [
+            repoRoot.appendingPathComponent("Resources/Pets")
+        ]
+        defer { PetAssetLocator.additionalSearchRoots = [] }
+
+        let asset = try XCTUnwrap(PetAssetLocator.builtInAsset)
+        let kinds = DesktopPetManager.availableAutonomyKinds(for: asset)
+        XCTAssertEqual(kinds, [.idle, .walkLeft, .walkRight, .frolic, .hop])
+
+        // 无小动作素材的资产：仅基础三态。
+        let bare = PetSpriteAsset(
+            id: "bare", displayName: "Bare", atlasFileName: "x.png",
+            grid: .init(columns: 8, rows: 9, cellWidth: 32, cellHeight: 32),
+            animations: [
+                PetSpriteAsset.Animation(id: "idle", frames: [0], fps: 1, loops: true, mirrorX: false),
+                PetSpriteAsset.Animation(id: "walk", frames: [8], fps: 8, loops: true, mirrorX: true),
+            ]
+        )
+        XCTAssertEqual(DesktopPetManager.availableAutonomyKinds(for: bare), [.idle, .walkLeft, .walkRight])
+    }
+
     // MARK: - 调参热更新
 
     func test_applyTuningTakesEffectImmediately() {
-        let engine = makeEngine(rolls: [0.1])
+        let engine = makeEngine(rolls: [0.3])
         var tuning = PetBehaviorTuning.default
         tuning.idleStep = 3...3
         engine.apply(tuning: tuning)
 
         let decision = engine.nextAutonomousDecision()
 
-        // roll 0.1 落在 idle；时长区间固定 3s（时长 roll 0 → 下界 3）。
+        // roll 0.3 落在 idle；时长区间固定 3s（时长 roll 0 → 下界 3）。
         XCTAssertEqual(decision.state, .idle)
         XCTAssertEqual(decision.duration, 3, accuracy: 0.0001)
     }
