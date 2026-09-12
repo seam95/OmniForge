@@ -8,7 +8,9 @@ enum PetAssetLocator {
     static var additionalSearchRoots: [URL] = []
 
     /// 内置默认宠物 id。
-    static let builtInPetID = "cat"
+    static let builtInPetID = "doraemon"
+    /// 已退役的旧内置宠物 id（升级迁移判定用）。
+    static let retiredBuiltInPetID = "cat"
 
     /// 指定 id 的资产目录：先查 Bundle，再查各搜索根。
     static func directory(for petID: String) -> URL? {

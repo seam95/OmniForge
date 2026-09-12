@@ -224,11 +224,12 @@ final class PetBehaviorEngine {
     }
 
     /// 外部反应：打断自主行为进入一次性反应态，播完回 `resumeState`。
-    /// 打断裁决：用户主动交互（拖拽/抚摸）进行中**丢弃**反应（不与用户争抢）；
-    /// 反应进行中到达的新反应**替换并刷新**；自主行为（idle/walk）一律可打断。
+    /// 打断裁决按 `PetInterruptLevel`：等级高于当前状态的反应接纳（drag/petted 之下）
+    /// ——用户主动交互（拖拽/抚摸）进行中**丢弃**反应（不与用户争抢）；
+    /// 反应进行中到达的新反应**同级替换并刷新**；自主行为（idle/walk/frolic/hop）一律可打断。
     @discardableResult
     func react(to kind: PetReactionKind) -> Bool {
-        switch state {
+        switch state.interruptLevel {
         case .drag, .petted:
             return false
         case .reaction:
@@ -237,7 +238,7 @@ final class PetBehaviorEngine {
                 state = .reaction(kind: kind, resumeState: resume)
             }
             return true
-        case .idle, .walk, .frolic, .hop:
+        case .autonomous:
             // 一次性自主小动作（frolic/hop）被打断后回到 idle（无需续播小动作）。
             let resume: PetResumeState
             switch state {

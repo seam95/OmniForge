@@ -162,7 +162,7 @@ enum Defaults {
             UserDefaultsKeys.petPositionX: 0.0,
             UserDefaultsKeys.petPositionY: 0.0,
             UserDefaultsKeys.petPositionScreen: "",
-            UserDefaultsKeys.petSelectedSlug: "cat",
+            UserDefaultsKeys.petSelectedSlug: PetAssetLocator.builtInPetID,
             UserDefaultsKeys.petActivityLevel: "balanced",
             UserDefaultsKeys.petReactionsEnabled: true,
         ]

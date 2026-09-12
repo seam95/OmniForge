@@ -648,4 +648,273 @@ final class DesktopPetManagerTests: XCTestCase {
         XCTAssertEqual(defaults.double(forKey: UserDefaultsKeys.petPositionX), 300)
         XCTAssertEqual(defaults.double(forKey: UserDefaultsKeys.petPositionY), 400)
     }
+
+    // MARK: - 内置宠物切换与 slug 迁移（三期：cat → doraemon）
+
+    /// 构造一个库内可加载的自定义宠物目录（自有格式，2×1 网格最小资产）。
+    private func installCustomPet(slug: String) throws {
+        let directory = assetRoot.appendingPathComponent(slug, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let manifest = #"""
+        {
+          "id": "\#(slug)",
+          "name": "\#(slug)",
+          "displayName": "\#(slug)",
+          "atlas": "atlas.png",
+          "grid": { "columns": 2, "rows": 1, "cellSize": [16, 16] },
+          "animations": [{ "id": "idle", "frames": "0-1", "fps": 4, "loop": true }]
+        }
+        """#
+        try Data(manifest.utf8).write(to: directory.appendingPathComponent("pet.json"))
+        // 图集本体不参与 slug 可加载判定（pet.json + 完整解码即算，解码在无图集时
+        // 仍成功——图集按需懒加载），pet.json 即可让 customAssetIsLoadable 命中。
+    }
+
+    func test_freshDefaultsSelectDoraemon() {
+        // 真实 defaults 注册下的首开：未存储 slug 时选择内置 doraemon 并落盘。
+        let manager = makeManager()
+
+        XCTAssertEqual(manager.selectedPetSlug, PetAssetLocator.builtInPetID)
+        XCTAssertEqual(manager.isCustomPet, false)
+        XCTAssertEqual(
+            defaults.string(forKey: UserDefaultsKeys.petSelectedSlug),
+            PetAssetLocator.builtInPetID,
+            "首开应把内置 slug 落盘"
+        )
+    }
+
+    func test_legacyCatMigratesToDoraemonWhenNoCustomCat() throws {
+        defaults.set(PetAssetLocator.retiredBuiltInPetID, forKey: UserDefaultsKeys.petSelectedSlug)
+
+        let manager = makeManager()
+
+        XCTAssertEqual(
+            manager.selectedPetSlug, PetAssetLocator.builtInPetID,
+            "旧 cat 且库内无同名自定义资产 → 迁移为 doraemon"
+        )
+        XCTAssertEqual(
+            defaults.string(forKey: UserDefaultsKeys.petSelectedSlug),
+            PetAssetLocator.builtInPetID,
+            "迁移结果须落盘（重启后不反复迁移）"
+        )
+    }
+
+    func test_validCustomCatIsPreserved() throws {
+        try installCustomPet(slug: PetAssetLocator.retiredBuiltInPetID)
+        defaults.set(PetAssetLocator.retiredBuiltInPetID, forKey: UserDefaultsKeys.petSelectedSlug)
+
+        let manager = makeManager()
+
+        XCTAssertEqual(
+            manager.selectedPetSlug, PetAssetLocator.retiredBuiltInPetID,
+            "用户自装的 cat 是有效自定义资产，不误迁"
+        )
+        XCTAssertEqual(manager.isCustomPet, true)
+    }
+
+    func test_missingSlugFallsBackToBuiltInAndPersists() {
+        defaults.set("ghost-pet", forKey: UserDefaultsKeys.petSelectedSlug)
+
+        let manager = makeManager()
+
+        XCTAssertEqual(manager.selectedPetSlug, PetAssetLocator.builtInPetID)
+        XCTAssertEqual(
+            defaults.string(forKey: UserDefaultsKeys.petSelectedSlug),
+            PetAssetLocator.builtInPetID,
+            "失效选择回退时同步保存（画面与选中态一致）"
+        )
+    }
+
+    func test_selectedSlugSurvivesReinit() throws {
+        try installCustomPet(slug: "my-pet")
+        defaults.set("my-pet", forKey: UserDefaultsKeys.petSelectedSlug)
+
+        let first = makeManager()
+        XCTAssertEqual(first.selectedPetSlug, "my-pet")
+
+        // 再次初始化：仍选 my-pet（有效自定义选择稳定保持）。
+        managers.append(first)
+        let second = makeManager()
+        XCTAssertEqual(second.selectedPetSlug, "my-pet")
+    }
+
+    // MARK: - 指针采样、看向与悬停（三期覆盖）
+
+    /// 可变指针源盒子：闭包捕获引用，测试期间可直接移动指针。
+    private final class PointerBox {
+        var location: CGPoint = .zero
+    }
+
+    /// 构造带资产与可变指针源的 Manager（覆盖采样测试用）。
+    private func makeOverlayManager(
+        asset: PetSpriteAsset?,
+        pointer: PointerBox = PointerBox()
+    ) -> (manager: DesktopPetManager, pointer: PointerBox) {
+        let clock = ManualFrameClock()
+        frameClocks.append(clock)
+        let manager = DesktopPetManager(
+            userDefaults: defaults,
+            windowController: PetWindowController(petSize: CGSize(width: 96, height: 96)),
+            assetStore: PetAssetStore(rootDirectory: assetRoot),
+            asset: asset,
+            stringsProvider: { Strings.zhHans },
+            visibleScreensProvider: { [self.screen] },
+            tickInterval: 1.0 / 30.0,
+            frameClock: clock,
+            pointerLocationProvider: { pointer.location }
+        )
+        managers.append(manager)
+        return (manager, pointer)
+    }
+
+    /// 覆盖测试用资产：idle 4 帧 @4fps + drag 2 帧 @8fps（悬停链）+ 可选 look。
+    private func overlayAsset(lookFrames: [Int?] = Array(repeating: nil, count: 16)) -> PetSpriteAsset {
+        var asset = PetSpriteAsset(
+            id: "overlay-pet",
+            displayName: "Overlay Pet",
+            atlasFileName: "atlas.png",
+            grid: PetSpriteAsset.Grid(columns: 8, rows: 9, cellWidth: 32, cellHeight: 32),
+            animations: [
+                PetSpriteAsset.Animation(id: PetAnimationID.idle, frames: [0, 1, 2, 3], fps: 4, loops: true, mirrorX: false),
+                PetSpriteAsset.Animation(id: PetAnimationID.drag, frames: [32, 33], fps: 8, loops: true, mirrorX: false),
+            ]
+        )
+        asset.lookFrames = lookFrames
+        return asset
+    }
+
+    func test_pointerOutsideUpdatesLookDirectionEachTick() {
+        let look = Array(repeating: nil, count: 16).withValue(4, 72)
+        let (manager, pointer) = makeOverlayManager(asset: overlayAsset(lookFrames: look))
+        manager.start()
+        // 首帧后把指针移到窗口右侧远处（窗口默认落在屏幕右下角内侧）。
+        let rect = manager.windowController.panel!.frame
+        pointer.location = CGPoint(x: rect.maxX + 200, y: rect.midY)
+
+        manager.tick(delta: 1.0 / 30.0)
+
+        XCTAssertEqual(manager.lookDirection, 4, "矩形外右侧 → 槽位 4")
+        XCTAssertEqual(manager.displaySnapshot?.frameIndex, 72, "看向帧覆盖底层动画")
+    }
+
+    func test_pointerInsideIsDeadZone() {
+        let look = Array(repeating: nil, count: 16).withValue(4, 72)
+        let (manager, pointer) = makeOverlayManager(asset: overlayAsset(lookFrames: look))
+        manager.start()
+        let rect = manager.windowController.panel!.frame
+        pointer.location = CGPoint(x: rect.midX, y: rect.midY)
+
+        manager.tick(delta: 1.0 / 30.0)
+
+        XCTAssertNil(manager.lookDirection, "矩形内为死区")
+        XCTAssertTrue((0...3).contains(manager.displaySnapshot?.frameIndex ?? -1), "回底层 idle（帧 0-3）")
+    }
+
+    func test_hoverTriggersOnceOnOutsideInsideEdge() {
+        let (manager, pointer) = makeOverlayManager(asset: overlayAsset())
+        manager.start()
+        let rect = manager.windowController.panel!.frame
+
+        // 首次采样：建立外部基线（不触发）。
+        manager.tick(delta: 1.0 / 30.0)
+        XCTAssertNil(manager.hoverPlayback, "首次采样只建基线")
+
+        // 外→内边沿：触发一次性悬停。
+        pointer.location = CGPoint(x: rect.midX, y: rect.midY)
+        manager.tick(delta: 1.0 / 30.0)
+        XCTAssertEqual(manager.hoverPlayback?.animation.id, PetAnimationID.drag, "悬停用 drag 素材")
+        XCTAssertEqual(manager.hoverPlayback?.animation.loops, false, "强制一次性播放")
+        XCTAssertEqual(manager.behaviorState, .idle, "悬停不改底层行为态")
+
+        // 播完（drag 2 帧 @8fps = 0.25s）后覆盖移除。
+        manager.tick(delta: 0.3)
+        XCTAssertNil(manager.hoverPlayback, "播完即移除覆盖")
+        XCTAssertEqual(manager.behaviorState, .idle)
+    }
+
+    func test_hoverCooldownBlocksImmediateRetrigger() {
+        let (manager, pointer) = makeOverlayManager(asset: overlayAsset())
+        manager.start()
+        let rect = manager.windowController.panel!.frame
+        let inside = CGPoint(x: rect.midX, y: rect.midY)
+
+        // 触发一次。
+        manager.tick(delta: 1.0 / 30.0)
+        pointer.location = inside
+        manager.tick(delta: 1.0 / 30.0)
+        XCTAssertNotNil(manager.hoverPlayback)
+
+        // 离开再立即进入（< 2s）：冷却期内不重播。
+        pointer.location = .zero
+        manager.tick(delta: 0.3)
+        pointer.location = inside
+        manager.tick(delta: 0.1)
+        XCTAssertNil(manager.hoverPlayback, "2s 冷却内不重触发")
+
+        // 离开超过 2s 再进入：可再次触发。
+        pointer.location = .zero
+        manager.tick(delta: 3.0)
+        pointer.location = inside
+        manager.tick(delta: 0.1)
+        XCTAssertNotNil(manager.hoverPlayback, "冷却结束可再次触发")
+    }
+
+    func test_hoverDoesNotClearReactionBubble() {
+        let (manager, pointer) = makeOverlayManager(asset: overlayAsset())
+        manager.start()
+        let rect = manager.windowController.panel!.frame
+        _ = manager.submit(.celebrationTriggered(quotaLabel: "Claude 7d"))
+        XCTAssertEqual(manager.behaviorState, .reaction(kind: .celebrate, resumeState: .idle))
+
+        // 悬停触发：反应态与气泡保持（悬停只是渲染覆盖）。
+        manager.tick(delta: 1.0 / 30.0)
+        pointer.location = CGPoint(x: rect.midX, y: rect.midY)
+        manager.tick(delta: 1.0 / 30.0)
+
+        XCTAssertNotNil(manager.hoverPlayback)
+        XCTAssertNotNil(manager.currentBubble, "悬停不清反应气泡")
+        XCTAssertEqual(manager.behaviorState, .reaction(kind: .celebrate, resumeState: .idle))
+    }
+
+    func test_dragDisablesLookAndClearsHover() {
+        let look = Array(repeating: nil, count: 16).withValue(4, 72)
+        let (manager, pointer) = makeOverlayManager(asset: overlayAsset(lookFrames: look))
+        manager.start()
+        let rect = manager.windowController.panel!.frame
+
+        // 触发悬停后开始拖动：悬停清除、看向禁用。
+        manager.tick(delta: 1.0 / 30.0)
+        pointer.location = CGPoint(x: rect.midX, y: rect.midY)
+        manager.tick(delta: 1.0 / 30.0)
+        XCTAssertNotNil(manager.hoverPlayback)
+
+        manager.beginDrag()
+        XCTAssertNil(manager.hoverPlayback, "开始直接拖动清除悬停覆盖")
+        pointer.location = CGPoint(x: rect.maxX + 100, y: rect.midY)
+        manager.tick(delta: 1.0 / 30.0)
+        XCTAssertNil(manager.lookDirection, "拖动期间看向禁用（不依赖指针位置假设）")
+        XCTAssertTrue((32...33).contains(manager.displaySnapshot?.frameIndex ?? -1), "拖动显示 drag 动画（帧 32/33）")
+    }
+
+    func test_displaySnapshotPresentImmediatelyAfterStart() {
+        let (manager, _) = makeOverlayManager(asset: overlayAsset())
+
+        manager.start()
+
+        XCTAssertTrue((0...3).contains(manager.displaySnapshot?.frameIndex ?? -1), "start 即产出首帧快照（首 tick 前不空白）")
+        XCTAssertEqual(manager.displaySnapshot?.frameIndex, 0)
+        XCTAssertEqual(manager.displaySnapshot?.size, manager.petSize)
+    }
+}
+
+// MARK: - 测试辅助
+
+private extension Array {
+    /// 返回副本，将指定下标置为给定值（构造 16 槽位局部占用用）。
+    func withValue(_ index: Int, _ value: Element) -> [Element] {
+        var copy = self
+        guard index >= 0, index < count else { return copy }
+        copy[index] = value
+        return copy
+    }
 }

@@ -14,6 +14,9 @@ struct PetSpriteAsset: Equatable {
     let grid: Grid
     /// 动画定义，按声明顺序。
     let animations: [Animation]
+    /// 看向帧映射：固定 16 个方向槽位（顺时针，正上为 0），每格为图集帧号或缺失。
+    /// 长度恒为 16（无看向能力时全 nil），不压缩缺失方向——渲染层按槽位取帧，缺帧回退底层动画。
+    var lookFrames: [Int?] = Array(repeating: nil, count: PetLookOverlay.directionCount)
 
     /// 图集网格：列数 / 行数 / 单元格像素尺寸。
     struct Grid: Equatable {
@@ -53,6 +56,15 @@ struct PetSpriteAsset: Equatable {
         animations.first { $0.id == id }
     }
 
+    /// 指定方向槽位（0…15）的看向帧号；越界或缺帧返回 nil。
+    func lookFrame(direction: Int) -> Int? {
+        guard direction >= 0, direction < lookFrames.count else { return nil }
+        return lookFrames[direction]
+    }
+
+    /// 是否存在任一有效看向帧（全部为 nil 时看向覆盖整体不启用）。
+    var hasLookFrames: Bool { lookFrames.contains { $0 != nil } }
+
     /// 单元格宽高比（宽 / 高）。桌宠窗口按此比例呈现，避免拉伸变形。
     var aspectRatio: CGFloat {
         guard grid.cellHeight > 0 else { return 1 }
@@ -72,6 +84,9 @@ enum PetAnimationID {
     static let petted = "petted"
     /// 拖拽悬空姿态（petdex 的 jumping 行）。
     static let drag = "drag"
+    /// 看向：frames 须恰好 16 项、按方向槽位顺序解释（不限于图集第 9/10 行）。
+    /// 不参与普通动画播放，也不作为缺 idle 时的兜底。
+    static let look = "look"
     // 以下为社区资产保留、一期不驱动（二期接 Agent 状态反应时启用）。
     static let failed = "failed"
     static let waiting = "waiting"
@@ -149,7 +164,21 @@ extension PetSpriteAsset {
             throw PetAssetError.missingField("grid.columns/rows/cellSize")
         }
 
-        let resolvedAnimations = try animations.map { animation -> Animation in
+        // look 声明单独解析：数量必须恰好 16 且帧号全部合法，否则忽略整组
+        // 看向能力（不影响其他动画加载）。它不进 animations，避免参与通用兜底。
+        var lookFrames: [Int?]?
+        if let lookRaw = animations.first(where: { $0.id == PetAnimationID.look }) {
+            if let frames = lookRaw.frames,
+               let indices = try? parseFrames(frames, animation: lookRaw.id),
+               indices.count == PetLookOverlay.directionCount,
+               indices.allSatisfy({ $0 >= 0 && $0 < resolvedGrid.cellCount }) {
+                lookFrames = indices
+            }
+        }
+
+        let resolvedAnimations = try animations
+            .filter { $0.id != PetAnimationID.look }
+            .map { animation -> Animation in
             guard let frames = animation.frames else {
                 throw PetAssetError.missingField("animations[].frames")
             }
@@ -178,7 +207,8 @@ extension PetSpriteAsset {
             displayName: raw.displayName ?? raw.name,
             atlasFileName: raw.atlas,
             grid: resolvedGrid,
-            animations: resolvedAnimations
+            animations: resolvedAnimations,
+            lookFrames: lookFrames ?? Array(repeating: nil, count: PetLookOverlay.directionCount)
         )
     }
 

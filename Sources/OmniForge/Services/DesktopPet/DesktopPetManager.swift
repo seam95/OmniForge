@@ -13,6 +13,10 @@ final class DesktopPetManager: ObservableObject {
     /// 同级替换（reaction → reaction）不算离开，气泡文案由 `submit` 更新。
     @Published private(set) var behaviorState: PetBehaviorState = .idle {
         didSet {
+            // 底层行为态切换即重置动画时间轴（覆盖层用独立时间轴，不触碰这里）。
+            if oldValue != behaviorState {
+                stateEnteredAtDisplay = displayDate
+            }
             guard case .reaction = oldValue, currentBubble != nil else { return }
             if case .reaction = behaviorState { return }
             clearBubble()
@@ -76,6 +80,32 @@ final class DesktopPetManager: ObservableObject {
     /// 行走活动半径（点）：以锚点为中心的水平活动半宽。
     private let walkRadius: CGFloat = 120
 
+    /// 投掷（松手后惯性运动）是否进行中：期间看向 / 悬停禁用、反应丢弃、自主掷骰暂停。
+    /// 阶段②接入真实动量状态；当前恒 false（拖动由原生会话即时结束）。
+    var isMomentumActive: Bool { false }
+
+    // MARK: - 指针采样与显示覆盖（三期：看向 / 悬停 / 统一显示快照）
+
+    /// 指针位置采样源（AppKit 屏幕坐标）；测试注入固定序列。
+    private let pointerLocationProvider: () -> CGPoint
+    /// 显示时钟：由 tick delta 推进的虚拟挂钟（循环相位连续、测试确定）。
+    private var displayDate = Date(timeIntervalSinceReferenceDate: 0)
+    /// 当前底层行为态的进入时刻（显示时钟域；覆盖不重置它，底层逻辑照常推进）。
+    private var stateEnteredAtDisplay = Date(timeIntervalSinceReferenceDate: 0)
+    /// 指针是否在宠物矩形内的上一次采样值（nil = 首次采样只建基线，不触发悬停）。
+    private var pointerInsideBaseline: Bool?
+    /// 悬停一次性播放（nil = 无覆盖）。
+    private(set) var hoverPlayback: PetHoverPlayback?
+    /// 悬停冷却截止时刻（显示时钟域；触发后至少 2s 才能再次触发）。
+    private var hoverCooldownUntil = Date.distantPast
+    /// 当前看向方向槽位（矩形外才有；拖动 / 投掷期间为 nil）。
+    private(set) var lookDirection: Int?
+    /// 最终显示快照（渲染与命中共享的唯一帧真相；非 Published——由视图帧时钟轮询读取，
+    /// 避免 30Hz 帧更新惊动所有订阅 Manager 的页面视图）。
+    private(set) var displaySnapshot: PetDisplaySnapshot?
+    /// 直接拖动期间的手势水平朝向（阶段②驱动分向走动表现；非拖动为 nil）。
+    private(set) var dragFacing: PetDirection?
+
     init(
         userDefaults: UserDefaults = .standard,
         windowController: PetWindowController? = nil,
@@ -90,7 +120,8 @@ final class DesktopPetManager: ObservableObject {
         persistDebounce: TimeInterval = 0.5,
         frameClock: PetFrameClock? = nil,
         bubbleController: PetBubbleWindowController? = nil,
-        bubbleVariantRoll: @escaping () -> Double = { Double.random(in: 0..<1) }
+        bubbleVariantRoll: @escaping () -> Double = { Double.random(in: 0..<1) },
+        pointerLocationProvider: @escaping () -> CGPoint = { NSEvent.mouseLocation }
     ) {
         self.userDefaults = userDefaults
         self.stringsProvider = stringsProvider
@@ -110,7 +141,12 @@ final class DesktopPetManager: ObservableObject {
         self.size = resolvedSize
 
         let storedSlug = userDefaults.string(forKey: UserDefaultsKeys.petSelectedSlug)
-        let slug = (storedSlug?.isEmpty == false) ? storedSlug! : PetAssetLocator.builtInPetID
+        let slug = Self.normalizedSelectedSlug(stored: storedSlug, store: store)
+        // 规范化后与存储值不同（旧 cat 迁移 / 失效选择回退）时同步落盘，
+        // 保证选中态与实际画面一致（重启后不反复迁移）。
+        if slug != storedSlug {
+            userDefaults.set(slug, forKey: UserDefaultsKeys.petSelectedSlug)
+        }
         self.selectedPetSlug = slug
         let resolvedAsset = asset ?? Self.resolveAsset(slug: slug, store: store)
         self.asset = resolvedAsset
@@ -118,6 +154,7 @@ final class DesktopPetManager: ObservableObject {
             ?? PetWindowController(petSize: Self.petSize(for: resolvedSize, asset: resolvedAsset))
         self.bubbleController = bubbleController ?? PetBubbleWindowController()
         self.bubbleVariantRoll = bubbleVariantRoll
+        self.pointerLocationProvider = pointerLocationProvider
         self.installedPets = store.installedPets()
         // 拖动由窗口承载的原生拖动会话驱动（越过阈值才触发），此处接线状态迁移回调。
         self.windowController.onWindowDragStart = { [weak self] in self?.beginDrag() }
@@ -146,6 +183,13 @@ final class DesktopPetManager: ObservableObject {
             initialOrigin: origin,
             rootView: PetSpriteView(manager: self, asset: asset)
         )
+        // 重置覆盖与采样基线（新会话从零开始），并立即产出首帧快照（首 tick 前不空白）。
+        pointerInsideBaseline = nil
+        hoverPlayback = nil
+        hoverCooldownUntil = .distantPast
+        lookDirection = nil
+        stateEnteredAtDisplay = displayDate
+        updateDisplaySnapshot()
         startFrameClock()
         startReactionCoordinator()
         installScreenChangeObserver()
@@ -164,6 +208,13 @@ final class DesktopPetManager: ObservableObject {
         isDragging = false
         walkAnchorX = nil
         behaviorState = .idle
+        // 覆盖与采样状态一并清理：停用后不留指针基线 / 悬停时间戳 / 快照引用。
+        pointerInsideBaseline = nil
+        hoverPlayback = nil
+        hoverCooldownUntil = .distantPast
+        lookDirection = nil
+        dragFacing = nil
+        displaySnapshot = nil
         engine.drainExternalEvents()
         stopReactionCoordinator()
         removeScreenChangeObserver()
@@ -207,6 +258,8 @@ final class DesktopPetManager: ObservableObject {
         size = newSize
         userDefaults.set(newSize.rawValue, forKey: UserDefaultsKeys.petSize)
         windowController.apply(petSize: petSize)
+        // 尺寸变化同步命中判定与显示快照。
+        updateDisplaySnapshot()
     }
 
     /// 素材可支撑的自主态集合（缺素材的行为从矩阵剔除，防僵着滑行）。
@@ -229,11 +282,16 @@ final class DesktopPetManager: ObservableObject {
     }
 
     /// 切换当前宠物：解析资产并（若在运行）重建窗口以应用新尺寸。
+    /// 覆盖状态先清理——旧宠物的悬停时间戳 / 看向帧不得驱动新窗口。
     func selectPet(slug: String) {
         selectedPetSlug = slug
         userDefaults.set(slug, forKey: UserDefaultsKeys.petSelectedSlug)
         asset = Self.resolveAsset(slug: slug, store: assetStore)
         engine.apply(availableKinds: Self.availableAutonomyKinds(for: asset))
+        pointerInsideBaseline = nil
+        hoverPlayback = nil
+        hoverCooldownUntil = .distantPast
+        lookDirection = nil
         restartIfRunning()
     }
 
@@ -326,6 +384,8 @@ final class DesktopPetManager: ObservableObject {
         behaviorState = .idle
         decisionRemaining = engine.sampleDuration(for: .idle)
         interruptedRemaining = nil
+        hoverPlayback = nil
+        updateDisplaySnapshot()
     }
 
     // MARK: - 行为循环
@@ -358,8 +418,16 @@ final class DesktopPetManager: ObservableObject {
             stopFrameClock()
             return
         }
-        guard !isDragging else { return }
         let dt = delta ?? tickInterval
+        // 显示时钟统一推进（覆盖与底层动画共用同一时间轴原点域）。
+        displayDate = displayDate.addingTimeInterval(dt)
+        // 指针采样先于拖动 / 行为推进：拖动方向与速度（阶段②）同样依赖采样流。
+        // 原生拖动会话期间 runloop 走 .eventTracking，帧时钟注册在 .common 仍持续回调。
+        samplePointerOverlays()
+        guard !isDragging else {
+            updateDisplaySnapshot()
+            return
+        }
         let currentPetSize = petSize
         let screens = visibleScreensProvider()
         guard let origin = windowController.currentOrigin,
@@ -367,7 +435,10 @@ final class DesktopPetManager: ObservableObject {
                 position: origin,
                 petSize: currentPetSize,
                 screens: screens
-              ) ?? screens.first else { return }
+              ) ?? screens.first else {
+            updateDisplaySnapshot()
+            return
+        }
 
         switch behaviorState {
         case .idle, .frolic, .hop:
@@ -442,6 +513,82 @@ final class DesktopPetManager: ObservableObject {
             }
             _ = kind
         }
+
+        updateDisplaySnapshot()
+    }
+
+    // MARK: - 指针采样与显示覆盖
+
+    /// 统一指针采样（每 tick 一次，约 30Hz）：更新看向方向并驱动悬停的外→内边沿。
+    /// 隐藏 / 停用时 tick 不跑，采样自然停止；重新显示后首次采样只建立基线。
+    private func samplePointerOverlays() {
+        guard let panel = windowController.panel else { return }
+        let pointer = pointerLocationProvider()
+        let petRect = panel.frame
+        let inside = Self.pointer(pointer, isInRect: petRect)
+
+        // 看向：直接拖动 / 投掷期间显式禁用（不能依赖「指针必在矩形内」的假设）；
+        // 矩形内（含边界）为死区。方向缺帧的回退在显示解析层处理。
+        lookDirection = (isDragging || isMomentumActive)
+            ? nil
+            : PetLookOverlay.directionIndex(pointer: pointer, petRect: petRect)
+
+        // 悬停：首次采样只建基线；外→内边沿触发，内→外离开即清除。
+        if let baseline = pointerInsideBaseline {
+            if inside && !baseline {
+                tryStartHover()
+            } else if !inside {
+                hoverPlayback = nil
+            }
+        }
+        pointerInsideBaseline = inside
+    }
+
+    /// 触发一次悬停覆盖：素材链 drag → fall，一次性播放；无素材则不显示覆盖。
+    /// 不修改底层行为态 / 计时 / 气泡；触发后至少 2s 冷却，持续停留不重播（边沿触发）。
+    private func tryStartHover() {
+        guard !isDragging, !isMomentumActive else { return }
+        guard displayDate >= hoverCooldownUntil else { return }
+        guard let animation = asset?.animation(id: PetAnimationID.drag)
+            ?? asset?.animation(id: PetAnimationID.fall) else { return }
+        hoverPlayback = PetHoverPlayback(animation: animation.oneShot(), startedAt: displayDate)
+        hoverCooldownUntil = displayDate.addingTimeInterval(2)
+    }
+
+    /// 重算最终显示快照：渲染与命中共享的唯一帧真相。
+    private func updateDisplaySnapshot() {
+        // 悬停播完即移除覆盖（下一层解析自然回落到底层动画）。
+        if let hover = hoverPlayback, hover.isFinished(at: displayDate) {
+            hoverPlayback = nil
+        }
+        guard let asset else {
+            displaySnapshot = nil
+            return
+        }
+        guard let resolution = PetDisplayResolver.resolve(
+            state: behaviorState,
+            asset: asset,
+            dragFacing: dragFacing,
+            lookDirection: lookDirection,
+            hover: hoverPlayback,
+            now: displayDate,
+            stateEnteredAt: stateEnteredAtDisplay
+        ) else {
+            displaySnapshot = nil
+            return
+        }
+        displaySnapshot = PetDisplaySnapshot(
+            asset: asset,
+            frameIndex: resolution.frameIndex,
+            mirrored: resolution.mirrored,
+            size: petSize
+        )
+    }
+
+    /// 指针是否在矩形内（含边界；与 `PetLookOverlay` 的死区判定同口径）。
+    static func pointer(_ pointer: CGPoint, isInRect rect: CGRect) -> Bool {
+        pointer.x >= rect.minX && pointer.x <= rect.maxX
+            && pointer.y >= rect.minY && pointer.y <= rect.maxY
     }
 
     // MARK: - 交互
@@ -454,19 +601,27 @@ final class DesktopPetManager: ObservableObject {
         behaviorState = engine.state
         // 抚摸动画时长由资产定义，缺资产时给一个保守值。
         decisionRemaining = oneShotDuration(ids: [PetAnimationID.petted], fallback: 0.6)
+        updateDisplaySnapshot()
     }
 
     /// 拖拽开始：进入拖动状态，位移随后由系统原生窗口拖动会话接管。
+    /// 看向与悬停覆盖立即禁用 / 清除（气泡沿用拖动开始即清的既有语义）。
     func beginDrag() {
         isDragging = true
+        hoverPlayback = nil
+        lookDirection = nil
         engine.beginDrag()
         behaviorState = .drag
+        updateDisplaySnapshot()
     }
 
     /// 拖拽结束：宠物悬停在松手处并回到 idle，该处成为新的行走活动锚点。
     func endDrag() {
         guard isDragging else { return }
         isDragging = false
+        dragFacing = nil
+        // 指针此刻必在宠物附近：重建悬停基线，避免松手后一次假边沿触发跳跃。
+        pointerInsideBaseline = true
         // 以松手处为活动锚点：之后只在附近走动，不再满屏游走。
         walkAnchorX = windowController.currentOrigin?.x
         engine.endDrag()
@@ -474,6 +629,7 @@ final class DesktopPetManager: ObservableObject {
         decisionRemaining = engine.sampleDuration(for: .idle)
         interruptedRemaining = nil
         persistPositionDebounced()
+        updateDisplaySnapshot()
     }
 
     /// 显示器配置变更：夹回可见区并回到 idle。
@@ -494,7 +650,9 @@ final class DesktopPetManager: ObservableObject {
         behaviorState = .idle
         decisionRemaining = engine.sampleDuration(for: .idle)
         interruptedRemaining = nil
+        hoverPlayback = nil
         persistPositionDebounced()
+        updateDisplaySnapshot()
     }
 
     // MARK: - 事件反应联动（二期）
@@ -606,6 +764,7 @@ final class DesktopPetManager: ObservableObject {
             behaviorState = engine.state
             decisionRemaining = engine.currentReaction?.duration ?? 3
             presentBubble(for: event)
+            updateDisplaySnapshot()
         }
         return accepted
     }
@@ -736,6 +895,30 @@ final class DesktopPetManager: ObservableObject {
             }
         }
         return PetAssetLocator.builtInAsset
+    }
+
+    /// 规范化持久化的所选 slug：
+    /// - 旧内置 `cat`：库内存在**可加载**的同名自定义资产则保留（用户自装的 cat），
+    ///   否则迁移为新内置并回写存储；
+    /// - 其他非内置 slug：可加载则保留原值，失效则回退内置并回写（画面与选中态一致）；
+    /// - 内置或空值：直接落内置。
+    static func normalizedSelectedSlug(stored: String?, store: PetAssetStore) -> String {
+        guard let stored, !stored.isEmpty else { return PetAssetLocator.builtInPetID }
+        if stored == PetAssetLocator.builtInPetID { return stored }
+        // 非内置（含旧 cat）：可加载的自定义资产保留，不可加载一律回内置。
+        if customAssetIsLoadable(slug: stored, store: store) {
+            return stored
+        }
+        return PetAssetLocator.builtInPetID
+    }
+
+    /// 库内自定义资产是否实际可加载（存在 pet.json 且完整解码）。
+    private static func customAssetIsLoadable(slug: String, store: PetAssetStore) -> Bool {
+        let directory = store.directory(for: slug)
+        guard FileManager.default.fileExists(
+            atPath: directory.appendingPathComponent("pet.json").path
+        ) else { return false }
+        return (try? PetAssetLocator.load(from: directory)) != nil
     }
 
     /// 恢复上次位置：屏幕标识命中则用之，否则回退默认落点。

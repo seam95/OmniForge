@@ -231,6 +231,114 @@ final class PetdexAssetAdapterTests: XCTestCase {
         XCTAssertEqual(asset.animation(id: PetAnimationID.idle)?.frames, [0, 1, 2])
     }
 
+    // MARK: - v2 看向扫描（行 9/10）
+
+    func test_v2LookRowsScanToSixteenDirectionSlots() throws {
+        // 行 9 全 8 格 + 行 10 前 4 格：方向 0…7 与 8…11 有帧，12…15 缺帧。
+        let directory = try makePet(
+            slug: "lookfull",
+            framesByRow: [0: 2, 9: 8, 10: 4],
+            atlasRows: 11
+        )
+
+        let asset = try PetdexAssetAdapter.load(from: directory)
+
+        XCTAssertTrue(asset.hasLookFrames)
+        // 帧号 = 行优先编号：方向 i 固定 9×8+i（不随占用重排）。
+        let expected: [Int?] = (72...83).map { Optional($0) }   // 行 9 全部 + 行 10 前 4 格 → 方向 0…11
+            + [nil, nil, nil, nil]                              // 行 10 后 4 格空 → 方向 12…15
+        XCTAssertEqual(asset.lookFrames, expected)
+        XCTAssertEqual(asset.lookFrame(direction: 0), 72)
+        XCTAssertEqual(asset.lookFrame(direction: 8), 80)
+        XCTAssertNil(asset.lookFrame(direction: 12), "空格保留槽位（缺帧回退底层）")
+    }
+
+    func test_v2LookRowsPartiallyOccupiedKeepSlots() throws {
+        // 行 9 只有第 3/6 格占用（不连续）：方向 2 与 5 有帧，其余槽位为 nil。
+        let directory = workDirectory.appendingPathComponent("look-sparse", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try writeAtlas(
+            to: directory,
+            // 帧 0 = 行 0 占位（九行状态行须至少一个动画）；74 / 77 = 行 9 的方向帧。
+            occupiedCells: [0, 9 * 8 + 2, 9 * 8 + 5],
+            rows: 11
+        )
+        try writeManifest(to: directory, slug: "look-sparse")
+
+        let asset = try PetdexAssetAdapter.load(from: directory)
+
+        XCTAssertEqual(asset.lookFrame(direction: 2), 74)
+        XCTAssertEqual(asset.lookFrame(direction: 5), 77)
+        XCTAssertNil(asset.lookFrame(direction: 0))
+        XCTAssertNil(asset.lookFrame(direction: 3), "非连续占用的空位不重排")
+    }
+
+    func test_v2LookRowsAllEmptyDisablesLook() throws {
+        let directory = try makePet(slug: "lookempty", framesByRow: [0: 2], atlasRows: 11)
+
+        let asset = try PetdexAssetAdapter.load(from: directory)
+
+        XCTAssertFalse(asset.hasLookFrames, "行 9/10 全空 → 看向整体不启用")
+        XCTAssertEqual(asset.lookFrames, Array(repeating: nil, count: 16))
+    }
+
+    func test_v1AtlasHasNoLookCapability() throws {
+        let directory = try makePet(slug: "v1pet", framesByRow: [0: 2], atlasRows: 9)
+
+        let asset = try PetdexAssetAdapter.load(from: directory)
+
+        XCTAssertFalse(asset.hasLookFrames, "v1（8×9）无行 9/10，无看向")
+    }
+
+    /// 直接写一张指定帧序号集合占用的图集（v2 look 非连续占用用）。
+    private func writeAtlas(to directory: URL, occupiedCells: Set<Int>, rows: Int) throws {
+        let columns = 8
+        let cellWidth = 24, cellHeight = 26
+        let width = columns * cellWidth
+        let height = rows * cellHeight
+        var buffer = [UInt8](repeating: 0, count: width * height * 4)
+        buffer.withUnsafeMutableBytes { raw in
+            guard let context = CGContext(
+                data: raw.baseAddress,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return }
+            context.setFillColor(CGColor(red: 1, green: 0.5, blue: 0, alpha: 1))
+            for cell in occupiedCells {
+                let column = cell % columns
+                let row = cell / columns
+                // 逻辑行 0 = 文件顶部（高 y 区域）。
+                let y = (rows - 1 - row) * cellHeight
+                context.fill(CGRect(x: column * cellWidth, y: y, width: cellWidth, height: cellHeight))
+            }
+        }
+        let image: CGImage? = buffer.withUnsafeMutableBytes { raw in
+            CGContext(
+                data: raw.baseAddress,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )?.makeImage()
+        }
+        let png = try XCTUnwrap(image.flatMap {
+            NSBitmapImageRep(cgImage: $0).representation(using: .png, properties: [:])
+        })
+        try png.write(to: directory.appendingPathComponent("spritesheet.png"))
+    }
+
+    private func writeManifest(to directory: URL, slug: String) throws {
+        let manifest: [String: Any] = ["id": slug, "displayName": slug.capitalized]
+        let data = try JSONSerialization.data(withJSONObject: manifest, options: [.sortedKeys])
+        try data.write(to: directory.appendingPathComponent("pet.json"))
+    }
+
     // MARK: - 真实资产（网络产物已缓存时）
 
     func test_realPetdexAssetIfCached() throws {

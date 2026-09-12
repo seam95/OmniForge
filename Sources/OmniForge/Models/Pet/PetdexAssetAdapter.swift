@@ -58,6 +58,9 @@ enum PetdexAssetAdapter {
         PetAnimationID.review,     // 8 review
     ]
 
+    /// 看向行起始行号（v2 图集第 9/10 行，帧号 9×columns 起连续 16 格）。
+    static let lookRowStart = 9
+
     /// 各动画的默认播放帧率（petdex 不提供 fps，按语义给默认值）。
     static func defaultFPS(for animationID: String) -> Double {
         switch animationID {
@@ -134,6 +137,15 @@ enum PetdexAssetAdapter {
             throw PetdexAssetError.noAnimationFrames
         }
 
+        // 看向扫描与九行状态映射分开：v2 的第 i 个方向固定对应帧 9×columns+i（行 9/10），
+        // 扫描后保留 16 个可空槽位；v1 图集无行 9/10，看向恒为空。
+        let lookFrames = scanLookFrames(
+            physicalRows: Self.atlasRows(forHeight: height),
+            cellWidth: cellWidth,
+            cellHeight: cellHeight,
+            cgImage: cgImage
+        )
+
         // 缺失 idle 动画时用首个可用行兜底。
         if animations.first(where: { $0.id == PetAnimationID.idle }) == nil, !firstRowFrames.isEmpty {
             animations.insert(
@@ -159,8 +171,65 @@ enum PetdexAssetAdapter {
                 cellWidth: cellWidth,
                 cellHeight: cellHeight
             ),
-            animations: animations
+            animations: animations,
+            lookFrames: lookFrames
         )
+    }
+
+    // MARK: - 看向扫描
+
+    /// 扫描 v2 图集行 9/10 的 16 个方向槽位。
+    /// 第 i 个方向的帧号固定为 `lookRowStart × columns + i`（行优先编号，行 9 = 方向 0…7、行 10 = 8…15）；
+    /// 每格按 alpha 占用判定，空格保留 nil（缺帧回退底层动画，不挪用相邻方向）。
+    /// v1 图集（9 行）无此区域，返回全 nil。
+    private static func scanLookFrames(
+        physicalRows: Int,
+        cellWidth: Int,
+        cellHeight: Int,
+        cgImage: CGImage
+    ) -> [Int?] {
+        guard physicalRows >= lookRowStart + 2 else {
+            return Array(repeating: nil, count: PetLookOverlay.directionCount)
+        }
+        // 逐方向判定占用：帧号即槽位语义（不是「从左到右扫到的第 n 个占用格」）。
+        return (0..<PetLookOverlay.directionCount).map { direction in
+            let frame = lookRowStart * columns + direction
+            let row = frame / columns
+            let column = frame % columns
+            guard let cell = cgImage.cropping(to: CGRect(
+                x: column * cellWidth,
+                y: row * cellHeight,
+                width: cellWidth,
+                height: cellHeight
+            )) else { return nil }
+            return cellIsOpaque(cell, cellWidth: cellWidth, cellHeight: cellHeight) ? frame : nil
+        }
+    }
+
+    /// 单元格是否有实体内容（alpha > 8 的像素占比超过 1%）。
+    private static func cellIsOpaque(_ cell: CGImage, cellWidth: Int, cellHeight: Int) -> Bool {
+        var buffer = [UInt8](repeating: 0, count: cellWidth * cellHeight * 4)
+        let drawn = buffer.withUnsafeMutableBytes { raw in
+            guard let context = CGContext(
+                data: raw.baseAddress,
+                width: cellWidth,
+                height: cellHeight,
+                bitsPerComponent: 8,
+                bytesPerRow: cellWidth * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            context.draw(cell, in: CGRect(x: 0, y: 0, width: cellWidth, height: cellHeight))
+            return true
+        }
+        guard drawn else { return false }
+        let minOpaquePixels = max(1, cellWidth * cellHeight / 100)
+        var opaqueCount = 0
+        for index in 0..<(cellWidth * cellHeight) where buffer[index * 4 + 3] > 8 {
+            opaqueCount += 1
+            if opaqueCount >= minOpaquePixels { return true }
+        }
+        return false
     }
 
     // MARK: - 私有
@@ -198,8 +267,6 @@ enum PetdexAssetAdapter {
         cellHeight: Int,
         cgImage: CGImage
     ) -> [Int] {
-        let alphaThreshold: UInt8 = 8
-        let minOpaquePixels = max(1, cellWidth * cellHeight / 100)
         var frames: [Int] = []
 
         for column in 0..<columns {
@@ -209,27 +276,7 @@ enum PetdexAssetAdapter {
                 width: cellWidth,
                 height: cellHeight
             )) else { continue }
-            // alpha 占比只数总量，与缓冲行序无关（小图 draw 进缓冲读取即可）。
-            var buffer = [UInt8](repeating: 0, count: cellWidth * cellHeight * 4)
-            let drawn: Bool = buffer.withUnsafeMutableBytes { raw in
-                guard let context = CGContext(
-                    data: raw.baseAddress,
-                    width: cellWidth,
-                    height: cellHeight,
-                    bitsPerComponent: 8,
-                    bytesPerRow: cellWidth * 4,
-                    space: CGColorSpaceCreateDeviceRGB(),
-                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-                ) else { return false }
-                context.draw(cell, in: CGRect(x: 0, y: 0, width: cellWidth, height: cellHeight))
-                return true
-            }
-            guard drawn else { continue }
-            var opaqueCount = 0
-            for index in 0..<(cellWidth * cellHeight) where buffer[index * 4 + 3] > alphaThreshold {
-                opaqueCount += 1
-            }
-            if opaqueCount >= minOpaquePixels {
+            if cellIsOpaque(cell, cellWidth: cellWidth, cellHeight: cellHeight) {
                 frames.append(row * columns + column)
             }
         }

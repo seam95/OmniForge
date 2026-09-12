@@ -130,9 +130,10 @@ final class PetSpriteAssetTests: XCTestCase {
         }
     }
 
-    func test_builtInAssetParsesAndCoversAllStates() throws {
-        // 内置资产必须覆盖四个行为状态的动画。
-        // 资源目录未声明进 SPM target，按源码树相对路径定位。
+    func test_builtInAssetParsesViaPetdexAdapterChain() throws {
+        // 内置资产（doraemon）为 petdex 格式（极简 pet.json + 图集行号约定），
+        // 须走实际适配链（PetAssetLocator.load：自有格式失败 → petdex 兜底）验证，
+        // 不能只以目录存在作为通过依据。
         let testFile = URL(fileURLWithPath: #filePath)
         let repositoryRoot = testFile
             .deletingLastPathComponent()   // Pet
@@ -141,13 +142,67 @@ final class PetSpriteAssetTests: XCTestCase {
             .deletingLastPathComponent()   // Tests
             .deletingLastPathComponent()   // 仓库根
         let assetURL = repositoryRoot
-            .appendingPathComponent("Resources/Pets/cat", isDirectory: true)
-        let asset = try PetSpriteAsset.load(from: assetURL)
+            .appendingPathComponent("Resources/Pets/\(PetAssetLocator.builtInPetID)", isDirectory: true)
+        let asset = try PetAssetLocator.load(from: assetURL)
 
-        for animationID in [PetAnimationID.idle, PetAnimationID.walk, PetAnimationID.fall, PetAnimationID.petted] {
+        XCTAssertEqual(asset.id, PetAssetLocator.builtInPetID)
+        // 九行既有行为链：idle / 左右行 / 抚摸 / 悬空在 v1 图集上均应可用。
+        for animationID in [
+            PetAnimationID.idle, PetAnimationID.walkRight, PetAnimationID.walkLeft,
+            PetAnimationID.petted, PetAnimationID.drag,
+        ] {
             XCTAssertNotNil(asset.animation(id: animationID), "缺少动画：\(animationID)")
         }
         XCTAssertEqual(asset.grid.columns, 8)
-        XCTAssertEqual(asset.grid.rows, 9)
+    }
+
+    // MARK: - look 动画（自有格式 16 向声明）
+
+    func test_decodeParsesLookAnimationToSixteenSlots() throws {
+        // 16 项帧号按方向顺序解释，不限于第 9/10 行。
+        let json = makeJSON(
+            animations: #"[{ "id": "idle", "frames": "0-3" }, { "id": "look", "frames": "0-15" }]"#
+        )
+        let asset = try PetSpriteAsset.decode(from: json)
+
+        XCTAssertEqual(asset.lookFrames, (0..<16).map { Optional($0) })
+        XCTAssertTrue(asset.hasLookFrames)
+        XCTAssertNil(asset.animation(id: PetAnimationID.look), "look 不进普通动画表（不参与兜底）")
+    }
+
+    func test_decodeLookWithDuplicateFramesIsAllowed() throws {
+        // 允许重复有效帧号（多个方向共用一帧）。
+        let json = makeJSON(
+            animations: #"[{ "id": "idle", "frames": "0-3" }, { "id": "look", "frames": "5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5" }]"#
+        )
+        let asset = try PetSpriteAsset.decode(from: json)
+
+        XCTAssertEqual(asset.lookFrame(direction: 0), 5)
+        XCTAssertEqual(asset.lookFrame(direction: 15), 5)
+    }
+
+    func test_decodeLookWithWrongCountIsIgnored() throws {
+        // 数量 ≠ 16：忽略整组 look 能力，保留其他有效动画。
+        let json = makeJSON(
+            animations: #"[{ "id": "idle", "frames": "0-3" }, { "id": "look", "frames": "0-7" }]"#
+        )
+        let asset = try PetSpriteAsset.decode(from: json)
+
+        XCTAssertFalse(asset.hasLookFrames)
+        XCTAssertEqual(asset.lookFrames, Array(repeating: nil, count: 16))
+        XCTAssertNotNil(asset.animation(id: PetAnimationID.idle), "非法 look 不影响其他动画加载")
+    }
+
+    func test_decodeLookWithOutOfBoundsFrameIsIgnored() throws {
+        // 帧号越界（72 格图集帧 80）：忽略整组 look。
+        let json = makeJSON(
+            grid: #"{ "columns": 8, "rows": 9, "cellSize": [32, 32] }"#,
+            animations: #"""
+            [{ "id": "idle", "frames": "0-3" }, { "id": "look", "frames": "0-7,8-15,16-23,24-31,32-39,40-47,48-55,56-63,64-71,72-79" }]
+            """#
+        )
+        let asset = try PetSpriteAsset.decode(from: json)
+
+        XCTAssertFalse(asset.hasLookFrames, "含越界帧的 look 声明整体忽略")
     }
 }

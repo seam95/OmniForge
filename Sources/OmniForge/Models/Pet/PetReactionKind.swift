@@ -1,7 +1,7 @@
 import Foundation
 
 /// 反应种类：外部事件触发的一次性状态语义。
-/// 每种携带优先级、时长、素材动画 id 与降级链（内置猫缺专用素材时回退）。
+/// 每种携带时长、素材动画 id 与降级链（内置宠物缺专用素材时回退）。
 enum PetReactionKind: String, Equatable, CaseIterable {
     /// 庆祝（限额重置、输入法解锁）。
     case celebrate
@@ -13,9 +13,6 @@ enum PetReactionKind: String, Equatable, CaseIterable {
     case noticed
     /// 致意小反应（输入法锁定）。
     case salute
-
-    /// 反应态优先级（drag 8 / petted 7 之下，自主态 2/1 之上）。
-    static let priority = 6
 
     /// 反应时长（秒）——业界一致取值（两家同类产品均为 3 秒回落）。
     var duration: TimeInterval { 3 }
