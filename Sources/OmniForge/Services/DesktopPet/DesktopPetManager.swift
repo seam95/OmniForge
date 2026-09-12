@@ -53,6 +53,8 @@ final class DesktopPetManager: ObservableObject {
     private var decisionRemaining: TimeInterval = 0
     /// 窗口拖动监听：拖拽中不跑行为循环，松手后按落地状态恢复。
     private var isDragging = false
+    /// 拖动起点的窗口位置（位移移动的基准）。
+    private var dragStartOrigin: CGPoint?
     /// 行走活动锚点（宠物左下角 x）：拖拽松手 / 重置位置 / 屏幕夹回时更新，
     /// 宠物只在锚点左右 `walkRadius` 范围内活动，不会满屏乱走。
     private var walkAnchorX: CGFloat?
@@ -139,6 +141,7 @@ final class DesktopPetManager: ObservableObject {
         decisionRemaining = 0
         interruptedRemaining = nil
         isDragging = false
+        dragStartOrigin = nil
         walkAnchorX = nil
         behaviorState = .idle
         engine.drainExternalEvents()
@@ -410,8 +413,18 @@ final class DesktopPetManager: ObservableObject {
     /// 拖拽开始。
     func beginDrag() {
         isDragging = true
+        dragStartOrigin = windowController.currentOrigin
         engine.beginDrag()
         behaviorState = .drag
+    }
+
+    /// 拖动位移：把窗口从拖动起点平移 `translation`（SwiftUI DragGesture 的累计位移）。
+    func dragWindow(by translation: CGSize) {
+        guard isDragging, let start = dragStartOrigin else { return }
+        windowController.move(to: CGPoint(
+            x: start.x + translation.width,
+            y: start.y - translation.height
+        ))
     }
 
     /// 拖拽结束：宠物悬停在松手处并回到 idle，该处成为新的行走活动锚点。

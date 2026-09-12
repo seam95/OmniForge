@@ -39,21 +39,24 @@ struct PetSpriteView: View {
 
     @ViewBuilder
     private func sprite(at date: Date) -> some View {
-        if let asset, let resolved = resolveAnimation(asset: asset),
-           let frameIndex = PetFrameSequencer.frameIndex(
-               now: date,
-               stateEnteredAt: stateEnteredAt,
-               animation: resolved.animation
-           ),
-           let image = SpriteAtlasImageProvider.shared.image(asset: asset, frameIndex: frameIndex) {
-            Image(nsImage: image)
-                .interpolation(.none)  // 像素最近邻采样，Retina 下保持锐利
-                .resizable()
-                .frame(width: manager.petSize.width, height: manager.petSize.height)
-                // 单朝向行走素材在向左行走时水平镜像。
-                .scaleEffect(x: resolved.mirrored ? -1 : 1, y: 1)
-        } else {
+        // 固定双层结构（占位常驻底层）：任何一帧解析失败都只是透出底层，
+        // 不切换视图树分支，避免状态切换瞬间的空白闪烁。
+        ZStack {
             placeholder
+            if let asset, let resolved = resolveAnimation(asset: asset),
+               let frameIndex = PetFrameSequencer.frameIndex(
+                   now: date,
+                   stateEnteredAt: stateEnteredAt,
+                   animation: resolved.animation
+               ),
+               let image = SpriteAtlasImageProvider.shared.image(asset: asset, frameIndex: frameIndex) {
+                Image(nsImage: image)
+                    .interpolation(.none)  // 像素最近邻采样，Retina 下保持锐利
+                    .resizable()
+                    .frame(width: manager.petSize.width, height: manager.petSize.height)
+                    // 单朝向行走素材在向左行走时水平镜像。
+                    .scaleEffect(x: resolved.mirrored ? -1 : 1, y: 1)
+            }
         }
     }
 
@@ -110,10 +113,16 @@ struct PetSpriteView: View {
     // MARK: - 拖拽
 
     private var dragGesture: some Gesture {
-        DragGesture(minimumDistance: 3)
-            .onChanged { _ in
-                if case .drag = manager.behaviorState { return }
+        // 阈值 8pt：触摸板单击的轻微位移（常见 3-5pt）不再误入拖动态
+        // （误入会闪一帧悬空姿态再跳回，观感为抚摸时闪烁）。
+        DragGesture(minimumDistance: 8)
+            .onChanged { value in
+                if case .drag = manager.behaviorState {
+                    manager.dragWindow(by: value.translation)
+                    return
+                }
                 manager.beginDrag()
+                manager.dragWindow(by: value.translation)
             }
             .onEnded { _ in
                 manager.endDrag()

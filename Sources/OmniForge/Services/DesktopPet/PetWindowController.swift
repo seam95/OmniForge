@@ -39,7 +39,9 @@ final class PetWindowController {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        panel.isMovableByWindowBackground = true
+        // 窗口移动由 SwiftUI DragGesture 全权接管：AppKit 背景拖动会话在单击时
+        // 也会启动/恢复，透明窗口在会话边界处会出现一帧空白闪烁（真机实测）。
+        panel.isMovableByWindowBackground = false
         panel.becomesKeyOnlyIfNeeded = true
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
