@@ -112,6 +112,15 @@ final class DesktopPetManager: ObservableObject {
     private(set) var displaySnapshot: PetDisplaySnapshot?
     /// 直接拖动期间的手势水平朝向（阶段②驱动分向走动表现；非拖动为 nil）。
     private(set) var dragFacing: PetDirection?
+    /// alpha 命中判定器（膨胀 mask 按帧 / 尺寸缓存）。
+    private let hitTester = PetAlphaHitTester()
+    /// 交互锁：mouseDown（含右键）到 mouseUp / 菜单会话结束之间窗口持续接收事件，
+    /// 穿透不得在会话中途打开（拖出透明区 / 帧动画变化均不例外）。
+    private var interactionLocked = false
+    /// 指针移动被动监听（全局 + 本地）：补 30Hz 轮询的间隙（快移即点场景）。
+    private var pointerMonitors: [Any] = []
+    /// 最近一次采样的指针位置（帧切换后同步刷新命中路由用）。
+    private var lastPointerSample: CGPoint?
 
     init(
         userDefaults: UserDefaults = .standard,
@@ -166,6 +175,15 @@ final class DesktopPetManager: ObservableObject {
         // 拖动由窗口承载的原生拖动会话驱动（越过阈值才触发），此处接线状态迁移回调。
         self.windowController.onWindowDragStart = { [weak self] in self?.beginDrag() }
         self.windowController.onWindowDragEnd = { [weak self] in self?.endDrag() }
+        // alpha 穿透的交互锁：按下即锁、抬起 / 菜单关闭解锁。
+        self.windowController.onInteractionLockStart = { [weak self] in
+            self?.interactionLocked = true
+        }
+        self.windowController.onInteractionLockEnd = { [weak self] in
+            self?.interactionLocked = false
+            // 会话结束立即重算命中（不等下一 tick）。
+            self?.refreshPointerState()
+        }
     }
 
     // MARK: - 生命周期
@@ -198,6 +216,7 @@ final class DesktopPetManager: ObservableObject {
         stateEnteredAtDisplay = displayDate
         updateDisplaySnapshot()
         startFrameClock()
+        installPointerMonitors()
         startReactionCoordinator()
         installScreenChangeObserver()
     }
@@ -225,6 +244,10 @@ final class DesktopPetManager: ObservableObject {
         // 投掷动量与交互锁一并清除；关窗前已 persistPositionNow 落盘当前位置。
         momentum = nil
         momentumElapsed = 0
+        interactionLocked = false
+        removePointerMonitors()
+        lastPointerSample = nil
+        hitTester.clearCache()
         engine.drainExternalEvents()
         stopReactionCoordinator()
         removeScreenChangeObserver()
@@ -538,11 +561,17 @@ final class DesktopPetManager: ObservableObject {
 
     // MARK: - 指针采样与显示覆盖
 
-    /// 统一指针采样（每 tick 一次，约 30Hz）：更新看向方向并驱动悬停的外→内边沿。
-    /// 隐藏 / 停用时 tick 不跑，采样自然停止；重新显示后首次采样只建立基线。
+    /// 统一指针采样（每 tick 一次约 30Hz + mouseMoved 被动监听即时补）：
+    /// 更新看向方向、驱动悬停边沿、刷新 alpha 命中路由。
+    /// 隐藏 / 停用时 tick 不跑且 monitor 已撤，采样自然停止；重新显示后首次采样只建立基线。
     private func samplePointerOverlays() {
+        refreshPointerState()
+    }
+
+    private func refreshPointerState() {
         guard let panel = windowController.panel else { return }
         let pointer = pointerLocationProvider()
+        lastPointerSample = pointer
         let petRect = panel.frame
         let inside = Self.pointer(pointer, isInRect: petRect)
 
@@ -572,6 +601,59 @@ final class DesktopPetManager: ObservableObject {
             }
         }
         pointerInsideBaseline = inside
+
+        updateHitRouting(pointer: pointer, panel: panel)
+    }
+
+    /// alpha 命中路由：按显示快照的实体像素（含容差）设置窗口是否接收鼠标事件。
+    /// 交互锁 / 直接拖动期间恒接收；缺资产或裁剪失败的可见占位采用矩形命中。
+    private func updateHitRouting(pointer: CGPoint, panel: NSPanel) {
+        let local = CGPoint(
+            x: pointer.x - panel.frame.minX,
+            y: pointer.y - panel.frame.minY
+        )
+        let receives: Bool
+        if interactionLocked || isDragging {
+            receives = true
+        } else if let snapshot = displaySnapshot {
+            if let frame = SpriteAtlasImageProvider.shared.frameCGImage(
+                asset: snapshot.asset, frameIndex: snapshot.frameIndex
+            ) {
+                receives = hitTester.contains(local, snapshot: snapshot, frameImage: frame)
+            } else {
+                // 帧图裁剪失败：可见占位保留矩形命中，避免无法操作。
+                receives = true
+            }
+        } else {
+            // 缺资产占位：矩形命中。
+            receives = true
+        }
+        windowController.setReceivesMouseEvents(receives)
+    }
+
+    /// 安装指针移动被动监听（全局 + 本地）：穿透期间窗口收不到移动事件，
+    /// 轮询间隙由监听即时补上（快速移入实体区立即点击的场景）。
+    private func installPointerMonitors() {
+        guard pointerMonitors.isEmpty else { return }
+        var monitors: [Any] = []
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { [weak self] _ in
+            Task { @MainActor in self?.refreshPointerState() }
+        } {
+            monitors.append(global)
+        }
+        let local = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved]) { [weak self] event in
+            Task { @MainActor in self?.refreshPointerState() }
+            return event
+        }
+        monitors.append(local)
+        pointerMonitors = monitors
+    }
+
+    private func removePointerMonitors() {
+        for monitor in pointerMonitors {
+            NSEvent.removeMonitor(monitor)
+        }
+        pointerMonitors.removeAll()
     }
 
     /// 触发一次悬停覆盖：素材链 drag → fall，一次性播放；无素材则不显示覆盖。
@@ -613,6 +695,10 @@ final class DesktopPetManager: ObservableObject {
             mirrored: resolution.mirrored,
             size: petSize
         )
+        // 帧切换同步更新命中判定（静止指针下动画换帧不得沿用旧命中区）。
+        if let pointer = lastPointerSample, let panel = windowController.panel {
+            updateHitRouting(pointer: pointer, panel: panel)
+        }
     }
 
     /// 指针是否在矩形内（含边界；与 `PetLookOverlay` 的死区判定同口径）。
@@ -977,8 +1063,10 @@ final class DesktopPetManager: ObservableObject {
     }
 
     /// 图集切片缓存失效：同名宠物覆盖更新 / 删除后，旧帧不得残留。
+    /// 命中膨胀 mask 一并失效（同一资产标识的旧 mask 不得复用）。
     private func invalidateSpriteCache() {
         SpriteAtlasImageProvider.shared.clearCache()
+        hitTester.clearCache()
     }
 
     /// 重启行为循环（资产切换后应用新尺寸与视图）。

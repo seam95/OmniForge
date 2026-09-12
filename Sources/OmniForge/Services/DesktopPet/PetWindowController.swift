@@ -13,6 +13,10 @@ final class PetHostingView<Content: View>: NSHostingView<Content> {
     /// 拖动会话开始 / 结束回调：仅桌宠窗口接线；气泡窗复用本类型但保持 nil，行为不变。
     var onWindowDragStart: (() -> Void)?
     var onWindowDragEnd: (() -> Void)?
+    /// 交互锁开始 / 结束：mouseDown（含右键）到对应 mouseUp / 菜单会话结束之间
+    /// 窗口必须持续接收事件——alpha 穿透不得在会话中途打开（拖出透明区也不中断拖动）。
+    var onInteractionLockStart: (() -> Void)?
+    var onInteractionLockEnd: (() -> Void)?
 
     /// 进入拖动会话的位移识别阈值（pt）。
     static var dragThreshold: CGFloat { 8 }
@@ -27,6 +31,8 @@ final class PetHostingView<Content: View>: NSHostingView<Content> {
     override func mouseDown(with event: NSEvent) {
         mouseDownScreenLocation = NSEvent.mouseLocation
         didStartDragSession = false
+        // 按下即锁：覆盖未达 DragGesture 阈值的按下阶段，帧动画 / 拖出矩形不得中途打开穿透。
+        onInteractionLockStart?()
         super.mouseDown(with: event)
     }
 
@@ -53,9 +59,18 @@ final class PetHostingView<Content: View>: NSHostingView<Content> {
         let wasDragging = didStartDragSession
         didStartDragSession = false
         mouseDownScreenLocation = nil
+        // 锁随抬起释放（拖动会话的残余抬起同样结束锁）。
+        onInteractionLockEnd?()
         // 拖动结束的残余抬起不透传 super，避免 SwiftUI 点击手势补触发一次抚摸。
         guard !wasDragging else { return }
         super.mouseUp(with: event)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        // 右键菜单是模态 tracking 会话：super 返回即菜单已关闭，锁覆盖整个会话。
+        onInteractionLockStart?()
+        super.rightMouseDown(with: event)
+        onInteractionLockEnd?()
     }
 
     /// 位移是否越过拖动识别阈值（独立纯函数，便于单测边界语义）。
@@ -76,9 +91,15 @@ final class PetWindowController {
     /// 拖动会话开始 / 结束回调（由组合根接线，透传给新建的 hosting view）。
     var onWindowDragStart: (() -> Void)?
     var onWindowDragEnd: (() -> Void)?
+    /// 交互锁开始 / 结束回调（alpha 穿透的会话期闸门）。
+    var onInteractionLockStart: (() -> Void)?
+    var onInteractionLockEnd: (() -> Void)?
 
     /// 当前窗口尺寸（非正方形：按素材宽高比，高度为档位尺寸）。
     private(set) var petSize: CGSize
+
+    /// 最近一次设置的鼠标接收状态（测试断言穿透路由用）。
+    private(set) var receivesMouseEvents = true
 
     init(petSize: CGSize) {
         self.petSize = petSize
@@ -113,6 +134,8 @@ final class PetWindowController {
         let hostingView = PetHostingView(rootView: AnyView(rootView))
         hostingView.onWindowDragStart = onWindowDragStart
         hostingView.onWindowDragEnd = onWindowDragEnd
+        hostingView.onInteractionLockStart = onInteractionLockStart
+        hostingView.onInteractionLockEnd = onInteractionLockEnd
         panel.contentView = hostingView
 
         self.panel = panel
@@ -145,6 +168,14 @@ final class PetWindowController {
     /// 读取当前窗口位置（左下角）。
     var currentOrigin: CGPoint? {
         panel.map { $0.frame.origin }
+    }
+
+    /// 动态设置窗口是否接收鼠标事件（alpha 穿透路由：false = 透明于事件，
+    /// 点击到达下层窗口）。值未变化时不重复写窗口属性。
+    func setReceivesMouseEvents(_ receives: Bool) {
+        guard receives != receivesMouseEvents else { return }
+        receivesMouseEvents = receives
+        panel?.ignoresMouseEvents = !receives
     }
 
     /// 移动到指定左下角位置（供行走位移、重置位置、屏幕夹回等程序化路径使用）。

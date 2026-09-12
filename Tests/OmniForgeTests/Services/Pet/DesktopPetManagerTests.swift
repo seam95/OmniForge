@@ -38,6 +38,7 @@ final class DesktopPetManagerTests: XCTestCase {
         suiteName = nil
         try? FileManager.default.removeItem(at: assetRoot)
         assetRoot = nil
+        PetAssetLocator.additionalSearchRoots = []
         super.tearDown()
     }
 
@@ -1093,6 +1094,153 @@ final class DesktopPetManagerTests: XCTestCase {
         XCTAssertEqual(
             manager.windowController.currentOrigin, originAfterSwitch,
             "旧投掷状态不得驱动新窗口"
+        )
+    }
+
+    // MARK: - alpha 命中路由（三期阶段③）
+
+    /// 构造左半实体资产的图集文件并注入搜索根（provider 需要真实图集才能裁帧）。
+    private func installLeftHalfAtlasPet(slug: String) throws {
+        let directory = assetRoot.appendingPathComponent(slug, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        // 2×1 网格 32×16：帧 0 内左半（x 0…8，即该格的一半）实体，右半透明。
+        let columns = 2, rows = 1, cw = 16, chh = 16
+        let width = columns * cw, height = rows * chh
+        var buffer = [UInt8](repeating: 0, count: width * height * 4)
+        buffer.withUnsafeMutableBytes { raw in
+            guard let context = CGContext(
+                data: raw.baseAddress, width: width, height: height,
+                bitsPerComponent: 8, bytesPerRow: width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return }
+            context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: cw / 2, height: chh))
+        }
+        let image: CGImage? = buffer.withUnsafeMutableBytes { raw in
+            CGContext(
+                data: raw.baseAddress, width: width, height: height,
+                bitsPerComponent: 8, bytesPerRow: width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )?.makeImage()
+        }
+        let png = try XCTUnwrap(image.flatMap {
+            NSBitmapImageRep(cgImage: $0).representation(using: .png, properties: [:])
+        })
+        try png.write(to: directory.appendingPathComponent("atlas.png"))
+        let manifest = #"""
+        {
+          "id": "\#(slug)",
+          "name": "\#(slug)",
+          "displayName": "\#(slug)",
+          "atlas": "atlas.png",
+          "grid": { "columns": 2, "rows": 1, "cellSize": [16, 16] },
+          "animations": [{ "id": "idle", "frames": "0", "fps": 4, "loop": true }]
+        }
+        """#
+        try Data(manifest.utf8).write(to: directory.appendingPathComponent("pet.json"))
+    }
+
+    /// 以「库内左半实体资产」构造 Manager（图集从文件加载，命中层走真实裁剪链）。
+    /// 需注入 `additionalSearchRoots` 让图集定位命中测试资产库（与生产 Bundle 路径对应）。
+    private func makeLeftHalfPetManager() throws -> (manager: DesktopPetManager, pointer: PointerBox) {
+        try installLeftHalfAtlasPet(slug: "left-half")
+        // 图集定位搜索根：构造后 tick 期间须持续有效（tearDown 统一还原）。
+        PetAssetLocator.additionalSearchRoots = [assetRoot]
+        let clock = ManualFrameClock()
+        frameClocks.append(clock)
+        let pointer = PointerBox()
+        let manager = DesktopPetManager(
+            userDefaults: defaults,
+            windowController: PetWindowController(petSize: CGSize(width: 96, height: 96)),
+            assetStore: PetAssetStore(rootDirectory: assetRoot),
+            stringsProvider: { Strings.zhHans },
+            visibleScreensProvider: { [self.screen] },
+            tickInterval: 1.0 / 30.0,
+            frameClock: clock,
+            pointerLocationProvider: { pointer.location }
+        )
+        managers.append(manager)
+        // 裁剪缓存随资产库就位后再启动；selectPet 切到左半资产。
+        manager.selectPet(slug: "left-half")
+        return (manager, pointer)
+    }
+
+    func test_alphaRoutingPassesThroughTransparentHalf() throws {
+        let (manager, pointer) = try makeLeftHalfPetManager()
+        manager.start()
+        // 窗口左半 = 实体（帧左半像素）；右半 = 透明。
+        let frame = try XCTUnwrap(manager.windowController.panel?.frame)
+
+        // 指针移到窗口右半（本地 x > 48）：未命中实体 → 穿透。
+        pointer.location = CGPoint(x: frame.minX + 70, y: frame.midY)
+        manager.tick(delta: 1.0 / 30.0)
+        XCTAssertFalse(
+            manager.windowController.receivesMouseEvents,
+            "透明半区窗口应穿透（事件到达下层应用）"
+        )
+
+        // 指针移到窗口左半：命中实体 → 接收。
+        pointer.location = CGPoint(x: frame.minX + 20, y: frame.midY)
+        manager.tick(delta: 1.0 / 30.0)
+        XCTAssertTrue(
+            manager.windowController.receivesMouseEvents,
+            "实体半区窗口应接收事件"
+        )
+    }
+
+    func test_interactionLockOverridesAlphaRouting() throws {
+        let (manager, pointer) = try makeLeftHalfPetManager()
+        manager.start()
+        let frame = try XCTUnwrap(manager.windowController.panel?.frame)
+        // 指针在透明半区（路由判定穿透）。
+        pointer.location = CGPoint(x: frame.minX + 70, y: frame.midY)
+        manager.tick(delta: 1.0 / 30.0)
+        XCTAssertFalse(manager.windowController.receivesMouseEvents)
+
+        // 按下锁定期（onInteractionLockStart）：即便指针在透明区也持续接收。
+        manager.windowController.onInteractionLockStart?()
+        pointer.location = CGPoint(x: frame.minX + 90, y: frame.midY)
+        manager.tick(delta: 1.0 / 30.0)
+        XCTAssertTrue(
+            manager.windowController.receivesMouseEvents,
+            "交互锁期间穿透不得打开（按下后拖出实体区不丢会话）"
+        )
+
+        // 抬起解锁：立即重算命中恢复穿透。
+        manager.windowController.onInteractionLockEnd?()
+        manager.tick(delta: 1.0 / 30.0)
+        XCTAssertFalse(manager.windowController.receivesMouseEvents, "解锁后恢复按像素路由")
+    }
+
+    func test_dragSessionOverridesAlphaRouting() throws {
+        let (manager, pointer) = try makeLeftHalfPetManager()
+        manager.start()
+        let frame = try XCTUnwrap(manager.windowController.panel?.frame)
+
+        manager.beginDrag()
+        pointer.location = CGPoint(x: frame.minX + 90, y: frame.midY)
+        manager.tick(delta: 1.0 / 30.0)
+        XCTAssertTrue(
+            manager.windowController.receivesMouseEvents,
+            "直接拖动期间窗口恒接收事件"
+        )
+        manager.endDrag()
+    }
+
+    func test_missingAssetPlaceholderKeepsRectHit() {
+        // 缺资产：显示占位（矩形命中），窗口不得穿透成不可操作。
+        let (manager, pointer) = makeOverlayManager(asset: nil)
+        manager.start()
+        let frame = manager.windowController.panel!.frame
+
+        pointer.location = CGPoint(x: frame.minX + 90, y: frame.midY)
+        manager.tick(delta: 1.0 / 30.0)
+
+        XCTAssertTrue(
+            manager.windowController.receivesMouseEvents,
+            "缺资产可见占位保持矩形命中"
         )
     }
 }

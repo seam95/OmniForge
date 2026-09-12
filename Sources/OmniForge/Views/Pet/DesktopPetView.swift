@@ -71,18 +71,29 @@ struct PetSpriteView: View {
     // manager.beginDrag / endDrag 回调触发。单击抚摸仍由上方 onTapGesture 处理。
 }
 
-/// 图集切片缓存：按资产与帧序号缓存切好的 NSImage，避免每帧重切。
+/// 图集切片缓存：按资产与帧序号缓存切好的图，避免每帧重切。
+/// 渲染（NSImage）与命中层（CGImage 像素）共享同一裁剪结果。
 @MainActor
 final class SpriteAtlasImageProvider {
     static let shared = SpriteAtlasImageProvider()
 
     private var atlasImageCache: [String: CGImage] = [:]
-    private var frameCache: [String: NSImage] = [:]
+    private var frameCache: [String: CGImage] = [:]
 
     private init() {}
 
     /// 取指定帧的切图；图集缺失时返回 nil（调用方回退占位）。
     func image(asset: PetSpriteAsset, frameIndex: Int) -> NSImage? {
+        guard let cropped = frameCGImage(asset: asset, frameIndex: frameIndex) else {
+            return nil
+        }
+        let image = NSImage(cgImage: cropped, size: NSSize(width: cropped.width, height: cropped.height))
+        image.capInsets = NSEdgeInsets()
+        return image
+    }
+
+    /// 取指定帧的 CGImage（命中层读像素用，与渲染同一份裁剪缓存）。
+    func frameCGImage(asset: PetSpriteAsset, frameIndex: Int) -> CGImage? {
         let frameKey = "\(asset.id)#\(frameIndex)"
         if let cached = frameCache[frameKey] { return cached }
         guard let cropped = crop(asset: asset, frameIndex: frameIndex) else {
@@ -117,7 +128,7 @@ final class SpriteAtlasImageProvider {
     /// 不走「CGContext.draw 整图进缓冲再按物理行段直拷」：webp 解码位图在该路径下
     /// 缓冲行序与 PNG 相反，而换算假设（缓冲行 0 = 图像底部）只对 PNG 成立——
     /// 社区宠物整张图集的行映射被上下翻转（idle 实际播到 review 行的内容）。
-    private func crop(asset: PetSpriteAsset, frameIndex: Int) -> NSImage? {
+    private func crop(asset: PetSpriteAsset, frameIndex: Int) -> CGImage? {
         let grid = asset.grid
         guard frameIndex >= 0, frameIndex < grid.cellCount else { return nil }
         guard let atlas = atlasImage(asset: asset) else { return nil }
@@ -132,11 +143,6 @@ final class SpriteAtlasImageProvider {
             width: grid.cellWidth,
             height: grid.cellHeight
         )) else { return nil }
-        let cropped = NSImage(
-            cgImage: cellImage,
-            size: NSSize(width: grid.cellWidth, height: grid.cellHeight)
-        )
-        cropped.capInsets = NSEdgeInsets()
-        return cropped
+        return cellImage
     }
 }
