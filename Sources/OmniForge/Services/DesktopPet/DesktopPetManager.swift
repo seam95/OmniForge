@@ -67,8 +67,6 @@ final class DesktopPetManager: ObservableObject {
     private var decisionRemaining: TimeInterval = 0
     /// 窗口拖动监听：拖拽中不跑行为循环，松手后按落地状态恢复。
     private var isDragging = false
-    /// 拖动起点的窗口位置（位移移动的基准）。
-    private var dragStartOrigin: CGPoint?
     /// 行走活动锚点（宠物左下角 x）：拖拽松手 / 重置位置 / 屏幕夹回时更新，
     /// 宠物只在锚点左右 `walkRadius` 范围内活动，不会满屏乱走。
     private var walkAnchorX: CGFloat?
@@ -121,6 +119,9 @@ final class DesktopPetManager: ObservableObject {
         self.bubbleController = bubbleController ?? PetBubbleWindowController()
         self.bubbleVariantRoll = bubbleVariantRoll
         self.installedPets = store.installedPets()
+        // 拖动由窗口承载的原生拖动会话驱动（越过阈值才触发），此处接线状态迁移回调。
+        self.windowController.onWindowDragStart = { [weak self] in self?.beginDrag() }
+        self.windowController.onWindowDragEnd = { [weak self] in self?.endDrag() }
     }
 
     // MARK: - 生命周期
@@ -161,7 +162,6 @@ final class DesktopPetManager: ObservableObject {
         decisionRemaining = 0
         interruptedRemaining = nil
         isDragging = false
-        dragStartOrigin = nil
         walkAnchorX = nil
         behaviorState = .idle
         engine.drainExternalEvents()
@@ -456,21 +456,11 @@ final class DesktopPetManager: ObservableObject {
         decisionRemaining = oneShotDuration(ids: [PetAnimationID.petted], fallback: 0.6)
     }
 
-    /// 拖拽开始。
+    /// 拖拽开始：进入拖动状态，位移随后由系统原生窗口拖动会话接管。
     func beginDrag() {
         isDragging = true
-        dragStartOrigin = windowController.currentOrigin
         engine.beginDrag()
         behaviorState = .drag
-    }
-
-    /// 拖动位移：把窗口从拖动起点平移 `translation`（SwiftUI DragGesture 的累计位移）。
-    func dragWindow(by translation: CGSize) {
-        guard isDragging, let start = dragStartOrigin else { return }
-        windowController.move(to: CGPoint(
-            x: start.x + translation.width,
-            y: start.y - translation.height
-        ))
     }
 
     /// 拖拽结束：宠物悬停在松手处并回到 idle，该处成为新的行走活动锚点。
