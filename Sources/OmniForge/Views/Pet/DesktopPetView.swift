@@ -39,10 +39,11 @@ struct PetSpriteView: View {
 
     @ViewBuilder
     private func sprite(at date: Date) -> some View {
-        // 固定双层结构（占位常驻底层）：任何一帧解析失败都只是透出底层，
-        // 不切换视图树分支，避免状态切换瞬间的空白闪烁。
+        // 固定双层结构：占位只在资产缺失时出现（调试窗口行为用）；
+        // 有资产时绝不渲染底色——像素图集帧有大量透明像素，
+        // 常驻底色会把宠物周围整块染色（蓝色占位曾透出为背景色块）。
         ZStack {
-            placeholder
+            if asset == nil { placeholder }
             if let asset, let resolved = resolveAnimation(asset: asset),
                let frameIndex = PetFrameSequencer.frameIndex(
                    now: date,
@@ -145,7 +146,7 @@ struct PetSpriteView: View {
 final class SpriteAtlasImageProvider {
     static let shared = SpriteAtlasImageProvider()
 
-    private var atlasCache: [String: NSImage] = [:]
+    private var atlasBufferCache: [String: [UInt8]] = [:]
     private var frameCache: [String: NSImage] = [:]
 
     private init() {}
@@ -154,8 +155,7 @@ final class SpriteAtlasImageProvider {
     func image(asset: PetSpriteAsset, frameIndex: Int) -> NSImage? {
         let frameKey = "\(asset.id)#\(frameIndex)"
         if let cached = frameCache[frameKey] { return cached }
-        guard let atlas = atlas(for: asset) else { return nil }
-        guard let cropped = crop(atlas: atlas, asset: asset, frameIndex: frameIndex) else {
+        guard let cropped = crop(asset: asset, frameIndex: frameIndex) else {
             return nil
         }
         frameCache[frameKey] = cropped
@@ -164,51 +164,88 @@ final class SpriteAtlasImageProvider {
 
     /// 清空缓存（资产热更新或测试用）。
     func clearCache() {
-        atlasCache.removeAll()
+        atlasBufferCache.removeAll()
         frameCache.removeAll()
     }
 
-    private func atlas(for asset: PetSpriteAsset) -> NSImage? {
-        if let cached = atlasCache[asset.id] { return cached }
+    /// 图集解码像素缓冲：按网格标称尺寸绘制（自动处理 DPI 缩放）。
+    /// 与 `PetdexAssetAdapter` 的占用扫描同一条路径，物理行序约定一致。
+    private func atlasBuffer(asset: PetSpriteAsset) -> [UInt8]? {
+        if let cached = atlasBufferCache[asset.id] { return cached }
         guard let url = PetAssetLocator.atlasURL(asset: asset),
-              let image = NSImage(contentsOf: url) else { return nil }
-        atlasCache[asset.id] = image
-        return image
+              let image = NSImage(contentsOf: url),
+              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return nil
+        }
+        let grid = asset.grid
+        let width = grid.columns * grid.cellWidth
+        let height = grid.rows * grid.cellHeight
+        var buffer = [UInt8](repeating: 0, count: width * height * 4)
+        let drawn: Bool = buffer.withUnsafeMutableBytes { raw in
+            guard let context = CGContext(
+                data: raw.baseAddress,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drawn else { return nil }
+        atlasBufferCache[asset.id] = buffer
+        return buffer
     }
 
-    /// 从图集裁出单元格。坐标为左上原点（图集坐标系），需转成 NSImage 的下原点。
-    private func crop(atlas: NSImage, asset: PetSpriteAsset, frameIndex: Int) -> NSImage? {
+    /// 从图集裁出单元格。
+    ///
+    /// 走 `CGImage` 像素直拷，与适配器占用扫描同一段物理像素
+    /// （行 0 = 高物理行段），保证「扫描判定占用的帧」与「裁出的帧」永远一致。
+    /// 不用 `NSImage.draw(in:from:)`：webp 的位图表示坐标系与 PNG 相反（实测），
+    /// 会在社区宠物上裁到镜像行的内容——抚摸动画尾帧落空导致宠物消失约半秒。
+    private func crop(asset: PetSpriteAsset, frameIndex: Int) -> NSImage? {
         let grid = asset.grid
         guard frameIndex >= 0, frameIndex < grid.cellCount else { return nil }
+        guard let atlas = atlasBuffer(asset: asset) else { return nil }
         let column = frameIndex % grid.columns
         let row = frameIndex / grid.columns
-        let cellSize = NSSize(width: grid.cellWidth, height: grid.cellHeight)
-        let atlasSize = atlas.size
-        guard atlasSize.width > 0, atlasSize.height > 0 else { return nil }
+        let atlasWidth = grid.columns * grid.cellWidth
+        let atlasHeight = grid.rows * grid.cellHeight
+        let cellWidth = grid.cellWidth
+        let cellHeight = grid.cellHeight
+        let bytesPerCellRow = cellWidth * 4
 
-        // 图集可能被系统按点尺寸缩放，按比例换算实际像素坐标。
-        let scaleX = atlasSize.width / CGFloat(grid.columns * grid.cellWidth)
-        let scaleY = atlasSize.height / CGFloat(grid.rows * grid.cellHeight)
-        let pixelOrigin = CGPoint(
-            x: CGFloat(column) * CGFloat(grid.cellWidth) * scaleX,
-            y: atlasSize.height - CGFloat(row + 1) * CGFloat(grid.cellHeight) * scaleY
-        )
-        let rect = NSRect(
-            x: pixelOrigin.x,
-            y: pixelOrigin.y,
-            width: cellSize.width * scaleX,
-            height: cellSize.height * scaleY
-        )
+        // 物理行段与 PetdexAssetAdapter.occupiedFrames 一致：row 0 → 顶部行段。
+        let sourceRowStart = atlasHeight - (row + 1) * cellHeight
+        var cell = [UInt8](repeating: 0, count: cellWidth * cellHeight * 4)
+        for y in 0..<cellHeight {
+            let sourceBase = ((sourceRowStart + y) * atlasWidth + column * cellWidth) * 4
+            let targetBase = y * bytesPerCellRow
+            cell.replaceSubrange(
+                targetBase..<(targetBase + bytesPerCellRow),
+                with: atlas[sourceBase..<(sourceBase + bytesPerCellRow)]
+            )
+        }
 
-        let cropped = NSImage(size: cellSize)
-        cropped.lockFocus()
-        atlas.draw(
-            in: NSRect(origin: .zero, size: cellSize),
-            from: rect,
-            operation: .copy,
-            fraction: 1.0
+        let cellImage = cell.withUnsafeMutableBytes { raw -> CGImage? in
+            guard let context = CGContext(
+                data: raw.baseAddress,
+                width: cellWidth,
+                height: cellHeight,
+                bitsPerComponent: 8,
+                bytesPerRow: bytesPerCellRow,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return nil }
+            return context.makeImage()
+        }
+        guard let cellImage else { return nil }
+        let cropped = NSImage(
+            cgImage: cellImage,
+            size: NSSize(width: cellWidth, height: cellHeight)
         )
-        cropped.unlockFocus()
         cropped.capInsets = NSEdgeInsets()
         return cropped
     }
