@@ -80,9 +80,16 @@ final class DesktopPetManager: ObservableObject {
     /// 行走活动半径（点）：以锚点为中心的水平活动半宽。
     private let walkRadius: CGFloat = 120
 
-    /// 投掷（松手后惯性运动）是否进行中：期间看向 / 悬停禁用、反应丢弃、自主掷骰暂停。
-    /// 阶段②接入真实动量状态；当前恒 false（拖动由原生会话即时结束）。
-    var isMomentumActive: Bool { false }
+    /// 进行中的投掷（nil = 无惯性运动）。投掷视为 drag 的延续：
+    /// 反应丢弃、自主掷骰暂停、看向与悬停禁用、气泡维持拖动开始即清。
+    private var momentum: (position: CGPoint, velocity: CGVector)?
+    /// 投掷开始至今的真实单调历时（秒；不累加被钳制的 dt）。
+    private var momentumElapsed: TimeInterval = 0
+    /// 拖动方向与速度采样器（消费统一指针采样流）。
+    private var dragMotion = PetDragMotionTracker()
+
+    /// 投掷（松手后惯性运动）是否进行中。
+    var isMomentumActive: Bool { momentum != nil }
 
     // MARK: - 指针采样与显示覆盖（三期：看向 / 悬停 / 统一显示快照）
 
@@ -215,6 +222,9 @@ final class DesktopPetManager: ObservableObject {
         lookDirection = nil
         dragFacing = nil
         displaySnapshot = nil
+        // 投掷动量与交互锁一并清除；关窗前已 persistPositionNow 落盘当前位置。
+        momentum = nil
+        momentumElapsed = 0
         engine.drainExternalEvents()
         stopReactionCoordinator()
         removeScreenChangeObserver()
@@ -252,9 +262,10 @@ final class DesktopPetManager: ObservableObject {
         installedPets = assetStore.installedPets()
     }
 
-    /// 切换尺寸档位并持久化。
+    /// 切换尺寸档位并持久化。改尺寸先取消投掷，保持左下角再夹回可见屏。
     func setSize(_ newSize: DesktopPetSize) {
         guard newSize != size else { return }
+        cancelMomentum(anchorCurrent: true)
         size = newSize
         userDefaults.set(newSize.rawValue, forKey: UserDefaultsKeys.petSize)
         windowController.apply(petSize: petSize)
@@ -282,7 +293,7 @@ final class DesktopPetManager: ObservableObject {
     }
 
     /// 切换当前宠物：解析资产并（若在运行）重建窗口以应用新尺寸。
-    /// 覆盖状态先清理——旧宠物的悬停时间戳 / 看向帧不得驱动新窗口。
+    /// 覆盖状态先清理——旧宠物的悬停时间戳 / 看向帧 / 动量不得驱动新窗口。
     func selectPet(slug: String) {
         selectedPetSlug = slug
         userDefaults.set(slug, forKey: UserDefaultsKeys.petSelectedSlug)
@@ -292,6 +303,7 @@ final class DesktopPetManager: ObservableObject {
         hoverPlayback = nil
         hoverCooldownUntil = .distantPast
         lookDirection = nil
+        cancelMomentum(anchorCurrent: false)
         restartIfRunning()
     }
 
@@ -365,8 +377,9 @@ final class DesktopPetManager: ObservableObject {
         return tuning
     }
 
-    /// 重置到所在屏默认位置（右侧地面）。
+    /// 重置到所在屏默认位置（右侧地面）。先取消投掷动量再重置位置、锚点与 idle。
     func resetPosition() {
+        cancelMomentum(anchorCurrent: false)
         let screens = visibleScreensProvider()
         guard let screen = PetPositionPlanner.screenContaining(
             position: windowController.currentOrigin ?? .zero,
@@ -424,6 +437,12 @@ final class DesktopPetManager: ObservableObject {
         // 指针采样先于拖动 / 行为推进：拖动方向与速度（阶段②）同样依赖采样流。
         // 原生拖动会话期间 runloop 走 .eventTracking，帧时钟注册在 .common 仍持续回调。
         samplePointerOverlays()
+        // 投掷步进先于直接拖动暂停与普通行为（SPEC 5.4 顺序）。
+        if let current = momentum {
+            stepMomentum(current: current, delta: dt)
+            updateDisplaySnapshot()
+            return
+        }
         guard !isDragging else {
             updateDisplaySnapshot()
             return
@@ -527,6 +546,17 @@ final class DesktopPetManager: ObservableObject {
         let petRect = panel.frame
         let inside = Self.pointer(pointer, isInRect: petRect)
 
+        // 直接拖动期间：喂方向 / 速度采样器（指针位移即窗口位移，会话锚点固定）。
+        if isDragging {
+            if dragMotion.update(
+                pointer: pointer,
+                at: displayDate.timeIntervalSinceReferenceDate
+            ) {
+                dragFacing = dragMotion.facing
+                updateDisplaySnapshot()
+            }
+        }
+
         // 看向：直接拖动 / 投掷期间显式禁用（不能依赖「指针必在矩形内」的假设）；
         // 矩形内（含边界）为死区。方向缺帧的回退在显示解析层处理。
         lookDirection = (isDragging || isMomentumActive)
@@ -594,7 +624,12 @@ final class DesktopPetManager: ObservableObject {
     // MARK: - 交互
 
     /// 单击抚摸。已在抚摸中再次点击视为连击：延长抚摸时长（引擎态不变，仅重置计时）。
+    /// 投掷进行中先结束投掷（以当前位置建立活动锚点），再进入 petted。
     func pet() {
+        if isMomentumActive {
+            cancelMomentum(anchorCurrent: true)
+            engine.endDrag()
+        }
         captureInterruptedRemaining()
         engine.pet()
         guard case .petted = engine.state else { return }
@@ -606,8 +641,17 @@ final class DesktopPetManager: ObservableObject {
 
     /// 拖拽开始：进入拖动状态，位移随后由系统原生窗口拖动会话接管。
     /// 看向与悬停覆盖立即禁用 / 清除（气泡沿用拖动开始即清的既有语义）。
+    /// 投掷进行中开始新拖动：清除投掷速度 / 样本，以当前位置建立新锚点，
+    /// 不运行旧投掷完成回调。
     func beginDrag() {
+        if isMomentumActive {
+            momentum = nil
+            momentumElapsed = 0
+            walkAnchorX = windowController.currentOrigin?.x
+        }
         isDragging = true
+        dragMotion.reset()
+        dragFacing = nil
         hoverPlayback = nil
         lookDirection = nil
         engine.beginDrag()
@@ -615,15 +659,34 @@ final class DesktopPetManager: ObservableObject {
         updateDisplaySnapshot()
     }
 
-    /// 拖拽结束：宠物悬停在松手处并回到 idle，该处成为新的行走活动锚点。
+    /// 拖拽结束：有投掷初速则延续 drag 进入惯性运动；否则悬停在松手处回 idle，
+    /// 松手处成为新的行走活动锚点。
     func endDrag() {
         guard isDragging else { return }
         isDragging = false
+        // 松手速度：补录最终样本后取 80ms 窗口首末差分（静止松手自然为零速）。
+        let releaseVelocity = dragMotion.velocity(
+            at: displayDate.timeIntervalSinceReferenceDate,
+            location: pointerLocationProvider()
+        )
         dragFacing = nil
         // 指针此刻必在宠物附近：重建悬停基线，避免松手后一次假边沿触发跳跃。
         pointerInsideBaseline = true
         // 以松手处为活动锚点：之后只在附近走动，不再满屏游走。
         walkAnchorX = windowController.currentOrigin?.x
+        if let origin = windowController.currentOrigin,
+           hypot(releaseVelocity.dx, releaseVelocity.dy) >= PetThrowPhysics.stopSpeed {
+            // 投掷视为 drag 的延续：保持 drag 行为态，物理步进在 tick 中推进。
+            momentum = (position: origin, velocity: releaseVelocity)
+            momentumElapsed = 0
+            // 投掷表现按初速水平符号给分向走动；纯竖直投掷无朝向（悬空姿态）。
+            if abs(releaseVelocity.dx) > 1 {
+                dragFacing = releaseVelocity.dx > 0 ? .right : .left
+            }
+            persistPositionDebounced()
+            updateDisplaySnapshot()
+            return
+        }
         engine.endDrag()
         behaviorState = engine.state
         decisionRemaining = engine.sampleDuration(for: .idle)
@@ -632,10 +695,58 @@ final class DesktopPetManager: ObservableObject {
         updateDisplaySnapshot()
     }
 
-    /// 显示器配置变更：夹回可见区并回到 idle。
+    // MARK: - 投掷步进（SPEC 5.4）
+
+    /// 推进一步投掷物理：真实历时计入、按连续路径碰撞、摩擦衰减；
+    /// 自然结束时统一收尾（回 idle、采样停留时长、清打断剩余、更新锚点并持久化）。
+    private func stepMomentum(current: (position: CGPoint, velocity: CGVector), delta: TimeInterval) {
+        momentumElapsed += delta
+        let result = PetThrowPhysics.step(
+            position: windowController.currentOrigin ?? current.position,
+            velocity: current.velocity,
+            elapsed: momentumElapsed,
+            delta: delta,
+            petSize: petSize,
+            screens: visibleScreensProvider()
+        )
+        windowController.move(to: result.position)
+        if result.finished {
+            finishMomentum(at: result.position)
+        } else {
+            momentum = (position: result.position, velocity: result.velocity)
+        }
+    }
+
+    /// 投掷自然结束的统一收尾路径。
+    private func finishMomentum(at position: CGPoint) {
+        momentum = nil
+        momentumElapsed = 0
+        dragFacing = nil
+        engine.endDrag()
+        behaviorState = engine.state
+        decisionRemaining = engine.sampleDuration(for: .idle)
+        interruptedRemaining = nil
+        walkAnchorX = position.x
+        persistPositionDebounced()
+    }
+
+    /// 取消投掷（中断表通用收尾）：清除动量与朝向；不运行自然结束回调。
+    /// `anchorCurrent` = true 时以当前位置更新活动锚点（单击抚摸等就地交互场景）。
+    private func cancelMomentum(anchorCurrent: Bool = true) {
+        guard isMomentumActive else { return }
+        momentum = nil
+        momentumElapsed = 0
+        dragFacing = nil
+        if anchorCurrent {
+            walkAnchorX = windowController.currentOrigin?.x
+        }
+    }
+
+    /// 显示器配置变更：取消投掷动量后夹回可见区并回到 idle。
     /// 夹回用与 tick 同源的 `visibleScreensProvider`（单一几何口径）；
     /// 夹回后的落点即新活动锚点（旧屏坐标在新屏上已无意义）。
     func handleScreenConfigurationChange() {
+        cancelMomentum(anchorCurrent: false)
         guard let origin = windowController.currentOrigin else { return }
         let screens = visibleScreensProvider()
         guard let screen = PetPositionPlanner.screenContaining(

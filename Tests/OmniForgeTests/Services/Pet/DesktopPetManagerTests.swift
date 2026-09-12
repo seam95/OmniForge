@@ -905,6 +905,196 @@ final class DesktopPetManagerTests: XCTestCase {
         XCTAssertEqual(manager.displaySnapshot?.frameIndex, 0)
         XCTAssertEqual(manager.displaySnapshot?.size, manager.petSize)
     }
+
+    // MARK: - 拖动方向与投掷（三期阶段②）
+
+    /// 模拟一次快速右甩拖动：多次采样喂出速度后松手。
+    private func flingRight(manager: DesktopPetManager, pointer: PointerBox, ticks: Int = 4) {
+        manager.beginDrag()
+        pointer.location = CGPoint(x: 600, y: 400)
+        for index in 1...ticks {
+            pointer.location = CGPoint(x: 600 + CGFloat(index) * 40, y: 400)
+            manager.tick(delta: 0.02)
+        }
+        manager.endDrag()
+    }
+
+    func test_dragFacingUpdatesWithPointerDirection() {
+        let (manager, pointer) = makeOverlayManager(asset: overlayAsset())
+        manager.start()
+
+        manager.beginDrag()
+        // 向左累计 5pt（一步达到阈值）：朝向换左。
+        pointer.location = CGPoint(x: 500, y: 400)
+        manager.tick(delta: 0.02)
+        pointer.location = CGPoint(x: 495, y: 400)
+        manager.tick(delta: 0.02)
+
+        XCTAssertEqual(manager.dragFacing, .left, "拖动方向累计达到阈值后更新朝向")
+        XCTAssertEqual(manager.behaviorState, .drag)
+    }
+
+    func test_releaseWithVelocityStartsMomentumKeepingDragState() {
+        let (manager, pointer) = makeOverlayManager(asset: overlayAsset())
+        manager.start()
+        pointer.location = CGPoint(x: 600, y: 400)
+
+        flingRight(manager: manager, pointer: pointer)
+
+        XCTAssertTrue(manager.isMomentumActive, "快速松手应进入惯性运动")
+        XCTAssertEqual(manager.behaviorState, .drag, "投掷视为 drag 的延续")
+    }
+
+    func test_stationaryReleaseEndsDragWithoutMomentum() {
+        let (manager, pointer) = makeOverlayManager(asset: overlayAsset())
+        manager.start()
+
+        manager.beginDrag()
+        pointer.location = CGPoint(x: 500, y: 400)
+        // 静止按住超过速度窗口。
+        manager.tick(delta: 0.02)
+        manager.tick(delta: 0.5)
+        manager.endDrag()
+
+        XCTAssertFalse(manager.isMomentumActive, "静止松手零速，不投掷")
+        XCTAssertEqual(manager.behaviorState, .idle)
+    }
+
+    func test_momentumStepsWindowAndFinishesBackToIdle() {
+        let (manager, pointer) = makeOverlayManager(asset: overlayAsset())
+        manager.start()
+        // 窗口移到屏幕中部：右甩有飞行空间（默认落点贴右缘会立即反弹）。
+        manager.windowController.move(to: CGPoint(x: 300, y: 400))
+        pointer.location = CGPoint(x: 300, y: 400)
+        flingRight(manager: manager, pointer: pointer, ticks: 4)
+
+        XCTAssertTrue(manager.isMomentumActive)
+        let start = manager.windowController.currentOrigin?.x ?? 0
+
+        // 推进若干步：窗口右移（摩擦衰减后自然结束回 idle）；反弹可能折返，取过程峰值。
+        var maxX = start
+        for _ in 0..<40 {
+            manager.tick(delta: 1.0 / 30.0)
+            maxX = max(maxX, manager.windowController.currentOrigin?.x ?? 0)
+            if !manager.isMomentumActive { break }
+        }
+
+        XCTAssertFalse(manager.isMomentumActive, "摩擦衰减后投掷自然结束")
+        XCTAssertEqual(manager.behaviorState, .idle)
+        XCTAssertGreaterThan(maxX, start + 50, "投掷期间窗口沿初速方向明显移动")
+    }
+
+    func test_momentumDropsIncomingReactions() {
+        let (manager, pointer) = makeOverlayManager(asset: overlayAsset())
+        manager.start()
+        pointer.location = CGPoint(x: 300, y: 400)
+        flingRight(manager: manager, pointer: pointer)
+
+        let accepted = manager.submit(.celebrationTriggered(quotaLabel: "Claude 7d"))
+
+        XCTAssertFalse(accepted, "投掷期间反应丢弃不排队")
+        XCTAssertNil(manager.currentBubble)
+    }
+
+    func test_newDragInterruptsMomentum() {
+        let (manager, pointer) = makeOverlayManager(asset: overlayAsset())
+        manager.start()
+        pointer.location = CGPoint(x: 300, y: 400)
+        flingRight(manager: manager, pointer: pointer)
+        XCTAssertTrue(manager.isMomentumActive)
+
+        // 投掷中开始新拖动：动量清除、以当前位置建新锚点。
+        pointer.location = CGPoint(x: 400, y: 400)
+        manager.beginDrag()
+
+        XCTAssertFalse(manager.isMomentumActive)
+        XCTAssertEqual(manager.behaviorState, .drag)
+        // 旧投掷不再驱动窗口（新会话静止松手直接回 idle）。
+        manager.tick(delta: 0.1)
+        manager.endDrag()
+        XCTAssertEqual(manager.behaviorState, .idle)
+    }
+
+    func test_singleClickInterruptsMomentumIntoPetted() {
+        let (manager, pointer) = makeOverlayManager(asset: overlayAsset())
+        manager.start()
+        pointer.location = CGPoint(x: 300, y: 400)
+        flingRight(manager: manager, pointer: pointer)
+        XCTAssertTrue(manager.isMomentumActive)
+
+        manager.pet()
+
+        XCTAssertFalse(manager.isMomentumActive, "单击先结束投掷")
+        XCTAssertEqual(manager.behaviorState, .petted(resumeState: .idle), "随后进入 petted")
+    }
+
+    func test_resetPositionInterruptsMomentum() {
+        let (manager, pointer) = makeOverlayManager(asset: overlayAsset())
+        manager.start()
+        pointer.location = CGPoint(x: 300, y: 400)
+        flingRight(manager: manager, pointer: pointer)
+
+        manager.resetPosition()
+
+        XCTAssertFalse(manager.isMomentumActive)
+        XCTAssertEqual(manager.behaviorState, .idle)
+        XCTAssertEqual(manager.windowController.currentOrigin?.y, screen.groundY)
+    }
+
+    func test_screenChangeInterruptsMomentumAndClamps() {
+        let (manager, pointer) = makeOverlayManager(asset: overlayAsset())
+        manager.start()
+        pointer.location = CGPoint(x: 300, y: 400)
+        flingRight(manager: manager, pointer: pointer)
+
+        manager.handleScreenConfigurationChange()
+
+        XCTAssertFalse(manager.isMomentumActive)
+        XCTAssertEqual(manager.behaviorState, .idle)
+    }
+
+    func test_sizeChangeInterruptsMomentum() {
+        let (manager, pointer) = makeOverlayManager(asset: overlayAsset())
+        manager.start()
+        pointer.location = CGPoint(x: 300, y: 400)
+        flingRight(manager: manager, pointer: pointer)
+
+        manager.setSize(.large)
+
+        XCTAssertFalse(manager.isMomentumActive, "改尺寸取消投掷动量")
+    }
+
+    func test_teardownInterruptsMomentumAndLeavesNoResidue() {
+        let (manager, pointer) = makeOverlayManager(asset: overlayAsset())
+        manager.start()
+        pointer.location = CGPoint(x: 300, y: 400)
+        flingRight(manager: manager, pointer: pointer)
+
+        manager.teardown()
+
+        XCTAssertFalse(manager.isMomentumActive)
+        XCTAssertNil(manager.windowController.panel)
+    }
+
+    func test_switchPetDuringMomentumDoesNotDriveNewWindow() throws {
+        try installCustomPet(slug: "switch-target")
+        let (manager, pointer) = makeOverlayManager(asset: overlayAsset())
+        manager.start()
+        pointer.location = CGPoint(x: 300, y: 400)
+        flingRight(manager: manager, pointer: pointer)
+        XCTAssertTrue(manager.isMomentumActive)
+
+        manager.selectPet(slug: "switch-target")
+
+        XCTAssertFalse(manager.isMomentumActive, "换宠先取消旧窗口动量")
+        // 重建后的新窗口推进旧时钟：无残留运动（窗口静止）。
+        let originAfterSwitch = manager.windowController.currentOrigin
+        lastClock?.emit(delta: 0.1)
+        XCTAssertEqual(
+            manager.windowController.currentOrigin, originAfterSwitch,
+            "旧投掷状态不得驱动新窗口"
+        )
+    }
 }
 
 // MARK: - 测试辅助
