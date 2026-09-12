@@ -85,7 +85,10 @@ final class PetWindowController {
         guard let panel else { return }
         var frame = panel.frame
         frame.origin = origin
-        panel.setFrame(frame, display: true)
+        // display: false——拖动 / 行走路径每帧都会调用，透明窗口 display: true
+        // 会同步擦除重绘，高频移动时合成器提交中间擦除帧（宠物频闪）；
+        // 交给 runloop 周期末尾统一重绘，与显示刷新对齐。
+        panel.setFrame(frame, display: false)
     }
 
     /// 把窗口夹回当前所在屏幕的可见区。

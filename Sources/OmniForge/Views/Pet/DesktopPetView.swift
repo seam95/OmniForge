@@ -123,19 +123,29 @@ struct PetSpriteView: View {
 
     // MARK: - 拖拽
 
+    /// 首次 `onChanged` 的手势累计位移（识别阈值 8pt 触发点）。
+    /// `DragGesture.translation` 从按下点累计，而窗口锚点在识别成功时才记录——
+    /// 不扣除该起点位移，窗口会在起拖瞬间瞬跳 ≥8pt（拖动起手的猛跳）。
+    @State private var dragTranslationAnchor: CGSize?
+
     private var dragGesture: some Gesture {
         // 阈值 8pt：触摸板单击的轻微位移（常见 3-5pt）不再误入拖动态
         // （误入会闪一帧悬空姿态再跳回，观感为抚摸时闪烁）。
         DragGesture(minimumDistance: 8)
             .onChanged { value in
                 if case .drag = manager.behaviorState {
-                    manager.dragWindow(by: value.translation)
+                    let anchor = dragTranslationAnchor ?? value.translation
+                    manager.dragWindow(by: CGSize(
+                        width: value.translation.width - anchor.width,
+                        height: value.translation.height - anchor.height
+                    ))
                     return
                 }
+                dragTranslationAnchor = value.translation
                 manager.beginDrag()
-                manager.dragWindow(by: value.translation)
             }
             .onEnded { _ in
+                dragTranslationAnchor = nil
                 manager.endDrag()
             }
     }
@@ -146,7 +156,7 @@ struct PetSpriteView: View {
 final class SpriteAtlasImageProvider {
     static let shared = SpriteAtlasImageProvider()
 
-    private var atlasBufferCache: [String: [UInt8]] = [:]
+    private var atlasImageCache: [String: CGImage] = [:]
     private var frameCache: [String: NSImage] = [:]
 
     private init() {}
