@@ -21,10 +21,17 @@ struct PetHoverPlayback: Equatable {
     /// 播放起始时刻（Manager 显示时钟域）。
     let startedAt: Date
 
-    /// 是否已播完（末帧停留超过半帧容差即视为结束，触发移除）。
+    /// 是否已播完（elapsed ≥ 动画总时长即结束，由 Manager 在每 tick 检查并移除覆盖）。
     func isFinished(at now: Date) -> Bool {
         let total = animation.frameDuration * Double(animation.frames.count)
         return now.timeIntervalSince(startedAt) >= total
+    }
+}
+
+extension PetSpriteAsset {
+    /// 悬空姿态动画（拖动 / 投掷 / 悬停 / hop 共用的降级链：drag → fall）。
+    func suspendedAnimation() -> Animation? {
+        animation(id: PetAnimationID.drag) ?? animation(id: PetAnimationID.fall)
     }
 }
 
@@ -72,9 +79,7 @@ enum PetDisplayResolver {
                     return Resolution(animation: walking.animation, frameIndex: index, mirrored: walking.mirrored)
                 }
             }
-            let suspended = asset.animation(id: PetAnimationID.drag)
-                ?? asset.animation(id: PetAnimationID.fall)
-            guard let suspended else { return nil }
+            guard let suspended = asset.suspendedAnimation() else { return nil }
             let index = PetFrameSequencer.frameIndex(
                 now: now, stateEnteredAt: stateEnteredAt, animation: suspended
             )
@@ -129,9 +134,7 @@ enum PetDisplayResolver {
             return asset.animations.first.map { ($0, direction == .left) }
 
         case .drag:
-            let animation = asset.animation(id: PetAnimationID.drag)
-                ?? asset.animation(id: PetAnimationID.fall)
-            return animation.map { ($0, false) }
+            return asset.suspendedAnimation().map { ($0, false) }
 
         case .petted:
             return asset.animation(id: PetAnimationID.petted).map { ($0, false) }
@@ -150,10 +153,8 @@ enum PetDisplayResolver {
             return asset.animation(id: PetAnimationID.petted).map { ($0, false) }
 
         case .hop:
-            // 蹦跳复用悬空素材（jumping 行优先，其次 fall）。
-            let animation = asset.animation(id: PetAnimationID.drag)
-                ?? asset.animation(id: PetAnimationID.fall)
-            return animation.map { ($0, false) }
+            // 蹦跳复用悬空素材（drag → fall 降级链）。
+            return asset.suspendedAnimation().map { ($0, false) }
         }
     }
 

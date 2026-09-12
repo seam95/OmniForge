@@ -86,8 +86,12 @@ final class DesktopPetManager: ObservableObject {
     /// 进行中的投掷（nil = 无惯性运动）。投掷视为 drag 的延续：
     /// 反应丢弃、自主掷骰暂停、看向与悬停禁用、气泡维持拖动开始即清。
     private var momentum: (position: CGPoint, velocity: CGVector)?
-    /// 投掷开始至今的真实单调历时（秒；不累加被钳制的 dt）。
-    private var momentumElapsed: TimeInterval = 0
+    /// 投掷开始的真实单调时刻（秒）。900ms 上限按真实历时计算——帧时钟 delta
+    /// 已被钳位（恢复挂起后单帧 ≤100ms），累加钳制值会让长挂起达不到上限，
+    /// 因此直接用当前单调时刻与起始时刻作差。
+    private var momentumStartedAt: TimeInterval = 0
+    /// 单调时钟源（测试注入递增值保证确定性）。
+    private let monotonicTimeProvider: () -> TimeInterval
     /// 拖动方向与速度采样器（消费统一指针采样流）。
     private var dragMotion = PetDragMotionTracker()
 
@@ -140,7 +144,8 @@ final class DesktopPetManager: ObservableObject {
         frameClock: PetFrameClock? = nil,
         bubbleController: PetBubbleWindowController? = nil,
         bubbleVariantRoll: @escaping () -> Double = { Double.random(in: 0..<1) },
-        pointerLocationProvider: @escaping () -> CGPoint = { NSEvent.mouseLocation }
+        pointerLocationProvider: @escaping () -> CGPoint = { NSEvent.mouseLocation },
+        monotonicTimeProvider: @escaping () -> TimeInterval = { CACurrentMediaTime() }
     ) {
         self.userDefaults = userDefaults
         self.stringsProvider = stringsProvider
@@ -174,6 +179,7 @@ final class DesktopPetManager: ObservableObject {
         self.bubbleController = bubbleController ?? PetBubbleWindowController()
         self.bubbleVariantRoll = bubbleVariantRoll
         self.pointerLocationProvider = pointerLocationProvider
+        self.monotonicTimeProvider = monotonicTimeProvider
         self.installedPets = store.installedPets()
         // 拖动由窗口承载的原生拖动会话驱动（越过阈值才触发），此处接线状态迁移回调。
         self.windowController.onWindowDragStart = { [weak self] in self?.beginDrag() }
@@ -246,7 +252,6 @@ final class DesktopPetManager: ObservableObject {
         displaySnapshot = nil
         // 投掷动量与交互锁一并清除；关窗前已 persistPositionNow 落盘当前位置。
         momentum = nil
-        momentumElapsed = 0
         interactionLocked = false
         removePointerMonitors()
         lastPointerSample = nil
@@ -309,8 +314,7 @@ final class DesktopPetManager: ObservableObject {
         if asset?.animation(id: PetAnimationID.petted) != nil {
             kinds.insert(.frolic)
         }
-        if asset?.animation(id: PetAnimationID.drag) != nil
-            || asset?.animation(id: PetAnimationID.fall) != nil {
+        if asset?.suspendedAnimation() != nil {
             kinds.insert(.hop)
         }
         return kinds
@@ -465,13 +469,14 @@ final class DesktopPetManager: ObservableObject {
         displayDate = displayDate.addingTimeInterval(dt)
         // 指针采样先于拖动 / 行为推进：拖动方向与速度（阶段②）同样依赖采样流。
         // 原生拖动会话期间 runloop 走 .eventTracking，帧时钟注册在 .common 仍持续回调。
-        samplePointerOverlays()
+        refreshPointerState()
         // 投掷步进先于直接拖动暂停与普通行为（SPEC 5.4 顺序）。
         if let current = momentum {
             stepMomentum(current: current, delta: dt)
             updateDisplaySnapshot()
             return
         }
+
         guard !isDragging else {
             updateDisplaySnapshot()
             return
@@ -570,16 +575,13 @@ final class DesktopPetManager: ObservableObject {
     /// 统一指针采样（每 tick 一次约 30Hz + mouseMoved 被动监听即时补）：
     /// 更新看向方向、驱动悬停边沿、刷新 alpha 命中路由。
     /// 隐藏 / 停用时 tick 不跑且 monitor 已撤，采样自然停止；重新显示后首次采样只建立基线。
-    private func samplePointerOverlays() {
-        refreshPointerState()
-    }
-
     private func refreshPointerState() {
         guard let panel = windowController.panel else { return }
         let pointer = pointerLocationProvider()
         lastPointerSample = pointer
         let petRect = panel.frame
-        let inside = Self.pointer(pointer, isInRect: petRect)
+        // 含边界死区判定与看向方向同源（PetLookOverlay 的几何口径）。
+        let inside = PetLookOverlay.directionIndex(pointer: pointer, petRect: petRect) == nil
 
         // 直接拖动期间：喂方向 / 速度采样器（指针位移即窗口位移，会话锚点固定）。
         if isDragging {
@@ -667,8 +669,7 @@ final class DesktopPetManager: ObservableObject {
     private func tryStartHover() {
         guard !isDragging, !isMomentumActive else { return }
         guard displayDate >= hoverCooldownUntil else { return }
-        guard let animation = asset?.animation(id: PetAnimationID.drag)
-            ?? asset?.animation(id: PetAnimationID.fall) else { return }
+        guard let animation = asset?.suspendedAnimation() else { return }
         hoverPlayback = PetHoverPlayback(animation: animation.oneShot(), startedAt: displayDate)
         hoverCooldownUntil = displayDate.addingTimeInterval(2)
     }
@@ -707,11 +708,6 @@ final class DesktopPetManager: ObservableObject {
         }
     }
 
-    /// 指针是否在矩形内（含边界；与 `PetLookOverlay` 的死区判定同口径）。
-    static func pointer(_ pointer: CGPoint, isInRect rect: CGRect) -> Bool {
-        pointer.x >= rect.minX && pointer.x <= rect.maxX
-            && pointer.y >= rect.minY && pointer.y <= rect.maxY
-    }
 
     // MARK: - 交互
 
@@ -738,7 +734,6 @@ final class DesktopPetManager: ObservableObject {
     func beginDrag() {
         if isMomentumActive {
             momentum = nil
-            momentumElapsed = 0
             walkAnchorX = windowController.currentOrigin?.x
         }
         isDragging = true
@@ -770,7 +765,7 @@ final class DesktopPetManager: ObservableObject {
            hypot(releaseVelocity.dx, releaseVelocity.dy) >= PetThrowPhysics.stopSpeed {
             // 投掷视为 drag 的延续：保持 drag 行为态，物理步进在 tick 中推进。
             momentum = (position: origin, velocity: releaseVelocity)
-            momentumElapsed = 0
+            momentumStartedAt = monotonicTimeProvider()
             // 投掷表现按初速水平符号给分向走动；纯竖直投掷无朝向（悬空姿态）。
             if abs(releaseVelocity.dx) > 1 {
                 dragFacing = releaseVelocity.dx > 0 ? .right : .left
@@ -789,14 +784,15 @@ final class DesktopPetManager: ObservableObject {
 
     // MARK: - 投掷步进（SPEC 5.4）
 
-    /// 推进一步投掷物理：真实历时计入、按连续路径碰撞、摩擦衰减；
-    /// 自然结束时统一收尾（回 idle、采样停留时长、清打断剩余、更新锚点并持久化）。
+    /// 推进一步投掷物理：真实历时按单调时钟作差（不受帧 delta 钳位影响）、
+    /// 按连续路径碰撞、摩擦衰减；自然结束时统一收尾（回 idle、采样停留时长、
+    /// 清打断剩余、更新锚点并持久化）。
     private func stepMomentum(current: (position: CGPoint, velocity: CGVector), delta: TimeInterval) {
-        momentumElapsed += delta
+        let elapsed = monotonicTimeProvider() - momentumStartedAt
         let result = PetThrowPhysics.step(
             position: windowController.currentOrigin ?? current.position,
             velocity: current.velocity,
-            elapsed: momentumElapsed,
+            elapsed: elapsed,
             delta: delta,
             petSize: petSize,
             screens: visibleScreensProvider()
@@ -812,7 +808,6 @@ final class DesktopPetManager: ObservableObject {
     /// 投掷自然结束的统一收尾路径。
     private func finishMomentum(at position: CGPoint) {
         momentum = nil
-        momentumElapsed = 0
         dragFacing = nil
         engine.endDrag()
         behaviorState = engine.state
@@ -827,7 +822,6 @@ final class DesktopPetManager: ObservableObject {
     private func cancelMomentum(anchorCurrent: Bool = true) {
         guard isMomentumActive else { return }
         momentum = nil
-        momentumElapsed = 0
         dragFacing = nil
         if anchorCurrent {
             walkAnchorX = windowController.currentOrigin?.x
