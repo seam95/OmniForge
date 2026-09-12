@@ -181,6 +181,14 @@ final class PetBehaviorEngine {
         syncAutonomyIfNeeded()
     }
 
+    /// 采样指定自主态的单步时长。
+    /// 供 Manager 硬切回 idle 的路径（行走结束 / 抚摸恢复 / 松手拖拽 / 重置位置等）
+    /// 显式取一次停留时长——这些路径不经过矩阵决策，若沿用归零的计时器，
+    /// idle 会在下一帧立即到期重掷，观感为「走完不停、一直重复走动」。
+    func sampleDuration(for kind: PetAutonomyKind) -> TimeInterval {
+        randomDuration(in: tuning.stepRange(for: kind))
+    }
+
     /// 开始拖拽（任意状态可进入）。
     func beginDrag() {
         state = .drag

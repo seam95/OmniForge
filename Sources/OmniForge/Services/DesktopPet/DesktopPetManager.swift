@@ -135,6 +135,8 @@ final class DesktopPetManager: ObservableObject {
         behaviorState = .idle
         engine.resetToIdle()
         engine.drainExternalEvents()
+        // 启动先安静停留一段采样时长，再进入矩阵决策（与其他硬切回 idle 路径同口径）。
+        decisionRemaining = engine.sampleDuration(for: .idle)
         let origin = restoredOrigin()
         // 恢复位置即初始活动锚点，重启后不会跑到别处。
         walkAnchorX = origin?.x
@@ -322,6 +324,7 @@ final class DesktopPetManager: ObservableObject {
         persistPositionDebounced()
         engine.resetToIdle()
         behaviorState = .idle
+        decisionRemaining = engine.sampleDuration(for: .idle)
         interruptedRemaining = nil
     }
 
@@ -374,7 +377,7 @@ final class DesktopPetManager: ObservableObject {
                 // 玩耍/蹦跳是一次性自主小动作，播完同样回到矩阵重新掷骰。
                 let decision = engine.nextAutonomousDecision()
                 engine.apply(decision)
-                decisionRemaining = decision.duration
+                decisionRemaining = autonomyDuration(for: decision)
                 behaviorState = decision.state
             }
 
@@ -408,6 +411,10 @@ final class DesktopPetManager: ObservableObject {
             } else if decisionRemaining <= 0 {
                 engine.apply(PetBehaviorDecision(state: .idle, horizontalDelta: 0, duration: 0))
                 behaviorState = .idle
+                // 行走结束是硬切回 idle：必须重新采样停留时长。若沿用归零的计时器，
+                // idle 会在下一帧立即到期重掷（45% 概率直接又走/玩/跳），
+                // 观感为「走完不停、一直重复走动」。
+                decisionRemaining = engine.sampleDuration(for: .idle)
                 persistPositionDebounced()
             }
 
@@ -420,7 +427,7 @@ final class DesktopPetManager: ObservableObject {
             if decisionRemaining <= 0 {
                 engine.finishPetted()
                 behaviorState = engine.state
-                decisionRemaining = interruptedRemaining ?? 0
+                decisionRemaining = interruptedRemaining ?? engine.sampleDuration(for: .idle)
                 interruptedRemaining = nil
             }
 
@@ -430,7 +437,7 @@ final class DesktopPetManager: ObservableObject {
             if decisionRemaining <= 0 {
                 engine.finishReaction()
                 behaviorState = engine.state
-                decisionRemaining = interruptedRemaining ?? 0
+                decisionRemaining = interruptedRemaining ?? engine.sampleDuration(for: .idle)
                 interruptedRemaining = nil
             }
             _ = kind
@@ -446,8 +453,7 @@ final class DesktopPetManager: ObservableObject {
         guard case .petted = engine.state else { return }
         behaviorState = engine.state
         // 抚摸动画时长由资产定义，缺资产时给一个保守值。
-        decisionRemaining = asset?.animation(id: PetAnimationID.petted)
-            .map { $0.frameDuration * Double($0.frames.count) } ?? 0.6
+        decisionRemaining = oneShotDuration(ids: [PetAnimationID.petted], fallback: 0.6)
     }
 
     /// 拖拽开始。
@@ -475,7 +481,7 @@ final class DesktopPetManager: ObservableObject {
         walkAnchorX = windowController.currentOrigin?.x
         engine.endDrag()
         behaviorState = engine.state
-        decisionRemaining = 0
+        decisionRemaining = engine.sampleDuration(for: .idle)
         interruptedRemaining = nil
         persistPositionDebounced()
     }
@@ -496,7 +502,7 @@ final class DesktopPetManager: ObservableObject {
         walkAnchorX = clamped.x
         engine.resetToIdle()
         behaviorState = .idle
-        decisionRemaining = 0
+        decisionRemaining = engine.sampleDuration(for: .idle)
         interruptedRemaining = nil
         persistPositionDebounced()
     }
@@ -657,6 +663,29 @@ final class DesktopPetManager: ObservableObject {
     }
 
     // MARK: - 私有
+
+    /// 自主决策后的状态时长：一次性小动作（玩耍 / 蹦跳）按素材动画总时长取
+    /// （播完即转移，不在末帧定格）；其余状态按决策采样时长。
+    private func autonomyDuration(for decision: PetBehaviorDecision) -> TimeInterval {
+        switch decision.state {
+        case .frolic:
+            return oneShotDuration(ids: [PetAnimationID.petted], fallback: decision.duration)
+        case .hop:
+            return oneShotDuration(ids: [PetAnimationID.drag, PetAnimationID.fall], fallback: decision.duration)
+        default:
+            return decision.duration
+        }
+    }
+
+    /// 一次性动画态的时长：取首个命中素材的总时长；素材缺失时回退默认值。
+    private func oneShotDuration(ids: [String], fallback: TimeInterval) -> TimeInterval {
+        for id in ids {
+            if let animation = asset?.animation(id: id) {
+                return animation.frameDuration * Double(animation.frames.count)
+            }
+        }
+        return fallback
+    }
 
     /// 记录被打断的自主行为剩余时长（仅行走有意义；反应态续期沿用首次记录）。
     private func captureInterruptedRemaining() {

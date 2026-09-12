@@ -54,14 +54,28 @@ final class PetBehaviorLoopTests: XCTestCase {
         // 记录每次状态切换，输出最长连续 walk 段。
         var longestWalkRun = 0
         var currentRun = 0
+        // idle 段统计：进入 idle 计 1 tick，离开时结算；循环结束仍在 idle 的尾段不结算
+        // （可能被截断）。用于抓「硬切回 idle 未采样停留时长 → idle 一帧即过」的回归。
+        var shortestIdleRun: Int?
+        var currentIdleRun = 0
+        var lastState = manager.behaviorState
 
         for _ in 0..<ticks {
             manager.tick()
             totalSeconds += 1.0 / 30.0
-            switch manager.behaviorState {
+            let state = manager.behaviorState
+            if state != lastState {
+                if case .idle = lastState, currentIdleRun > 0 {
+                    shortestIdleRun = min(shortestIdleRun ?? currentIdleRun, currentIdleRun)
+                }
+                currentIdleRun = 0
+                lastState = state
+            }
+            switch state {
             case .idle:
                 idleTicks += 1
                 idleSeconds += 1.0 / 30.0
+                currentIdleRun += 1
                 currentRun = 0
             case .walk:
                 walkTicks += 1
@@ -82,6 +96,9 @@ final class PetBehaviorLoopTests: XCTestCase {
         print("DIAG x轨迹范围=[\(minX), \(maxX)] 跨度=\(maxX - minX) 起点≈\(startAnchor)")
         print("DIAG 最长连续walk=\(longestWalkRun) tick（\(Double(longestWalkRun) / 30.0)s）")
         print("DIAG anchor范围应=[\(startAnchor - 120), \(startAnchor + 120)]")
+        if let shortest = shortestIdleRun {
+            print("DIAG 最短idle段=\(Double(shortest) / 30.0)s（idleStep 下界 2s；≈0 值段=硬切回 idle 未采样时长）")
+        }
 
         // 事实断言：位置必须困在 anchor ±120（+1pt 容差）内。
         XCTAssertLessThanOrEqual(maxX - minX, 240 + 1, "位置越出活动范围——范围限制失效")
@@ -91,5 +108,14 @@ final class PetBehaviorLoopTests: XCTestCase {
             0.70,
             "idle 时长占比应 ≥70%，实际 \(idleSeconds / totalSeconds)"
         )
+        // 回归：任何完整 idle 段不应短于 1s（idleStep 下界 2s 的一半）。
+        // 历史 bug：硬切回 idle 的路径（行走结束 / 抚摸恢复 / 松手拖拽等）decisionRemaining
+        // 归零，idle 一帧即过、宠物走完不停立即又动——观感为「一直重复走动停不下来」。
+        if let shortest = shortestIdleRun {
+            XCTAssertGreaterThanOrEqual(
+                Double(shortest) / 30.0, 1.0,
+                "存在 \(Double(shortest) / 30.0)s 的超短 idle 段——硬切回 idle 未采样停留时长"
+            )
+        }
     }
 }

@@ -542,12 +542,14 @@ final class DesktopPetManagerTests: XCTestCase {
     // MARK: - 一次性状态打断保留剩余行走时长
 
     func test_reactionInterruptingWalkRestoresRemainingDuration() {
-        // 种子随机：首掷 0.7 → idle 行选中 walkLeft；次掷 0.0 → 时长下限 1s。
-        let engine = PetBehaviorEngine(randomSource: SeededPetRandomSource(values: [0.7, 0.0]))
+        // 种子随机：0.0 → start 的 idle 停留采样（下限 2s）；0.7 → 决策选中 walkLeft；
+        // 0.0 → 行走时长下限 1s。
+        let engine = PetBehaviorEngine(randomSource: SeededPetRandomSource(values: [0.0, 0.7, 0.0]))
         let manager = makeManager(engine: engine, tickInterval: 1.0 / 30.0)
         manager.start()
 
-        manager.tick(delta: 0.001)
+        // 推进满 idle 停留时长后触发矩阵决策，进入行走。
+        manager.tick(delta: 2.1)
         XCTAssertEqual(manager.behaviorState, .walk(direction: .left))
 
         // 走 0.5s 后被反应打断：剩 0.5s。
@@ -570,11 +572,12 @@ final class DesktopPetManagerTests: XCTestCase {
     }
 
     func test_petInterruptingWalkRestoresRemainingDuration() {
-        let engine = PetBehaviorEngine(randomSource: SeededPetRandomSource(values: [0.7, 0.0]))
+        // 种子随机：0.0 → start 的 idle 停留采样；0.7 → walkLeft；0.0 → 时长下限 1s。
+        let engine = PetBehaviorEngine(randomSource: SeededPetRandomSource(values: [0.0, 0.7, 0.0]))
         let manager = makeManager(engine: engine, tickInterval: 1.0 / 30.0)
         manager.start()
 
-        manager.tick(delta: 0.001)
+        manager.tick(delta: 2.1)
         manager.tick(delta: 0.5)
         manager.pet()
         XCTAssertEqual(manager.behaviorState, .petted(resumeState: .walk(direction: .left)))
