@@ -262,11 +262,49 @@ final class DesktopPetManagerTests: XCTestCase {
     }
 
     func test_invalidStoredSizeFallsBackToMedium() {
+        // 字符串等非数值 → 回退默认 96（缺失键同路径）。
+        defaults.set("garbage", forKey: UserDefaultsKeys.petSize)
+        XCTAssertEqual(makeManager().size, .medium)
+    }
+
+    func test_outOfRangeStoredSizeIsClamped() {
+        // 有限越界值（旧枚举外的 999）钳到上限 224——与非法值回退 96 可区分。
         defaults.set(999, forKey: UserDefaultsKeys.petSize)
+        XCTAssertEqual(makeManager().size.rawValue, 224)
+    }
 
+    func test_legacyIntegerSizeStaysAfterUpgrade() {
+        // 真实旧整数偏好（128）升级后保持原尺寸。
+        defaults.set(128, forKey: UserDefaultsKeys.petSize)
         let manager = makeManager()
+        manager.start()
 
-        XCTAssertEqual(manager.size, .medium)
+        XCTAssertEqual(manager.size, .large)
+        XCTAssertEqual(manager.petSize.height, 128)
+    }
+
+    func test_continuousSizePersistsAcrossReinit() {
+        let manager = makeManager()
+        manager.setSize(DesktopPetSize(148))
+
+        XCTAssertEqual(defaults.integer(forKey: UserDefaultsKeys.petSize), 148, "连续值原样落盘")
+        // 再次初始化（重启语义）后保持。
+        managers.append(manager)
+        XCTAssertEqual(makeManager().size.rawValue, 148)
+    }
+
+    func test_sizeChangeKeepsBottomLeftAndSyncsWalkAnchor() {
+        let manager = makeManager()
+        manager.start()
+        // 移到屏幕中部：放大后保持左下角、夹屏内。
+        manager.windowController.move(to: CGPoint(x: 400, y: 300))
+
+        manager.setSize(.large)
+
+        let origin = manager.windowController.currentOrigin
+        XCTAssertEqual(origin?.x, 400, "左下角 x 保持")
+        XCTAssertEqual(origin?.y, 300, "左下角 y 保持")
+        XCTAssertEqual(manager.walkAnchorXForTesting, 400, "夹回后的活动锚点同步")
     }
 
     // MARK: - 帧时钟

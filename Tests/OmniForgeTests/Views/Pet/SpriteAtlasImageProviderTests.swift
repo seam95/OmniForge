@@ -214,16 +214,17 @@ final class SpriteAtlasImageProviderTests: XCTestCase {
         }
     }
 
-    /// 帧缓存生效：同帧两次请求返回同一实例。
+    /// 帧缓存生效：同帧两次请求复用同一 CGImage 裁剪结果
+    /// （渲染 NSImage 与命中层共享同一份缓存——NSImage 是轻包装，实例不必相同）。
     func testFrameCacheReusesInstance() throws {
         let asset = try makeColorCodedAsset(slug: "cache-pet")
         let first = try XCTUnwrap(
-            SpriteAtlasImageProvider.shared.image(asset: asset, frameIndex: 0)
+            SpriteAtlasImageProvider.shared.frameCGImage(asset: asset, frameIndex: 0)
         )
         let second = try XCTUnwrap(
-            SpriteAtlasImageProvider.shared.image(asset: asset, frameIndex: 0)
+            SpriteAtlasImageProvider.shared.frameCGImage(asset: asset, frameIndex: 0)
         )
-        XCTAssertTrue(first === second)
+        XCTAssertTrue(first === second, "同帧两次请求应复用同一 CGImage 裁剪结果")
     }
 
     /// 越界帧序号返回 nil（不崩溃）。

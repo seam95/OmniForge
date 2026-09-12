@@ -77,6 +77,9 @@ final class DesktopPetManager: ObservableObject {
     /// 被一次性状态（抚摸 / 反应）打断的自主行为剩余时长；恢复自主态时归还，避免打断吞时长。
     private var interruptedRemaining: TimeInterval?
 
+    /// 行走活动锚点（测试断言夹屏同步用；外部不应依赖）。
+    var walkAnchorXForTesting: CGFloat? { walkAnchorX }
+
     /// 行走活动半径（点）：以锚点为中心的水平活动半宽。
     private let walkRadius: CGFloat = 120
 
@@ -153,7 +156,7 @@ final class DesktopPetManager: ObservableObject {
         self.assetStore = store
         self.community = community ?? PetCommunityBrowser(store: store)
 
-        let resolvedSize = DesktopPetSize.from(userDefaults.integer(forKey: UserDefaultsKeys.petSize))
+        let resolvedSize = DesktopPetSize.read(from: userDefaults, key: UserDefaultsKeys.petSize)
         self.size = resolvedSize
 
         let storedSlug = userDefaults.string(forKey: UserDefaultsKeys.petSelectedSlug)
@@ -285,13 +288,16 @@ final class DesktopPetManager: ObservableObject {
         installedPets = assetStore.installedPets()
     }
 
-    /// 切换尺寸档位并持久化。改尺寸先取消投掷，保持左下角再夹回可见屏。
+    /// 切换尺寸并持久化。改尺寸先取消投掷，保持左下角再夹回可见屏；
+    /// 夹回后的活动锚点与持久化位置同步（下一次自主行走不回旧锚点）。
     func setSize(_ newSize: DesktopPetSize) {
         guard newSize != size else { return }
         cancelMomentum(anchorCurrent: true)
         size = newSize
         userDefaults.set(newSize.rawValue, forKey: UserDefaultsKeys.petSize)
         windowController.apply(petSize: petSize)
+        walkAnchorX = windowController.currentOrigin?.x
+        persistPositionDebounced()
         // 尺寸变化同步命中判定与显示快照。
         updateDisplaySnapshot()
     }

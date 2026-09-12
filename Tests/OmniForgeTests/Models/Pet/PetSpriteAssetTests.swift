@@ -146,7 +146,7 @@ final class PetSpriteAssetTests: XCTestCase {
         let asset = try PetAssetLocator.load(from: assetURL)
 
         XCTAssertEqual(asset.id, PetAssetLocator.builtInPetID)
-        // 九行既有行为链：idle / 左右行 / 抚摸 / 悬空在 v1 图集上均应可用。
+        // 九行既有行为链：idle / 左右行 / 抚摸 / 悬空在图集上均应可用。
         for animationID in [
             PetAnimationID.idle, PetAnimationID.walkRight, PetAnimationID.walkLeft,
             PetAnimationID.petted, PetAnimationID.drag,
@@ -154,6 +154,15 @@ final class PetSpriteAssetTests: XCTestCase {
             XCTAssertNotNil(asset.animation(id: animationID), "缺少动画：\(animationID)")
         }
         XCTAssertEqual(asset.grid.columns, 8)
+        // 阶段④交付门槛：内置资产必须是 v2（8×11），16 向看向全部非空。
+        XCTAssertEqual(asset.grid.rows, 11, "内置宠物须为 v2 图集（8×11）")
+        XCTAssertTrue(asset.hasLookFrames, "内置宠物 16 向看向应启用")
+        for direction in 0..<PetLookOverlay.directionCount {
+            XCTAssertNotNil(
+                asset.lookFrame(direction: direction),
+                "方向 \(direction) 缺帧——交付门槛要求 16 向全部非空"
+            )
+        }
     }
 
     // MARK: - look 动画（自有格式 16 向声明）

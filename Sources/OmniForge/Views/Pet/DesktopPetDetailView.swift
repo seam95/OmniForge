@@ -195,34 +195,70 @@ private struct DesktopPetContent: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - 尺寸档位
+    // MARK: - 尺寸（连续值 + 快捷预设）
 
     private var sizeSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             FlatSectionHeader(title: strings.desktopPetSizeSection, accent: tint)
 
-            Picker(strings.desktopPetSizeSection, selection: Binding(
-                get: { manager.size },
-                set: { manager.setSize($0) }
-            )) {
-                ForEach(DesktopPetSize.allCases, id: \.self) { size in
-                    Text(sizeName(size)).tag(size)
+            // 滑杆：连续 64…224pt、步进 4；当前 pt 值随动显示。
+            HStack(spacing: 10) {
+                Slider(
+                    value: Binding(
+                        get: { Double(manager.size.rawValue) },
+                        set: { manager.setSize(DesktopPetSize.normalized(clamping: $0)) }
+                    ),
+                    in: Double(DesktopPetSize.range.lowerBound)...Double(DesktopPetSize.range.upperBound),
+                    step: Double(DesktopPetSize.step)
+                )
+                .accessibilityLabel(strings.desktopPetSizeSection)
+
+                Text("\(manager.size.rawValue) pt")
+                    .font(Theme.Stats.font12Medium)
+                    .monospacedDigit()
+                    .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
+                    .frame(minWidth: 44, alignment: .trailing)
+            }
+
+            // 快捷预设：64 / 96 / 128（真实旧三档等值，升级用户偏好不变）。
+            HStack(spacing: 8) {
+                ForEach(DesktopPetSize.presets, id: \.self) { preset in
+                    Button {
+                        manager.setSize(preset)
+                    } label: {
+                        Text(sizeName(preset))
+                            .font(Theme.Stats.font11Regular)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 3)
+                            .background(
+                                manager.size == preset
+                                    ? tint.opacity(0.14)
+                                    : Color.clear
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 5))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(manager.size == preset ? tint : MonitorOverviewPalette.primary(colorScheme))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 5)
+                            .strokeBorder(manager.size == preset ? tint.opacity(0.5) : Color.primary.opacity(0.12), lineWidth: 1)
+                    )
+                    .accessibilityLabel("\(strings.desktopPetSizeSection) \(sizeName(preset)) \(preset.rawValue) pt")
                 }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .disabled(!isEnabled)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+        .disabled(!isEnabled)
     }
 
     /// 档位展示名：Models 层不引用本地化，映射放在视图层。
     private func sizeName(_ size: DesktopPetSize) -> String {
         switch size {
-        case .small: return strings.desktopPetSizeSmall
-        case .medium: return strings.desktopPetSizeMedium
-        case .large: return strings.desktopPetSizeLarge
+        case DesktopPetSize.small: return strings.desktopPetSizeSmall
+        case DesktopPetSize.medium: return strings.desktopPetSizeMedium
+        case DesktopPetSize.large: return strings.desktopPetSizeLarge
+        default: return "\(size.rawValue) pt"
         }
     }
 

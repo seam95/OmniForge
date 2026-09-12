@@ -1,7 +1,7 @@
 {
   "id": "doraemon",
-  "name": "doraemon",
   "displayName": "哆啦 A 梦",
-  "description": "一只保留经典蓝白红黄特征、适合桌面展示的复古像素哆啦 A 梦宠物。",
+  "description": "16 向看向与口袋惊喜的复古像素哆啦 A 梦（同人作品，petdex 公开分发）。",
+  "spriteVersionNumber": 2,
   "spritesheetPath": "spritesheet.webp"
 }
