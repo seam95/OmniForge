@@ -164,87 +164,47 @@ final class SpriteAtlasImageProvider {
 
     /// 清空缓存（资产热更新或测试用）。
     func clearCache() {
-        atlasBufferCache.removeAll()
+        atlasImageCache.removeAll()
         frameCache.removeAll()
     }
 
-    /// 图集解码像素缓冲：按网格标称尺寸绘制（自动处理 DPI 缩放）。
-    /// 与 `PetdexAssetAdapter` 的占用扫描同一条路径，物理行序约定一致。
-    private func atlasBuffer(asset: PetSpriteAsset) -> [UInt8]? {
-        if let cached = atlasBufferCache[asset.id] { return cached }
+    /// 图集 CGImage：按资产缓存，避免逐帧重复解码。
+    private func atlasImage(asset: PetSpriteAsset) -> CGImage? {
+        if let cached = atlasImageCache[asset.id] { return cached }
         guard let url = PetAssetLocator.atlasURL(asset: asset),
               let image = NSImage(contentsOf: url),
               let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             return nil
         }
-        let grid = asset.grid
-        let width = grid.columns * grid.cellWidth
-        let height = grid.rows * grid.cellHeight
-        var buffer = [UInt8](repeating: 0, count: width * height * 4)
-        let drawn: Bool = buffer.withUnsafeMutableBytes { raw in
-            guard let context = CGContext(
-                data: raw.baseAddress,
-                width: width,
-                height: height,
-                bitsPerComponent: 8,
-                bytesPerRow: width * 4,
-                space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-            ) else { return false }
-            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-            return true
-        }
-        guard drawn else { return nil }
-        atlasBufferCache[asset.id] = buffer
-        return buffer
+        atlasImageCache[asset.id] = cgImage
+        return cgImage
     }
 
     /// 从图集裁出单元格。
     ///
-    /// 走 `CGImage` 像素直拷，与适配器占用扫描同一段物理像素
-    /// （行 0 = 高物理行段），保证「扫描判定占用的帧」与「裁出的帧」永远一致。
-    /// 不用 `NSImage.draw(in:from:)`：webp 的位图表示坐标系与 PNG 相反（实测），
-    /// 会在社区宠物上裁到镜像行的内容——抚摸动画尾帧落空导致宠物消失约半秒。
+    /// 用 `CGImage.cropping` 直取像素：行 0 = 图集文件顶部，该语义对 PNG 与 webp
+    /// 一致（与 `PetdexAssetAdapter` 的占用扫描同口径，扫到的帧与裁出的帧永远同格）。
+    /// 不走「CGContext.draw 整图进缓冲再按物理行段直拷」：webp 解码位图在该路径下
+    /// 缓冲行序与 PNG 相反，而换算假设（缓冲行 0 = 图像底部）只对 PNG 成立——
+    /// 社区宠物整张图集的行映射被上下翻转（idle 实际播到 review 行的内容）。
     private func crop(asset: PetSpriteAsset, frameIndex: Int) -> NSImage? {
         let grid = asset.grid
         guard frameIndex >= 0, frameIndex < grid.cellCount else { return nil }
-        guard let atlas = atlasBuffer(asset: asset) else { return nil }
+        guard let atlas = atlasImage(asset: asset) else { return nil }
+        // 图集像素尺寸须与网格标称一致（适配器按实际尺寸计算网格，自有格式按声明校验）。
+        guard atlas.width == grid.columns * grid.cellWidth,
+              atlas.height == grid.rows * grid.cellHeight else { return nil }
         let column = frameIndex % grid.columns
         let row = frameIndex / grid.columns
-        let atlasWidth = grid.columns * grid.cellWidth
-        let atlasHeight = grid.rows * grid.cellHeight
-        let cellWidth = grid.cellWidth
-        let cellHeight = grid.cellHeight
-        let bytesPerCellRow = cellWidth * 4
-
-        // 物理行段与 PetdexAssetAdapter.occupiedFrames 一致：row 0 → 顶部行段。
-        let sourceRowStart = atlasHeight - (row + 1) * cellHeight
-        var cell = [UInt8](repeating: 0, count: cellWidth * cellHeight * 4)
-        for y in 0..<cellHeight {
-            let sourceBase = ((sourceRowStart + y) * atlasWidth + column * cellWidth) * 4
-            let targetBase = y * bytesPerCellRow
-            cell.replaceSubrange(
-                targetBase..<(targetBase + bytesPerCellRow),
-                with: atlas[sourceBase..<(sourceBase + bytesPerCellRow)]
-            )
-        }
-
-        let cellImage = cell.withUnsafeMutableBytes { raw -> CGImage? in
-            guard let context = CGContext(
-                data: raw.baseAddress,
-                width: cellWidth,
-                height: cellHeight,
-                bitsPerComponent: 8,
-                bytesPerRow: bytesPerCellRow,
-                space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-            ) else { return nil }
-            return context.makeImage()
-        }
-        guard let cellImage else { return nil }
+        guard let cellImage = atlas.cropping(to: CGRect(
+            x: column * grid.cellWidth,
+            y: row * grid.cellHeight,
+            width: grid.cellWidth,
+            height: grid.cellHeight
+        )) else { return nil }
         let cropped = NSImage(
             cgImage: cellImage,
-            size: NSSize(width: cellWidth, height: cellHeight)
+            size: NSSize(width: grid.cellWidth, height: grid.cellHeight)
         )
         cropped.capInsets = NSEdgeInsets()
         return cropped

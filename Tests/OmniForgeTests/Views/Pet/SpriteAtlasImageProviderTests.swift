@@ -33,7 +33,7 @@ final class SpriteAtlasImageProviderTests: XCTestCase {
     // MARK: - 构造测试图集
 
     /// 生成 8×9 图集：每格填独特色（R=行、G=列编码），并落盘 pet.json 占位。
-    /// 填充手法与 PetdexAssetAdapterTests 相同（CG 低 y = 逻辑行 row），
+    /// 填充手法与 PetdexAssetAdapterTests 相同（逻辑行 0 = 文件顶部行，Quartz 高 y），
     /// 保证与适配器占用扫描同一条像素链路。
     private func makeColorCodedAsset(slug: String) throws -> PetSpriteAsset {
         let directory = workDirectory.appendingPathComponent(slug, isDirectory: true)
@@ -57,6 +57,8 @@ final class SpriteAtlasImageProviderTests: XCTestCase {
             for row in 0..<rows {
                 for column in 0..<columns {
                     // 颜色编码：R=40+行×20（唯一识别行），G=20+列×25（唯一识别列）。
+                    // 图集约定：逻辑行 0 = 文件顶部行。CGBitmapContext 缓冲行 0
+                    // 对应 Quartz 顶部（高 y），故逻辑行 row 填在高 y 区域。
                     context.setFillColor(CGColor(
                         srgbRed: Double(40 + row * 20) / 255.0,
                         green: Double(20 + column * 25) / 255.0,
@@ -65,7 +67,7 @@ final class SpriteAtlasImageProviderTests: XCTestCase {
                     ))
                     context.fill(CGRect(
                         x: column * cellWidth,
-                        y: row * cellHeight,
+                        y: (rows - 1 - row) * cellHeight,
                         width: cellWidth,
                         height: cellHeight
                     ))
@@ -102,6 +104,40 @@ final class SpriteAtlasImageProviderTests: XCTestCase {
                 PetSpriteAsset.Animation(
                     id: PetAnimationID.idle,
                     frames: Array(0..<columns),
+                    fps: 4,
+                    loops: true,
+                    mirrorX: false
+                )
+            ]
+        )
+    }
+
+    /// webp 版颜色编码图集：与 `makeColorCodedAsset` 同一张图的无损 webp 编码
+    /// （8×9、cell 12×14，R=行编码 G=列编码，逻辑行 0 = 文件顶部）。
+    /// webp 无法运行时编码（ImageIO 不支持），以 base64 内嵌（84 字节）。
+    private func makeWebpColorCodedAsset(slug: String) throws -> PetSpriteAsset {
+        let directory = workDirectory.appendingPathComponent(slug, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try "{}".data(using: .utf8)!.write(to: directory.appendingPathComponent("pet.json"))
+        // swiftlint:disable:next line_length
+        let base64 = "UklGRkwAAABXRUJQVlA4TD8AAAAvX0AfALkyRPQ/dhHR/4CatpGYA3Hf+HP96cYvAoEUBzHE0xRk0jargV0RwYOuQujDpAuR3/vv9oHm9vvvNgAA"
+        let webp = try XCTUnwrap(Data(base64Encoded: base64), "webp fixture base64 解码失败")
+        try webp.write(to: directory.appendingPathComponent("spritesheet.webp"))
+
+        return PetSpriteAsset(
+            id: slug,
+            displayName: slug,
+            atlasFileName: "spritesheet.webp",
+            grid: PetSpriteAsset.Grid(
+                columns: 8,
+                rows: 9,
+                cellWidth: 12,
+                cellHeight: 14
+            ),
+            animations: [
+                PetSpriteAsset.Animation(
+                    id: PetAnimationID.idle,
+                    frames: Array(0..<8),
                     fps: 4,
                     loops: true,
                     mirrorX: false
@@ -151,6 +187,29 @@ final class SpriteAtlasImageProviderTests: XCTestCase {
                                "帧 \(frameIndex) 的行编码不符（疑似行镜像/偏移）")
                 XCTAssertEqual(pixel.g, 20 + column * 25, accuracy: 3,
                                "帧 \(frameIndex) 的列编码不符（疑似列偏移）")
+            }
+        }
+    }
+
+    /// webp 坐标契约：真实 webp 解码路径下，帧序号 → 行/列编码必须与 PNG 一致。
+    /// 历史回归（36e8995 引入）：webp 解码位图在「CGContext.draw 整图进缓冲」路径下
+    /// 缓冲行序与 PNG 相反，整张图集行映射上下翻转——idle 实际播到 review 行内容
+    /// （社区宠物反复做 review 动作）。PNG 契约测试覆盖不到该路径，必须用真 webp。
+    func testCropMatchesScanGridConvention_webp() throws {
+        let asset = try makeWebpColorCodedAsset(slug: "coord-pet-webp")
+
+        for row in [0, 3, 8] {
+            for column in 0..<8 {
+                let frameIndex = row * 8 + column
+                let image = try XCTUnwrap(
+                    SpriteAtlasImageProvider.shared.image(asset: asset, frameIndex: frameIndex),
+                    "帧 \(frameIndex) 应裁出内容"
+                )
+                let pixel = try XCTUnwrap(centerPixel(of: image))
+                XCTAssertEqual(pixel.r, 40 + row * 20, accuracy: 3,
+                               "webp 帧 \(frameIndex) 的行编码不符（疑似行镜像/偏移）")
+                XCTAssertEqual(pixel.g, 20 + column * 25, accuracy: 3,
+                               "webp 帧 \(frameIndex) 的列编码不符（疑似列偏移）")
             }
         }
     }

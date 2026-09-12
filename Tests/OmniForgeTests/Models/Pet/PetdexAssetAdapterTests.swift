@@ -57,10 +57,10 @@ final class PetdexAssetAdapterTests: XCTestCase {
             context.setFillColor(CGColor(red: 1, green: 0.5, blue: 0, alpha: 1))
             for (row, count) in framesByRow {
                 for column in 0..<count {
-                    // CGContext 原点在左下，makeImage 不翻转；用低 y 填充即对应
-                    // 适配器扫描约定的图集行（与真实 top-down PNG 对齐后的结果一致）。
+                    // 图集约定：逻辑行 0 = 文件顶部行。CGBitmapContext 缓冲行 0
+                    // 对应 Quartz 顶部（高 y），故逻辑行 row 填在高 y 区域。
                     let x = column * cellWidth
-                    let y = row * cellHeight
+                    let y = (rows - 1 - row) * cellHeight
                     context.fill(CGRect(x: x, y: y, width: cellWidth, height: cellHeight))
                 }
             }
@@ -93,6 +93,31 @@ final class PetdexAssetAdapterTests: XCTestCase {
     }
 
     // MARK: - 正常路径
+
+    /// webp 行序契约：真实 webp 解码路径下，逻辑行 0（idle）必须扫到文件顶部行段。
+    /// 历史回归（36e8995 引入）：webp 解码位图在「CGContext.draw 整图进缓冲」路径下
+    /// 缓冲行序与 PNG 相反，行映射整体上下翻转——idle 扫到 review 行，
+    /// 社区宠物静止时反复播 review 动作。PNG 用例覆盖不到，必须用真 webp。
+    /// fixture 为无损 webp（58 字节 base64 内嵌）：逻辑行 0 填 3 格、逻辑行 8 填 5 格。
+    func test_loadWebpScansTopRowAsIdle() throws {
+        let directory = workDirectory.appendingPathComponent("webper", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        // swiftlint:disable:next line_length
+        let base64 = "UklGRjIAAABXRUJQVlA4TCUAAAAvX0AfEA8wk/Mf8x84zLRtEwblj9YMdu2I6P8EwKqqq3yngN0HAA=="
+        let webp = try XCTUnwrap(Data(base64Encoded: base64), "webp fixture base64 解码失败")
+        try webp.write(to: directory.appendingPathComponent("spritesheet.webp"))
+        let manifest: [String: Any] = ["id": "webper", "displayName": "Webper", "spritesheetPath": "spritesheet.webp"]
+        try JSONSerialization.data(withJSONObject: manifest, options: [.sortedKeys])
+            .write(to: directory.appendingPathComponent("pet.json"))
+
+        let asset = try PetdexAssetAdapter.load(from: directory)
+
+        // 行 0（idle）3 帧、行 8（review）5 帧；翻转时会扫反或触发 idle 兜底。
+        XCTAssertEqual(asset.animation(id: PetAnimationID.idle)?.frames, [0, 1, 2],
+                       "webp 的 idle 行扫描不符（疑似行镜像）")
+        XCTAssertEqual(asset.animation(id: PetAnimationID.review)?.frames, [64, 65, 66, 67, 68],
+                       "webp 的 review 行扫描不符（疑似行镜像）")
+    }
 
     func test_loadMapsRowsToAnimationsAndScansFrames() throws {
         // row0=6 帧 idle、row1=6 帧右行、row2=6 帧左行、row3=4 帧抚摸、row4=5 帧悬空。

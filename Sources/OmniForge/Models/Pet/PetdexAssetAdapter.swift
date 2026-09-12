@@ -102,10 +102,6 @@ enum PetdexAssetAdapter {
         let cellWidth = width / columns
         let cellHeight = height / Self.atlasRows(forHeight: height)
 
-        guard let (alpha, bytesPerRow) = alphaBuffer(cgImage) else {
-            throw PetdexAssetError.unreadableSpritesheet
-        }
-
         // 逐行扫描占用格，行号 → 动画 id。
         var animations: [PetSpriteAsset.Animation] = []
         // 首个非空行：部分宠物没有 idle 行，用它兜底保证静止时有画面。
@@ -117,9 +113,7 @@ enum PetdexAssetAdapter {
                 columns: columns,
                 cellWidth: cellWidth,
                 cellHeight: cellHeight,
-                atlasHeight: height,
-                alpha: alpha,
-                bytesPerRow: bytesPerRow
+                cgImage: cgImage
             )
             guard !frames.isEmpty else { continue }
             if firstRowFrames.isEmpty { firstRowFrames = frames }
@@ -190,57 +184,50 @@ enum PetdexAssetAdapter {
         throw PetdexAssetError.missingSpritesheet
     }
 
-    /// 把图集解码为 RGBA 缓冲区（用于 alpha 扫描）。
-    private static func alphaBuffer(_ cgImage: CGImage) -> ([UInt8], Int)? {
-        let width = cgImage.width
-        let height = cgImage.height
-        let bytesPerRow = width * 4
-        var buffer = [UInt8](repeating: 0, count: height * bytesPerRow)
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        var success = false
-        buffer.withUnsafeMutableBytes { raw in
-            guard let context = CGContext(
-                data: raw.baseAddress,
-                width: width,
-                height: height,
-                bitsPerComponent: 8,
-                bytesPerRow: bytesPerRow,
-                space: colorSpace,
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-            ) else { return }
-            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-            success = true
-        }
-        return success ? (buffer, bytesPerRow) : nil
-    }
-
     /// 扫描某一行的占用单元格，返回从左到右的帧序号（图集行优先编号）。
     /// 判定标准：单元格内 alpha > 8 的像素占比超过 1%。
+    ///
+    /// 逐格走 `CGImage.cropping` 直取像素（行 0 = 图集文件顶部），与
+    /// `SpriteAtlasImageProvider` 的裁剪同口径，且对 PNG / webp 语义一致。
+    /// 不走「CGContext.draw 整图进缓冲再换算行号」：webp 解码位图在该路径下
+    /// 缓冲行序与 PNG 相反，会让整张图集的行映射上下翻转（idle 扫到 review 行）。
     private static func occupiedFrames(
         row: Int,
         columns: Int,
         cellWidth: Int,
         cellHeight: Int,
-        atlasHeight: Int,
-        alpha: [UInt8],
-        bytesPerRow: Int
+        cgImage: CGImage
     ) -> [Int] {
         let alphaThreshold: UInt8 = 8
         let minOpaquePixels = max(1, cellWidth * cellHeight / 100)
         var frames: [Int] = []
 
         for column in 0..<columns {
+            guard let cell = cgImage.cropping(to: CGRect(
+                x: column * cellWidth,
+                y: row * cellHeight,
+                width: cellWidth,
+                height: cellHeight
+            )) else { continue }
+            // alpha 占比只数总量，与缓冲行序无关（小图 draw 进缓冲读取即可）。
+            var buffer = [UInt8](repeating: 0, count: cellWidth * cellHeight * 4)
+            let drawn: Bool = buffer.withUnsafeMutableBytes { raw in
+                guard let context = CGContext(
+                    data: raw.baseAddress,
+                    width: cellWidth,
+                    height: cellHeight,
+                    bitsPerComponent: 8,
+                    bytesPerRow: cellWidth * 4,
+                    space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                ) else { return false }
+                context.draw(cell, in: CGRect(x: 0, y: 0, width: cellWidth, height: cellHeight))
+                return true
+            }
+            guard drawn else { continue }
             var opaqueCount = 0
-            let baseX = column * cellWidth
-            // CGContext 原点在左下，图集行自顶向下，需翻转 y。
-            let topY = row * cellHeight
-            for y in 0..<cellHeight {
-                let pixelY = atlasHeight - 1 - (topY + y)
-                let rowStart = pixelY * bytesPerRow
-                for x in 0..<cellWidth {
-                    let alphaValue = alpha[rowStart + (baseX + x) * 4 + 3]
-                    if alphaValue > alphaThreshold { opaqueCount += 1 }
-                }
+            for index in 0..<(cellWidth * cellHeight) where buffer[index * 4 + 3] > alphaThreshold {
+                opaqueCount += 1
             }
             if opaqueCount >= minOpaquePixels {
                 frames.append(row * columns + column)
