@@ -37,56 +37,65 @@ final class PetEventCoordinatorTests: XCTestCase {
     // MARK: - 限额重置
 
     func test_limitResetDeliversImmediatelyWithoutCooldown() {
-        coordinator.handleLimitReset()
-        coordinator.handleLimitReset()
+        coordinator.handleLimitReset(quotaLabel: "Claude 7d")
+        coordinator.handleLimitReset(quotaLabel: "Claude 7d")
 
-        XCTAssertEqual(spy.events, [.celebrationTriggered, .celebrationTriggered])
+        XCTAssertEqual(spy.events, [.celebrationTriggered(quotaLabel: "Claude 7d"), .celebrationTriggered(quotaLabel: "Claude 7d")])
+    }
+
+    func test_quotaLabelPassesThroughToEvents() {
+        // 标签（平台 + 窗口）原样透传给事件，供气泡文案标注额度归属。
+        coordinator.handleLimitReset(quotaLabel: "DeepSeek 5h")
+        XCTAssertEqual(spy.events, [.celebrationTriggered(quotaLabel: "DeepSeek 5h")])
+
+        coordinator.handleLimitsUpdate(shortagePercent: 8, quotaLabel: "Claude 5h")
+        XCTAssertEqual(spy.events.last, .attentionRequested(quotaLabel: "Claude 5h"))
     }
 
     // MARK: - 限额告急（下降沿 + 冷却）
 
     func test_shortageFiresOnFallingEdgeOnly() {
         // 首次进入告急区（上次无穷大 > 10）触发。
-        coordinator.handleLimitsUpdate(shortagePercent: 8)
-        XCTAssertEqual(spy.events, [.attentionRequested])
+        coordinator.handleLimitsUpdate(shortagePercent: 8, quotaLabel: "Claude 7d")
+        XCTAssertEqual(spy.events, [.attentionRequested(quotaLabel: "Claude 7d")])
 
         // 已在告急区继续刷新：不重复。
-        coordinator.handleLimitsUpdate(shortagePercent: 5)
+        coordinator.handleLimitsUpdate(shortagePercent: 5, quotaLabel: "Claude 7d")
         XCTAssertEqual(spy.events.count, 1)
 
         // 回到安全区再进入：冷却期满后再次触发。
         now += 601
-        coordinator.handleLimitsUpdate(shortagePercent: 50)
-        coordinator.handleLimitsUpdate(shortagePercent: 9)
+        coordinator.handleLimitsUpdate(shortagePercent: 50, quotaLabel: "Claude 7d")
+        coordinator.handleLimitsUpdate(shortagePercent: 9, quotaLabel: "Claude 7d")
         XCTAssertEqual(spy.events.count, 2)
     }
 
     func test_shortageSafeZoneNeverFires() {
-        coordinator.handleLimitsUpdate(shortagePercent: 50)
-        coordinator.handleLimitsUpdate(shortagePercent: 11)
+        coordinator.handleLimitsUpdate(shortagePercent: 50, quotaLabel: "Claude 7d")
+        coordinator.handleLimitsUpdate(shortagePercent: 11, quotaLabel: "Claude 7d")
 
         XCTAssertTrue(spy.events.isEmpty)
     }
 
     func test_shortageNilDataDoesNotArmEdge() {
         // 首次为 nil 不触发；随后 8% 视为下降沿（上次 nil 视为安全）。
-        coordinator.handleLimitsUpdate(shortagePercent: nil)
-        coordinator.handleLimitsUpdate(shortagePercent: 8)
+        coordinator.handleLimitsUpdate(shortagePercent: nil, quotaLabel: "Claude 7d")
+        coordinator.handleLimitsUpdate(shortagePercent: 8, quotaLabel: "Claude 7d")
 
-        XCTAssertEqual(spy.events, [.attentionRequested])
+        XCTAssertEqual(spy.events, [.attentionRequested(quotaLabel: "Claude 7d")])
     }
 
     func test_shortageRespectsCooldown() {
-        coordinator.handleLimitsUpdate(shortagePercent: 8)
+        coordinator.handleLimitsUpdate(shortagePercent: 8, quotaLabel: "Claude 7d")
         // 回安全区再进告急区，但冷却内：不触发。
-        coordinator.handleLimitsUpdate(shortagePercent: 50)
-        coordinator.handleLimitsUpdate(shortagePercent: 9)
+        coordinator.handleLimitsUpdate(shortagePercent: 50, quotaLabel: "Claude 7d")
+        coordinator.handleLimitsUpdate(shortagePercent: 9, quotaLabel: "Claude 7d")
         XCTAssertEqual(spy.events.count, 1)
 
         // 冷却期满（600s）：触发。
         now += 601
-        coordinator.handleLimitsUpdate(shortagePercent: 50)
-        coordinator.handleLimitsUpdate(shortagePercent: 9)
+        coordinator.handleLimitsUpdate(shortagePercent: 50, quotaLabel: "Claude 7d")
+        coordinator.handleLimitsUpdate(shortagePercent: 9, quotaLabel: "Claude 7d")
         XCTAssertEqual(spy.events.count, 2)
     }
 
@@ -254,25 +263,25 @@ final class PetEventCoordinatorTests: XCTestCase {
     func test_rejectedEventDoesNotBurnCooldown() {
         // 引擎拒绝（如拖拽中）：不记录冷却时间，下次仍可触发。
         spy.accept = { _ in false }
-        coordinator.handleLimitsUpdate(shortagePercent: 8)
+        coordinator.handleLimitsUpdate(shortagePercent: 8, quotaLabel: "Claude 7d")
         XCTAssertTrue(spy.events.isEmpty)
 
         spy.accept = { _ in true }
-        coordinator.handleLimitsUpdate(shortagePercent: 50)
-        coordinator.handleLimitsUpdate(shortagePercent: 9)
-        XCTAssertEqual(spy.events, [.attentionRequested])
+        coordinator.handleLimitsUpdate(shortagePercent: 50, quotaLabel: "Claude 7d")
+        coordinator.handleLimitsUpdate(shortagePercent: 9, quotaLabel: "Claude 7d")
+        XCTAssertEqual(spy.events, [.attentionRequested(quotaLabel: "Claude 7d")])
     }
 
     // MARK: - 状态重置
 
     func test_resetStateRestartsFreshBaseline() {
-        coordinator.handleLimitsUpdate(shortagePercent: 8)
+        coordinator.handleLimitsUpdate(shortagePercent: 8, quotaLabel: "Claude 7d")
         XCTAssertEqual(spy.events.count, 1)
 
         // 重置后基线视为未知（安全区）：冷却与边沿全部清空。
         now += 700
         coordinator.resetState()
-        coordinator.handleLimitsUpdate(shortagePercent: 8)
+        coordinator.handleLimitsUpdate(shortagePercent: 8, quotaLabel: "Claude 7d")
         XCTAssertEqual(spy.events.count, 2, "重置后冷启动发现告急应再次提醒")
     }
 }

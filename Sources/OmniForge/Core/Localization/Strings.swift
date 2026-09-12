@@ -1575,6 +1575,19 @@ struct Strings: Equatable {
     let desktopPetActivityLively: String
     let desktopPetReactionsSection: String
     let desktopPetReactionsToggle: String
+    // 桌宠对话气泡（每种反应两条候选，反应开始时随机定格一条）
+    let desktopPetBubbleResetFormat1: String
+    let desktopPetBubbleResetFormat2: String
+    let desktopPetBubbleUnlocked1: String
+    let desktopPetBubbleUnlocked2: String
+    let desktopPetBubbleLowFormat1: String
+    let desktopPetBubbleLowFormat2: String
+    let desktopPetBubbleHeat1: String
+    let desktopPetBubbleHeat2: String
+    let desktopPetBubbleClipboard1: String
+    let desktopPetBubbleClipboard2: String
+    let desktopPetBubbleLocked1: String
+    let desktopPetBubbleLocked2: String
 }
 
 // MARK: - 派生文案

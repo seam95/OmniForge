@@ -46,10 +46,10 @@ enum PetExternalEvent: Equatable {
     case activityStarted(kind: PetActivityKind)
     /// 外部活动结束——三期 Agent 预留。
     case activityEnded(kind: PetActivityKind)
-    /// 需要提醒（额度告急）。
-    case attentionRequested
-    /// 庆祝（限额重置）。
-    case celebrationTriggered
+    /// 需要提醒（额度告急）；标签为「平台 + 窗口」组合（如 "Claude 7d"，与重置 toast 同口径）。
+    case attentionRequested(quotaLabel: String)
+    /// 庆祝（限额重置）；标签为「平台 + 窗口」组合。输入法解锁走 `.inputLockChanged(false)`。
+    case celebrationTriggered(quotaLabel: String)
     /// 系统负载升高（CPU 持续超阈）。
     case loadSurged
     /// 剪贴板出现新复制内容。
@@ -61,8 +61,7 @@ enum PetExternalEvent: Equatable {
     var reactionKind: PetReactionKind? {
         switch self {
         case .celebrationTriggered: return .celebrate
-        case .attentionRequested: return .attention
-        case .loadSurged: return .heat
+        case .attentionRequested: return .attention        case .loadSurged: return .heat
         case .clipboardActivity: return .noticed
         case .inputLockChanged(let locked): return locked ? .salute : .celebrate
         case .activityStarted, .activityEnded: return nil

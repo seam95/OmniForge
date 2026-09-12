@@ -1424,5 +1424,17 @@ extension Strings {
         desktopPetActivityLively: "Lively",
         desktopPetReactionsSection: "State Reactions",
         desktopPetReactionsToggle: "React to system state",
+        desktopPetBubbleResetFormat1: "%@ limit reset! ✨",
+        desktopPetBubbleResetFormat2: "%@ is all refilled!",
+        desktopPetBubbleUnlocked1: "I'm back~",
+        desktopPetBubbleUnlocked2: "Unlocked, yay!",
+        desktopPetBubbleLowFormat1: "%@ is running low…",
+        desktopPetBubbleLowFormat2: "Go easy on %@",
+        desktopPetBubbleHeat1: "CPU is burning…",
+        desktopPetBubbleHeat2: "Too hot to move…",
+        desktopPetBubbleClipboard1: "What did you copy?",
+        desktopPetBubbleClipboard2: "Let me peek~",
+        desktopPetBubbleLocked1: "I'll watch your keyboard!",
+        desktopPetBubbleLocked2: "Keyboard guarded!",
     )
 }

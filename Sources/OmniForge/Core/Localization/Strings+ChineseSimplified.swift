@@ -1424,5 +1424,17 @@ extension Strings {
         desktopPetActivityLively: "活泼",
         desktopPetReactionsSection: "状态反应",
         desktopPetReactionsToggle: "对系统状态做出反应",
+        desktopPetBubbleResetFormat1: "%@ 额度重置啦！",
+        desktopPetBubbleResetFormat2: "%@ 又满血啦！",
+        desktopPetBubbleUnlocked1: "我回来啦~",
+        desktopPetBubbleUnlocked2: "解锁，我回来啦！",
+        desktopPetBubbleLowFormat1: "%@ 额度快见底了…",
+        desktopPetBubbleLowFormat2: "%@ 得省着点用了",
+        desktopPetBubbleHeat1: "CPU 好烫…",
+        desktopPetBubbleHeat2: "热得受不了啦",
+        desktopPetBubbleClipboard1: "又复制了什么？",
+        desktopPetBubbleClipboard2: "让我瞅瞅~",
+        desktopPetBubbleLocked1: "看好你的键盘！",
+        desktopPetBubbleLocked2: "键盘由我守护！",
     )
 }

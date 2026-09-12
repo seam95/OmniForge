@@ -44,7 +44,8 @@ final class DesktopPetManagerTests: XCTestCase {
     private func makeManager(
         windowController: PetWindowController? = nil,
         engine: PetBehaviorEngine? = nil,
-        tickInterval: TimeInterval = 3600
+        tickInterval: TimeInterval = 3600,
+        bubbleVariantRoll: Double = 0.1
     ) -> DesktopPetManager {
         // 注入假帧时钟：隔离真实 CADisplayLink 对屏幕 / runloop 的依赖，保证时序确定。
         let clock = ManualFrameClock()
@@ -62,7 +63,8 @@ final class DesktopPetManagerTests: XCTestCase {
                 identifier: "display-1"
             )] },
             tickInterval: tickInterval,
-            frameClock: clock
+            frameClock: clock,
+            bubbleVariantRoll: { bubbleVariantRoll }
         )
         managers.append(manager)
         return manager
@@ -115,7 +117,7 @@ final class DesktopPetManagerTests: XCTestCase {
         let manager = makeManager()
         manager.start()
 
-        let accepted = manager.submit(.celebrationTriggered)
+        let accepted = manager.submit(.celebrationTriggered(quotaLabel: "Claude 7d"))
 
         // 二期：已映射事件即时分发为反应态。
         XCTAssertTrue(accepted)
@@ -131,6 +133,110 @@ final class DesktopPetManagerTests: XCTestCase {
         // 未映射事件（三期 Agent 预留）仍只入队。
         XCTAssertFalse(accepted)
         XCTAssertEqual(manager.behaviorState, .idle)
+    }
+
+    // MARK: - 对话气泡
+
+    func test_submitMappedEventPresentsBubbleWithQuotaCopy() {
+        let manager = makeManager(bubbleVariantRoll: 0.1)
+        manager.start()
+
+        XCTAssertTrue(manager.submit(.celebrationTriggered(quotaLabel: "Claude 7d")))
+
+        XCTAssertEqual(manager.currentBubble?.kind, .celebrate)
+        XCTAssertEqual(manager.currentBubble?.text, "Claude 7d 额度重置啦！", "额度文案须含平台与窗口标签")
+        XCTAssertNotNil(manager.bubbleController.panel, "反应被接受应展示气泡子窗")
+    }
+
+    func test_submitUnmappedEventDoesNotPresentBubble() {
+        let manager = makeManager()
+        manager.start()
+
+        _ = manager.submit(.activityStarted(kind: .thinking))
+
+        XCTAssertNil(manager.currentBubble)
+    }
+
+    func test_bubbleVariantRollPicksSecondCopy() {
+        let manager = makeManager(bubbleVariantRoll: 0.9)
+        manager.start()
+
+        _ = manager.submit(.loadSurged)
+
+        XCTAssertEqual(manager.currentBubble?.text, "热得受不了啦")
+    }
+
+    func test_reactionExpiryClearsBubble() {
+        let manager = makeManager()
+        manager.start()
+        _ = manager.submit(.attentionRequested(quotaLabel: "Claude 7d"))
+        XCTAssertNotNil(manager.currentBubble)
+
+        // 反应 3s 到期自然结束：状态回 idle，气泡随之清空。
+        manager.tick(delta: 3.1)
+
+        XCTAssertEqual(manager.behaviorState, .idle)
+        XCTAssertNil(manager.currentBubble)
+    }
+
+    func test_petDuringReactionClearsBubble() {
+        let manager = makeManager()
+        manager.start()
+        _ = manager.submit(.attentionRequested(quotaLabel: "Claude 7d"))
+
+        manager.pet()
+
+        XCTAssertEqual(manager.behaviorState, .petted(resumeState: .idle))
+        XCTAssertNil(manager.currentBubble, "抚摸打断反应时气泡立即消失")
+    }
+
+    func test_beginDragDuringReactionClearsBubble() {
+        let manager = makeManager()
+        manager.start()
+        _ = manager.submit(.attentionRequested(quotaLabel: "Claude 7d"))
+
+        manager.beginDrag()
+
+        XCTAssertEqual(manager.behaviorState, .drag)
+        XCTAssertNil(manager.currentBubble, "拖拽打断反应时气泡立即消失")
+    }
+
+    func test_sameLevelReplacementUpdatesBubbleText() {
+        let manager = makeManager(bubbleVariantRoll: 0.1)
+        manager.start()
+        _ = manager.submit(.celebrationTriggered(quotaLabel: "Claude 7d"))
+        XCTAssertEqual(manager.currentBubble?.text, "Claude 7d 额度重置啦！")
+
+        // 同级替换（另一平台重置）：换文案、状态仍为 reaction。
+        XCTAssertTrue(manager.submit(.celebrationTriggered(quotaLabel: "DeepSeek 5h")))
+        XCTAssertEqual(manager.currentBubble?.text, "DeepSeek 5h 额度重置啦！")
+        guard case .reaction(let kind, _) = manager.behaviorState else {
+            return XCTFail("同级替换后应仍在反应态")
+        }
+        XCTAssertEqual(kind, .celebrate)
+    }
+
+    func test_dismissBubbleClearsContentButKeepsReaction() {
+        let manager = makeManager()
+        manager.start()
+        _ = manager.submit(.attentionRequested(quotaLabel: "Claude 7d"))
+
+        manager.dismissBubble()
+
+        XCTAssertNil(manager.currentBubble, "点击气泡只关气泡")
+        XCTAssertEqual(manager.behaviorState, .reaction(kind: .attention, resumeState: .idle), "反应动画继续走完")
+    }
+
+    func test_teardownClosesBubblePanel() {
+        let manager = makeManager()
+        manager.start()
+        _ = manager.submit(.attentionRequested(quotaLabel: "Claude 7d"))
+        XCTAssertNotNil(manager.bubbleController.panel)
+
+        manager.teardown()
+
+        XCTAssertNil(manager.bubbleController.panel, "teardown 应销毁气泡子窗")
+        XCTAssertNil(manager.currentBubble)
     }
 
     // MARK: - 偏好持久化
@@ -446,7 +552,7 @@ final class DesktopPetManagerTests: XCTestCase {
 
         // 走 0.5s 后被反应打断：剩 0.5s。
         manager.tick(delta: 0.5)
-        XCTAssertTrue(manager.submit(.celebrationTriggered))
+        XCTAssertTrue(manager.submit(.celebrationTriggered(quotaLabel: "Claude 7d")))
         XCTAssertEqual(
             manager.behaviorState,
             .reaction(kind: .celebrate, resumeState: .walk(direction: .left))

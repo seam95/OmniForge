@@ -213,7 +213,7 @@ final class PetBehaviorEngineTests: XCTestCase {
 
     func test_drainExternalEventsClearsQueue() {
         let engine = makeEngine(rolls: [0.1])
-        engine.submit(.attentionRequested)
+        engine.submit(.attentionRequested(quotaLabel: "Claude 7d"))
 
         engine.drainExternalEvents()
 
@@ -235,7 +235,7 @@ final class PetBehaviorEngineTests: XCTestCase {
     func test_submitMappedEventInterruptsIdle() {
         let engine = makeEngine(rolls: [0.1])
 
-        let accepted = engine.submit(.celebrationTriggered)
+        let accepted = engine.submit(.celebrationTriggered(quotaLabel: "Claude 7d"))
 
         XCTAssertTrue(accepted)
         XCTAssertEqual(engine.state, .reaction(kind: .celebrate, resumeState: .idle))
@@ -247,7 +247,7 @@ final class PetBehaviorEngineTests: XCTestCase {
         engine.apply(engine.nextAutonomousDecision())
         XCTAssertEqual(engine.state, .walk(direction: .right))
 
-        XCTAssertTrue(engine.submit(.attentionRequested))
+        XCTAssertTrue(engine.submit(.attentionRequested(quotaLabel: "Claude 7d")))
         XCTAssertEqual(engine.state, .reaction(kind: .attention, resumeState: .walk(direction: .right)))
 
         engine.finishReaction()
@@ -267,7 +267,7 @@ final class PetBehaviorEngineTests: XCTestCase {
     func test_reactionIsDroppedDuringDragAndPetted() {
         let engine = makeEngine(rolls: [0.1])
         engine.beginDrag()
-        XCTAssertFalse(engine.submit(.celebrationTriggered))
+        XCTAssertFalse(engine.submit(.celebrationTriggered(quotaLabel: "Claude 7d")))
         XCTAssertEqual(engine.state, .drag)
 
         engine.endDrag()
@@ -279,7 +279,7 @@ final class PetBehaviorEngineTests: XCTestCase {
     func test_newReactionReplacesCurrentAndKeepsResume() {
         let engine = makeEngine(rolls: [0.9, 0.0])
         engine.apply(engine.nextAutonomousDecision())
-        XCTAssertTrue(engine.submit(.attentionRequested))
+        XCTAssertTrue(engine.submit(.attentionRequested(quotaLabel: "Claude 7d")))
         XCTAssertTrue(engine.submit(.loadSurged))
 
         XCTAssertEqual(engine.state, .reaction(kind: .heat, resumeState: .walk(direction: .right)))
@@ -289,7 +289,7 @@ final class PetBehaviorEngineTests: XCTestCase {
         // 反应进行中被抚摸打断：petted 沿用反应记录的恢复态，不丢被打断的行走。
         let engine = makeEngine(rolls: [0.9, 0.0])
         engine.apply(engine.nextAutonomousDecision())
-        XCTAssertTrue(engine.submit(.attentionRequested))
+        XCTAssertTrue(engine.submit(.attentionRequested(quotaLabel: "Claude 7d")))
 
         engine.pet()
         XCTAssertEqual(engine.state, .petted(resumeState: .walk(direction: .right)))
@@ -299,8 +299,8 @@ final class PetBehaviorEngineTests: XCTestCase {
     }
 
     func test_reactionKindMapping() {
-        XCTAssertEqual(PetExternalEvent.celebrationTriggered.reactionKind, .celebrate)
-        XCTAssertEqual(PetExternalEvent.attentionRequested.reactionKind, .attention)
+        XCTAssertEqual(PetExternalEvent.celebrationTriggered(quotaLabel: "Claude 7d").reactionKind, .celebrate)
+        XCTAssertEqual(PetExternalEvent.attentionRequested(quotaLabel: "Claude 7d").reactionKind, .attention)
         XCTAssertEqual(PetExternalEvent.loadSurged.reactionKind, .heat)
         XCTAssertEqual(PetExternalEvent.clipboardActivity.reactionKind, .noticed)
         XCTAssertEqual(PetExternalEvent.inputLockChanged(locked: true).reactionKind, .salute)

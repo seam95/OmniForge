@@ -60,19 +60,21 @@ final class PetEventCoordinator {
     // MARK: - 数据入口（组合根订阅调用）
 
     /// 限额重置（onCelebrate）：事件天然稀疏，不冷却。
-    func handleLimitReset() {
-        sink(.celebrationTriggered)
+    /// `quotaLabel` 为「平台 + 窗口」组合（如 "Claude 7d"），供气泡文案标注额度归属。
+    func handleLimitReset(quotaLabel: String) {
+        sink(.celebrationTriggered(quotaLabel: quotaLabel))
     }
 
-    /// 限额刷新：`shortagePercent` 为当前各启用窗口的最小剩余百分比（nil = 无可用数据）。
+    /// 限额刷新：`shortagePercent` 为当前各启用窗口的最小剩余百分比（nil = 无可用数据），
+    /// `quotaLabel` 为该最紧张窗口的「平台 + 窗口」标签（百分比非 nil 时必有值）。
     /// 下降沿触发：上次 >10% 本次 ≤10% 才提醒；已在告急区不重复。
-    func handleLimitsUpdate(shortagePercent: Double?) {
+    func handleLimitsUpdate(shortagePercent: Double?, quotaLabel: String) {
         defer { lastShortagePercent = shortagePercent }
         guard let percent = shortagePercent else { return }
         let wasOutside = (lastShortagePercent ?? .infinity) > Self.shortageThresholdPercent
         let isInside = percent <= Self.shortageThresholdPercent
         guard wasOutside, isInside, passCooldown(.attention) else { return }
-        if sink(.attentionRequested) {
+        if sink(.attentionRequested(quotaLabel: quotaLabel)) {
             markFired(.attention)
         }
     }

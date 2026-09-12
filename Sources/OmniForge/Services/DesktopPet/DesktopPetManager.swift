@@ -9,7 +9,17 @@ import SwiftUI
 @MainActor
 final class DesktopPetManager: ObservableObject {
     /// 当前宠物状态（供视图渲染帧动画）。
-    @Published private(set) var behaviorState: PetBehaviorState = .idle
+    /// 离开反应态时自动清空气泡（自然结束 / 被打断 / 重置 / teardown 全覆盖）；
+    /// 同级替换（reaction → reaction）不算离开，气泡文案由 `submit` 更新。
+    @Published private(set) var behaviorState: PetBehaviorState = .idle {
+        didSet {
+            guard case .reaction = oldValue, currentBubble != nil else { return }
+            if case .reaction = behaviorState { return }
+            clearBubble()
+        }
+    }
+    /// 当前反应气泡（nil = 无气泡；内容在反应开始时定格，期间不变）。
+    @Published private(set) var currentBubble: PetBubbleContent?
     /// 当前尺寸档位。
     @Published private(set) var size: DesktopPetSize
     /// 当前宠物资产（nil 表示资产缺失，窗口显示占位）。
@@ -31,6 +41,10 @@ final class DesktopPetManager: ObservableObject {
     private let userDefaults: UserDefaults
     /// 窗口控制器（测试断言窗口生命周期与位置用；外部不应直接改窗口状态）。
     let windowController: PetWindowController
+    /// 对话气泡子窗控制器（随反应态展示 / 收起；测试断言气泡面板用）。
+    private(set) var bubbleController: PetBubbleWindowController
+    /// 气泡文案变体掷点（0..<1；测试钉死保证确定性）。
+    private let bubbleVariantRoll: () -> Double
     private let engine: PetBehaviorEngine
     private let assetStore: PetAssetStore
     private let visibleScreensProvider: () -> [PetScreenGeometry]
@@ -76,7 +90,9 @@ final class DesktopPetManager: ObservableObject {
         visibleScreensProvider: (() -> [PetScreenGeometry])? = nil,
         tickInterval: TimeInterval = 1.0 / 30.0,
         persistDebounce: TimeInterval = 0.5,
-        frameClock: PetFrameClock? = nil
+        frameClock: PetFrameClock? = nil,
+        bubbleController: PetBubbleWindowController? = nil,
+        bubbleVariantRoll: @escaping () -> Double = { Double.random(in: 0..<1) }
     ) {
         self.userDefaults = userDefaults
         self.stringsProvider = stringsProvider
@@ -102,6 +118,8 @@ final class DesktopPetManager: ObservableObject {
         self.asset = resolvedAsset
         self.windowController = windowController
             ?? PetWindowController(petSize: Self.petSize(for: resolvedSize, asset: resolvedAsset))
+        self.bubbleController = bubbleController ?? PetBubbleWindowController()
+        self.bubbleVariantRoll = bubbleVariantRoll
         self.installedPets = store.installedPets()
     }
 
@@ -147,6 +165,7 @@ final class DesktopPetManager: ObservableObject {
         engine.drainExternalEvents()
         stopReactionCoordinator()
         removeScreenChangeObserver()
+        bubbleController.close()
         windowController.close()
     }
 
@@ -520,20 +539,29 @@ final class DesktopPetManager: ObservableObject {
                 .store(in: &reactionCancellables)
         }
 
-        // 限额：最小剩余百分比（0…100）喂下降沿判定；重置多播喂庆祝。
+        // 限额：与重置检测同口径拍平（含带标签窗口），取最紧张窗口的剩余百分比
+        // 与「平台 + 窗口」标签喂下降沿判定；重置多播喂庆祝（标签组合同 toast 口径）。
         if let token = FeatureRuntime.shared.manager(for: .tokenUsage, as: TokenUsageManager.self) {
             token.$limits
                 .receive(on: RunLoop.main)
-                .sink { [weak coordinator] limits in
-                    let minRemaining = limits.values
-                        .flatMap { $0.windows.values }
-                        .map { 100 - $0.usedPercent }
-                        .min()
-                    coordinator?.handleLimitsUpdate(shortagePercent: minRemaining)
+                .sink { [weak coordinator, weak self] limits in
+                    guard let self else { return }
+                    let readings = limits.limitResetReadings(strings: self.strings)
+                    let minReading = readings.min {
+                        (100 - $0.usedPercent) < (100 - $1.usedPercent)
+                    }
+                    coordinator?.handleLimitsUpdate(
+                        shortagePercent: minReading.map { 100 - $0.usedPercent },
+                        quotaLabel: minReading
+                            .map { "\($0.provider.displayName) \($0.windowLabel)" }
+                            ?? ""
+                    )
                 }
                 .store(in: &reactionCancellables)
-            token.addLimitResetObserver { [weak coordinator] _, _, _ in
-                coordinator?.handleLimitReset()
+            token.addLimitResetObserver { [weak coordinator] event, _, _ in
+                coordinator?.handleLimitReset(
+                    quotaLabel: "\(event.provider.displayName) \(event.windowLabel)"
+                )
             }
         }
 
@@ -573,6 +601,7 @@ final class DesktopPetManager: ObservableObject {
     // MARK: - 二期事件入口（形状锁定）
 
     /// 提交外部事件：已映射事件即时分发为反应（返回是否生效）。
+    /// 反应被接受时同帧定格并展示对话气泡（未映射事件无气泡）。
     @discardableResult
     func submit(_ event: PetExternalEvent) -> Bool {
         captureInterruptedRemaining()
@@ -580,8 +609,39 @@ final class DesktopPetManager: ObservableObject {
         if accepted {
             behaviorState = engine.state
             decisionRemaining = engine.currentReaction?.duration ?? 3
+            presentBubble(for: event)
         }
         return accepted
+    }
+
+    /// 用户点击气泡：仅收起气泡，反应动画继续走完。
+    func dismissBubble() {
+        guard currentBubble != nil else { return }
+        clearBubble()
+    }
+
+    /// 定格并展示气泡：文案在反应开始时一次性确定（含变体掷点），期间不变。
+    private func presentBubble(for event: PetExternalEvent) {
+        guard let kind = event.reactionKind,
+              let text = PetBubbleCopy.text(
+                for: event,
+                strings: strings,
+                variantRoll: bubbleVariantRoll()
+              ) else { return }
+        currentBubble = PetBubbleContent(kind: kind, text: text)
+        guard let parent = windowController.panel else { return }
+        bubbleController.show(
+            text: text,
+            parent: parent,
+            petFrame: parent.frame,
+            screens: visibleScreensProvider(),
+            onDismiss: { [weak self] in self?.dismissBubble() }
+        )
+    }
+
+    private func clearBubble() {
+        currentBubble = nil
+        bubbleController.hide()
     }
 
     // MARK: - 菜单动作
