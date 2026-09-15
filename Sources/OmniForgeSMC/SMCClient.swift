@@ -8,6 +8,8 @@ public enum SMCError: Error, LocalizedError {
     case keyNotFound(String)
     case readFailed(kern_return_t)
     case writeFailed(kern_return_t)
+    /// IOKit 传输成功但 SMC 拒绝命令（result 非零）— 上层不得当作写入成功
+    case writeRejected(UInt8)
 
     public var errorDescription: String? {
         switch self {
@@ -16,6 +18,7 @@ public enum SMCError: Error, LocalizedError {
         case .keyNotFound(let key): return "SMC key not found: \(key)"
         case .readFailed(let code): return "SMC read failed with code: \(code)"
         case .writeFailed(let code): return "SMC write failed with code: \(code)"
+        case .writeRejected(let code): return "SMC rejected write command with result: \(code)"
         }
     }
 }
@@ -128,6 +131,9 @@ public final class SMCClient: SMCReading {
                                            &input, MemoryLayout<SMCParamStruct>.stride,
                                            &output, &outSize)
         guard kr == kIOReturnSuccess else { throw SMCError.writeFailed(kr) }
+        // IOKit 传输成功 ≠ SMC 接受命令：result 非零表示命令被拒（如 key 只读），
+        // 漏检会把失败当成功（读路径 call() 已同口径检查）。
+        guard output.result == 0 else { throw SMCError.writeRejected(output.result) }
     }
 
     /// SMC key 总数（"#KEY"，固定 ui32/4 字节），供传感器发现枚举使用

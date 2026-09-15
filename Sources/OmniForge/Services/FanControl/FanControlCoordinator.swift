@@ -49,10 +49,23 @@ final class FanControlCoordinator: ObservableObject {
     private var manualTargets: [Int: Double] = [:]
     private var wasPerformanceActive = false
     private var systemAsleep = false
-    private var performanceSuspended = false
+    /// 挂起原因集合（屏幕睡眠 / 锁屏各自独立登记与解除，
+    /// 避免一个 wake 事件错误解除另一原因仍有效的挂起）。
+    private var suspensionReasons: Set<SuspensionReason> = []
     /// 监控总开关关闭/特性卸载导致的挂起（独立于屏幕睡眠/锁屏挂起）
     private var monitoringSuspended = false
+    /// 归还事务进行中：串行化，晚到的速度命令不得覆盖 reset
+    private var resetInFlight = false
+    /// 归还失败待恢复：置位后 evaluate 优先重试归还而非下发曲线
+    private var resetRecoveryPending = false
+    /// 应用退出事务已启动：禁止一切新的下发
+    private var quitting = false
     private var observersInstalled = false
+
+    enum SuspensionReason: Hashable {
+        case screenAsleep
+        case screenLocked
+    }
 
     init(
         helper: FanHelperCommanding,
@@ -145,15 +158,11 @@ final class FanControlCoordinator: ObservableObject {
     }
 
     /// 全部归还自动（UI「全部归还」按钮）：同时关闭性能模式偏好，
-    /// 避免归还后被仍开启的模式立即重新接管
+    /// 避免归还后被仍开启的模式立即重新接管。硬件归还走回执路径：
+    /// 成功才清内部状态，失败保留待恢复状态供下轮重试。
     func handBackToAuto() {
         preferences?.update { $0.performanceMode = false }
-        helper.resetAllFans { [weak self] ok, error in
-            Task { @MainActor in
-                self?.recordResult(ok: ok, error: error)
-            }
-        }
-        resetInternalState()
+        handBackHardware()
     }
 
     /// 手动目标（UI 回显）
@@ -199,15 +208,61 @@ final class FanControlCoordinator: ObservableObject {
         monitorPreferences = nil
     }
 
-    /// 条件归还：性能模式或手动物标在位时 resetAllFans，随后清空曲线内部状态。
+    /// 条件归还（回执事务，用户按钮/系统事件/监控停用/退出共用）：
+    /// 性能模式、手动目标在位或存在待恢复归还（上次失败）时 resetAllFans；
+    /// 串行化（进行中不重复发起），成功才清内部状态，
+    /// 失败保留待恢复状态（下轮 evaluate 重试归还）。
     private func handBackHardware() {
-        if wasPerformanceActive || !manualTargets.isEmpty {
-            helper.resetAllFans { [weak self] ok, error in
-                Task { @MainActor in self?.recordResult(ok: ok, error: error) }
+        guard !resetInFlight else { return }
+        guard resetRecoveryPending || wasPerformanceActive || !manualTargets.isEmpty else {
+            resetInternalState()
+            return
+        }
+        resetInFlight = true
+        // 请求层立即停止速度下发（reset 与速度命令不并发，晚到命令不覆盖 reset）。
+        wasPerformanceActive = false
+        manualTargets.removeAll()
+        helper.resetAllFans { [weak self] ok, error in
+            Task { @MainActor in
+                guard let self else { return }
+                self.resetInFlight = false
+                if ok {
+                    self.resetInternalState()
+                    self.resetRecoveryPending = false
+                } else {
+                    // 归还失败：保留待恢复信息（不清成「已自动」），停止曲线下发，
+                    // 由下一轮快照重试归还（2s 节奏天然有界）。
+                    self.resetRecoveryPending = true
+                }
+                self.recordResult(ok: ok, error: error)
             }
         }
-        resetInternalState()
-        wasPerformanceActive = false
+    }
+
+    /// 应用退出事务（审查 R06）：禁止一切新目标下发，若硬件在控则等待归还回执。
+    /// 返回 false = 归还失败，调用方应沿退出失败机制提示重试，不得宣称安全退出。
+    /// XPC 层自带 8s 回执超时兜底，此处不会无限等待。
+    func shutdownForApplicationTermination() async -> Bool {
+        quitting = true
+        guard wasPerformanceActive || !manualTargets.isEmpty else {
+            return true
+        }
+        return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            helper.resetAllFans { [weak self] ok, error in
+                Task { @MainActor in
+                    guard let self else {
+                        continuation.resume(returning: ok)
+                        return
+                    }
+                    if ok {
+                        self.resetInternalState()
+                        self.wasPerformanceActive = false
+                    }
+                    self.recordResult(ok: ok, error: error)
+                    continuation.resume(returning: ok)
+                }
+            }
+        }
     }
 
     /// 显式移除系统事件观察者（不依赖 dealloc 时的 zeroing-weak 隐式注销）。
@@ -221,8 +276,14 @@ final class FanControlCoordinator: ObservableObject {
     // MARK: - 核心评估（快照驱动）
 
     func evaluate(snapshot: SystemSnapshot) {
-        guard !systemAsleep, !performanceSuspended, !monitoringSuspended else { return }
+        guard !quitting, !systemAsleep, suspensionReasons.isEmpty, !monitoringSuspended else { return }
         guard let preferences else { return }
+        // 归还事务进行中或归还失败待恢复：优先完成/重试归还，不下发曲线。
+        if resetRecoveryPending {
+            handBackHardware()
+            return
+        }
+        guard !resetInFlight else { return }
 
         // 机型判定：fans 非空即有风扇；风扇轮成功执行（无 issue 且传感器有读数，
         // 证明采样确实跑过）而 fans 为空 = 无风扇机型。未采样轮保持已判定值。
@@ -252,11 +313,7 @@ final class FanControlCoordinator: ObservableObject {
 
         // 性能模式关闭/被抑制 → 唯一归还路径
         if wasPerformanceActive && !performanceActive {
-            wasPerformanceActive = false
-            helper.resetAllFans { [weak self] ok, error in
-                Task { @MainActor in self?.recordResult(ok: ok, error: error) }
-            }
-            resetInternalState()
+            handBackHardware()
             return
         }
         guard performanceActive, !snapshot.fans.isEmpty else { return }
@@ -283,6 +340,17 @@ final class FanControlCoordinator: ObservableObject {
             zonePercents[zone] = FanCurve.speedPercent(level: level, temperature: smoothed)
         }
 
+        // 温度有效性门槛（审查 R07）：无任何有效读数、或 CPU 热区（性能控制的
+        // 主要受控对象）无覆盖时，不得按「0 贡献」下发低档目标 —
+        // 暂停曲线并归还自动（保留用户偏好与错误状态），有温度后自动接管。
+        guard zonePercents[.cpu] != nil else {
+            if wasPerformanceActive {
+                lastError = "无有效 CPU 温度读数，性能模式暂停并已归还自动控制"
+                handBackHardware()
+            }
+            return
+        }
+
         // 每风扇目标 = max over 热区(曲线% × 亲和度)，地板兜底
         let isSingleFan = snapshot.fans.count <= 1
         var fanPercents: [Int: Double] = [:]
@@ -301,7 +369,8 @@ final class FanControlCoordinator: ObservableObject {
         let maxPercent = fanPercents.values.max() ?? floor
         performanceCurvePercent = maxPercent * 100
 
-        // 下发：斜坡限速 + 100 RPM 取整 + 与上次差 <100 跳过（防 XPC 刷屏）
+        // 下发：斜坡限速 + 100 RPM 取整 + 与上次差 <100 跳过（防 XPC 刷屏）。
+        // 去重基线只在命令成功后保留（审查 R08）：失败回滚基线，下轮自动重试。
         for fan in snapshot.fans where manualTargets[fan.id] == nil {
             let percent = fanPercents[fan.id] ?? floor
             let desired = fan.minRPM + percent * (fan.maxRPM - fan.minRPM)
@@ -313,14 +382,63 @@ final class FanControlCoordinator: ObservableObject {
             )
             let rounded = (ramped / 100).rounded() * 100
             if let last = lastSentRPM[fan.id], abs(rounded - last) < 100 { continue }
-            lastSentRPM[fan.id] = rounded
-            helper.setFanSpeed(index: fan.id, rpm: Int(rounded)) { [weak self] ok, error in
-                Task { @MainActor in self?.recordResult(ok: ok, error: error) }
+            let previousBaseline = lastSentRPM[fan.id]
+            let fanIndex = fan.id
+            lastSentRPM[fanIndex] = rounded
+            helper.setFanSpeed(index: fanIndex, rpm: Int(rounded)) { [weak self] ok, error in
+                Task { @MainActor in
+                    guard let self else { return }
+                    if !ok, self.lastSentRPM[fanIndex] == rounded {
+                        // 失败回滚到下发前基线，下轮差值仍超阈值会重试
+                        if let previous = previousBaseline {
+                            self.lastSentRPM[fanIndex] = previous
+                        } else {
+                            self.lastSentRPM[fanIndex] = nil
+                        }
+                    }
+                    self.recordResult(ok: ok, error: error)
+                }
             }
         }
     }
 
     // MARK: - 系统事件（睡眠/锁屏归还，SPEC §4.5）
+    //
+    // 系统暂态只挂起与归还硬件，**不改写用户偏好**（审查 R13）：
+    // 睡眠/锁屏/屏幕睡眠复用保留偏好的 handBackHardware（唤醒后按原偏好
+    // 与新鲜温度重建曲线）；改偏好的 handBackToAuto 只属于用户显式关闭。
+
+    @objc func handleSleep() {
+        systemAsleep = true
+        handBackHardware()
+    }
+
+    @objc func handleWake() {
+        systemAsleep = false
+        resumeIfNeeded()
+    }
+
+    @objc func handleScreenSleep() {
+        guard let preferences, !preferences.configuration.keepFansOnScreenSleep else { return }
+        suspensionReasons.insert(.screenAsleep)
+        handBackHardware()
+    }
+
+    @objc func handleScreenWake() {
+        suspensionReasons.remove(.screenAsleep)
+        resumeIfNeeded()
+    }
+
+    @objc func handleScreenLocked() {
+        guard let preferences, !preferences.configuration.keepFansOnScreenSleep else { return }
+        suspensionReasons.insert(.screenLocked)
+        handBackHardware()
+    }
+
+    @objc func handleScreenUnlocked() {
+        suspensionReasons.remove(.screenLocked)
+        resumeIfNeeded()
+    }
 
     func setupSystemObserversIfNeeded() {
         guard !observersInstalled else { return }
@@ -341,38 +459,6 @@ final class FanControlCoordinator: ObservableObject {
                         name: NSNotification.Name("com.apple.screenIsLocked"), object: nil)
         dnc.addObserver(self, selector: #selector(handleScreenUnlocked),
                         name: NSNotification.Name("com.apple.screenIsUnlocked"), object: nil)
-    }
-
-    @objc private func handleSleep() {
-        systemAsleep = true
-        handBackToAuto()
-    }
-
-    @objc private func handleWake() {
-        systemAsleep = false
-        resumeIfNeeded()
-    }
-
-    @objc private func handleScreenSleep() {
-        guard let preferences, !preferences.configuration.keepFansOnScreenSleep else { return }
-        performanceSuspended = true
-        handBackToAuto()
-    }
-
-    @objc private func handleScreenWake() {
-        performanceSuspended = false
-        resumeIfNeeded()
-    }
-
-    @objc private func handleScreenLocked() {
-        guard let preferences, !preferences.configuration.keepFansOnScreenSleep else { return }
-        performanceSuspended = true
-        handBackToAuto()
-    }
-
-    @objc private func handleScreenUnlocked() {
-        performanceSuspended = false
-        resumeIfNeeded()
     }
 
     /// 唤醒/解锁后延迟触发一轮立即评估（等待 auto 归还命令送达）

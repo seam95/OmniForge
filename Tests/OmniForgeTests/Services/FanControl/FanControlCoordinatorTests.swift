@@ -74,6 +74,15 @@ final class FanControlCoordinatorTests: XCTestCase {
         return coordinator
     }
 
+    /// 排空主队列两轮：让命令回执（Task @MainActor）落地后再继续断言。
+    private func drainMainActorReceipts() {
+        for _ in 0..<2 {
+            let drained = expectation(description: "回执落地")
+            DispatchQueue.main.async { drained.fulfill() }
+            wait(for: [drained], timeout: 1)
+        }
+    }
+
     /// 双风扇 + CPU 热区高温快照
     private func makeSnapshot(cpuTemp: Double = 80) -> SystemSnapshot {
         var snapshot = SystemSnapshot()
@@ -310,6 +319,7 @@ final class FanControlCoordinatorTests: XCTestCase {
                        "挂起期间不得下发转速")
 
         coordinator.resumeFromMonitoringStop()
+        drainMainActorReceipts()  // suspend 的归还回执落地（串行化窗口结束）
         coordinator.evaluate(snapshot: makeSnapshot())
         XCTAssertTrue(helper.commands.contains { $0.hasPrefix("speed(") },
                       "恢复后重新接管")
@@ -368,5 +378,211 @@ final class FanControlCoordinatorTests: XCTestCase {
         coordinator.evaluate(snapshot: makeSnapshot())
         XCTAssertEqual(helper.commands, ["reset"])
         XCTAssertTrue(coordinator.currentManualTargets.isEmpty)
+    }
+
+    // MARK: - 回执可信度与温度门槛（审查 R06/R07/R08/R13）
+
+    /// 脚本化 Helper 替身：可按命令序注入失败/延迟回执。
+    private final class ScriptedFanHelperClient: FanHelperCommanding {
+        enum Action {
+            case succeed
+            case fail(String)
+        }
+        /// 每条命令的动作脚本（speed 命令按 setFanSpeed 调用序索引；超长重复末项）。
+        var speedScript: [Action] = [.succeed]
+        var resetAction: Action = .succeed
+        private(set) var commands: [String] = []
+
+        /// 清空命令记录（测试分段断言用）。
+        func resetCommands() {
+            commands.removeAll()
+        }
+
+        func setFanSpeed(index: Int, rpm: Int, completion: @escaping (Bool, String?) -> Void) {
+            commands.append("speed(\(index),\(rpm))")
+            let call = commands.filter { $0.hasPrefix("speed(") }.count - 1
+            let action = speedScript[min(call, speedScript.count - 1)]
+            switch action {
+            case .succeed: completion(true, nil)
+            case .fail(let reason): completion(false, reason)
+            }
+        }
+
+        func setFanAuto(index: Int, completion: @escaping (Bool, String?) -> Void) {
+            commands.append("auto(\(index))")
+            completion(true, nil)
+        }
+
+        func resetAllFans(completion: @escaping (Bool, String?) -> Void) {
+            commands.append("reset")
+            switch resetAction {
+            case .succeed: completion(true, nil)
+            case .fail(let reason): completion(false, reason)
+            }
+        }
+
+        func fetchVersion(completion: @escaping (String?) -> Void) {
+            completion("1.0.0")
+        }
+    }
+
+    private func makeCoordinatorWith(scripted: ScriptedFanHelperClient) -> FanControlCoordinator {
+        let coordinator = FanControlCoordinator(
+            helper: scripted,
+            powerSupply: power,
+            isHelperRegistered: { true }
+        )
+        coordinator.start(
+            monitor: makeFakeMonitor(),
+            preferences: preferences,
+            monitorPreferences: monitorPreferences
+        )
+        return coordinator
+    }
+
+    /// R08：下发失败回滚去重基线 — 相同目标下一轮必须重试，不得因「差值不足」跳过。
+    func test_speedCommandFailure_rollsBackBaselineForRetry() {
+        let scripted = ScriptedFanHelperClient()
+        scripted.speedScript = [.fail("smc rejected"), .succeed]
+        preferences.update { $0.performanceMode = true; $0.performanceLevel = .medium }
+        let coordinator = makeCoordinatorWith(scripted: scripted)
+        let snapshot = makeSnapshot(cpuTemp: 80)
+
+        coordinator.evaluate(snapshot: snapshot)
+        drainMainActorReceipts()
+
+        coordinator.evaluate(snapshot: snapshot)
+        // 双风扇：第一轮 fan0 失败、fan1 成功；回滚后第二轮 fan0 重试成功（fan1 差值不足跳过）。
+        let speedCalls = scripted.commands.filter { $0.hasPrefix("speed(") }
+        XCTAssertEqual(speedCalls.count, 3, "失败回滚后同目标应重试")
+    }
+
+    /// R08：归还失败保留待恢复状态 — 下一轮评估优先重试归还，不下发曲线。
+    func test_resetFailure_keepsRecoveryPendingAndRetries() {
+        let scripted = ScriptedFanHelperClient()
+        scripted.resetAction = .fail("helper down")
+        preferences.update { $0.performanceMode = true; $0.performanceLevel = .medium }
+        let coordinator = makeCoordinatorWith(scripted: scripted)
+        coordinator.evaluate(snapshot: makeSnapshot(cpuTemp: 80))
+        XCTAssertFalse(scripted.commands.isEmpty, "先建立控制")
+        let speedCountAfterControl = scripted.commands.filter { $0.hasPrefix("speed(") }.count
+
+        preferences.update { $0.performanceMode = false }  // 关闭 → 归还（回执失败）
+
+        // 归还回执落地后，逐轮评估驱动重试（每轮之间排空回执）。
+        for _ in 0..<3 {
+            drainMainActorReceipts()
+            coordinator.evaluate(snapshot: makeSnapshot(cpuTemp: 80))
+        }
+        drainMainActorReceipts()
+
+        let resets = scripted.commands.filter { $0 == "reset" }
+        XCTAssertGreaterThanOrEqual(resets.count, 2, "归还失败后下轮重试归还")
+        XCTAssertEqual(
+            scripted.commands.filter { $0.hasPrefix("speed(") }.count,
+            speedCountAfterControl,
+            "归还待恢复期间不得有新的曲线下发"
+        )
+    }
+
+    /// R08：归还成功才清状态 — 成功后不再重复归还。
+    func test_resetSuccess_clearsState() {
+        let scripted = ScriptedFanHelperClient()
+        preferences.update { $0.performanceMode = true; $0.performanceLevel = .medium }
+        let coordinator = makeCoordinatorWith(scripted: scripted)
+        coordinator.evaluate(snapshot: makeSnapshot(cpuTemp: 80))
+
+        preferences.update { $0.performanceMode = false }
+        coordinator.evaluate(snapshot: makeSnapshot(cpuTemp: 80))
+        coordinator.evaluate(snapshot: makeSnapshot(cpuTemp: 80))
+
+        let resets = scripted.commands.filter { $0 == "reset" }
+        XCTAssertEqual(resets.count, 1, "成功归还后不重复")
+    }
+
+    /// R07：无有效 CPU 温度读数时不得按「0 贡献」下发低档目标 —
+    /// 已在控则归还自动，保留用户偏好。
+    func test_evaluate_missingCPUTemperature_handsBackWithoutLowFloorCommands() {
+        preferences.update { $0.performanceMode = true; $0.performanceLevel = .medium }
+        let coordinator = makeCoordinator()
+
+        // 先有温度建立控制。
+        coordinator.evaluate(snapshot: makeSnapshot(cpuTemp: 80))
+        XCTAssertFalse(helper.commands.filter { $0.hasPrefix("speed(") }.isEmpty)
+        helper.reset()
+
+        // 温度全空：归还，不再下发。
+        var snapshot = makeSnapshot()
+        snapshot.sensors = []
+        coordinator.evaluate(snapshot: snapshot)
+        XCTAssertEqual(helper.commands, ["reset"], "无温度时归还而非下发地板转速")
+        XCTAssertTrue(preferences.configuration.performanceMode, "用户偏好不得被篡改")
+    }
+
+    /// R13：系统事件（睡眠/屏幕睡眠/锁屏）归还硬件但不得改写用户偏好。
+    func test_systemEvents_handBackWithoutTouchingPreference() {
+        preferences.update { $0.performanceMode = true; $0.performanceLevel = .medium }
+        let coordinator = makeCoordinator()
+        coordinator.evaluate(snapshot: makeSnapshot(cpuTemp: 80))
+        helper.reset()
+
+        coordinator.handleScreenSleep()
+        XCTAssertEqual(helper.commands, ["reset"], "屏幕睡眠归还硬件")
+        XCTAssertTrue(preferences.configuration.performanceMode, "偏好保留 — 唤醒后按原偏好重建曲线")
+
+        // 屏幕唤醒：排空归还回执后按保留的偏好恢复接管。
+        helper.reset()
+        drainMainActorReceipts()
+        coordinator.handleScreenWake()
+        coordinator.evaluate(snapshot: makeSnapshot(cpuTemp: 80))
+        XCTAssertFalse(helper.commands.isEmpty, "唤醒后按保留的偏好恢复接管")
+    }
+
+    /// R13：锁屏与屏幕睡眠独立登记 — 只解除其一（屏醒）时锁屏挂起仍有效。
+    func test_lockAndScreenSleep_reasonsResolveIndependently() {
+        preferences.update { $0.performanceMode = true; $0.performanceLevel = .medium }
+        let coordinator = makeCoordinator()
+        coordinator.evaluate(snapshot: makeSnapshot(cpuTemp: 80))
+        helper.reset()
+
+        coordinator.handleScreenLocked()
+        drainMainActorReceipts()  // 第一次归还回执落地，串行化窗口结束
+        coordinator.handleScreenSleep()
+        XCTAssertEqual(helper.commands.filter { $0 == "reset" }.count, 1,
+                       "挂起去重：硬件已在控归还过则不再重复 reset")
+        helper.reset()
+
+        coordinator.handleScreenWake()  // 仅屏幕唤醒，锁屏仍有效
+        coordinator.evaluate(snapshot: makeSnapshot(cpuTemp: 80))
+        XCTAssertTrue(helper.commands.isEmpty, "锁屏挂起仍有效，不得恢复下发")
+
+        coordinator.handleScreenUnlocked()
+        drainMainActorReceipts()
+        coordinator.evaluate(snapshot: makeSnapshot(cpuTemp: 80))
+        XCTAssertFalse(helper.commands.isEmpty, "解锁后恢复")
+    }
+
+    /// R06：退出事务 — 硬件在控时等待归还回执；失败返回 false（阻止退出）。
+    func test_shutdownForApplicationTermination_reportsHandbackOutcome() async {
+        let scripted = ScriptedFanHelperClient()
+        preferences.update { $0.performanceMode = true; $0.performanceLevel = .medium }
+        let coordinator = makeCoordinatorWith(scripted: scripted)
+        coordinator.evaluate(snapshot: makeSnapshot(cpuTemp: 80))
+        scripted.resetCommands()
+
+        let ok = await coordinator.shutdownForApplicationTermination()
+        XCTAssertTrue(ok, "归还成功应放行退出")
+        XCTAssertEqual(scripted.commands, ["reset"])
+        // 退出事务启动后禁止一切下发。
+        coordinator.evaluate(snapshot: makeSnapshot(cpuTemp: 80))
+        XCTAssertEqual(scripted.commands, ["reset"], "退出中不得再下发")
+
+        // 失败路径：手动目标在位 + 归还失败。
+        scripted.resetAction = .fail("helper dead")
+        let second = FanControlCoordinator(helper: scripted, powerSupply: power, isHelperRegistered: { true })
+        second.start(monitor: makeFakeMonitor(), preferences: preferences, monitorPreferences: monitorPreferences)
+        second.setManualTarget(index: 0, rpm: 3000)
+        let ok2 = await second.shutdownForApplicationTermination()
+        XCTAssertFalse(ok2, "归还失败必须阻止退出（不得误报安全清理）")
     }
 }

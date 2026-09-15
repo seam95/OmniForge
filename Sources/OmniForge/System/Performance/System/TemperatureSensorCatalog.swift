@@ -3,10 +3,18 @@ import OmniForgeSMC
 
 /// 温度传感器目录 — 首轮枚举 SMC key（T 前缀 + 值域过滤）锁定活跃集，
 /// 其后每轮仅轮询活跃集，避免对不存在的 key 反复发起 IOKit 调用。
+///
+/// 发现失败不锁定空缓存（审查 R07）：totalKeyCount 读取失败（SMC 暂时
+/// 不可达等）保留未发现状态，按指数退避重试，避免临时故障被缓存为
+/// 永久「无传感器」。
 final class TemperatureSensorCatalog: TemperatureSensorScanning {
     private let smc: FanSMCCommanding & SMCKeyEnumerating
-    /// 已锁定的活跃传感器（key/label/zone），nil = 尚未完成首轮发现
+    /// 已锁定的活跃传感器（key/label/zone）；nil = 尚未完成首轮发现（含重试退避中）
     private var activeSensors: [(key: String, label: String, zone: ThermalZone)]?
+    /// 连续发现失败深度（指数翻倍）
+    private var failureDepth = 0
+    /// 剩余跳过轮数（退避窗口 1、2、4…，上限 32 轮 ≈ 1 分钟 @2s 周期）
+    private var backoffRemaining = 0
 
     init(smc: FanSMCCommanding & SMCKeyEnumerating) {
         self.smc = smc
@@ -14,7 +22,7 @@ final class TemperatureSensorCatalog: TemperatureSensorScanning {
 
     func sampleSensors() throws -> [FanSensorReading] {
         if activeSensors == nil {
-            activeSensors = discoverSensors()
+            try discoverSensorsIfNeeded()
         }
         guard let active = activeSensors else { return [] }
         return active.compactMap { sensor in
@@ -27,9 +35,28 @@ final class TemperatureSensorCatalog: TemperatureSensorScanning {
 
     // MARK: - 发现
 
-    /// 枚举全部 SMC key，T 前缀且可读、值域合理者收编；按热区序 + key 字典序稳定排序
-    private func discoverSensors() -> [(key: String, label: String, zone: ThermalZone)] {
-        guard let total = smc.totalKeyCount() else { return [] }
+    /// 退避窗口内的调用直接跳过发现（本轮返回空，等下一窗口再试）；
+    /// 连续失败时窗口指数翻倍，恢复成功即清零。
+    private func discoverSensorsIfNeeded() {
+        if backoffRemaining > 0 {
+            backoffRemaining -= 1
+            return
+        }
+        // 发现成功无传感器 = 合法终态（空机型），锁定空集合；
+        // 发现失败（totalKeyCount 读不到）= 保留未发现状态并退避。
+        if let found = discoverSensors() {
+            activeSensors = found
+            failureDepth = 0
+        } else {
+            failureDepth = failureDepth == 0 ? 1 : min(failureDepth * 2, 32)
+            backoffRemaining = failureDepth
+        }
+    }
+
+    /// 枚举全部 SMC key，T 前缀且可读、值域合理者收编；按热区序 + key 字典序稳定排序。
+    /// 返回 nil 表示发现失败（与「发现成功但无传感器」的空数组区分）。
+    private func discoverSensors() -> [(key: String, label: String, zone: ThermalZone)]? {
+        guard let total = smc.totalKeyCount() else { return nil }
         var found: [String] = []
         for index in 0..<total {
             guard let name = smc.keyName(at: index), name.hasPrefix("T") else { continue }
