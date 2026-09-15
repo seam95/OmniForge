@@ -328,6 +328,27 @@ final class StickyNoteManagerTests: XCTestCase {
         XCTAssertEqual(store.saveCallCount, 0, "同档重复设置与非法档位值均不落库")
     }
 
+    /// 新建走聚焦呈现：显示窗口并聚焦正文，新建后可直接输入。
+    func test_create_presentsWithFocus() {
+        let manager = makeManager()
+
+        let note = manager.create()!
+
+        XCTAssertEqual(presenter.focusedNotes.count, 1, "新建必须走 showAndFocus 聚焦正文")
+        XCTAssertEqual(presenter.focusedNotes.first?.id, note.id)
+    }
+
+    /// 启动恢复等普通 show 路径不得抢焦点：未隐藏存量只前置、不触发聚焦呈现。
+    func test_showAll_restoresWithoutFocus() {
+        store.stubbedNotes = [StickyNote(content: "存量", color: .yellow)]
+        let manager = makeManager()
+
+        manager.showAll()
+
+        XCTAssertTrue(presenter.focusedNotes.isEmpty, "恢复显示不聚焦，避免批量抢焦点")
+        XCTAssertEqual(presenter.frontedIDs.count, 1)
+    }
+
     func test_complete_overridesCollapseAndHidesWindow() {
         let manager = makeManager()
         let note = manager.create()!
@@ -822,6 +843,7 @@ private final class FakeReminderScheduler: StickyNoteReminderScheduling {
 
 private final class FakeStickyNotePresenter: StickyNoteWindowPresenting {
     var shownNotes: [StickyNote] = []
+    var focusedNotes: [StickyNote] = []
     var hiddenIDs: [UUID] = []
     var dismissedIDs: [UUID] = []
     private(set) var hideAllCount = 0
@@ -831,12 +853,18 @@ private final class FakeStickyNotePresenter: StickyNoteWindowPresenting {
     /// 清空调用记录。
     func resetRecording() {
         shownNotes = []
+        focusedNotes = []
         hiddenIDs = []
         dismissedIDs = []
         frontedIDs = []
     }
 
     func show(note: StickyNote) { shownNotes.append(note) }
+    /// 覆盖协议默认实现：记录聚焦呈现调用（新建路径专用）。
+    func showAndFocus(note: StickyNote) {
+        focusedNotes.append(note)
+        show(note: note)
+    }
     func hide(id: UUID) { hiddenIDs.append(id) }
     func dismiss(id: UUID) { dismissedIDs.append(id) }
     func hideAll() { hideAllCount += 1 }

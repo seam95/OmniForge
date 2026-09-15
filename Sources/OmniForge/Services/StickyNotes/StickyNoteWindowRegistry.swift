@@ -21,6 +21,15 @@ final class StickyNoteWindowRegistry: StickyNoteWindowPresenting {
         controller.show()
     }
 
+    /// 新建路径：显示并聚焦正文，新建后可直接输入（激活应用保证 IME 可用）。
+    /// 仅新建走此路径；启动恢复等普通 show 不聚焦，避免批量抢焦点。
+    func showAndFocus(note: StickyNote) {
+        let controller = controller(for: note)
+        controller.apply(note: note)
+        controller.show()
+        controller.activateForTyping()
+    }
+
     func hide(id: UUID) {
         controllers[id]?.hide()
     }

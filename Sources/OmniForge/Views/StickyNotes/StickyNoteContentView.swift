@@ -23,6 +23,9 @@ struct StickyNoteContentView: View {
     @State private var toolbarWidth: CGFloat = 0
     @State private var showsReminderPanel = false
     @State private var showsFontPanel = false
+    /// 正文处于输入法组合态（marked text，拼音未确认）：组合期间隐藏占位提示，
+    /// 否则组合拼音与「写下就好…」视觉重叠。
+    @State private var editorHasMarkedText = false
 
     /// `debugShowsFontPanel` 仅供离屏渲染 / 预览直出档位面板打开态。
     init(
@@ -220,13 +223,16 @@ struct StickyNoteContentView: View {
                 palette: palette,
                 colorScheme: colorScheme,
                 onActivate: onActivateForTyping,
+                onMarkedTextChange: { editorHasMarkedText = $0 },
                 onTextChange: { content in
                     viewModel.markSaving()
                     viewModel.updateContentLocally(content)
                     actions().onContentChanged(note.id, content)
                 }
             )
-            if note.content.isEmpty {
+            // 组合态（拼音未确认）期间占位符必须让位：marked text 由输入法
+            // 绘制在文字层上，占位符照常渲染会与其重叠成「乱码」观感。
+            if note.content.isEmpty && !editorHasMarkedText {
                 Text(strings.stickyNotePlaceholder)
                     .font(.system(size: note.fontSize))
                     .foregroundStyle(palette.text(colorScheme: colorScheme).opacity(0.45))
@@ -434,10 +440,30 @@ struct StickyNoteInteractionRegion: NSViewRepresentable {
 @MainActor
 final class StickyNoteActivatableTextView: NSTextView {
     var onActivate: (() -> Void)?
+    /// 输入法组合态变化回调：占位符显隐与外部文本回写守卫的共同依据。
+    var onMarkedStateChanged: ((Bool) -> Void)?
 
     override func mouseDown(with event: NSEvent) {
         onActivate?()
         super.mouseDown(with: event)
+    }
+
+    // 组合态的进入与退出都收口在这三个入口：setMarkedText 进入/更新组合拼音，
+    // unmarkText 与 insertText（确认上屏）结束组合。super 处理完读 hasMarkedText
+    // 上报，组合态期间 textDidChange 不回调，SwiftUI 侧无从自行感知。
+    override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
+        onMarkedStateChanged?(hasMarkedText())
+    }
+
+    override func unmarkText() {
+        super.unmarkText()
+        onMarkedStateChanged?(hasMarkedText())
+    }
+
+    override func insertText(_ string: Any, replacementRange: NSRange) {
+        super.insertText(string, replacementRange: replacementRange)
+        onMarkedStateChanged?(hasMarkedText())
     }
 }
 
@@ -447,6 +473,7 @@ struct StickyNoteTextEditor: NSViewRepresentable {
     let palette: StickyNotePalette
     let colorScheme: ColorScheme
     let onActivate: () -> Void
+    let onMarkedTextChange: (Bool) -> Void
     let onTextChange: (String) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -456,6 +483,7 @@ struct StickyNoteTextEditor: NSViewRepresentable {
     func makeNSView(context: Context) -> NSScrollView {
         let textView = StickyNoteActivatableTextView(frame: .zero)
         textView.onActivate = onActivate
+        textView.onMarkedStateChanged = onMarkedTextChange
         textView.delegate = context.coordinator
         textView.isRichText = false
         textView.allowsUndo = true
@@ -486,11 +514,14 @@ struct StickyNoteTextEditor: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? StickyNoteActivatableTextView else { return }
         textView.onActivate = onActivate
+        textView.onMarkedStateChanged = onMarkedTextChange
         context.coordinator.onTextChange = onTextChange
         applyStyle(to: textView)
         (scrollView.verticalScroller as? StickyNoteScroller)?.knobColor = scrollerKnobColor
-        // 仅外部状态与当前文本不同才回写，避免打断输入
-        if textView.string != text {
+        // 仅外部状态与当前文本不同才回写，避免打断输入；
+        // 组合态期间绝不回写：textView.string 此刻含未确认拼音，回写等于
+        // 清空组合文字、打断输入法会话（差异会在组合结束后的下一拍补齐）。
+        if !textView.hasMarkedText(), textView.string != text {
             let selectedRanges = textView.selectedRanges
             textView.string = text
             textView.selectedRanges = selectedRanges

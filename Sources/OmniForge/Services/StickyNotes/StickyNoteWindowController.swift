@@ -248,8 +248,9 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
 
     // MARK: - 激活（正文点击）
 
-    /// 点正文进入编辑：激活应用并聚焦文本，保证中文输入法可用。
-    private func activateForTyping() {
+    /// 点正文 / 新建进入编辑：激活应用并聚焦文本，保证中文输入法可用。
+    /// 新建路径由 Registry 的 showAndFocus 复用。
+    func activateForTyping() {
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         makeTextViewFirstResponder()

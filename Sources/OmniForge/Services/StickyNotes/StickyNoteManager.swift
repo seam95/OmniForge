@@ -130,7 +130,7 @@ final class StickyNoteManager: ObservableObject {
         )
         notes.append(note)
         saveImmediately(note: note)
-        windowPresenter.show(note: note)
+        windowPresenter.showAndFocus(note: note)
         return note
     }
 
