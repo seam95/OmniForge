@@ -44,6 +44,45 @@ final class GRDBUsageStoreTests: XCTestCase {
 
     // MARK: - 桶 upsert
 
+    // MARK: - 扫描原子提交与账本保留（审查 R14/R15）
+
+    /// commitScan 在一个事务内落桶/游标/新见 key/消息状态，读回全部一致。
+    func test_commitScan_appliesAllTablesAtomically() throws {
+        let store = GRDBUsageStore(databaseURL: databaseURL)
+        let bucketKey = UsageBucketKey(
+            provider: .claude, model: "m",
+            bucketStart: Date(timeIntervalSince1970: 1_784_502_000)
+        )
+        var commit = ScanCommit()
+        commit.buckets = [UsageBucketState(key: bucketKey, usage: TokenUsage(inputTokens: 10, cachedInputTokens: 0, cacheCreationInputTokens: 0, outputTokens: 5, reasoningOutputTokens: 0, totalTokens: 15), conversationCount: 2)]
+        commit.cursors = ["/tmp/a.jsonl": JSONLCursor(inode: 7, offset: 99)]
+        commit.newSeenKeys = ["k1"]
+        commit.messageStateUpdates = [(.opencode, ["s1|m1": "{\"x\":1}"])]
+
+        try store.commitScan(commit)
+
+        XCTAssertEqual(store.loadBucket(bucketKey)?.usage.totalTokens, 15)
+        XCTAssertEqual(store.loadCursors()["/tmp/a.jsonl"]?.offset, 99)
+        XCTAssertTrue(store.loadSeenKeys().contains("k1"))
+        XCTAssertEqual(store.loadProviderMessageState(.opencode)["s1|m1"], "{\"x\":1}")
+    }
+
+    /// 消息状态账本不再容量淘汰：差分计数基线被保留（审查 R15 止血），
+    /// 源全量重读不会把旧基线当首次贡献重计。
+    func test_messageState_notTrimmed() throws {
+        let store = GRDBUsageStore(databaseURL: databaseURL)
+        var entries: [String: String] = [:]
+        for index in 0..<1000 {
+            entries["s1|m\(index)"] = "{\"lastTotals\":{\"totalTokens\":\(index)}}"
+        }
+        store.storeProviderMessageState(.opencode, entries: entries)
+
+        // 后续轮次只更新部分条目：旧条目不得被淘汰。
+        store.storeProviderMessageState(.opencode, entries: ["s2|mX": "{}"])
+
+        XCTAssertEqual(store.loadProviderMessageState(.opencode).count, 1001, "账本基线不淘汰")
+    }
+
     func test_upsertBucket_idempotent() {
         let s = state(total: 160, conversations: 2)
         store.upsertBucket(s)

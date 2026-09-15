@@ -79,26 +79,27 @@ class JSONLUsageCollectorBase: UsageCollecting {
         // 子类必须实现。
     }
 
-    /// 处理单个文件；默认走 JSONL 增量读（逐行 `processLine`）。子类可覆盖以支持
-    /// 整文件读取（如 grok 的 signals.json 兜底）。返回新游标；nil = 跳过不写游标。
+    /// 处理单个文件；默认走 JSONL 增量**流式**读（分块逐行 `processLine`，审查 R17）。
+    /// 子类可覆盖以支持整文件读取（如 grok 的 signals.json 兜底）。
+    /// 返回新游标；nil = 跳过不写游标（文件缺失/不可读/超长行，进度可重试）。
     func visit(
         file: URL,
         previous: JSONLCursor?,
         decoder: JSONDecoder,
         scan: ScanContext
     ) -> JSONLCursor? {
-        guard let outcome = JSONLStreamReader.read(
+        var state = newFileState(file: file, cursor: previous)
+        guard let cursor = JSONLStreamReader.forEachLine(
             fileURL: file,
             previous: previous,
-            fileManager: fileManager
+            fileManager: fileManager,
+            consume: { line in
+                processLine(line, decoder: decoder, file: file, state: &state, scan: scan)
+            }
         ) else { return nil }
-        var state = newFileState(file: file, cursor: previous)
-        for line in outcome.lines {
-            processLine(line, decoder: decoder, file: file, state: &state, scan: scan)
-        }
         return JSONLCursor(
-            inode: outcome.cursor.inode,
-            offset: outcome.cursor.offset,
+            inode: cursor.inode,
+            offset: cursor.offset,
             model: state.model
         )
     }
@@ -214,7 +215,9 @@ class JSONLUsageCollectorBase: UsageCollecting {
 
     // MARK: - 扫描
 
-    /// 全量一轮：增量游标读 → 行解析 → 前缀游标 → 聚合写桶 → 写新见 key。
+    /// 全量一轮：增量游标读 → 行解析 → 聚合 → **原子提交**（桶/游标/新见 key/
+    /// 消息状态同一事务，审查 R14）。提交失败不推进任何进度：下轮从旧游标
+    /// 重读重算，配合去重与差分幂等，不产生漏计或重复计数。
     fileprivate func performScan() {
         let files = enumerateFiles()
         guard !files.isEmpty else { return }
@@ -225,23 +228,29 @@ class JSONLUsageCollectorBase: UsageCollecting {
         }, seen: store.loadSeenKeys())
         let decoder = JSONDecoder()
 
+        var commit = ScanCommit()
         for fileURL in files {
             let previous = cursors[fileURL.path]
             guard let cursor = visit(file: fileURL, previous: previous, decoder: decoder, scan: scan) else {
                 continue
             }
             cursors[fileURL.path] = cursor
-            store.storeCursor(path: fileURL.path, cursor: cursor)
+            commit.cursors[fileURL.path] = cursor
         }
 
-        for state in scan.aggregator.drainTouched() {
-            store.upsertBucket(state)
+        commit.buckets = scan.aggregator.drainTouched()
+        commit.newSeenKeys = scan.drainNewSeen()
+        // seen_at = 首次实际看见时间；只写新见 key，避免全量重写
+        // （截断退化、LRU 语义失真；参考 #09 评审 H4）。
+        commit.seenAt = Date()
+        commit.messageStateUpdates = scan.drainMessageStateUpdates()
+
+        do {
+            try store.commitScan(commit)
+        } catch {
+            // 提交失败：内存进度随本轮丢弃（cursors 局部变量），下轮重扫重算。
+            print("[UsageCollector] commitScan failed, will rescan from last committed cursors: \(error)")
         }
-        let newSeen = scan.drainNewSeen()
-        guard !newSeen.isEmpty else { return }
-        // 只写新见 key（seen_at = 首次实际看见时间），避免每次扫描把全量
-        // key 的 seen_at 整体重写（截断退化、LRU 语义失真；参考 #09 评审 H4）。
-        store.storeSeenKeys(newSeen, asOf: Date())
     }
 
     // MARK: - 文件枚举
@@ -318,6 +327,29 @@ extension JSONLUsageCollectorBase {
         func drainNewSeen() -> Set<String> {
             let drained = newSeen
             newSeen.removeAll()
+            return drained
+        }
+
+        /// 消息级状态账本的 dirty 变更（SQLite 差分采集暂存；随原子提交落库）。
+        private(set) var messageStateUpdates: [(provider: TokenUsageProvider, entries: [String: String])] = []
+
+        /// 暂存一 provider 的变更条目（同 provider 多次暂存会合并去重，后写覆盖）。
+        func stageMessageState(provider: TokenUsageProvider, entries: [String: String]) {
+            if let index = messageStateUpdates.firstIndex(where: { $0.provider == provider }) {
+                var merged = messageStateUpdates[index].entries
+                for (key, payload) in entries {
+                    merged[key] = payload
+                }
+                messageStateUpdates[index].entries = merged
+            } else {
+                messageStateUpdates.append((provider, entries))
+            }
+        }
+
+        /// 取出并清空消息状态变更（基类扫描末尾统一提交）。
+        func drainMessageStateUpdates() -> [(provider: TokenUsageProvider, entries: [String: String])] {
+            let drained = messageStateUpdates
+            messageStateUpdates = []
             return drained
         }
 

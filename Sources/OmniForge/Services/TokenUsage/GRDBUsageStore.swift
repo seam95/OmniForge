@@ -365,8 +365,6 @@ final class GRDBUsageStore: UsageStoring {
 
     // MARK: - 提供者消息级状态（SQLite 差分采集）
 
-    /// 每 provider 状态条数上限（超出按写入顺序截断，对齐 seen 容量语义）。
-    static let maxMessageStatePerProvider = 200_000
 
     func loadProviderMessageState(_ provider: TokenUsageProvider) -> [String: String] {
         guard let databaseQueue else { return [:] }
@@ -389,6 +387,9 @@ final class GRDBUsageStore: UsageStoring {
         }
     }
 
+    /// 只写传入条目（调用方只提交 dirty 变更，审查 R15）。
+    /// 消息状态账本是差分计数基线：源（opencode/zcode 等）每轮全量重读，
+    /// 被淘汰的基线会被当作首次贡献重新整行计入（重计）——因此**不做容量淘汰**。
     func storeProviderMessageState(_ provider: TokenUsageProvider, entries: [String: String]) {
         guard let databaseQueue, !entries.isEmpty else { return }
         do {
@@ -403,29 +404,71 @@ final class GRDBUsageStore: UsageStoring {
                         arguments: [provider.rawValue, key, payload, now]
                     )
                 }
-                try trimProviderMessageState(db, provider: provider)
             }
         } catch {
             print("[GRDBUsageStore] storeProviderMessageState failed: \(error)")
         }
     }
 
-    private func trimProviderMessageState(_ db: Database, provider: TokenUsageProvider) throws {
-        let count = try Int.fetchOne(
-            db,
-            sql: "SELECT COUNT(*) FROM provider_message_state WHERE provider = ?",
-            arguments: [provider.rawValue]
-        ) ?? 0
-        let excess = count - Self.maxMessageStatePerProvider
-        guard excess > 0 else { return }
+    // MARK: - 扫描原子提交（审查 R14）
+
+    /// 一轮扫描的全部写入在同一写事务内完成：桶、游标、新见 key、消息状态
+    /// 任一失败则整体回滚 —— 游标推进不可能先于桶写入成功，中断后可安全重扫。
+    func commitScan(_ commit: ScanCommit) throws {
+        guard let databaseQueue else {
+            throw UsageStoreError.databaseUnavailable
+        }
+        try databaseQueue.write { db in
+            for state in commit.buckets {
+                try Self.insertBucket(state, in: db)
+            }
+            for (path, cursor) in commit.cursors {
+                try db.execute(
+                    sql: """
+                    INSERT OR REPLACE INTO file_cursors (path, inode, offset, model) VALUES (?, ?, ?, ?)
+                    """,
+                    arguments: [path, Int64(cursor.inode), Int64(cursor.offset), cursor.model]
+                )
+            }
+            for key in commit.newSeenKeys {
+                try db.execute(
+                    sql: "INSERT OR REPLACE INTO message_seen (key, seen_at) VALUES (?, ?)",
+                    arguments: [key, commit.seenAt.timeIntervalSince1970]
+                )
+            }
+            try trimSeenKeys(db)
+            for (provider, entries) in commit.messageStateUpdates {
+                let now = Date().timeIntervalSince1970
+                for (key, payload) in entries {
+                    try db.execute(
+                        sql: """
+                        INSERT OR REPLACE INTO provider_message_state (provider, message_key, payload, updated_at)
+                        VALUES (?, ?, ?, ?)
+                        """,
+                        arguments: [provider.rawValue, key, payload, now]
+                    )
+                }
+            }
+        }
+    }
+
+    private static func insertBucket(_ state: UsageBucketState, in db: Database) throws {
+        let key = state.key
+        let usage = state.usage
         try db.execute(
             sql: """
-            DELETE FROM provider_message_state WHERE provider = ? AND message_key IN (
-                SELECT message_key FROM provider_message_state WHERE provider = ?
-                ORDER BY updated_at ASC, message_key ASC LIMIT ?
-            )
+            INSERT OR REPLACE INTO usage_buckets
+                (provider, model, bucket_start, input_tokens, cached_input_tokens,
+                 cache_creation_input_tokens, output_tokens, reasoning_output_tokens,
+                 total_tokens, conversation_count)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            arguments: [provider.rawValue, provider.rawValue, excess]
+            arguments: [
+                key.provider.rawValue, key.model, key.bucketStart.timeIntervalSince1970,
+                usage.inputTokens, usage.cachedInputTokens, usage.cacheCreationInputTokens,
+                usage.outputTokens, usage.reasoningOutputTokens, usage.totalTokens,
+                state.conversationCount,
+            ]
         )
     }
 

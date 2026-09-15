@@ -14,6 +14,9 @@ final class FakeUsageStore: UsageStoring {
     /// 非零时每次 upsert 挂起（并发/合并测试用）。
     var upsertDelay: TimeInterval = 0
     private(set) var upsertCount = 0
+    /// 置非 nil 时 commitScan 抛错（原子提交失败注入，审查 R14 测试）。
+    var commitError: Error?
+    private(set) var commitCallCount = 0
 
     func upsertBucket(_ state: UsageBucketState) {
         if upsertDelay > 0 { Thread.sleep(forTimeInterval: upsertDelay) }
@@ -125,6 +128,32 @@ final class FakeUsageStore: UsageStoring {
     }
 
     /// 窗口内会话数（断言辅助）。
+    /// 失败注入版原子提交：commitError 置位时整体不生效（游标/桶/seen 均不推进）。
+    func commitScan(_ commit: OmniForge.ScanCommit) throws {
+        commitCallCount += 1
+        if let commitError {
+            throw commitError
+        }
+        for bucket in commit.buckets {
+            upsertBucket(bucket)
+        }
+        for (path, cursor) in commit.cursors {
+            cursors[path] = cursor
+        }
+        seenKeys.formUnion(commit.newSeenKeys)
+        for (provider, entries) in commit.messageStateUpdates {
+            var merged = messageState[provider] ?? [:]
+            for (key, payload) in entries {
+                merged[key] = payload
+            }
+            messageState[provider] = merged
+        }
+    }
+
+    func totalConversations() -> Int {
+        bucketsByKey.values.reduce(0) { $0 + $1.conversationCount }
+    }
+
     func totalTokens(in window: (start: Date, end: Date)? = nil) -> Int {
         bucketsByKey.values
             .filter { state in

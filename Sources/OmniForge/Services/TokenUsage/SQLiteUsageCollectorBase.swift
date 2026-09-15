@@ -62,6 +62,9 @@ class SQLiteUsageCollectorBase: JSONLUsageCollectorBase {
         var bucketStart: Double?
         var model: String?
         var conversationCount: Int = 0
+        /// 该消息是否已贡献过会话计数（审查 R16：首次有效贡献计 1，
+        /// 后续差分只加 token 不再加计数；旧 payload 缺字段按 false 解码）。
+        var countedConversation: Bool = false
 
         static func decode(_ payload: String?) -> MessageState? {
             guard let payload, let data = payload.data(using: .utf8) else { return nil }
@@ -115,14 +118,15 @@ class SQLiteUsageCollectorBase: JSONLUsageCollectorBase {
         guard let messages = readMessages() else { return consumedCursor(file) }
         var state = store.loadProviderMessageState(provider)
         let fingerprintIndex = FingerprintIndex(state)
-        var changed = false
+        let baseline = state
         for message in messages {
-            if processMessage(message, state: &state, fingerprintIndex: fingerprintIndex, scan: scan) {
-                changed = true
-            }
+            _ = processMessage(message, state: &state, fingerprintIndex: fingerprintIndex, scan: scan)
         }
-        if changed {
-            store.storeProviderMessageState(provider, entries: state)
+        // 只提交实际变更的条目（脏 key 对比），并经扫描原子提交落库（审查 R14/R15）；
+        // 不再全量重写账本（也避免 updated_at 整体刷新干扰任何基于时间序的维护）。
+        let dirtyEntries = state.filter { baseline[$0.key] != $0.value }
+        if !dirtyEntries.isEmpty {
+            scan.stageMessageState(provider: provider, entries: dirtyEntries)
         }
         return consumedCursor(file)
     }

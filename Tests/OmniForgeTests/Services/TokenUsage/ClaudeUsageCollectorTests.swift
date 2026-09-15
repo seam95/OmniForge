@@ -39,6 +39,29 @@ final class ClaudeUsageCollectorTests: XCTestCase {
         try? FileManager.default.removeItem(at: projectsDir)
     }
 
+    // MARK: - 原子提交（审查 R14）
+
+    /// 提交失败：桶与游标都不推进；恢复后重扫数据完整（不漏计）。
+    func test_scan_commitFailureKeepsProgressThenRecovers() throws {
+        try writeFile("sess-a.jsonl", contents: usageLine(id: "m1", tokens: 100) + "\n")
+        store.commitError = UsageStoreError.databaseUnavailable
+        collector.start()
+        collector.waitForIdle()
+        pumpUntil { self.collector.scanCount == 1 }
+
+        XCTAssertEqual(store.totalTokens(), 0, "提交失败桶不落库")
+        XCTAssertTrue(store.cursors.isEmpty, "提交失败游标不推进")
+
+        // 存储恢复：重扫后数据完整（重读重算，不因上轮失败漏计）。
+        store.commitError = nil
+        watcher.simulateChange()
+        collector.waitForIdle()
+        pumpUntil { self.collector.scanCount == 2 }
+
+        XCTAssertEqual(store.totalTokens(), 100, "恢复重扫补齐数据")
+        XCTAssertFalse(store.cursors.isEmpty, "成功提交推进游标")
+    }
+
     // MARK: - 工具
 
     /// 泵主队列直到条件满足（采集器回调走 DispatchQueue.main，需显式泵送）。
