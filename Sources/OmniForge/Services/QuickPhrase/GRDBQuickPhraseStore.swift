@@ -38,24 +38,34 @@ final class GRDBQuickPhraseStore: QuickPhraseStore {
         return migrator
     }
 
-    func loadPhrases() -> [QuickPhraseEntry] {
-        guard let databaseQueue else { return [] }
-        var phrases: [QuickPhraseEntry] = []
+    /// 数据库不可用错误（初始化降级后所有操作的统一可观察失败）。
+    enum StoreError: LocalizedError {
+        case databaseUnavailable
+
+        var errorDescription: String? {
+            switch self {
+            case .databaseUnavailable: return "快捷短语数据库不可用"
+            }
+        }
+    }
+
+    func loadPhrases() throws -> [QuickPhraseEntry] {
+        guard let databaseQueue else { throw StoreError.databaseUnavailable }
         do {
-            try databaseQueue.read { db in
-                phrases = try QuickPhraseDBRecord
+            return try databaseQueue.read { db in
+                try QuickPhraseDBRecord
                     .order(Column("createdAt").desc)
                     .fetchAll(db)
                     .map { $0.toQuickPhraseEntry() }
             }
         } catch {
             print("[GRDBQuickPhraseStore] Failed to load phrases: \(error)")
+            throw error
         }
-        return phrases
     }
 
-    func savePhrase(_ phrase: QuickPhraseEntry) {
-        guard let databaseQueue else { return }
+    func savePhrase(_ phrase: QuickPhraseEntry) throws {
+        guard let databaseQueue else { throw StoreError.databaseUnavailable }
         do {
             try databaseQueue.write { db in
                 var record = QuickPhraseDBRecord(from: phrase)
@@ -63,22 +73,24 @@ final class GRDBQuickPhraseStore: QuickPhraseStore {
             }
         } catch {
             print("[GRDBQuickPhraseStore] Failed to save phrase: \(error)")
+            throw error
         }
     }
 
-    func deletePhrase(id: UUID) {
-        guard let databaseQueue else { return }
+    func deletePhrase(id: UUID) throws {
+        guard let databaseQueue else { throw StoreError.databaseUnavailable }
         do {
             try databaseQueue.write { db in
                 try QuickPhraseDBRecord.filter(Column("id") == id.uuidString).deleteAll(db)
             }
         } catch {
             print("[GRDBQuickPhraseStore] Failed to delete phrase: \(error)")
+            throw error
         }
     }
 
-    func updatePhrase(_ phrase: QuickPhraseEntry) {
-        savePhrase(phrase)
+    func updatePhrase(_ phrase: QuickPhraseEntry) throws {
+        try savePhrase(phrase)
     }
 
     func releaseMemory() {

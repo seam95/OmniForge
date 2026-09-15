@@ -48,8 +48,12 @@ struct QuickPhraseView: View {
                 phrase: editingPhrase,
                 allGroups: manager.allGroups(),
                 onSave: { content, group in
-                    savePhrase(content: content, group: group)
-                    showEditor = false
+                    let saved = savePhrase(content: content, group: group)
+                    if saved {
+                        showEditor = false
+                    }
+                    // 失败：sheet 保持打开、editingPhrase 保留，编辑器显示错误供重试。
+                    return saved
                 },
                 onCancel: {
                     showEditor = false
@@ -262,18 +266,17 @@ struct QuickPhraseView: View {
         showEditor = true
     }
 
-    private func savePhrase(content: String, group: String?) {
+    @discardableResult
+    private func savePhrase(content: String, group: String?) -> Bool {
         if let existing = editingPhrase {
-            manager.update(id: existing.id, content: content, group: group)
-        } else {
-            manager.add(content: content, group: group)
+            return manager.update(id: existing.id, content: content, group: group)
         }
-        editingPhrase = nil
+        return manager.add(content: content, group: group)
     }
 
     private func deletePhrase(_ phrase: QuickPhraseEntry) {
-        manager.delete(id: phrase.id)
-        if uiState.selectedPhraseID == phrase.id {
+        let deleted = manager.delete(id: phrase.id)
+        if deleted, uiState.selectedPhraseID == phrase.id {
             uiState.selectedPhraseID = nil
         }
     }

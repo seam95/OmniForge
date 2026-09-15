@@ -137,9 +137,9 @@ private final class FRFakeStore: ClipboardStore {
 }
 
 private final class FRFakePhraseStore: QuickPhraseStore {
-    func loadPhrases() -> [QuickPhraseEntry] { [] }
-    func savePhrase(_ phrase: QuickPhraseEntry) {}
-    func deletePhrase(id: UUID) {}
-    func updatePhrase(_ phrase: QuickPhraseEntry) {}
+    func loadPhrases() throws -> [QuickPhraseEntry] { [] }
+    func savePhrase(_ phrase: QuickPhraseEntry) throws {}
+    func deletePhrase(id: UUID) throws {}
+    func updatePhrase(_ phrase: QuickPhraseEntry) throws {}
     func releaseMemory() {}
 }

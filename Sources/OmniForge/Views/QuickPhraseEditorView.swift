@@ -4,15 +4,18 @@ import SwiftUI
 struct QuickPhraseEditorView: View {
     let phrase: QuickPhraseEntry?
     let allGroups: [String]
-    let onSave: (String, String?) -> Void
+    /// 保存回调返回是否成功（审查 R19）：false = 存储失败，调用方保持 sheet
+    /// 打开、草稿原样保留供重试；错误文案经 errorMessage 展示。
+    let onSave: (String, String?) -> Bool
     let onCancel: () -> Void
 
     @State private var content: String
     @State private var group: String = ""
     @State private var customGroup: String = ""
     @State private var useCustomGroup: Bool = false
+    @State private var saveError: String?
 
-    init(phrase: QuickPhraseEntry?, allGroups: [String], onSave: @escaping (String, String?) -> Void, onCancel: @escaping () -> Void) {
+    init(phrase: QuickPhraseEntry?, allGroups: [String], onSave: @escaping (String, String?) -> Bool, onCancel: @escaping () -> Void) {
         self.phrase = phrase
         self.allGroups = allGroups
         self.onSave = onSave
@@ -73,6 +76,14 @@ struct QuickPhraseEditorView: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
+
+            if let saveError {
+                // 存储失败：草稿保留在编辑器内，修正错误或直接再点保存即重试。
+                Text("保存失败：\(saveError)（内容已保留，可重试）")
+                    .font(.system(size: 11))
+                    .foregroundColor(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .padding(20)
         .frame(width: 400)
@@ -89,7 +100,10 @@ struct QuickPhraseEditorView: View {
             finalGroup = group.isEmpty ? nil : group
         }
 
-        onSave(trimmedContent, finalGroup)
+        if !onSave(trimmedContent, finalGroup) {
+            saveError = "存储不可用"
+            return
+        }
     }
 }
 
@@ -98,7 +112,7 @@ struct QuickPhraseEditorView_Previews: PreviewProvider {
         QuickPhraseEditorView(
             phrase: nil,
             allGroups: ["工作", "生活"],
-            onSave: { _, _ in },
+            onSave: { _, _ in true },
             onCancel: {}
         )
     }
