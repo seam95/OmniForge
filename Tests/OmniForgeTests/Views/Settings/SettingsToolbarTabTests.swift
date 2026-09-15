@@ -111,11 +111,10 @@ final class SettingsToolbarTabTests: XCTestCase {
     func test_performanceSections_orderAndTitles() {
         XCTAssertEqual(
             PerformanceSettingsSection.allCases,
-            [.monitor, .menuBar, .alerts, .fan]
+            [.monitor, .menuBar, .alerts]
         )
         XCTAssertEqual(PerformanceSettingsSection.monitor.title(in: .en), "Monitor")
         XCTAssertEqual(PerformanceSettingsSection.menuBar.title(in: .zhHans), "菜单栏")
         XCTAssertEqual(PerformanceSettingsSection.alerts.title(in: .en), "Alerts")
-        XCTAssertEqual(PerformanceSettingsSection.fan.title(in: .zhHans), "风扇")
     }
 }

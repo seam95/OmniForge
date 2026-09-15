@@ -12,7 +12,6 @@ enum MonitorCardAccent {
         case .gpu: return Theme.Stats.gpu
         case .disk: return Theme.Stats.cpu
         case .energy: return Theme.Stats.ram
-        case .fan: return Theme.Stats.fan
         }
     }
 

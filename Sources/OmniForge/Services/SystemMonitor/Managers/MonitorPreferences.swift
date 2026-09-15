@@ -32,11 +32,6 @@ struct MonitorAlertConfiguration: Equatable, Codable {
 // MARK: - 完整监控配置
 
 struct MonitorConfiguration: Equatable, Codable {
-    /// 解码时强制并入的指标：功能迭代新增、早于其上线的存量配置无法包含，
-    /// 且面板指标集合（visiblePanelMetrics）无设置界面入口，不并入则新指标卡
-    /// 对老用户永远不可见。仅并入"上线时不存在"的指标，不触碰既有指标显隐。
-    static let autoEnabledMetrics: Set<MonitorMetric> = [.fan, .fanSensor]
-
     var isEnabled = true
     var refreshInterval = 2
     var temperatureUnit = TemperatureUnit.celsius
@@ -83,13 +78,27 @@ struct MonitorConfiguration: Equatable, Codable {
         isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
         refreshInterval = try container.decodeIfPresent(Int.self, forKey: .refreshInterval) ?? 2
         temperatureUnit = try container.decodeIfPresent(TemperatureUnit.self, forKey: .temperatureUnit) ?? .celsius
-        visibleSections = try container.decodeIfPresent(Set<MonitorSection>.self, forKey: .visibleSections)
-            ?? Set(MonitorSection.allCases)
-        panelSectionOrder = try container.decodeIfPresent([MonitorSection].self, forKey: .panelSectionOrder)
-            ?? Array(MonitorSection.allCases)
-        visiblePanelMetrics = try container.decodeIfPresent(Set<MonitorMetric>.self, forKey: .visiblePanelMetrics)
-            ?? Set(MonitorMetric.allCases)
-        visiblePanelMetrics.formUnion(Self.autoEnabledMetrics)
+        // 分区与面板指标同样按 rawValue 过滤：存量 JSON 中已下线的枚举值
+        // （如风扇的 "fan"/"fanSensor"）会让 Set/数组整体解码失败，导致全部
+        // 监控偏好回退默认；过滤后为空（键缺失或全部失效）回落默认全集
+        if let sectionsRaw = try container.decodeIfPresent([String].self, forKey: .visibleSections) {
+            let sections = Set(sectionsRaw.compactMap { MonitorSection(rawValue: $0) })
+            visibleSections = sections.isEmpty ? Set(MonitorSection.allCases) : sections
+        } else {
+            visibleSections = Set(MonitorSection.allCases)
+        }
+        if let orderRaw = try container.decodeIfPresent([String].self, forKey: .panelSectionOrder) {
+            let order = orderRaw.compactMap { MonitorSection(rawValue: $0) }
+            panelSectionOrder = order.isEmpty ? Array(MonitorSection.allCases) : order
+        } else {
+            panelSectionOrder = Array(MonitorSection.allCases)
+        }
+        if let metricsRaw = try container.decodeIfPresent([String].self, forKey: .visiblePanelMetrics) {
+            let metrics = Set(metricsRaw.compactMap { MonitorMetric(rawValue: $0) })
+            visiblePanelMetrics = metrics.isEmpty ? Set(MonitorMetric.allCases) : metrics
+        } else {
+            visiblePanelMetrics = Set(MonitorMetric.allCases)
+        }
         // 按 rawValue 过滤而非直接解码枚举集合：存量 JSON 中已下线的指标
         // （磁盘/电源/日期）会让 Set/数组整体解码失败，导致全部监控偏好回退默认
         let enabledRaw = try container.decodeIfPresent([String].self, forKey: .enabledMenuBarMetrics) ?? []

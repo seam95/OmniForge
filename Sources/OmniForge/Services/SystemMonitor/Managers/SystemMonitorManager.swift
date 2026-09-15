@@ -61,9 +61,6 @@ final class SystemMonitorManager: ObservableObject {
     private let powerSampler: PowerSampling
     private let peripheralBatterySampler: PeripheralBatterySampling
     private let processSampler: ProcessUsageSampling
-    /// 风扇与传感器采样 — 可选注入；nil 时（旧测试/功能未接线）不采集该指标
-    private let fanSampler: FanSampling?
-    private let sensorScanner: TemperatureSensorScanning?
     private let speedTest: SpeedTest
 
     init(
@@ -77,8 +74,6 @@ final class SystemMonitorManager: ObservableObject {
         powerSampler: PowerSampling,
         peripheralBatterySampler: PeripheralBatterySampling,
         processSampler: ProcessUsageSampling,
-        fanSampler: FanSampling? = nil,
-        sensorScanner: TemperatureSensorScanning? = nil,
         speedTest: SpeedTest = SpeedTest()
     ) {
         self.scheduler = scheduler
@@ -91,8 +86,6 @@ final class SystemMonitorManager: ObservableObject {
         self.powerSampler = powerSampler
         self.peripheralBatterySampler = peripheralBatterySampler
         self.processSampler = processSampler
-        self.fanSampler = fanSampler
-        self.sensorScanner = sensorScanner
         self.speedTest = speedTest
         speedTestCancellable = speedTest.$state
             .receive(on: DispatchQueue.main)
@@ -261,10 +254,6 @@ final class SystemMonitorManager: ObservableObject {
         if demand.gpuTemperature || demand.system { metrics.insert(.gpuTemperature) }
         if demand.batteryTemperature || demand.system { metrics.insert(.batteryTemperature) }
         if demand.peripheralBattery { metrics.insert(.peripheralBattery) }
-        if demand.fan {
-            metrics.insert(.fan)
-            metrics.insert(.fanSensor)
-        }
 
         for metric in menuBarMetrics {
             switch metric {
@@ -277,7 +266,6 @@ final class SystemMonitorManager: ObservableObject {
             case .gpuTemperature: metrics.insert(.gpuTemperature)
             case .batteryTemperature: metrics.insert(.batteryTemperature)
             case .peripheralBattery: metrics.insert(.peripheralBattery)
-            case .fan: metrics.insert(.fan)
             }
         }
 
@@ -406,23 +394,6 @@ final class SystemMonitorManager: ObservableObject {
                     } catch {
                         newSnapshot.peripheralBatteries = []
                         newSnapshot.issues[.peripheralBattery] = .failed("\(error)")
-                    }
-                case .fan:
-                    guard let fanSampler = self.fanSampler else { break }
-                    do {
-                        newSnapshot.fans = try fanSampler.sampleFans()
-                    } catch {
-                        // 失败清空并记录 issue — UI 据 issue 显示错误而非「无风扇」空态
-                        newSnapshot.fans = []
-                        newSnapshot.issues[.fan] = .failed("\(error)")
-                    }
-                case .fanSensor:
-                    guard let sensorScanner = self.sensorScanner else { break }
-                    do {
-                        newSnapshot.sensors = try sensorScanner.sampleSensors()
-                    } catch {
-                        newSnapshot.sensors = []
-                        newSnapshot.issues[.fanSensor] = .failed("\(error)")
                     }
                 }
             }

@@ -86,12 +86,6 @@ struct PerformanceSettingsView: View {
                             strings: state.l10n.s,
                             isMonitorEnabled: isMonitorEnabled
                         )
-                    case .fan:
-                        FanSettingsView(
-                            preferences: state.fanPreferences,
-                            fanControl: state.fanControl,
-                            strings: state.l10n.s
-                        )
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

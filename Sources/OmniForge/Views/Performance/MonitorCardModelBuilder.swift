@@ -26,10 +26,6 @@ struct MonitorCardModel: Equatable, Identifiable {
     var accessoryText: String? = nil
     /// 折线下方的明细行（小灰字，以中点分隔）：CPU 为系统/用户占比
     var detailTexts: [String] = []
-    /// 风扇卡专用：快照是否有风扇读数（无风扇机器/未采样轮不出分区）
-    var hasFanData = true
-    /// 风扇卡专用：无风扇但有传感器读数时仍出分区（展示温度传感器摘要）
-    var hasSensorData = false
 }
 
 /// Pure mapping from snapshot + history + configuration into overview card models.
@@ -89,12 +85,6 @@ enum MonitorCardModelBuilder {
         case .energy:
             // 保留（排行代码沿用），overview 无入口
             return energyModel(snapshot: snapshot, strings: strings)
-        case .fan:
-            return fanModel(
-                snapshot: snapshot,
-                strings: strings,
-                temperatureUnit: temperatureUnit
-            )
         }
     }
 
@@ -307,67 +297,6 @@ enum MonitorCardModelBuilder {
             trend: history.gpu,
             trendTimes: history.gpuTimes,
             accessoryText: MetricFormat.temperature(snapshot.gpuTemperature, unit: temperatureUnit)
-        )
-    }
-
-    /// 风扇卡：有风扇时标题行右侧最高转速、caption 逐风扇 RPM；
-    /// 无风扇但有传感器时标题改「温度传感器」、主值取最高温、caption 为前两热点组（传感器仍可监控）。
-    private static func fanModel(
-        snapshot: SystemSnapshot,
-        strings: Strings,
-        temperatureUnit: TemperatureUnit
-    ) -> MonitorCardModel {
-        let fans = snapshot.fans
-        if fans.isEmpty {
-            // 无风扇机型：退化为温度传感器摘要卡。
-            // 主值 = 过滤 unknown 后的最高温（与详情页 FanSensorGroupSummary 同源口径），
-            // caption = 前两热点组「组名 组内最高温」，回答「哪里最热」。
-            let summaries = FanSensorGroupSummary.summaries(from: snapshot.sensors)
-            let peak = summaries.compactMap(\.hottest?.temperatureCelsius).max()
-            let peakText = peak.flatMap { MetricFormat.temperature($0, unit: temperatureUnit) }
-            let hotspotParts = summaries.prefix(2).compactMap { summary -> String? in
-                guard let hottest = summary.hottest,
-                      let text = MetricFormat.temperature(hottest.temperatureCelsius, unit: temperatureUnit)
-                else { return nil }
-                return "\(strings.fanZoneName(summary.zone)) \(text)"
-            }
-            let hotspotCaption = hotspotParts.isEmpty
-                ? nil
-                : hotspotParts.joined(separator: " \(strings.monitorSubtitleSeparator) ")
-            let count = snapshot.sensors.count
-            return MonitorCardModel(
-                id: .fan,
-                title: strings.fanSensorSectionTitle,
-                systemImage: "thermometer.medium",
-                primaryText: peakText ?? "--",
-                secondaryText: hotspotCaption,
-                progress: nil,
-                badgeText: nil,
-                showsLiveDot: false,
-                issueText: issueText(for: snapshot.issues[.fan], strings: strings),
-                processMetricKind: nil,
-                hasFanData: false,
-                hasSensorData: count > 0
-            )
-        }
-        let peak = fans.map(\.currentRPM).max() ?? 0
-        let peakFraction = fans.map(\.speedFraction).max() ?? 0
-        let anyManual = fans.contains { $0.isManualMode }
-        // caption：`3200 RPM • 3400 RPM`（或单风扇 `3200 RPM`）
-        let caption = fans
-            .compactMap { MetricFormat.rpm($0.currentRPM).map { "\($0) RPM" } }
-            .joined(separator: " \(strings.monitorSubtitleSeparator) ")
-        return MonitorCardModel(
-            id: .fan,
-            title: strings.monitorCardFan,
-            systemImage: "fanblades",
-            primaryText: (MetricFormat.rpm(peak).map { "\($0) RPM" }) ?? "--",
-            secondaryText: caption.isEmpty ? nil : caption,
-            progress: peakFraction,
-            badgeText: anyManual ? strings.fanModeManualBadge : nil,
-            showsLiveDot: false,
-            issueText: issueText(for: snapshot.issues[.fan], strings: strings),
-            processMetricKind: nil
         )
     }
 

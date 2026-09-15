@@ -132,65 +132,6 @@ struct Strings: Equatable {
     let monitorSectionNetwork: String
     let monitorSectionDisk: String
     let monitorSectionPower: String
-    let monitorSectionFan: String
-    // 风扇监控与详情页
-    let monitorCardFan: String
-    let menubarMetricFan: String
-    let fanDetailTitle: String
-    let fanNameSingle: String
-    let fanNameLeft: String
-    let fanNameRight: String
-    let fanNameIndexed: String
-    let fanModeManualBadge: String
-    let fanTargetRPM: String
-    let fanSensorSectionTitle: String
-    let fanZoneCpu: String
-    let fanZoneGpu: String
-    let fanZoneMemory: String
-    let fanZoneSsd: String
-    let fanZonePowerDelivery: String
-    let fanZoneBattery: String
-    let fanZoneAmbient: String
-    let fanZoneUnknown: String
-    let fanSensorHottestFormat: String
-    let fanSensorHottestBadge: String
-    let fanSensorHiddenCountFormat: String
-    let fanNoFans: String
-    // 风扇设置页
-    let settingsTabFan: String
-    let fanSettingsHelperSection: String
-    let fanSettingsHelperStatusTitle: String
-    let fanSettingsHelperStatusReady: String
-    let fanSettingsHelperStatusNotInstalled: String
-    let fanSettingsHelperStatusVersionMismatch: String
-    let fanSettingsHelperStatusRegisterFailed: String
-    let fanSettingsHelperStatusAwaitingApproval: String
-    let fanSettingsHelperAwaitingApprovalHint: String
-    let fanSettingsHelperOpenApprovalSettings: String
-    let fanSettingsHelperInstall: String
-    let fanSettingsHelperUninstall: String
-    let fanSettingsHelperFooter: String
-    // 风扇控制区
-    let fanControlSectionTitle: String
-    let fanPerformanceMode: String
-    let fanLevelLabel: String
-    let fanLevelLow: String
-    let fanLevelMedium: String
-    let fanLevelHigh: String
-    let fanLevelMax: String
-    let fanBatterySaverNotice: String
-    let fanAutoButton: String
-    let fanResetAllButton: String
-    let fanInstallHelperBanner: String
-    // 风扇设置偏好区
-    let fanSettingsPreferencesSection: String
-    let fanSettingsBatterySaver: String
-    let fanSettingsBatterySaverThreshold: String
-    let fanSettingsForceOnBattery: String
-    let fanSettingsKeepOnScreenSleep: String
-    // 无风扇机型
-    let fanControlUnavailableOnFanless: String
-    let fanMonitoringStillWorks: String
     /// 分区配置上移/下移
     let settingsMoveUp: String
     let settingsMoveDown: String
@@ -1588,22 +1529,4 @@ struct Strings: Equatable {
     let desktopPetBubbleClipboard2: String
     let desktopPetBubbleLocked1: String
     let desktopPetBubbleLocked2: String
-}
-
-// MARK: - 派生文案
-
-extension Strings {
-    /// 热区 → 展示名（风扇详情页分组标题与监控页温度摘要卡 caption 共用）
-    func fanZoneName(_ zone: ThermalZone) -> String {
-        switch zone {
-        case .cpu: return fanZoneCpu
-        case .gpu: return fanZoneGpu
-        case .memory: return fanZoneMemory
-        case .ssd: return fanZoneSsd
-        case .powerDelivery: return fanZonePowerDelivery
-        case .battery: return fanZoneBattery
-        case .ambient: return fanZoneAmbient
-        case .unknown: return fanZoneUnknown
-        }
-    }
 }

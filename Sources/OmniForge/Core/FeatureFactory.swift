@@ -74,30 +74,6 @@ struct FeatureFactory {
                     )
                 )
             }
-            if runtime.manager(for: .systemMonitor, as: FanPreferences.self) == nil {
-                runtime.register(
-                    .systemMonitor,
-                    manager: FanPreferences(userDefaults: userDefaults)
-                )
-            }
-            if runtime.manager(for: .systemMonitor, as: FanControlCoordinator.self) == nil,
-               let monitor = runtime.manager(for: .systemMonitor, as: SystemMonitorManager.self),
-               let fanPreferences = runtime.manager(for: .systemMonitor, as: FanPreferences.self),
-               let monitorPreferences = runtime.manager(for: .systemMonitor, as: MonitorPreferences.self) {
-                let coordinator = FanControlCoordinator(
-                    helper: FanHelperClient(),
-                    powerSupply: PowerSupplyChecker()
-                )
-                // 注册状态后台解析：SMAppService.status 是同步 XPC（~120ms），
-                // 不得进入启动路径或每 2s 快照评估路径
-                coordinator.start(
-                    monitor: monitor,
-                    preferences: fanPreferences,
-                    monitorPreferences: monitorPreferences,
-                    immediatelyResolveRegistration: false
-                )
-                runtime.register(.systemMonitor, manager: coordinator)
-            }
         case .tokenUsage:
             // preferences 单源：注册点唯一，各 Manager 一律从 registry 取同一实例；
             // 此前的 `??` fallback 一旦触发会创建未注册的第二实例，配置静默分裂。
@@ -405,9 +381,6 @@ struct FeatureFactory {
             runtime.manager(for: .quickPhrase, as: QuickPhraseManager.self)?
                 .releaseMemory()
         case .systemMonitor:
-            // 先归还风扇控制（性能模式/手动物标在位时 resetAllFans），
-            // 再停采样 — 卸载后无 UI 可归还，钉死的转速只能靠 helper 重启解除
-            runtime.manager(for: .systemMonitor, as: FanControlCoordinator.self)?.stop()
             if let manager = runtime.manager(for: .systemMonitor, as: SystemMonitorManager.self) {
                 manager.setPanelDemand(.none)
                 manager.setMenuBarMetrics([])
@@ -464,8 +437,7 @@ struct FeatureFactory {
     }
 
     private static func makeProductionMonitor() -> SystemMonitorManager {
-        // 温度/电源/风扇各自独享一条 SMC 连接 — 与现有接线一致，避免跨队列共享实例
-        let fanSMC = SMCClient()
+        // 温度/电源各自独享一条 SMC 连接 — 避免跨队列共享实例
         return SystemMonitorManager(
             scheduler: TimerRepeatingScheduler(),
             cpuSampler: CPUUsageSampler(),
@@ -476,9 +448,7 @@ struct FeatureFactory {
             diskSampler: DiskSampler(),
             powerSampler: PowerSampler(smc: SMCClient()),
             peripheralBatterySampler: PeripheralBatterySampler(),
-            processSampler: ProcessUsageSampler(),
-            fanSampler: FanSampler(smc: fanSMC),
-            sensorScanner: TemperatureSensorCatalog(smc: fanSMC)
+            processSampler: ProcessUsageSampler()
         )
     }
 

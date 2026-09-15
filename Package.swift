@@ -34,14 +34,6 @@ let package = Package(
                 .swiftLanguageMode(.v5),
             ]
         ),
-        .executableTarget(
-            name: "FanControlHelper",
-            dependencies: ["OmniForgeSMC"],
-            path: "Sources/FanControlHelper",
-            swiftSettings: [
-                .swiftLanguageMode(.v5),
-            ]
-        ),
         .testTarget(
             name: "OmniForgeTests",
             dependencies: [

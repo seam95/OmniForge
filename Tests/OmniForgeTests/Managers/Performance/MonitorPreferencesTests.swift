@@ -215,38 +215,48 @@ final class MonitorPreferencesTests: XCTestCase {
         )
         XCTAssertEqual(
             preferences.configuration.menuBarMetricOrder,
-            [.cpu, .battery, .fan],
+            [.cpu, .battery],
             "排序中已下线指标被剔除，其余保持相对顺序"
         )
         XCTAssertEqual(preferences.configuration.refreshInterval, 5)
         XCTAssertEqual(preferences.configuration.temperatureUnit, .fahrenheit)
     }
 
-    /// 存量配置的面板指标集合不含后续新增的风扇指标，且该集合无设置界面
-    /// 入口 — 解码时必须自动并入，否则风扇卡对老用户永远不可见
-    func test_legacyJSONWithoutFanMetrics_autoEnablesFanMetrics() throws {
-        let suite = "MonitorPreferences.autoFanMetrics"
+    /// 存量 JSON 的分区/面板指标集合含已下线枚举值（风扇 "fan"/"fanSensor"）时
+    /// 按 rawValue 剔除，不抛错、不丢其余偏好（直接解码 Set 会让整包回退默认）
+    func test_legacyJSONWithRemovedFanSectionsAndMetrics_dropsUnknownCasesAndKeepsRest() throws {
+        let suite = "MonitorPreferences.removedFanSections"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
 
         let legacyJSON = """
         {
-          "refreshInterval": 2,
-          "visiblePanelMetrics": ["cpu", "gpu", "memory", "network", "disk", "power"],
-          "visibleSections": ["system", "network", "disk", "power", "fan"]
+          "refreshInterval": 5,
+          "temperatureUnit": "fahrenheit",
+          "visibleSections": ["system", "network", "disk", "power", "fan"],
+          "panelSectionOrder": ["system", "fan", "network", "disk", "power"],
+          "visiblePanelMetrics": ["cpu", "gpu", "fan", "fanSensor", "memory", "network", "disk", "power"]
         }
         """.data(using: .utf8)!
         defaults.set(legacyJSON, forKey: "OmniForge.monitorConfiguration")
 
         let preferences = MonitorPreferences(userDefaults: defaults)
-        XCTAssertTrue(
-            preferences.configuration.visiblePanelMetrics.contains(.fan)
-                && preferences.configuration.visiblePanelMetrics.contains(.fanSensor),
-            "新增指标解码时自动并入存量集合"
+        XCTAssertEqual(
+            preferences.configuration.visibleSections,
+            [.system, .network, .disk, .power],
+            "已下线分区被剔除，保留仍存在的分区"
         )
-        XCTAssertFalse(
-            preferences.configuration.visiblePanelMetrics.contains(.cpuTemperature),
-            "autoEnabledMetrics 只并入风扇系新指标，不扩到其他指标"
+        XCTAssertEqual(
+            preferences.configuration.panelSectionOrder,
+            [.system, .network, .disk, .power],
+            "分区顺序中已下线项被剔除，其余保持相对顺序"
         )
+        XCTAssertEqual(
+            preferences.configuration.visiblePanelMetrics,
+            [.cpu, .gpu, .memory, .network, .disk, .power],
+            "已下线面板指标被剔除，保留仍存在的指标"
+        )
+        XCTAssertEqual(preferences.configuration.refreshInterval, 5)
+        XCTAssertEqual(preferences.configuration.temperatureUnit, .fahrenheit)
     }
 }

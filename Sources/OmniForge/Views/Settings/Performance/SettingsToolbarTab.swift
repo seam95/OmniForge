@@ -169,12 +169,11 @@ enum TokenUsageSettingsSection: String, CaseIterable, Identifiable {
     }
 }
 
-/// 性能页内部分段（监控 / 菜单栏 / 告警 / 风扇）。
+/// 性能页内部分段（监控 / 菜单栏 / 告警）。
 enum PerformanceSettingsSection: String, CaseIterable, Identifiable {
     case monitor
     case menuBar
     case alerts
-    case fan
 
     var id: String { rawValue }
 
@@ -183,7 +182,6 @@ enum PerformanceSettingsSection: String, CaseIterable, Identifiable {
         case .monitor: return strings.settingsTabMonitor
         case .menuBar: return strings.settingsTabMenuBar
         case .alerts: return strings.settingsTabAlerts
-        case .fan: return strings.settingsTabFan
         }
     }
 }

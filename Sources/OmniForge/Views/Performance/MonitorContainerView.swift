@@ -35,9 +35,6 @@ struct MonitorContainerView: View {
     /// 页面树挂载计数观测（测试配置用；+1 onAppear / -1 onDisappear，携带页面 route）。
     /// 用于在真实监控层级切换上断言单活动树不变量（SPEC §6.3.5）。
     var pageMountObserver: (@MainActor (MonitorPanelRoute, Int) -> Void)? = nil
-    /// 风扇控制注入 — nil 时详情页为纯监控（测试/功能未接线）
-    var fanControl: FanControlCoordinator? = nil
-    var fanPreferences: FanPreferences? = nil
 
     var body: some View {
         // 层级页面统一 Host（SPEC §5/§6）：overview → 排名/磁盘详情为前进，
@@ -113,23 +110,9 @@ struct MonitorContainerView: View {
                 onSelectDiskDetail: {
                     route = .diskDetail
                 },
-                onSelectFanDetail: {
-                    route = .fanDetail
-                },
                 onRefresh: { onRefresh(false) }
             )
             .pageMountReporting(.overview, observer: pageMountObserver)
-        case .fanDetail:
-            MonitorFanDetailView(
-                snapshot: monitor.snapshot,
-                strings: strings,
-                temperatureUnit: configuration.temperatureUnit,
-                onBack: { route = .overview },
-                onRefresh: { onRefresh(false) },
-                fanControl: fanControl,
-                fanPreferences: fanPreferences
-            )
-            .pageMountReporting(.fanDetail, observer: pageMountObserver)
         case .diskDetail:
             MonitorDiskDetailView(
                 snapshot: monitor.snapshot,
@@ -187,9 +170,6 @@ struct MonitorContainerView: View {
         }
         if visible.contains(.power) {
             demand.power = true
-        }
-        if visible.contains(.fan) {
-            demand.fan = true
         }
         return demand
     }
