@@ -38,6 +38,9 @@ final class ScrollCapturer {
     struct SessionConfig: Sendable {
         /// 拼接图高度上限（px），达到即自动停止。
         var maxScrollHeight = 30_000
+        /// 拼接画布总字节预算（BGRA）：高度上限之外的第二道防线，
+        /// 防止超宽选区（如 4K/5K 全屏宽）把单画布推到 GiB 级。
+        var maxTotalBytes = 512 * 1024 * 1024
         /// 吸顶头部/滚动条检测开关。
         var frozenDetectionEnabled = true
 
@@ -162,7 +165,7 @@ final class ScrollCapturer {
 
         isActive = true
         shotA = nil
-        mergedImage = firstFrame
+        mergedImage = frameCappedToBudget(firstFrame)
         headerHeightPx = 0
         headerDetectionDone = false
         rightMarginPx = 0
@@ -170,7 +173,11 @@ final class ScrollCapturer {
         consecutiveZeroShifts = 0
         hasScrolledOnce = false
         stripCount = 1
-        stitchedPixelSize = CGSize(width: firstFrame.width, height: firstFrame.height)
+        if let merged = mergedImage {
+            stitchedPixelSize = CGSize(width: merged.width, height: merged.height)
+        } else {
+            stitchedPixelSize = .zero
+        }
 
         log(
             "session-start",
@@ -292,17 +299,18 @@ final class ScrollCapturer {
     }
 
     /// 手动滚动中的立即抓帧：拿来当前画面直接尝试拼接（测试驱动点）。
-    func processImmediateFrame() async {
-        guard isActive, !isProcessingFrame else { return }
+    @discardableResult
+    func processImmediateFrame() async -> Bool {
+        guard isActive, !isProcessingFrame else { return false }
         isProcessingFrame = true
         defer { isProcessingFrame = false }
 
-        guard let currentFrame = captureFrame() else { return }
+        guard let currentFrame = captureFrame() else { return false }
         guard let previousFrame = baselineFrame(matchingHeight: currentFrame.height) else {
             shotA = currentFrame
-            return
+            return false
         }
-        _ = await processFrame(current: currentFrame, previous: previousFrame, settled: false)
+        return await processFrame(current: currentFrame, previous: previousFrame, settled: false)
     }
 
     /// 停止后的全 settle 补拍；维护零位移自动停止计数（测试驱动点）。
@@ -409,7 +417,11 @@ final class ScrollCapturer {
 
         // 1px 遮缝：新条多覆盖一行，遮住接缝处的亚像素渲染差。
         let safeOffset = max(1, offsetPx - 1)
-        mergeNewContent(currentFrame: current, offsetPx: safeOffset)
+        guard mergeNewContent(currentFrame: current, offsetPx: safeOffset) else {
+            // 合并失败（画布分配失败/预算耗尽）：保留最近有效结果，不计数。
+            shotA = current
+            return false
+        }
 
         shotA = current
         stripCount += 1
@@ -424,6 +436,19 @@ final class ScrollCapturer {
         )
         emitPreview()
         onStripAdded?(stripCount)
+        // 预算用尽：自动完成并交付当前有效结果（明确原因，区别于触底停止）。
+        if let merged = mergedImage,
+           merged.height >= allowedStitchHeight(width: merged.width) {
+            log(
+                "auto-stop-height-budget",
+                metadata: [
+                    "pixelSize": "\(merged.width)x\(merged.height)",
+                    "maxScrollHeight": config.maxScrollHeight,
+                    "maxTotalBytes": config.maxTotalBytes,
+                ]
+            )
+            stopSession()
+        }
         return true
     }
 
@@ -468,13 +493,17 @@ final class ScrollCapturer {
         computeQueue.sync {
             guard current.width == previous.width,
                   current.height == previous.height,
-                  let curData = rawPixelData(current),
-                  let prevData = rawPixelData(previous)
+                  let curBuffer = Self.pixelBuffer(of: current),
+                  let prevBuffer = Self.pixelBuffer(of: previous)
             else { return nil }
 
             let w = current.width
             let h = current.height
-            let bytesPerRow = w * 4
+            let curData = curBuffer.bytePtr
+            let prevData = prevBuffer.bytePtr
+            // 按真实行跨度寻址（行尾可能有对齐填充），边界按实际数据长度检查。
+            let bytesPerRow = min(curBuffer.bytesPerRow, prevBuffer.bytesPerRow)
+            let bufferBytes = min(curBuffer.totalBytes, prevBuffer.totalBytes)
 
             let rowStart = h * 2 / 10
             let rowEnd = h * 8 / 10
@@ -490,7 +519,7 @@ final class ScrollCapturer {
 
                 for row in stride(from: rowStart, to: rowEnd, by: rowStep) {
                     let idx = row * bytesPerRow + col * 4
-                    guard idx + 2 < h * bytesPerRow else { continue }
+                    guard idx + 2 < bufferBytes else { continue }
                     sad += UInt64(
                         abs(Int(curData[idx]) - Int(prevData[idx]))
                             + abs(Int(curData[idx + 1]) - Int(prevData[idx + 1]))
@@ -544,13 +573,17 @@ final class ScrollCapturer {
         computeQueue.sync {
             guard current.width == previous.width,
                   current.height == previous.height,
-                  let curData = rawPixelData(current),
-                  let prevData = rawPixelData(previous)
+                  let curBuffer = Self.pixelBuffer(of: current),
+                  let prevBuffer = Self.pixelBuffer(of: previous)
             else { return nil }
 
             let w = current.width
             let h = current.height
-            let bytesPerRow = w * 4
+            let curData = curBuffer.bytePtr
+            let prevData = prevBuffer.bytePtr
+            // 按真实行跨度寻址（行尾可能有对齐填充），边界按实际数据长度检查。
+            let bytesPerRow = min(curBuffer.bytesPerRow, prevBuffer.bytesPerRow)
+            let bufferBytes = min(curBuffer.totalBytes, prevBuffer.totalBytes)
             let compareBytes = max(4, w - rightMarginPx) * 4
             let colByteStep = 4 * 4 // 每 4 像素采样一列
 
@@ -559,7 +592,7 @@ final class ScrollCapturer {
                 var samples = 0
                 let rowOffset = row * bytesPerRow
                 for col in stride(from: 0, to: compareBytes, by: colByteStep) {
-                    guard rowOffset + col + 2 < h * bytesPerRow else { continue }
+                    guard rowOffset + col + 2 < bufferBytes else { continue }
                     rowSAD += UInt64(
                         abs(Int(curData[rowOffset + col]) - Int(prevData[rowOffset + col]))
                             + abs(Int(curData[rowOffset + col + 1]) - Int(prevData[rowOffset + col + 1]))
@@ -576,29 +609,91 @@ final class ScrollCapturer {
         }
     }
 
-    /// CGImage 原始像素字节（BGRA）。
-    private nonisolated func rawPixelData(_ image: CGImage) -> UnsafePointer<UInt8>? {
-        guard let dataProvider = image.dataProvider,
-              let data = dataProvider.data
-        else { return nil }
-        return CFDataGetBytePtr(data)
+    /// CGImage 原始像素的受控访问缓冲：持有 CFData 所有者与真实行跨度。
+    /// 消费者在作用域内持有本值即可保证字节指针有效（修复仅返回裸指针导致的释放后访问）。
+    private struct PixelBuffer {
+        let data: CFData
+        let bytesPerRow: Int
+        let width: Int
+        let height: Int
+
+        var bytePtr: UnsafePointer<UInt8> { CFDataGetBytePtr(data) }
+        var totalBytes: Int { CFDataGetLength(data) }
+    }
+
+    /// 取图像像素缓冲：32 位/像素直接取数据提供器（保留真实行跨度），
+    /// 其他格式统一绘制到受控 BGRA 上下文转换。
+    private nonisolated static func pixelBuffer(of image: CGImage) -> PixelBuffer? {
+        if image.bitsPerPixel == 32 {
+            guard let provider = image.dataProvider,
+                  let data = provider.data,
+                  image.bytesPerRow > 0,
+                  image.width > 0, image.height > 0,
+                  CFDataGetLength(data) >= image.bytesPerRow * image.height
+            else { return nil }
+            return PixelBuffer(
+                data: data,
+                bytesPerRow: image.bytesPerRow,
+                width: image.width,
+                height: image.height
+            )
+        }
+        return convertedPixelBuffer(of: image)
+    }
+
+    /// 非预期格式（非 32bpp）的兜底：绘制到受控 BGRA 上下文取得统一缓冲。
+    private nonisolated static func convertedPixelBuffer(of image: CGImage) -> PixelBuffer? {
+        let width = image.width
+        let height = image.height
+        guard width > 0, height > 0 else { return nil }
+        let bytesPerRow = width * 4
+        let bitmapInfo = CGImageAlphaInfo.premultipliedFirst.rawValue
+            | CGBitmapInfo.byteOrder32Little.rawValue
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: bitmapInfo
+        ) else { return nil }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let raw = context.data else { return nil }
+        let cfData = CFDataCreate(
+            nil,
+            raw.assumingMemoryBound(to: UInt8.self),
+            bytesPerRow * height
+        )
+        return cfData.map {
+            PixelBuffer(data: $0, bytesPerRow: bytesPerRow, width: width, height: height)
+        }
     }
 
     // MARK: - 增量合并
 
     /// 立即增量合并：旧图在上、新内容在下。检出吸顶头部时只贴底部新条，
-    /// 否则整帧绘制（自然覆盖重叠区）。新条高度为 `offsetPx` 行。
-    private func mergeNewContent(currentFrame: CGImage, offsetPx: Int) {
+    /// 否则整帧绘制（自然覆盖重叠区）。返回是否成功合入；
+    /// 超预算部分只接收预算内的行（高度截断），画布创建失败返回 false（保留最近有效结果）。
+    private func mergeNewContent(currentFrame: CGImage, offsetPx: Int) -> Bool {
         guard let existing = mergedImage else {
             mergedImage = currentFrame
             stitchedPixelSize = CGSize(width: currentFrame.width, height: currentFrame.height)
-            return
+            return true
         }
 
         let width = currentFrame.width
         let existingHeight = existing.height
-        let newRows = offsetPx
-        guard newRows > 0, newRows <= currentFrame.height else { return }
+        let requestedRows = offsetPx
+        guard requestedRows > 0, requestedRows <= currentFrame.height else { return false }
+
+        // 高度与字节预算：已到上限不再合并；超出部分只接收预算内的行。
+        let allowedTotalHeight = allowedStitchHeight(width: width)
+        guard existingHeight < allowedTotalHeight else {
+            log("height-budget-exhausted", metadata: ["allowed": allowedTotalHeight])
+            return false
+        }
+        let newRows = min(requestedRows, allowedTotalHeight - existingHeight)
 
         let stripsHeaderOnly = headerDetectionDone && headerHeightPx > 0
         guard let merged = renderMerged(
@@ -608,10 +703,39 @@ final class ScrollCapturer {
             existingHeight: existingHeight,
             newRows: newRows,
             stripsHeaderOnly: stripsHeaderOnly
-        ) else { return }
+        ) else { return false }
 
         mergedImage = merged
         stitchedPixelSize = CGSize(width: width, height: existingHeight + newRows)
+        return true
+    }
+
+    /// 预算内允许的拼接总高（px）：高度上限与总字节预算（BGRA）取小，乘法带溢出检查。
+    private func allowedStitchHeight(width: Int) -> Int {
+        var allowed = config.maxScrollHeight
+        guard width > 0 else { return 0 }
+        let (bytesPerRow, rowOverflow) = width.multipliedReportingOverflow(by: 4)
+        guard !rowOverflow else { return 0 }
+        let byteCapHeight = config.maxTotalBytes / max(bytesPerRow, 1)
+        allowed = min(allowed, Int(clamping: byteCapHeight))
+        return max(allowed, 0)
+    }
+
+    /// 首帧预算裁剪：视口本身超预算（超大屏 + 极端缩放的罕见组合）时裁到底部行保留顶部，
+    /// 保证会话仍可交付预算内的结果。
+    private func frameCappedToBudget(_ frame: CGImage) -> CGImage {
+        let allowed = allowedStitchHeight(width: frame.width)
+        guard frame.height > allowed else { return frame }
+        log(
+            "first-frame-capped",
+            metadata: [
+                "pixelSize": "\(frame.width)x\(frame.height)",
+                "allowed": allowed,
+            ]
+        )
+        return frame.cropping(
+            to: CGRect(x: 0, y: frame.height - allowed, width: frame.width, height: allowed)
+        ) ?? frame
     }
 
     private nonisolated func renderMerged(
@@ -624,8 +748,9 @@ final class ScrollCapturer {
     ) -> CGImage? {
         computeQueue.sync {
             let totalHeight = existingHeight + newRows
-            let colorSpace = existing.colorSpace
-                ?? CGColorSpace(name: CGColorSpace.sRGB)
+            // 画布色彩空间固定 sRGB（不取 existing.colorSpace）：灰度等非 RGB 空间
+            // 与 32bpp BGRA 位图组合不被 Quartz 支持，会使上下文创建失败静默丢帧。
+            let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)
                 ?? CGColorSpaceCreateDeviceRGB()
             let bitmapInfo = CGImageAlphaInfo.premultipliedFirst.rawValue
                 | CGBitmapInfo.byteOrder32Little.rawValue

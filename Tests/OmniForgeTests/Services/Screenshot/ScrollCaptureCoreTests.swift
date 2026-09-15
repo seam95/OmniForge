@@ -251,6 +251,177 @@ final class ScrollCaptureCoreTests: XCTestCase {
         XCTAssertFalse(capturer.isActive, "启动期停止后 settle 完成不得复活会话")
     }
 
+    // MARK: - 像素缓冲所有权与行跨度（R02）
+
+    /// 带行尾对齐填充的图（bytesPerRow > width*4）参与滚动条/头部检测不越界、不串行。
+    func test_frozenDetection_survivesPaddedRows() async {
+        // 两帧左区不同（滚动内容），右缘 8 列也不同（模拟滚动条动区）。
+        let counter = CallCounter()
+        let capture: ScrollCapturer.RegionCapture = { _, _ in
+            let stage = counter.next()
+            return stage < 3
+                ? Self.makePaddedImage(width: 60, height: 100, leftColor: .red, scrollbarColor: .gray)
+                : Self.makePaddedImage(width: 60, height: 100, leftColor: .blue, scrollbarColor: .white)
+        }
+        let alignment = Self.makeScriptedAlignment([60])
+        let config = ScrollCapturer.SessionConfig(frozenDetectionEnabled: true)
+
+        let capturer = ScrollCapturer(
+            captureRect: CGRect(x: 0, y: 0, width: 60, height: 100),
+            scaleFactor: 1,
+            config: config,
+            capture: capture,
+            alignment: alignment
+        )
+        await capturer.startSession()
+        await capturer.processImmediateFrame()
+        // 主要验收：填充行跨度下像素访问不崩溃且拼接照常完成。
+        XCTAssertEqual(capturer.stripCount, 2, "行填充图不影响拼接")
+        capturer.cancelSession()
+    }
+
+    /// 非 32bpp 图像走受控 BGRA 转换路径，检测与拼接照常。
+    func test_frozenDetection_convertsNon32bppImages() async {
+        let counter = CallCounter()
+        let capture: ScrollCapturer.RegionCapture = { _, _ in
+            let stage = counter.next()
+            return stage < 3
+                ? Self.makeGray8Image(width: 40, height: 100, white: 0.2)
+                : Self.makeGray8Image(width: 40, height: 100, white: 0.8)
+        }
+        let alignment = Self.makeScriptedAlignment([50])
+
+        let capturer = ScrollCapturer(
+            captureRect: CGRect(x: 0, y: 0, width: 40, height: 100),
+            scaleFactor: 1,
+            config: .init(frozenDetectionEnabled: true),
+            capture: capture,
+            alignment: alignment
+        )
+        await capturer.startSession()
+        await capturer.processImmediateFrame()
+        XCTAssertEqual(capturer.stripCount, 2, "8bpp 灰度图经转换路径仍可拼接")
+        capturer.cancelSession()
+    }
+
+    // MARK: - 高度与字节预算（R09）
+
+    /// 帧间位移跨越高度上限：最后一条只接收预算内行、到上限自动完成并交付。
+    func test_merge_truncatesAtMaxScrollHeightAndAutoStops() async {
+        // 首帧 100 高，maxScrollHeight=150；offset 60（safe 59）截断为 50 → 总高 150 触发自动停止。
+        let counter = CallCounter()
+        let capture: ScrollCapturer.RegionCapture = { _, _ in
+            let stage = counter.next()
+            return stage < 3
+                ? Self.makeSolidCGImage(width: 40, height: 100, color: .red)
+                : Self.makeSolidCGImage(width: 40, height: 100, color: .blue)
+        }
+        let alignment = Self.makeScriptedAlignment([60])
+        let capturer = ScrollCapturer(
+            captureRect: CGRect(x: 0, y: 0, width: 40, height: 100),
+            scaleFactor: 1,
+            config: .init(maxScrollHeight: 150),
+            capture: capture,
+            alignment: alignment
+        )
+        var delivered: NSImage?
+        let done = expectation(description: "budget-auto-stop")
+        capturer.onSessionDone = { image in
+            delivered = image
+            done.fulfill()
+        }
+
+        await capturer.startSession()
+        await capturer.processImmediateFrame()
+
+        XCTAssertFalse(capturer.isActive, "到高度上限应自动完成")
+        XCTAssertEqual(capturer.stripCount, 2, "截断的一条仍计入")
+        await fulfillment(of: [done], timeout: 5)
+        XCTAssertEqual(delivered?.size.height ?? 0, 150, accuracy: 1.0, "100 + 截断 50 = 150")
+    }
+
+    /// 字节预算构成第二道防线：宽图的允许高度由 maxTotalBytes 决定。
+    func test_merge_truncatesAtByteBudget() async {
+        // 40px 宽 → bytesPerRow=160；预算 160×130 → 允许高 130。
+        let counter = CallCounter()
+        let capture: ScrollCapturer.RegionCapture = { _, _ in
+            let stage = counter.next()
+            return stage < 3
+                ? Self.makeSolidCGImage(width: 40, height: 100, color: .red)
+                : Self.makeSolidCGImage(width: 40, height: 100, color: .blue)
+        }
+        let alignment = Self.makeScriptedAlignment([60])
+        let capturer = ScrollCapturer(
+            captureRect: CGRect(x: 0, y: 0, width: 40, height: 100),
+            scaleFactor: 1,
+            config: .init(maxScrollHeight: 30_000, maxTotalBytes: 160 * 130),
+            capture: capture,
+            alignment: alignment
+        )
+        var delivered: NSImage?
+        let done = expectation(description: "byte-budget-auto-stop")
+        capturer.onSessionDone = { image in
+            delivered = image
+            done.fulfill()
+        }
+
+        await capturer.startSession()
+        await capturer.processImmediateFrame()
+
+        XCTAssertFalse(capturer.isActive, "到字节预算应自动完成")
+        await fulfillment(of: [done], timeout: 5)
+        XCTAssertEqual(delivered?.size.height ?? 0, 130, accuracy: 1.0, "100 + 截断 30 = 130")
+    }
+
+    /// 预算已耗尽后再有位移：不合并、不计数、不崩溃。
+    func test_merge_budgetExhaustedSkipsMergeWithoutCounting() async {
+        let counter = CallCounter()
+        let capture: ScrollCapturer.RegionCapture = { _, _ in
+            let stage = counter.next()
+            return Self.makeSolidCGImage(width: 40, height: 100, color: .red)
+        }
+        let alignment = Self.makeScriptedAlignment([60])
+        let capturer = ScrollCapturer(
+            captureRect: CGRect(x: 0, y: 0, width: 40, height: 100),
+            scaleFactor: 1,
+            config: .init(maxScrollHeight: 100),
+            capture: capture,
+            alignment: alignment
+        )
+        await capturer.startSession()
+
+        let merged = await capturer.processImmediateFrame()
+        XCTAssertFalse(merged, "首帧已占满预算，后续位移不得再合并")
+        XCTAssertEqual(capturer.stripCount, 1, "预算耗尽的合并不计数")
+        XCTAssertTrue(capturer.isActive, "预算外单次合并不结束会话（未触达上限合并）")
+        capturer.cancelSession()
+    }
+
+    /// 首帧本身超预算（视口高 > 上限）：裁剪到预算内仍可交付。
+    func test_startSession_capsFirstFrameToBudget() async {
+        let capture: ScrollCapturer.RegionCapture = { _, _ in
+            Self.makeSolidCGImage(width: 40, height: 100, color: .red)
+        }
+        let capturer = ScrollCapturer(
+            captureRect: CGRect(x: 0, y: 0, width: 40, height: 100),
+            scaleFactor: 1,
+            config: .init(maxScrollHeight: 60),
+            capture: capture
+        )
+        var delivered: NSImage?
+        let done = expectation(description: "first-frame-capped")
+        capturer.onSessionDone = { image in
+            delivered = image
+            done.fulfill()
+        }
+
+        await capturer.startSession()
+        XCTAssertEqual(capturer.stitchedPixelSize.height, 60, "首帧裁剪到预算内高度")
+        capturer.stopSession()
+        await fulfillment(of: [done], timeout: 5)
+        XCTAssertEqual(delivered?.size.height ?? 0, 60, accuracy: 1.0)
+    }
+
     // MARK: - 窗口排除列表
 
     func test_scrollCaptureExclusion_includesHostOverlayWindowFirst() {
@@ -367,6 +538,47 @@ final class ScrollCaptureCoreTests: XCTestCase {
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         )!
         context.setFillColor(cgColor)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage()!
+    }
+
+    /// 带行尾对齐填充的图：主区双色（左主色 + 右缘滚动条色），bytesPerRow 故意大于 width*4。
+    private nonisolated static func makePaddedImage(
+        width: Int,
+        height: Int,
+        leftColor: NSColor,
+        scrollbarColor: NSColor
+    ) -> CGImage {
+        let bytesPerRow = width * 4 + 16 // 行尾 16 字节对齐填充
+        let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )!
+        context.setFillColor(leftColor.usingColorSpace(.sRGB)!.cgColor)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        // 右缘 8 列用滚动条色（两帧不同色 → 判为动区，宽度 8 合法）。
+        context.setFillColor(scrollbarColor.usingColorSpace(.sRGB)!.cgColor)
+        context.fill(CGRect(x: width - 8, y: 0, width: 8, height: height))
+        return context.makeImage()!
+    }
+
+    /// 8bpp 灰度图（非 32bpp，触发受控转换路径）。
+    private nonisolated static func makeGray8Image(width: Int, height: Int, white: CGFloat) -> CGImage {
+        let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceGray(),
+            bitmapInfo: CGImageAlphaInfo.none.rawValue
+        )!
+        context.setFillColor(CGColor(gray: white, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: width, height: height))
         return context.makeImage()!
     }
