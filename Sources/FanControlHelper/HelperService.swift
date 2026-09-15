@@ -5,14 +5,30 @@ import OmniForgeSMC
 
 /// XPC 命令实现 — 写入序列全部委托共享库 FanSMCWriter，实例常驻保持测试模式状态。
 final class FanHelperService: NSObject, FanHelperProtocol {
-    private static let writer = FanSMCWriter(smc: SMCClient())
+    static let writer = FanSMCWriter(smc: SMCClient())
+    /// 本连接是否发生过控制命令（速度/模式/归还）；版本查询不算控制会话。
+    private var performedControl = false
+    /// 首个控制命令登记到连接跟踪器（归还未完成时连接死亡 → 补偿归还）。
+    private let onControlActivity: () -> Void
+
+    init(onControlActivity: @escaping () -> Void = {}) {
+        self.onControlActivity = onControlActivity
+    }
 
     static func cleanupAndExit() {
         try? writer.resetAllFansToAuto()
         exit(0)
     }
 
+    private func markControlActivity() {
+        if !performedControl {
+            performedControl = true
+            onControlActivity()
+        }
+    }
+
     func setFanSpeed(fanIndex: Int, rpm: Int, reply: @escaping (Bool, String?) -> Void) {
+        markControlActivity()
         do {
             try Self.writer.setFanSpeed(index: fanIndex, rpm: Double(rpm))
             reply(true, nil)
@@ -22,6 +38,7 @@ final class FanHelperService: NSObject, FanHelperProtocol {
     }
 
     func setFanMode(fanIndex: Int, isAuto: Bool, reply: @escaping (Bool, String?) -> Void) {
+        markControlActivity()
         guard isAuto else {
             // 手动模式必须携带目标转速（走 setFanSpeed）；
             // 拒绝无转速的手动请求，防止风扇被误写停转
@@ -37,6 +54,7 @@ final class FanHelperService: NSObject, FanHelperProtocol {
     }
 
     func resetAllFans(reply: @escaping (Bool, String?) -> Void) {
+        markControlActivity()
         do {
             try Self.writer.resetAllFansToAuto()
             reply(true, nil)
@@ -46,12 +64,19 @@ final class FanHelperService: NSObject, FanHelperProtocol {
     }
 
     func getVersion(reply: @escaping (String) -> Void) {
+        // 版本查询不构成控制会话：连接断开不得触发归还补偿，
+        // 否则会重置其他活跃控制连接的会话状态。
         reply(kFanHelperVersion)
     }
 }
 
 /// 连接准入 — 校验调用方签名信息后才放行命令通道
 final class FanHelperDelegate: NSObject, NSXPCListenerDelegate {
+    /// 曾下发控制命令的活跃连接；最后一个控制连接断开时补偿归还
+    /// （主应用崩溃/被杀时风扇不会停留在手动目标）。
+    private static let controlLock = NSLock()
+    private static var activeControlConnections: Set<NSXPCConnection> = []
+
     func listener(
         _ listener: NSXPCListener,
         shouldAcceptNewConnection newConnection: NSXPCConnection
@@ -60,9 +85,35 @@ final class FanHelperDelegate: NSObject, NSXPCListenerDelegate {
             return false
         }
         newConnection.exportedInterface = NSXPCInterface(with: FanHelperProtocol.self)
-        newConnection.exportedObject = FanHelperService()
+        let service = FanHelperService(onControlActivity: { [weak newConnection] in
+            guard let connection = newConnection else { return }
+            Self.registerControlConnection(connection)
+        })
+        newConnection.exportedObject = service
+        newConnection.invalidationHandler = { [weak newConnection] in
+            guard let connection = newConnection else { return }
+            Self.unregisterControlConnection(connection)
+        }
         newConnection.resume()
         return true
+    }
+
+    private static func registerControlConnection(_ connection: NSXPCConnection) {
+        controlLock.lock()
+        activeControlConnections.insert(connection)
+        controlLock.unlock()
+    }
+
+    /// 控制连接断开：最后一个断开时归还全部风扇（幂等 — 主应用正常退出
+    /// 已先归还过，此路径主要补偿主应用异常死亡）。
+    private static func unregisterControlConnection(_ connection: NSXPCConnection) {
+        controlLock.lock()
+        activeControlConnections.remove(connection)
+        let shouldHandBack = activeControlConnections.isEmpty
+        controlLock.unlock()
+        if shouldHandBack {
+            try? FanHelperService.writer.resetAllFansToAuto()
+        }
     }
 }
 

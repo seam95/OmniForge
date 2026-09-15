@@ -83,13 +83,23 @@ final class AppCompositionRoot {
     }
 
     /// App 退出：先终止 dsh web 子进程（独立无依赖），再优先 KeepAwakeManager.shutdown；
-    /// 无 Manager 时走 Coordinator 恢复。
+    /// 无 Manager 时走 Coordinator 恢复。风扇控制在控时必须完成硬件归还才放行退出。
     func prepareForApplicationTermination() async -> Bool {
         DSHWebManager.shared.shutdown()
         // 便签：失效全部唤起定时器并撤销通知请求（窗口随 teardown 关闭）。
         FeatureRuntime.shared.manager(for: .stickyNotes, as: StickyNoteManager.self)?.teardown()
         // 桌面宠物：窗口消失 + 行为循环停止。
         FeatureRuntime.shared.manager(for: .desktopPet, as: DesktopPetManager.self)?.teardown()
+        // 风扇：退出事务先归还硬件（失败则阻止退出走重试路径，不得宣称安全清理）。
+        if let fanCoordinator = FeatureRuntime.shared.manager(
+            for: .systemMonitor,
+            as: FanControlCoordinator.self
+        ) {
+            let handedBack = await fanCoordinator.shutdownForApplicationTermination()
+            if !handedBack {
+                return false
+            }
+        }
         if let manager = FeatureRuntime.shared.manager(for: .keepAwake, as: KeepAwakeManager.self) {
             await manager.shutdown(reason: .applicationTermination)
             if case .cleanupRequired = manager.state {
