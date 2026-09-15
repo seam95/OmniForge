@@ -385,8 +385,10 @@ final class SystemMonitorManagerTests: XCTestCase {
 
         manager.setPanelDemand(.init(gpu: true))
         manager.setExpandedProcessMetric(.gpu)
-        // 等待采样真正执行完成（hasBaselineQueried 在 sample 返回空后才被查询）。
-        try await waitForBaselineQuery(process)
+        // hasProcessBaseline 在主线程先于采样执行（sampleProcessUsage 前置查询），
+        // sampleCount>=1 即代表查询与采样均已完成；再等一拍让主线程回写 processState。
+        try await waitForPrimingSampleCount(process, atLeast: 1)
+        try await Task.sleep(nanoseconds: 100_000_000) // 等主线程回写完成
         XCTAssertEqual(process.sampleCount, 1)
         XCTAssertTrue(process.hasBaselineQueried)
         // 采样完成后应维持 .loading，而非切到 .loaded（预热态）。
@@ -948,16 +950,17 @@ private func waitForProcessState(
 }
 
 @MainActor
-private func waitForBaselineQuery(
+private func waitForPrimingSampleCount(
     _ sampler: PrimingProcessUsageSampler,
+    atLeast count: Int,
     timeout: TimeInterval = 1.0
 ) async throws {
     let deadline = Date().addingTimeInterval(timeout)
     while Date() < deadline {
-        if sampler.hasBaselineQueried { return }
+        if sampler.sampleCount >= count { return }
         try await Task.sleep(nanoseconds: 20_000_000)
     }
-    XCTFail("Timed out waiting for hasProcessBaseline query")
+    XCTFail("Timed out waiting for priming sample count >= \(count); got \(sampler.sampleCount)")
 }
 
 @MainActor
