@@ -224,6 +224,37 @@ final class ShelfService: ObservableObject {
 
     // MARK: - Lifecycle
 
+    /// 特性卸载终态（审查 R10）：不依赖 availability 的幂等资源回收 —
+    /// 封闭快捷键回调与拖拽监控、失效全部计时器、flush 待写持久化、
+    /// 关闭两类窗口并解除 hosting 持有（SwiftUI 视图强引用本服务、服务持有
+    /// 窗口、窗口持有 hosting 的环只有清 contentViewController 才断开）。
+    /// UserDefaults 中的快捷键真值保留（重装后 recorder 仍显示原绑定）。
+    func teardown() {
+        unregisterHotkey()
+        stopDragMonitor()
+        autoHideTimer?.invalidate()
+        autoHideTimer = nil
+        autoHideFadeTimer?.invalidate()
+        autoHideFadeTimer = nil
+        dockedWatchdog?.invalidate()
+        dockedWatchdog = nil
+        // 挂起的持久化立即落盘（卸载前最后一笔变更不得丢失）。
+        if persistScheduled {
+            persistScheduled = false
+            persistItems()
+        }
+        isPinned = false
+        panel?.orderOut(nil)
+        dockedPanel?.orderOut(nil)
+        panel?.contentViewController = nil
+        dockedPanel?.contentViewController = nil
+        panel?.close()
+        dockedPanel?.close()
+        panel = nil
+        dockedPanel = nil
+        Self.activeForUI = nil
+    }
+
     func syncWithPreferences() {
         syncWithPreferencesCallCount += 1
         reloadAutomaticExclusions()
@@ -1242,12 +1273,13 @@ final class ShelfService: ObservableObject {
     }
 
     private func imageItem(for image: NSImage) -> Item? {
-        let icon = image
         if let png = autoreleasepool(invoking: { () -> Data? in
             guard let tiff = image.tiffRepresentation,
                   let rep = NSBitmapImageRep(data: tiff) else { return nil }
             return rep.representation(using: .png, properties: [:])
         }), let url = storePayloadData(png, fileExtension: "png") {
+            // 条目只持有显示尺寸缩略图（原图已在 payload 文件里，导出按需读取；审查 R18）。
+            let icon = Self.downsampledImageThumbnail(at: url) ?? image
             return Item(payload: .file(url), title: L10n().s.shelfItemImage, icon: icon, isImage: true)
         }
         return nil
@@ -1614,11 +1646,36 @@ final class ShelfService: ObservableObject {
     }
 
     private func thumbnail(forFile url: URL) -> NSImage? {
-        // Lightweight: prefer workspace icon; image files can use NSImage(contentsOf:).
-        if let image = NSImage(contentsOf: url) {
-            return image
+        Self.downsampledImageThumbnail(at: url)
+            ?? NSImage(contentsOf: url)
+    }
+
+    /// 条目缩略图像素上限（显示卡片尺寸远小于原图；审查 R18 的显示尺寸预算）。
+    static let thumbnailMaxPixelSize: CGFloat = 512
+
+    /// 经图像源直接降采样的缩略图（不先完整解码再缩小）：
+    /// GIF 只取首帧（不保留全部动画帧）；失败返回 nil 由调用方降级文件图标。
+    nonisolated static func downsampledImageThumbnail(
+        at url: URL,
+        maxPixel: CGFloat = ShelfService.thumbnailMaxPixelSize
+    ) -> NSImage? {
+        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions) else {
+            return nil
         }
-        return nil
+        let thumbnailOptions = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+        ] as CFDictionary
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions) else {
+            return nil
+        }
+        return NSImage(
+            cgImage: cgImage,
+            size: NSSize(width: cgImage.width, height: cgImage.height)
+        )
     }
 
     // MARK: - Persistence
@@ -1724,7 +1781,7 @@ final class ShelfService: ObservableObject {
             let isImage = imageExtensions.contains(url.pathExtension.lowercased())
             let fallbackIcon = NSWorkspace.shared.icon(forFile: url.path)
             let icon: NSImage
-            if isImage, let image = NSImage(contentsOf: url) {
+            if isImage, let image = Self.downsampledImageThumbnail(at: url) {
                 icon = image
             } else {
                 icon = fallbackIcon

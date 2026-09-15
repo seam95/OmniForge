@@ -417,7 +417,9 @@ struct FeatureFactory {
             runtime.manager(for: .tokenUsage, as: TokenUsageManager.self)?.stop()
             runtime.manager(for: .tokenUsage, as: DeepSeekBalanceManager.self)?.stop()
         case .shelf:
-            runtime.manager(for: .shelf, as: ShelfService.self)?.syncWithPreferences()
+            // 卸载终态走显式 teardown（审查 R10）：封闭回调/计时器、关窗并解除
+            // hosting 持有环；sync 只改可见性（hide 仅 orderOut，服务与图片不释放）。
+            runtime.manager(for: .shelf, as: ShelfService.self)?.teardown()
         case .launchAtLogin:
             break
         case .cleaner:
