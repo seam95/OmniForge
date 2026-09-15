@@ -12,7 +12,7 @@ final class TokenResetCelebrationController {
     private var panels: [NSPanel] = []
     private var dismissTask: Task<Void, Never>?
     private var sleepObservers: [NSObjectProtocol] = []
-    private let lifetime: TimeInterval = 9.0
+    private let lifetime: TimeInterval = 6.0
 
     init() {
         registerSleepTeardownObservers()
@@ -92,7 +92,7 @@ final class TokenResetCelebrationController {
         return panel
     }
 
-    /// 庆祝是 ~9 秒的瞬时效果，睡眠/息屏时没人看它 — 立即结束。
+    /// 庆祝是 ~6 秒的瞬时效果，睡眠/息屏时没人看它 — 立即结束。
     /// 同时保证粒子模拟有界：睡眠期间 `TimelineView` 停止走帧，而 Vortex 的每帧
     /// delta 取自墙钟，唤醒后第一帧会把整个睡眠时长灌进模拟，代价见
     /// `makeFireworksSystem()` 中对大 delta 的说明。
@@ -129,8 +129,8 @@ private struct TokenResetCelebrationOverlayView: View {
     @State private var fireworksShown = true
     /// 由本视图私有持有，绝不共享：见 `makeFireworksSystem()`。
     @State private var fireworks: VortexSystem = makeFireworksSystem()
-    private let fireworksDuration: TimeInterval = 5.0
-    private let toastFadeDelay: TimeInterval = 7.5
+    private let fireworksDuration: TimeInterval = 2.0
+    private let toastFadeDelay: TimeInterval = 5.0
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -209,16 +209,43 @@ private struct TokenResetCelebrationOverlayView: View {
 ///
 /// 每视图私有系统让每次庆祝互相独立，也避免多屏场景（每屏一个 `VortexView`）
 /// 在同一帧内驱动同一模拟对象多次。
+///
+/// 观感设计：火箭带白→黄→橙燃烧色爬升、每帧双份尾迹；爆裂瞬间由白色闪光
+/// 子系统打亮（`circle` 贴图自带 plusLighter 混合，重叠粒子自然发亮），火星
+/// 从白热经亮色衰减到同色系暗色（alpha 归零）消散，避免「彩纸飘落」观感。
 func makeFireworksSystem() -> VortexSystem {
     let sparkles = VortexSystem(
         tags: ["circle"],
         spawnOccasion: .onUpdate,
-        emissionLimit: 1,
+        // 每帧两份尾迹：短烟花窗口内让上升轨迹足够醒目。
+        emissionLimit: 2,
         lifespan: 0.5,
         speed: 0.05,
         angleRange: .degrees(90),
         size: 0.05
     )
+
+    // 爆裂瞬间的白色闪光：单粒子大光球，扩张中淡出，靠 plusLighter 混合
+    // 与火星重叠形成炸开亮斑。birthRate 同样按 emissionLimit × 60 口径
+    // 约束长帧 delta 的迭代次数。
+    let flash = VortexSystem(
+        tags: ["circle"],
+        spawnOccasion: .onDeath,
+        position: [0.5, 1],
+        birthRate: 60,
+        emissionLimit: 1,
+        lifespan: 0.18,
+        speed: 0,
+        colors: .ramp(.white, .white.opacity(0)),
+        size: 0.4,
+        sizeMultiplierAtDeath: 1.6
+    )
+
+    // 爆裂熄灭段：同色系暗色且 alpha 归零，模拟燃烧殆尽而非硬消失。
+    // 注意 ramp 元素是 VortexSystem.Color，不是 SwiftUI.Color。
+    func ember(_ red: Double, _ green: Double, _ blue: Double) -> VortexSystem.Color {
+        VortexSystem.Color(red: red, green: green, blue: blue, opacity: 0)
+    }
 
     let explosion = VortexSystem(
         tags: ["circle"],
@@ -230,33 +257,37 @@ func makeFireworksSystem() -> VortexSystem {
         // 的量同样瞬间，且把最坏情况约束低约三个数量级。
         birthRate: Double(fireworksExplosionEmissionLimit * 60),
         emissionLimit: fireworksExplosionEmissionLimit,
-        speed: 0.5,
+        // 初速更高、颗粒更细：爆裂更「炸」，飘落段更接近火星而非彩纸。
+        speed: 0.85,
         speedVariation: 1,
         angleRange: .degrees(360),
         acceleration: [0, 1.5],
         dampingFactor: 4,
+        // 白热→亮色→同色系暗色（alpha 归零）：模拟燃烧衰减、逐渐熄灭。
         colors: .randomRamp(
-            [.white, .pink, .pink],
-            [.white, .blue, .blue],
-            [.white, .green, .green],
-            [.white, .orange, .orange],
-            [.white, .cyan, .cyan]
+            [.white, .pink, ember(0.45, 0.02, 0.18)],
+            [.white, .blue, ember(0.05, 0.12, 0.40)],
+            [.white, .green, ember(0.02, 0.35, 0.10)],
+            [.white, .orange, ember(0.50, 0.20, 0.00)],
+            [.white, .cyan, ember(0.00, 0.35, 0.45)]
         ),
-        size: 0.15,
-        sizeVariation: 0.1,
+        size: 0.08,
+        sizeVariation: 0.05,
         sizeMultiplierAtDeath: 0
     )
 
     return VortexSystem(
         tags: ["circle"],
-        secondarySystems: [sparkles, explosion],
+        secondarySystems: [sparkles, flash, explosion],
         position: [0.5, 1],
-        birthRate: 2,
+        // 2 秒可见窗口按 0.33s/发铺 6 发，保持单位时间烟花密度。
+        birthRate: 3,
         emissionLimit: 1000,
         speed: 1.5,
         speedVariation: 0.75,
         angleRange: .degrees(60),
         dampingFactor: 2,
+        colors: .ramp(.white, .yellow, .orange),
         size: 0.15,
         stretchFactor: 4
     )
