@@ -349,6 +349,42 @@ final class StickyNoteManagerTests: XCTestCase {
         XCTAssertEqual(presenter.frontedIDs.count, 1)
     }
 
+    // MARK: - 3.2 行高档位（工具栏 Aa 面板）
+
+    func test_create_defaultsToDefaultLineHeight() {
+        let manager = makeManager()
+
+        let note = manager.create()!
+
+        XCTAssertEqual(note.lineHeight, StickyNote.defaultLineHeight)
+    }
+
+    func test_setLineHeight_updatesPersistsAndSyncsWindow() {
+        let manager = makeManager()
+        let note = manager.create()!
+        store.resetRecording()
+        presenter.resetRecording()
+
+        manager.setLineHeight(id: note.id, lineHeight: 1.5)
+
+        XCTAssertEqual(manager.notes[0].lineHeight, 1.5)
+        XCTAssertEqual(store.savedNotes.last?.lineHeight, 1.5)
+        XCTAssertEqual(presenter.shownNotes.last?.lineHeight, 1.5, "行高变化需同步窗口刷新 NSTextView")
+    }
+
+    func test_setLineHeight_sameLevelOrInvalidValue_isNoop() {
+        let manager = makeManager()
+        let note = manager.create()!
+        store.resetRecording()
+
+        manager.setLineHeight(id: note.id, lineHeight: StickyNote.defaultLineHeight)
+        manager.setLineHeight(id: note.id, lineHeight: 1.3)  // 非档位值
+        manager.setLineHeight(id: note.id, lineHeight: 3)    // 非档位值
+
+        XCTAssertEqual(manager.notes[0].lineHeight, StickyNote.defaultLineHeight)
+        XCTAssertEqual(store.saveCallCount, 0, "同档重复设置与非法档位值均不落库")
+    }
+
     func test_complete_overridesCollapseAndHidesWindow() {
         let manager = makeManager()
         let note = manager.create()!

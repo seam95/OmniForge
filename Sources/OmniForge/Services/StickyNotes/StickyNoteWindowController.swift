@@ -8,6 +8,7 @@ struct StickyNoteViewActions {
     let onTogglePin: (UUID) -> Void
     let onToggleCollapse: (UUID) -> Void
     let onSetFontSize: (UUID, Double) -> Void
+    let onSetLineHeight: (UUID, Double) -> Void
     let onComplete: (UUID) -> Void
     let onCreateNew: () -> Void
     let onSetReminder: (UUID, Date) -> Result<Void, StickyNoteReminderError>
@@ -19,6 +20,7 @@ struct StickyNoteViewActions {
         onTogglePin: { _ in },
         onToggleCollapse: { _ in },
         onSetFontSize: { _, _ in },
+        onSetLineHeight: { _, _ in },
         onComplete: { _ in },
         onCreateNew: {},
         onSetReminder: { _, _ in .failure(.noteNotFound) },

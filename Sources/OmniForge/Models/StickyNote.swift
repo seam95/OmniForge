@@ -17,6 +17,10 @@ struct StickyNote: Identifiable, Codable, Equatable {
     static let fontSizeSteps: [Double] = [11, 13, 15, 17, 20, 24]
     /// 正文字号默认档（档位表中的标准正文大小）。
     static let defaultFontSize: Double = 13
+    /// 正文行高倍数可选档位（升序）；1.0 = 系统默认行距，即历史行为。
+    static let lineHeightSteps: [Double] = [1.0, 1.2, 1.5, 1.8, 2.0]
+    /// 正文行高默认档：维持系统默认行距。
+    static let defaultLineHeight: Double = 1.0
 
     let id: UUID
     var content: String
@@ -31,6 +35,8 @@ struct StickyNote: Identifiable, Codable, Equatable {
     var collapsed: Bool
     /// 正文字号（pt）；旧库迁移缺列时由存储层补默认档。
     var fontSize: Double
+    /// 正文行高倍数；渲染换算为行间距（见 StickyNoteTextEditor.applyStyle）。
+    var lineHeight: Double
     /// 提醒时刻；nil = 未设置。
     var reminderAt: Date?
     /// 提醒已触发时刻（防重）；nil = 未触发。
@@ -51,6 +57,7 @@ struct StickyNote: Identifiable, Codable, Equatable {
         completed: Bool = false,
         collapsed: Bool = false,
         fontSize: Double = StickyNote.defaultFontSize,
+        lineHeight: Double = StickyNote.defaultLineHeight,
         reminderAt: Date? = nil,
         reminderFiredAt: Date? = nil,
         createdAt: Date = Date(),
@@ -68,6 +75,7 @@ struct StickyNote: Identifiable, Codable, Equatable {
         self.completed = completed
         self.collapsed = collapsed
         self.fontSize = fontSize
+        self.lineHeight = lineHeight
         self.reminderAt = reminderAt
         self.reminderFiredAt = reminderFiredAt
         self.createdAt = createdAt

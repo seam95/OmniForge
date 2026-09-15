@@ -58,6 +58,12 @@ final class GRDBStickyNoteStore: StickyNoteStore {
                 t.add(column: "fontSize", .double).notNull().defaults(to: StickyNote.defaultFontSize)
             }
         }
+        // v4：正文行高倍数；旧便签补默认档（= 系统默认行距）。
+        migrator.registerMigration("addStickyNoteLineHeight") { db in
+            try db.alter(table: "stickyNote") { t in
+                t.add(column: "lineHeight", .double).notNull().defaults(to: StickyNote.defaultLineHeight)
+            }
+        }
         return migrator
     }
 
@@ -130,6 +136,7 @@ private struct StickyNoteDBRecord: Codable, FetchableRecord, PersistableRecord {
     var completed: Bool
     var collapsed: Bool
     var fontSize: Double
+    var lineHeight: Double
     var reminderAt: Double?
     var reminderFiredAt: Double?
     var createdAt: Double
@@ -150,6 +157,7 @@ private struct StickyNoteDBRecord: Codable, FetchableRecord, PersistableRecord {
         self.completed = note.completed
         self.collapsed = note.collapsed
         self.fontSize = note.fontSize
+        self.lineHeight = note.lineHeight
         self.reminderAt = note.reminderAt?.timeIntervalSince1970
         self.reminderFiredAt = note.reminderFiredAt?.timeIntervalSince1970
         self.createdAt = note.createdAt.timeIntervalSince1970
@@ -174,6 +182,7 @@ private struct StickyNoteDBRecord: Codable, FetchableRecord, PersistableRecord {
             completed: completed,
             collapsed: collapsed,
             fontSize: fontSize,
+            lineHeight: lineHeight,
             reminderAt: reminderAt.map(Date.init(timeIntervalSince1970:)),
             reminderFiredAt: reminderFiredAt.map(Date.init(timeIntervalSince1970:)),
             createdAt: Date(timeIntervalSince1970: createdAt),

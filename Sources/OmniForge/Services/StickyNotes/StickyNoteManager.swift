@@ -179,6 +179,15 @@ final class StickyNoteManager: ObservableObject {
         syncWindow(id: id)
     }
 
+    /// 设置正文行高倍数（工具栏 Aa 档位面板）：仅接受档位表内的值。
+    func setLineHeight(id: UUID, lineHeight: Double) {
+        guard StickyNote.lineHeightSteps.contains(lineHeight),
+              let note = notes.first(where: { $0.id == id }),
+              note.lineHeight != lineHeight else { return }
+        mutate(id) { $0.lineHeight = lineHeight }
+        syncWindow(id: id)
+    }
+
     /// 完成便签：标记完成并隐藏；事项已办，提醒一并撤销。
     /// 空白便签（误新建、未写内容）没有归档价值：完成动作退化为物理删除，
     /// 免去「先完成进归档、再去已完成区删一次」的两步操作。

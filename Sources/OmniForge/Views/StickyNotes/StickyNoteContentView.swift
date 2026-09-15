@@ -220,6 +220,7 @@ struct StickyNoteContentView: View {
             StickyNoteTextEditor(
                 text: note.content,
                 fontSize: note.fontSize,
+                lineHeight: note.lineHeight,
                 palette: palette,
                 colorScheme: colorScheme,
                 onActivate: onActivateForTyping,
@@ -315,31 +316,37 @@ struct StickyNoteContentView: View {
 
     // MARK: - 字号档位面板
 
-    /// 横向档位条：数字以档位字号直接渲染（即所见预览），当前档 accent 高亮，
+    /// 字号 / 行高档位面板：两行档位条（上行字号、下行行高倍数），
+    /// 档位值即按钮文字（字号行以档位字号渲染为所见预览），当前档 accent 高亮，
     /// 点选即关。水平居中 + 顶部留白 34 落在工具栏下方（下拉式展开）：
     /// 面板宽恒小于最小窗宽 240，任何便签宽度下完整可点，Aa 按钮保持可见可再点关闭。
     @ViewBuilder
     private var fontPanel: some View {
         if showsFontPanel {
-            HStack(spacing: 4) {
-                ForEach(StickyNote.fontSizeSteps, id: \.self) { size in
-                    let isCurrent = note.fontSize == size
-                    Button {
-                        actions().onSetFontSize(note.id, size)
-                        showsFontPanel = false
-                    } label: {
-                        Text("\(Int(size))")
-                            .font(.system(size: size, weight: isCurrent ? .semibold : .regular))
-                            .minimumScaleFactor(0.6)
-                            .foregroundStyle(isCurrent ? palette.accent : palette.text(colorScheme: colorScheme).opacity(0.75))
-                            .frame(width: 30, height: 30)
-                            .background(
-                                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                    .fill(isCurrent ? palette.accent.opacity(0.12) : Color.clear)
-                            )
-                            .contentShape(Rectangle())
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 4) {
+                    panelRowLabel(strings.stickyNoteFontSizeLabel)
+                    ForEach(StickyNote.fontSizeSteps, id: \.self) { size in
+                        panelStepButton(
+                            title: "\(Int(size))",
+                            previewFontSize: size,
+                            isCurrent: note.fontSize == size
+                        ) {
+                            actions().onSetFontSize(note.id, size)
+                        }
                     }
-                    .buttonStyle(.plain)
+                }
+                HStack(spacing: 4) {
+                    panelRowLabel(strings.stickyNoteLineHeight)
+                    ForEach(StickyNote.lineHeightSteps, id: \.self) { multiple in
+                        panelStepButton(
+                            title: "\(multiple)",
+                            previewFontSize: nil,
+                            isCurrent: note.lineHeight == multiple
+                        ) {
+                            actions().onSetLineHeight(note.id, multiple)
+                        }
+                    }
                 }
             }
             .padding(8)
@@ -350,6 +357,40 @@ struct StickyNoteContentView: View {
             .zIndex(10)
             .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
         }
+    }
+
+    /// 档位条左端的小标签（「字号」/「行高」），右对齐贴近档位序列。
+    private func panelRowLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 10))
+            .foregroundStyle(palette.text(colorScheme: colorScheme).opacity(0.55))
+            .frame(width: 22, alignment: .trailing)
+    }
+
+    /// 档位按钮：`previewFontSize` 非空时以该字号渲染（字号档所见预览），
+    /// 否则用固定小字号（行高倍数档）。
+    private func panelStepButton(
+        title: String,
+        previewFontSize: CGFloat?,
+        isCurrent: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            action()
+            showsFontPanel = false
+        } label: {
+            Text(title)
+                .font(.system(size: previewFontSize ?? 12, weight: isCurrent ? .semibold : .regular))
+                .minimumScaleFactor(0.6)
+                .foregroundStyle(isCurrent ? palette.accent : palette.text(colorScheme: colorScheme).opacity(0.75))
+                .frame(width: 28, height: 30)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(isCurrent ? palette.accent.opacity(0.12) : Color.clear)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - 缩放热区
@@ -470,6 +511,7 @@ final class StickyNoteActivatableTextView: NSTextView {
 struct StickyNoteTextEditor: NSViewRepresentable {
     let text: String
     let fontSize: CGFloat
+    let lineHeight: Double
     let palette: StickyNotePalette
     let colorScheme: ColorScheme
     let onActivate: () -> Void
@@ -533,6 +575,16 @@ struct StickyNoteTextEditor: NSViewRepresentable {
         textView.font = .systemFont(ofSize: fontSize)
         textView.textColor = nsText
         textView.insertionPointColor = nsText
+        applyLineHeight(to: textView)
+    }
+
+    /// 行高倍数 → 行间距：lineSpacing 只加在行与行之间、首行基线不动，
+    /// 占位符（单行 Text）与光标对齐不受影响；lineHeightMultiple 会推低
+    /// 首行基线，SwiftUI 占位符无法等价复现，故不采用。
+    private func applyLineHeight(to textView: NSTextView) {
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.lineSpacing = CGFloat((lineHeight - 1) * fontSize)
+        textView.defaultParagraphStyle = paragraphStyle
     }
 
     private var textNSColor: NSColor {

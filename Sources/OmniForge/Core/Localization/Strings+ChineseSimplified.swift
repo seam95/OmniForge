@@ -1250,6 +1250,8 @@ extension Strings {
         stickyNoteCollapse: "收起便签",
         stickyNoteExpand: "展开便签",
         stickyNoteFontSize: "调整字号",
+        stickyNoteFontSizeLabel: "字号",
+        stickyNoteLineHeight: "行高",
         stickyNoteComplete: "完成便签",
         stickyNoteReminderQuick15: "15 分钟",
         stickyNoteReminderQuick1h: "1 小时",

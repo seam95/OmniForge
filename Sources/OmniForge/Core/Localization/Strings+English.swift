@@ -1250,6 +1250,8 @@ extension Strings {
         stickyNoteCollapse: "Collapse note",
         stickyNoteExpand: "Expand note",
         stickyNoteFontSize: "Font size",
+        stickyNoteFontSizeLabel: "Size",
+        stickyNoteLineHeight: "Leading",
         stickyNoteComplete: "Complete note",
         stickyNoteReminderQuick15: "15 Minutes",
         stickyNoteReminderQuick1h: "1 Hour",

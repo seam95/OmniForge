@@ -76,6 +76,9 @@ final class StickyNoteWindowRegistry: StickyNoteWindowPresenting {
             onSetFontSize: { id, fontSize in
                 manager.setFontSize(id: id, fontSize: fontSize)
             },
+            onSetLineHeight: { id, lineHeight in
+                manager.setLineHeight(id: id, lineHeight: lineHeight)
+            },
             onComplete: { id in
                 manager.complete(id: id)
             },

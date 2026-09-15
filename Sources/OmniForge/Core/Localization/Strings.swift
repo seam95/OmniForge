@@ -1386,6 +1386,10 @@ struct Strings: Equatable {
     let stickyNoteCollapse: String
     let stickyNoteExpand: String
     let stickyNoteFontSize: String
+    /// 档位面板字号行标签。
+    let stickyNoteFontSizeLabel: String
+    /// 档位面板行高行标签（行高倍数）。
+    let stickyNoteLineHeight: String
     let stickyNoteComplete: String
     // 提醒面板
     let stickyNoteReminderQuick15: String
