@@ -62,9 +62,31 @@ final class DSHWebManager: ObservableObject {
     private let shutdownTimeout: Duration
 
     private var activeProcess: DSHWebProcessControlling?
-    /// 持有管道防释放；readabilityHandler 读块后追加日志。
-    private var outputPipes: [Pipe] = []
+    /// 当前运行的输出资源集合（两路管道 + 幂等清理）；随 activeProcess 同进退。
+    private var outputContext: DSHWebOutputContext?
     private let eventFormatter = DSHWebManager.makeEventFormatter()
+
+    /// 单次运行的输出管道资源：cleanup 幂等（摘 handler + 关父端读句柄）。
+    /// 管道方向契约：子进程接**写端**，父进程从读端采集日志（审查 R04）；
+    /// 启动成功后立即关闭父侧写端，保证子进程退出后读端能收到 EOF。
+    final class DSHWebOutputContext {
+        let pipes: [Pipe]
+        private var cleaned = false
+
+        init(pipes: [Pipe]) {
+            self.pipes = pipes
+        }
+
+        func cleanup() {
+            guard !cleaned else { return }
+            cleaned = true
+            for pipe in pipes {
+                pipe.fileHandleForReading.readabilityHandler = nil
+                try? pipe.fileHandleForWriting.close()
+                try? pipe.fileHandleForReading.close()
+            }
+        }
+    }
 
     init(
         processLauncher: DSHWebProcessLaunching = ZshDSHWebProcessLauncher(),
@@ -115,33 +137,36 @@ final class DSHWebManager: ObservableObject {
         appendEvent("启动 dsh web :\(port)")
         state = .starting
 
-        let outPipe = makeOutputPipe()
-        let errPipe = makeOutputPipe()
+        let outPipe = Pipe()
+        let errPipe = Pipe()
+        let context = DSHWebOutputContext(pipes: [outPipe, errPipe])
+        installLogHandler(on: outPipe, context: context)
+        installLogHandler(on: errPipe, context: context)
         let process: DSHWebProcessControlling
         do {
             process = try processLauncher.launch(
                 command: Self.launchCommand(for: configuredPort),
                 workingDirectory: FileManager.default.homeDirectoryForCurrentUser,
-                stdout: outPipe.fileHandleForReading,
-                stderr: errPipe.fileHandleForReading
+                stdout: outPipe.fileHandleForWriting,
+                stderr: errPipe.fileHandleForWriting
             )
         } catch {
+            // 启动失败同样释放本轮资源（审查 R11：失败重试不得累积）。
+            context.cleanup()
             let reason = stringsProvider().dshWebLaunchFailed
             appendEvent(reason)
             state = .failed(reason)
             return
         }
+        // 启动成功：关闭父侧写端，子进程退出后读端才能收到 EOF。
+        try? outPipe.fileHandleForWriting.close()
+        try? errPipe.fileHandleForWriting.close()
+        replaceOutputContext(with: context)
         activeProcess = process
         process.onExit = { [weak self, weak process] in
             guard let process else { return }
             Task { @MainActor [weak self] in
-                guard self?.activeProcess?.pid == process.pid else { return }
-                self?.activeProcess = nil
-                if self?.state == .running {
-                    self?.appendEvent("dsh web 进程已退出")
-                    self?.state = .stopped
-                    await self?.refreshServices()
-                }
+                await self?.handleNaturalExit(of: process)
             }
         }
 
@@ -150,6 +175,7 @@ final class DSHWebManager: ObservableObject {
         while state == .starting {
             guard process.isRunning else {
                 await terminateProcess(process, timeout: stopTimeout)
+                releaseProcessResources()
                 let reason = stringsProvider().dshWebStartTimeout
                 appendEvent("进程提前退出，服务未就绪")
                 state = .failed(reason)
@@ -164,6 +190,7 @@ final class DSHWebManager: ObservableObject {
             }
             if Date() >= deadline {
                 await terminateProcess(process, timeout: stopTimeout)
+                releaseProcessResources()
                 let reason = stringsProvider().dshWebStartTimeout
                 appendEvent("启动超时，服务未就绪")
                 state = .failed(reason)
@@ -171,6 +198,37 @@ final class DSHWebManager: ObservableObject {
             }
             try? await Task.sleep(for: pollInterval)
         }
+    }
+
+    /// 自然退出：先给尾日志一个有界排空窗口（崩溃信息常在 EOF 前的尾部），
+    /// 再清理本轮资源、迁移状态；期间新一轮启动已替换上下文则按代次放弃。
+    private func handleNaturalExit(of process: DSHWebProcessControlling) async {
+        guard activeProcess === process else { return }
+        let context = outputContext
+        activeProcess = nil
+        let wasRunning = state == .running
+        try? await Task.sleep(for: .milliseconds(300))
+        // 新一轮启动已换装上下文（旧资源已在换装时清理）→ 按代次放弃，不动新资源。
+        guard outputContext === context else { return }
+        releaseProcessResources()
+        if wasRunning {
+            appendEvent("dsh web 进程已退出")
+            state = .stopped
+            await refreshServices()
+        }
+    }
+
+    /// 释放当前进程与输出资源（幂等；停止/失败/退出各路径共用）。
+    private func releaseProcessResources() {
+        activeProcess = nil
+        outputContext?.cleanup()
+        outputContext = nil
+    }
+
+    /// 换装新运行上下文：先清理未释放的旧上下文（防异常路径遗留）。
+    private func replaceOutputContext(with context: DSHWebOutputContext) {
+        outputContext?.cleanup()
+        outputContext = context
     }
 
     // MARK: - 停止
@@ -181,7 +239,7 @@ final class DSHWebManager: ObservableObject {
         guard state == .running, let process = activeProcess else { return }
         state = .stopping
         await terminateProcess(process, timeout: stopTimeout)
-        activeProcess = nil
+        releaseProcessResources()
         appendEvent("服务已停止")
         state = .stopped
         await refreshServices()
@@ -281,7 +339,7 @@ final class DSHWebManager: ObservableObject {
             semaphore.signal()
         }
         _ = semaphore.wait(timeout: .now() + seconds(shutdownTimeout))
-        activeProcess = nil
+        releaseProcessResources()
         appendEvent("服务已停止")
         state = .stopped
     }
@@ -356,24 +414,24 @@ final class DSHWebManager: ObservableObject {
 
     // MARK: - 输出采集
 
-    /// 创建子进程 stdout/stderr 管道：逐块读取，追加到日志缓冲（MainActor）。
-    private func makeOutputPipe() -> Pipe {
-        let pipe = Pipe()
-        let handle = pipe.fileHandleForReading
-        handle.readabilityHandler = { [weak self] handle in
+    /// 在管道读端装日志采集 handler：父进程从**读端**逐块采集，追加到日志缓冲（MainActor）。
+    /// 归属上下文的资源清理统一由 DSHWebOutputContext.cleanup 负责；
+    /// 清理后晚到的旧日志按代次（上下文同一性）丢弃。
+    private func installLogHandler(on pipe: Pipe, context: DSHWebOutputContext) {
+        pipe.fileHandleForReading.readabilityHandler = { [weak self, weak context] handle in
             let data = handle.availableData
             guard !data.isEmpty else {
                 handle.readabilityHandler = nil
                 return
             }
+            guard let context else { return }
             if let text = String(data: data, encoding: .utf8) {
                 Task { @MainActor [weak self] in
-                    self?.appendLog(text)
+                    guard let self, self.outputContext === context else { return }
+                    self.appendLog(text)
                 }
             }
         }
-        outputPipes.append(pipe)
-        return pipe
     }
 
     /// 子进程原始输出原样追加（无时间戳）。

@@ -355,4 +355,107 @@ final class DSHWebManagerTests: XCTestCase {
 
         XCTAssertTrue(manager.logLines.isEmpty)
     }
+
+    // MARK: - 真实子进程集成（审查 R04/R11）
+
+    /// 测试用真实启动器：忽略 manager 生成的命令，执行注入脚本，
+    /// 但**原样使用**传入的 stdout/stderr 句柄——管道方向的真实验证点。
+    private final class RealScriptLauncher: DSHWebProcessLaunching {
+        let script: String
+        init(script: String) {
+            self.script = script
+        }
+
+        func launch(
+            command: String,
+            workingDirectory: URL,
+            stdout: FileHandle?,
+            stderr: FileHandle?
+        ) throws -> DSHWebProcessControlling {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+            process.arguments = ["-c", script]
+            process.currentDirectoryURL = workingDirectory
+            process.standardOutput = stdout
+            process.standardError = stderr
+            try process.run()
+            return ProcessBackedDSHWebProcess(process: process)
+        }
+    }
+
+    /// 真实子进程的 stdout/stderr 必须都能进入日志（R04：曾把管道读端接到子进程，
+    /// 子进程写入会得到 Bad file descriptor，两路日志全部丢失）。
+    func test_realProcessOutput_reachesLogFromBothStreams() async throws {
+        let realManager = DSHWebManager(
+            processLauncher: RealScriptLauncher(
+                script: "echo r04-out-marker-中文; echo r04-err-marker 1>&2; sleep 3"
+            ),
+            portProbe: probe,
+            browserOpener: browser,
+            serviceDiscoverer: serviceDiscoverer,
+            serviceSignaler: signaler,
+            userDefaults: userDefaults,
+            stringsProvider: { [strings] in strings },
+            pollInterval: .milliseconds(20),
+            readyTimeout: .milliseconds(300),
+            stopTimeout: .milliseconds(500),
+            shutdownTimeout: .milliseconds(100)
+        )
+        probe.results = [false]
+
+        await realManager.start()
+        guard case .failed = realManager.state else {
+            return XCTFail("端口恒关闭应走就绪超时，实际 \(realManager.state)")
+        }
+
+        // readabilityHandler 异步采集：轮询等待两路 marker 进入日志。
+        for _ in 0..<100 where !(realManager.logLines.contains { $0.contains("r04-out-marker-中文") }
+            && realManager.logLines.contains { $0.contains("r04-err-marker") }) {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertTrue(
+            realManager.logLines.contains { $0.contains("r04-out-marker-中文") },
+            "stdout 必须进入日志（写端方向）"
+        )
+        XCTAssertTrue(
+            realManager.logLines.contains { $0.contains("r04-err-marker") },
+            "stderr 必须进入日志（写端方向）"
+        )
+    }
+
+    /// 多轮「启动失败重试」后父进程 FD 数保持稳定（R11：管道曾只增不减）。
+    func test_repeatedFailedStarts_doNotLeakFileDescriptors() async throws {
+        let realManager = DSHWebManager(
+            processLauncher: RealScriptLauncher(script: "sleep 1"),
+            portProbe: probe,
+            browserOpener: browser,
+            serviceDiscoverer: serviceDiscoverer,
+            serviceSignaler: signaler,
+            userDefaults: userDefaults,
+            stringsProvider: { [strings] in strings },
+            pollInterval: .milliseconds(10),
+            readyTimeout: .milliseconds(50),
+            stopTimeout: .milliseconds(200),
+            shutdownTimeout: .milliseconds(100)
+        )
+        probe.results = [false]
+
+        func openFDCount() -> Int {
+            (try? FileManager.default.contentsOfDirectory(atPath: "/dev/fd").count) ?? -1
+        }
+
+        // 预热两轮后开始测量。
+        await realManager.start()
+        await realManager.start()
+        let baseline = openFDCount()
+
+        for _ in 0..<6 {
+            await realManager.start()
+        }
+
+        // 等待尾日志排空窗口（自然退出路径的 300ms）与 handler 摘除落地。
+        try await Task.sleep(nanoseconds: 600_000_000)
+        let after = openFDCount()
+        XCTAssertLessThanOrEqual(after, baseline + 2, "失败重试不得持续累积 FD：基线 \(baseline) → \(after)")
+    }
 }
