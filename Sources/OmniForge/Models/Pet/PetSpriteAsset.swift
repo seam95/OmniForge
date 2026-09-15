@@ -104,6 +104,10 @@ enum PetAssetError: Error, Equatable, LocalizedError {
     case emptyFrames(animation: String)
     case invalidFrameRange(animation: String, raw: String)
     case frameOutOfBounds(animation: String, index: Int, cellCount: Int)
+    /// 网格乘法溢出或超出图集规模预算（格数/像素边长）。
+    case gridTooLarge(columns: Int, rows: Int)
+    /// 帧总数（含重复区间展开）超出预算。
+    case tooManyFrames(animation: String, count: Int, budget: Int)
 
     var errorDescription: String? {
         switch self {
@@ -121,11 +125,22 @@ enum PetAssetError: Error, Equatable, LocalizedError {
             return "动画「\(animation)」帧区间非法：\(raw)"
         case .frameOutOfBounds(let animation, let index, let cellCount):
             return "动画「\(animation)」帧序号 \(index) 超出图集范围（共 \(cellCount) 格）"
+        case .gridTooLarge(let columns, let rows):
+            return "宠物图集网格 \(columns)×\(rows) 溢出或超出规模预算"
+        case .tooManyFrames(let animation, let count, let budget):
+            return "动画「\(animation)」帧总数 \(count) 超出预算 \(budget)"
         }
     }
 }
 
 extension PetSpriteAsset {
+    /// 图集规模预算：格数上限（真实图集 8×11=88，宽松覆盖任意第三方素材）。
+    static let maxAtlasCellCount = 1_000_000
+    /// 图集单边像素上限。
+    static let maxAtlasPixelSide = 32_768
+    /// 全部动画（含 look 展开）帧总数预算：限制解码期展开的内存规模。
+    static let maxTotalFrameCount = 16_384
+
     /// 从 JSON 数据解码。
     /// 帧区间写法支持 `"3"`（单帧）与 `"0-3"`（闭区间）；图集序号越界即报错。
     static func decode(from data: Data) throws -> PetSpriteAsset {
@@ -164,16 +179,29 @@ extension PetSpriteAsset {
             throw PetAssetError.missingField("grid.columns/rows/cellSize")
         }
 
+        // 网格算术预算：乘法溢出与规模上限都在任何区间展开之前完成，
+        // 损坏资产（如 Int.max 网格）在此快速失败，不会升级为 trap 或内存耗尽。
+        let (cellCount, cellOverflow) = resolvedGrid.columns.multipliedReportingOverflow(by: resolvedGrid.rows)
+        let (atlasWidth, widthOverflow) = resolvedGrid.columns.multipliedReportingOverflow(by: resolvedGrid.cellWidth)
+        let (atlasHeight, heightOverflow) = resolvedGrid.rows.multipliedReportingOverflow(by: resolvedGrid.cellHeight)
+        guard !cellOverflow, !widthOverflow, !heightOverflow,
+              cellCount <= maxAtlasCellCount,
+              atlasWidth <= maxAtlasPixelSide, atlasHeight <= maxAtlasPixelSide else {
+            throw PetAssetError.gridTooLarge(columns: resolvedGrid.columns, rows: resolvedGrid.rows)
+        }
+
+        // 帧数预算池：look 与普通动画共用（展开前按段统计扣减，不先展开再验证）。
+        var frameBudget = maxTotalFrameCount
+
         // look 声明单独解析：数量必须恰好 16 且帧号全部合法，否则忽略整组
         // 看向能力（不影响其他动画加载）。它不进 animations，避免参与通用兜底。
         var lookFrames: [Int?]?
-        if let lookRaw = animations.first(where: { $0.id == PetAnimationID.look }) {
-            if let frames = lookRaw.frames,
-               let indices = try? parseFrames(frames, animation: lookRaw.id),
-               indices.count == PetLookOverlay.directionCount,
-               indices.allSatisfy({ $0 >= 0 && $0 < resolvedGrid.cellCount }) {
-                lookFrames = indices
-            }
+        if let lookRaw = animations.first(where: { $0.id == PetAnimationID.look }),
+           let frames = lookRaw.frames,
+           let spans = try? parseFrameSpans(frames, animation: lookRaw.id),
+           let indices = try? expandSpans(spans, animation: lookRaw.id, cellCount: cellCount, budget: &frameBudget),
+           indices.count == PetLookOverlay.directionCount {
+            lookFrames = indices
         }
 
         let resolvedAnimations = try animations
@@ -182,16 +210,15 @@ extension PetSpriteAsset {
             guard let frames = animation.frames else {
                 throw PetAssetError.missingField("animations[].frames")
             }
-            let indices = try parseFrames(frames, animation: animation.id)
+            let spans = try parseFrameSpans(frames, animation: animation.id)
+            let indices = try expandSpans(
+                spans,
+                animation: animation.id,
+                cellCount: cellCount,
+                budget: &frameBudget
+            )
             guard !indices.isEmpty else {
                 throw PetAssetError.emptyFrames(animation: animation.id)
-            }
-            for index in indices where index < 0 || index >= resolvedGrid.cellCount {
-                throw PetAssetError.frameOutOfBounds(
-                    animation: animation.id,
-                    index: index,
-                    cellCount: resolvedGrid.cellCount
-                )
             }
             return Animation(
                 id: animation.id,
@@ -212,9 +239,15 @@ extension PetSpriteAsset {
         )
     }
 
-    /// 解析帧区间字符串：`"3"` 或 `"0-3"`（闭区间，支持多段以逗号分隔）。
-    private static func parseFrames(_ raw: String, animation: String) throws -> [Int] {
-        var result: [Int] = []
+    /// 帧区间段（未展开）：单帧或闭区间。词法解析阶段不展开，先做预算与范围校验。
+    private enum FrameSpan {
+        case single(Int)
+        case range(ClosedRange<Int>)
+    }
+
+    /// 解析帧区间字符串：`"3"` 或 `"0-3"`（闭区间，支持多段以逗号分隔），只产出段，不展开。
+    private static func parseFrameSpans(_ raw: String, animation: String) throws -> [FrameSpan] {
+        var spans: [FrameSpan] = []
         for segment in raw.split(separator: ",") {
             let trimmed = segment.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty else { continue }
@@ -224,17 +257,66 @@ extension PetSpriteAsset {
                 guard let value = Int(parts[0]) else {
                     throw PetAssetError.invalidFrameRange(animation: animation, raw: trimmed)
                 }
-                result.append(value)
+                spans.append(.single(value))
             case 2:
                 guard let lower = Int(parts[0]), let upper = Int(parts[1]), lower <= upper else {
                     throw PetAssetError.invalidFrameRange(animation: animation, raw: trimmed)
                 }
-                result.append(contentsOf: lower...upper)
+                spans.append(.range(lower...upper))
             default:
                 throw PetAssetError.invalidFrameRange(animation: animation, raw: trimmed)
             }
         }
-        return result
+        return spans
+    }
+
+    /// 展开前的双重校验：帧号范围 + 帧总数预算（重复区间同样计入），通过后才生成帧序列。
+    private static func expandSpans(
+        _ spans: [FrameSpan],
+        animation: String,
+        cellCount: Int,
+        budget: inout Int
+    ) throws -> [Int] {
+        var totalCount = 0
+        for span in spans {
+            let spanCount: Int
+            switch span {
+            case .single: spanCount = 1
+            case .range(let range):
+                // 区间长度 = upper-lower+1；差值已达 Int.max 时真实长度无法表示，
+                // 用 Int.max 充当「至少 Int.max」（预算判断不受影响），避免 ClosedRange.count 的溢出 trap。
+                let width = range.upperBound - range.lowerBound
+                spanCount = width == Int.max ? Int.max : width + 1
+            }
+            let (summed, overflow) = totalCount.addingReportingOverflow(spanCount)
+            guard !overflow, summed <= budget else {
+                throw PetAssetError.tooManyFrames(animation: animation, count: summed, budget: budget)
+            }
+            totalCount = summed
+        }
+
+        var frames: [Int] = []
+        frames.reserveCapacity(totalCount)
+        for span in spans {
+            switch span {
+            case .single(let index):
+                guard index >= 0, index < cellCount else {
+                    throw PetAssetError.frameOutOfBounds(animation: animation, index: index, cellCount: cellCount)
+                }
+                frames.append(index)
+            case .range(let range):
+                guard range.lowerBound >= 0, range.upperBound < cellCount else {
+                    throw PetAssetError.frameOutOfBounds(
+                        animation: animation,
+                        index: range.upperBound,
+                        cellCount: cellCount
+                    )
+                }
+                frames.append(contentsOf: range)
+            }
+        }
+        budget -= totalCount
+        return frames
     }
 }
 

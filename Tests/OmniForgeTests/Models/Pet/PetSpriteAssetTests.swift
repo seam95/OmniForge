@@ -214,4 +214,93 @@ final class PetSpriteAssetTests: XCTestCase {
 
         XCTAssertFalse(asset.hasLookFrames, "含越界帧的 look 声明整体忽略")
     }
+
+    // MARK: - 网格与帧数预算（R03：先校验后展开，损坏资产快速失败）
+
+    /// 网格乘法溢出（Int.max 列 × 2 行）在区间展开之前被拒绝，不 trap、不大分配。
+    func test_decodeRejectsGridMultiplicationOverflow() {
+        let json = makeJSON(grid: #"{ "columns": 9223372036854775807, "rows": 2, "cellSize": [32, 32] }"#)
+
+        XCTAssertThrowsError(try PetSpriteAsset.decode(from: json)) { error in
+            guard case .gridTooLarge = error as? PetAssetError else {
+                return XCTFail("期望 gridTooLarge，实际 \(error)")
+            }
+        }
+    }
+
+    /// 图集像素边长超预算同样快速失败。
+    func test_decodeRejectsAtlasPixelSideOverBudget() {
+        let json = makeJSON(grid: #"{ "columns": 4, "rows": 4, "cellSize": [100000, 100000] }"#)
+
+        XCTAssertThrowsError(try PetSpriteAsset.decode(from: json)) { error in
+            guard case .gridTooLarge = error as? PetAssetError else {
+                return XCTFail("期望 gridTooLarge，实际 \(error)")
+            }
+        }
+    }
+
+    /// 超大闭区间（0…Int.max）在展开前被帧数预算拦截。
+    func test_decodeRejectsHugeFrameRangeBeforeExpansion() {
+        let json = makeJSON(
+            animations: #"[{ "id": "greedy", "frames": "0-9223372036854775807" }]"#
+        )
+
+        XCTAssertThrowsError(try PetSpriteAsset.decode(from: json)) { error in
+            guard case .tooManyFrames = error as? PetAssetError else {
+                return XCTFail("期望 tooManyFrames，实际 \(error)")
+            }
+        }
+    }
+
+    /// 累积过多的小区间同样计入预算（多段相加超过上限）。
+    func test_decodeRejectsCumulativeFramesOverBudget() {
+        // 每段 0-71（72 帧）× 228 段 = 16416 > 16384 预算。
+        let segments = Array(repeating: "0-71", count: 228).joined(separator: ",")
+        let json = makeJSON(animations: #"[{ "id": "many", "frames": "\#(segments)" }]"#)
+
+        XCTAssertThrowsError(try PetSpriteAsset.decode(from: json)) { error in
+            guard case .tooManyFrames = error as? PetAssetError else {
+                return XCTFail("期望 tooManyFrames，实际 \(error)")
+            }
+        }
+    }
+
+    /// 合法边界：帧号恰好到 cellCount-1 仍然通过。
+    func test_decodeAcceptsBoundaryFrameIndex() throws {
+        let json = makeJSON(animations: #"[{ "id": "edge", "frames": "71" }]"#)
+        let asset = try PetSpriteAsset.decode(from: json)
+
+        XCTAssertEqual(asset.animations[0].frames, [71])
+    }
+
+    /// look 声明含超大区间：忽略 look 能力即可，不得让整个资产解码失败。
+    func test_decodeLookWithHugeRangeIsIgnoredNotFatal() throws {
+        let json = makeJSON(
+            animations: #"[{ "id": "idle", "frames": "0-3" }, { "id": "look", "frames": "0-9223372036854775807" }]"#
+        )
+        let asset = try PetSpriteAsset.decode(from: json)
+
+        XCTAssertFalse(asset.hasLookFrames, "超大区间 look 整组忽略")
+        XCTAssertNotNil(asset.animation(id: PetAnimationID.idle), "其他动画不受影响")
+    }
+
+    /// 预算被普通动画耗尽后，后续动画超预算报错（预算跨动画共享）。
+    func test_decodeFrameBudgetSharedAcrossAnimations() {
+        // 动画一吃掉 227×72=16344 帧预算，动画二再要 72 帧 → 超 16384。
+        let bigFrames = Array(repeating: "0-71", count: 227).joined(separator: ",")
+        let json = makeJSON(
+            animations: #"""
+            [
+              { "id": "big", "frames": "\#(bigFrames)" },
+              { "id": "late", "frames": "0-71" }
+            ]
+            """#
+        )
+
+        XCTAssertThrowsError(try PetSpriteAsset.decode(from: json)) { error in
+            guard case .tooManyFrames = error as? PetAssetError else {
+                return XCTFail("期望 tooManyFrames，实际 \(error)")
+            }
+        }
+    }
 }
