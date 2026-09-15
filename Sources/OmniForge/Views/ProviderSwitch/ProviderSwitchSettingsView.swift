@@ -545,18 +545,22 @@ struct ProviderSwitchSettingsView: View {
     }
 
     private func activate(_ profile: ProviderProfile) {
-        do {
-            present(outcome: try manager.switchTo(profile: profile))
-        } catch {
-            showToast(String(format: strings.providerSwitchFailedFormat, error.localizedDescription))
+        Task { @MainActor in
+            do {
+                present(outcome: try await manager.switchTo(profile: profile))
+            } catch {
+                showToast(String(format: strings.providerSwitchFailedFormat, error.localizedDescription))
+            }
         }
     }
 
     private func activateOfficial(tool: ProviderTool) {
-        do {
-            present(outcome: try manager.switchToOfficial(tool: tool))
-        } catch {
-            showToast(String(format: strings.providerSwitchFailedFormat, error.localizedDescription))
+        Task { @MainActor in
+            do {
+                present(outcome: try await manager.switchToOfficial(tool: tool))
+            } catch {
+                showToast(String(format: strings.providerSwitchFailedFormat, error.localizedDescription))
+            }
         }
     }
 

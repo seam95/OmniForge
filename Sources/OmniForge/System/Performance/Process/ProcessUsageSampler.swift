@@ -319,21 +319,16 @@ final class ProcessUsageSampler: ProcessUsageSampling {
 }
 
 enum Shell {
+    /// 有界同步执行：并发排空两路管道（防 ps 输出超管道容量的等待环死锁），
+    /// 超时 SIGKILL 回收。启动失败返回 (-1, "")。
     @discardableResult
     static func run(_ path: String, _ args: [String]) -> (status: Int32, output: String) {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: path)
-        proc.arguments = args
-        let out = Pipe()
-        proc.standardOutput = out
-        proc.standardError = Pipe()
-        do {
-            try proc.run()
-            proc.waitUntilExit()
-        } catch {
+        guard let result = BoundedProcessRunner.runBlocking(
+            executable: URL(fileURLWithPath: path),
+            arguments: args
+        ) else {
             return (-1, "")
         }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        return (proc.terminationStatus, String(data: data, encoding: .utf8) ?? "")
+        return (result.exitCode, result.stdout)
     }
 }

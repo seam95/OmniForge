@@ -136,7 +136,7 @@ final class ProviderSwitchManagerTests: XCTestCase {
     private final class StubDetector: RunningProcessDetecting {
         var runningTools: Set<ProviderTool> = []
 
-        func isRunning(tool: ProviderTool) -> Bool {
+        func isRunning(tool: ProviderTool) async -> Bool {
             runningTools.contains(tool)
         }
     }
@@ -254,13 +254,13 @@ final class ProviderSwitchManagerTests: XCTestCase {
 
     // MARK: - 切换
 
-    func test_switchTo_snapshotsThenAppliesAndRefreshes() throws {
+    func test_switchTo_snapshotsThenAppliesAndRefreshes() async throws {
         let profile = seedProfile()
         claudeStore.env = ["ANTHROPIC_BASE_URL": "https://old.example"]
         manager.refresh()
         XCTAssertEqual(manager.active(tool: .claudeCode), .unmanaged(summary: "https://old.example"))
 
-        let outcome = try manager.switchTo(profile: profile)
+        let outcome = try await manager.switchTo(profile: profile)
         XCTAssertEqual(backupStore.snapshots, [.claudeCode], "写入前先快照")
         XCTAssertEqual(claudeStore.applied.map(\.id), ["glm"])
         XCTAssertEqual(outcome.target, .profile(name: "GLM"))
@@ -268,41 +268,51 @@ final class ProviderSwitchManagerTests: XCTestCase {
         XCTAssertEqual(manager.active(tool: .claudeCode), .profile(profileID: "glm"))
     }
 
-    func test_switchTo_codexRoutesToCodexStore() throws {
+    func test_switchTo_codexRoutesToCodexStore() async throws {
         let profile = seedProfile(name: "GLM", tool: .codex)
-        let outcome = try manager.switchTo(profile: profile)
+        let outcome = try await manager.switchTo(profile: profile)
         XCTAssertEqual(backupStore.snapshots, [.codex])
         XCTAssertEqual(codexStore.applied.map(\.id), ["glm"])
         XCTAssertEqual(outcome.tool, .codex)
     }
 
-    func test_switchTo_reportsRunningProcess() throws {
+    func test_switchTo_reportsRunningProcess() async throws {
         detector.runningTools = [.claudeCode]
         let profile = seedProfile()
-        let outcome = try manager.switchTo(profile: profile)
+        let outcome = try await manager.switchTo(profile: profile)
         XCTAssertTrue(outcome.cliRunning, "检测到运行中进程 → 提示需重启")
     }
 
-    func test_switchTo_writeFailureRollsBackFromSnapshot() throws {
+    func test_switchTo_writeFailureRollsBackFromSnapshot() async throws {
         let profile = seedProfile()
         claudeStore.applyError = ProviderConfigFileError.writeFailed(path: "settings.json")
-        XCTAssertThrowsError(try manager.switchTo(profile: profile)) { error in
-            XCTAssertEqual(error as? ProviderConfigFileError, .writeFailed(path: "settings.json"))
+        do {
+            _ = try await manager.switchTo(profile: profile)
+            XCTFail("写入失败必须抛错")
+        } catch let error as ProviderConfigFileError {
+            XCTAssertEqual(error, .writeFailed(path: "settings.json"))
+        } catch {
+            XCTFail("期望 ProviderConfigFileError，实际 \(error)")
         }
         XCTAssertEqual(backupStore.restored.count, 1, "写入失败自动从快照回滚")
         XCTAssertEqual(backupStore.restored[0].tool, .claudeCode)
     }
 
-    func test_switchTo_rollbackFailureThrowsRollbackFailed() throws {
+    func test_switchTo_rollbackFailureThrowsRollbackFailed() async throws {
         let profile = seedProfile()
         claudeStore.applyError = ProviderConfigFileError.writeFailed(path: "settings.json")
         backupStore.failRestore = true
-        XCTAssertThrowsError(try manager.switchTo(profile: profile)) { error in
-            XCTAssertEqual(error as? ProviderSwitchManagerError, .rollbackFailed(tool: .claudeCode))
+        do {
+            _ = try await manager.switchTo(profile: profile)
+            XCTFail("回滚失败必须抛错")
+        } catch let error as ProviderSwitchManagerError {
+            XCTAssertEqual(error, .rollbackFailed(tool: .claudeCode))
+        } catch {
+            XCTFail("期望 rollbackFailed，实际 \(error)")
         }
     }
 
-    func test_switchToOfficial_clearsOverrides() throws {
+    func test_switchToOfficial_clearsOverrides() async throws {
         seedProfile()
         claudeStore.env = [
             "ANTHROPIC_BASE_URL": "https://open.bigmodel.cn/api/anthropic",
@@ -311,17 +321,17 @@ final class ProviderSwitchManagerTests: XCTestCase {
         manager.refresh()
         XCTAssertEqual(manager.active(tool: .claudeCode), .profile(profileID: "glm"))
 
-        let outcome = try manager.switchToOfficial(tool: .claudeCode)
+        let outcome = try await manager.switchToOfficial(tool: .claudeCode)
         XCTAssertEqual(claudeStore.cleared, 1)
         XCTAssertEqual(outcome.target, .official)
         XCTAssertEqual(manager.active(tool: .claudeCode), .official)
     }
 
-    func test_switchToOfficial_codexClears() throws {
+    func test_switchToOfficial_codexClears() async throws {
         _ = seedProfile(name: "GLM", tool: .codex)
         codexStore.active = ("glm", "https://open.bigmodel.cn/api/paas/v4", "sk-x")
         manager.refresh()
-        let outcome = try manager.switchToOfficial(tool: .codex)
+        let outcome = try await manager.switchToOfficial(tool: .codex)
         XCTAssertEqual(codexStore.cleared, 1)
         XCTAssertEqual(outcome.target, .official)
         XCTAssertEqual(manager.active(tool: .codex), .official)

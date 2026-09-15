@@ -140,8 +140,9 @@ final class ProviderSwitchManager: ObservableObject {
     // MARK: - 切换（字段所有权合并 + 快照 + 失败回滚）
 
     /// 设为激活：快照 → 合并写入 → 失败自动回滚 → 刷新。
+    /// CLI 运行检测经有界进程边界异步执行，不再阻塞主线程。
     @discardableResult
-    func switchTo(profile: ProviderProfile) throws -> ProviderSwitchOutcome {
+    func switchTo(profile: ProviderProfile) async throws -> ProviderSwitchOutcome {
         let tool = profile.tool
         let backup = try snapshot(tool: tool)
         do {
@@ -154,12 +155,12 @@ final class ProviderSwitchManager: ObservableObject {
             throw error
         }
         refresh()
-        return ProviderSwitchOutcome(tool: tool, target: .profile(name: profile.name), cliRunning: processDetector.isRunning(tool: tool))
+        return ProviderSwitchOutcome(tool: tool, target: .profile(name: profile.name), cliRunning: await processDetector.isRunning(tool: tool))
     }
 
     /// 切到官方：快照 → 删除 override → 失败自动回滚 → 刷新。
     @discardableResult
-    func switchToOfficial(tool: ProviderTool) throws -> ProviderSwitchOutcome {
+    func switchToOfficial(tool: ProviderTool) async throws -> ProviderSwitchOutcome {
         let backup = try snapshot(tool: tool)
         do {
             switch tool {
@@ -171,7 +172,7 @@ final class ProviderSwitchManager: ObservableObject {
             throw error
         }
         refresh()
-        return ProviderSwitchOutcome(tool: tool, target: .official, cliRunning: processDetector.isRunning(tool: tool))
+        return ProviderSwitchOutcome(tool: tool, target: .official, cliRunning: await processDetector.isRunning(tool: tool))
     }
 
     // MARK: - profile 管理

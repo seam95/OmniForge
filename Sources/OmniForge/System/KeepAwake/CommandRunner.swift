@@ -17,38 +17,23 @@ protocol CommandRunning: AnyObject {
     func run(executable: URL, arguments: [String]) async throws -> CommandResult
 }
 
-/// 基于 Process 的生产实现。
+/// 基于 Process 的生产实现（经有界进程执行边界：并发排空、超时回收、协作取消）。
 final class ProcessCommandRunner: CommandRunning {
     func run(executable: URL, arguments: [String]) async throws -> CommandResult {
         guard executable.isFileURL else {
             throw CommandRunnerError.invalidExecutable(executable.absoluteString)
         }
-
-        return try await withCheckedThrowingContinuation { continuation in
-            do {
-                let process = Process()
-                process.executableURL = executable
-                process.arguments = arguments
-
-                let stdout = Pipe()
-                let stderr = Pipe()
-                process.standardOutput = stdout
-                process.standardError = stderr
-
-                try process.run()
-                process.waitUntilExit()
-
-                let outData = stdout.fileHandleForReading.readDataToEndOfFile()
-                let errData = stderr.fileHandleForReading.readDataToEndOfFile()
-                let result = CommandResult(
-                    terminationStatus: process.terminationStatus,
-                    standardOutput: String(data: outData, encoding: .utf8) ?? "",
-                    standardError: String(data: errData, encoding: .utf8) ?? ""
-                )
-                continuation.resume(returning: result)
-            } catch {
-                continuation.resume(throwing: CommandRunnerError.launchFailed(error.localizedDescription))
-            }
+        do {
+            let output = try await BoundedProcessRunner.run(executable: executable, arguments: arguments)
+            return CommandResult(
+                terminationStatus: output.exitCode,
+                standardOutput: output.stdout,
+                standardError: output.stderr
+            )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw CommandRunnerError.launchFailed(error.localizedDescription)
         }
     }
 }

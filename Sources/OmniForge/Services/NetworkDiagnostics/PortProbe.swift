@@ -195,50 +195,31 @@ final class PortProbe: PortProbing {
 
     // MARK: Live runner
 
+    /// 经有界进程边界执行 lsof：并发排空两路（防大输出等待环），超时 SIGKILL 回收。
     private static func runLsof(arguments: [String]) throws -> (stdout: String, exitCode: Int32, stderr: String) {
-        let process = Process()
         let lsofURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-        if FileManager.default.isExecutableFile(atPath: lsofURL.path) {
-            process.executableURL = lsofURL
-        } else if let path = which("lsof") {
-            process.executableURL = URL(fileURLWithPath: path)
-        } else {
+        guard FileManager.default.isExecutableFile(atPath: lsofURL.path) else {
+            guard let path = which("lsof") else { throw PortProbeError.lsofMissing }
+            return try execute(URL(fileURLWithPath: path), arguments)
+        }
+        return try execute(lsofURL, arguments)
+    }
+
+    private static func execute(_ executable: URL, _ arguments: [String]) throws -> (stdout: String, exitCode: Int32, stderr: String) {
+        guard let result = BoundedProcessRunner.runBlocking(executable: executable, arguments: arguments) else {
             throw PortProbeError.lsofMissing
         }
-        process.arguments = arguments
-
-        let outPipe = Pipe()
-        let errPipe = Pipe()
-        process.standardOutput = outPipe
-        process.standardError = errPipe
-
-        try process.run()
-        process.waitUntilExit()
-
-        let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
-        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
-        let stdout = String(data: outData, encoding: .utf8) ?? ""
-        let stderr = String(data: errData, encoding: .utf8) ?? ""
-        return (stdout, process.terminationStatus, stderr)
+        return (result.stdout, result.exitCode, result.stderr)
     }
 
     private static func which(_ name: String) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-        process.arguments = [name]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        do {
-            try process.run()
-            process.waitUntilExit()
-            guard process.terminationStatus == 0 else { return nil }
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let path = String(data: data, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            return (path?.isEmpty == false) ? path : nil
-        } catch {
+        guard let result = BoundedProcessRunner.runBlocking(
+            executable: URL(fileURLWithPath: "/usr/bin/which"),
+            arguments: [name]
+        ), result.exitCode == 0 else {
             return nil
         }
+        let path = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        return path.isEmpty ? nil : path
     }
 }
