@@ -252,6 +252,52 @@ final class OpencodeUsageCollectorTests: XCTestCase {
         XCTAssertEqual(store.totalTokens(), 120, "数据不变不重复计数")
     }
 
+    // MARK: - 会话计数只计一次（审查 R16）
+
+    /// 同一消息累积增长（120→170）：差分只加 token，会话计数不得再加 1。
+    func test_scan_cumulativeGrowthDoesNotRecountConversation() throws {
+        try createDb(rows: [
+            MessageRow(id: "m1", session: "s1", data: messageData(createdMs: 1_784_502_000_000, completedMs: 1_784_502_000_000, input: 100, output: 20)),
+        ])
+        collector.start()
+        collector.waitForIdle()
+        pumpUntil { self.collector.scanCount == 1 }
+        XCTAssertEqual(store.totalConversations(), 1)
+
+        // 同消息 100→150：第二轮差分 50 只加 token。
+        try updateRow(id: "m1", data: messageData(createdMs: 1_784_502_000_000, completedMs: 1_784_502_000_000, input: 150, output: 20))
+        watcher.simulateChange()
+        collector.waitForIdle()
+        pumpUntil { self.collector.scanCount == 2 }
+
+        XCTAssertEqual(store.totalTokens(), 170, "增量 token 照加")
+        XCTAssertEqual(store.totalConversations(), 1, "同一消息的会话计数只贡献一次")
+
+        // 无变化重扫：计数仍稳定。
+        watcher.simulateChange()
+        collector.waitForIdle()
+        pumpUntil { self.collector.scanCount == 3 }
+        XCTAssertEqual(store.totalConversations(), 1)
+    }
+
+    /// 零 Token 初态（totals 全零）不消耗首次计数资格；后续有效贡献才计 1。
+    func test_scan_zeroInitialThenContributionCountsOnce() throws {
+        try createDb(rows: [
+            MessageRow(id: "m1", session: "s1", data: messageData(createdMs: 1_784_502_000_000, completedMs: 1_784_502_000_000, input: 0, output: 0)),
+        ])
+        collector.start()
+        collector.waitForIdle()
+        pumpUntil { self.collector.scanCount == 1 }
+        XCTAssertEqual(store.totalConversations(), 0, "零增量不计会话")
+
+        try updateRow(id: "m1", data: messageData(createdMs: 1_784_502_000_000, completedMs: 1_784_502_000_000, input: 30, output: 5))
+        watcher.simulateChange()
+        collector.waitForIdle()
+        pumpUntil { self.collector.scanCount == 2 }
+        XCTAssertEqual(store.totalConversations(), 1, "首次有效贡献计 1")
+        XCTAssertEqual(store.totalTokens(), 35)
+    }
+
     // MARK: - fork 复制去重
 
     func test_scan_forkCopyCountedOnce() throws {

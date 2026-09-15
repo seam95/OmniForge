@@ -126,11 +126,14 @@ class OpencodeSchemaCollectorBase: SQLiteUsageCollectorBase {
         if let delta, !Self.isZeroUsage(delta),
            let timestampMs = message.timestampMs,
            let bucketStart = Self.bucketStart(fromMilliseconds: timestampMs) {
+            // 会话计数只在首次有效贡献时 +1（审查 R16）：同一消息后续 totals
+            // 增长的差分只累加 token，不得重复推高对话数。
             scan.aggregator.ingest(
                 usage: delta,
-                conversationDelta: 1,
+                conversationDelta: entry.countedConversation ? 0 : 1,
                 key: UsageBucketKey(provider: provider, model: message.model, bucketStart: bucketStart)
             )
+            entry.countedConversation = true
         }
         entry.lastTotals = totals
         entry.fingerprint = message.fingerprint

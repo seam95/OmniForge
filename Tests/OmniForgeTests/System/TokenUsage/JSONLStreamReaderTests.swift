@@ -39,6 +39,91 @@ final class JSONLStreamReaderTests: XCTestCase {
 
     // MARK: - 增量读
 
+    // MARK: - 分块流式读取（审查 R17）
+
+    /// 流式读取与批量读取语义等价（小文件单块）。
+    func test_forEachLine_matchesBatchRead() throws {
+        let url = try makeFile(name: "eq.jsonl", contents: "a\nb\nc\n")
+
+        var streamed: [String] = []
+        let cursor = JSONLStreamReader.forEachLine(fileURL: url, previous: nil) { line in
+            streamed.append(line)
+        }
+
+        let batch = JSONLStreamReader.read(fileURL: url, previous: nil)
+        XCTAssertEqual(streamed, batch?.lines ?? [])
+        XCTAssertEqual(cursor?.offset, batch?.cursor.offset)
+    }
+
+    /// 跨块边界（1MB+）的行：UTF-8 内容完整、行数正确、游标正确。
+    func test_forEachLine_handlesLinesSpanningChunkBoundaries() throws {
+        // 两行各约 1.2MB 中文（UTF-8 每字 3 字节），均以换行结尾、跨 1MB 块边界。
+        let bigLine = String(repeating: "中文内容行", count: 100_000)  // ≈1.2MB
+        let url = try makeFile(name: "big.jsonl", contents: bigLine + "\n" + bigLine + "\n")
+
+        var lengths: [Int] = []
+        var lines = 0
+        let cursor = JSONLStreamReader.forEachLine(fileURL: url, previous: nil) { line in
+            lines += 1
+            lengths.append(line.utf8.count)
+        }
+
+        XCTAssertEqual(lines, 2, "跨块换行正确分两行")
+        XCTAssertEqual(lengths.reduce(0, +), bigLine.utf8.count * 2, "UTF-8 内容完整")
+        XCTAssertEqual(cursor?.offset, UInt64(bigLine.utf8.count * 2 + 2), "游标停在最后换行后")
+    }
+
+    /// 尾部半行（无换行）回退：游标停在最后完整行之后，半行等下轮。
+    func test_forEachLine_partialTrailingLineRolledBack() throws {
+        let full = "line1\nline2\n"
+        let url = try makeFile(name: "partial.jsonl", contents: full + "half")
+
+        var lines: [String] = []
+        let cursor = JSONLStreamReader.forEachLine(fileURL: url, previous: nil) { line in
+            lines.append(line)
+        }
+
+        XCTAssertEqual(lines, ["line1", "line2"])
+        XCTAssertEqual(cursor?.offset, UInt64(full.utf8.count), "半行不计入游标")
+
+        // 下轮补齐后半行后可读。
+        try append("line3\n", to: url)
+        var followUp: [String] = []
+        _ = JSONLStreamReader.forEachLine(fileURL: url, previous: cursor) { line in
+            followUp.append(line)
+        }
+        XCTAssertEqual(followUp, ["halfline3"])
+    }
+
+    /// 超长行（> maxLineBytes 无换行）：返回 nil，调用方保留旧游标可重试。
+    func test_forEachLine_overlongLineReturnsNil() throws {
+        let junk = Data(count: JSONLStreamReader.maxLineBytes + 1024)
+        let url = directory.appendingPathComponent("overlong.jsonl")
+        try junk.write(to: url)
+
+        var consumed = 0
+        let cursor = JSONLStreamReader.forEachLine(fileURL: url, previous: nil) { _ in
+            consumed += 1
+        }
+
+        XCTAssertNil(cursor, "超长行必须显式失败（不静默跳过）")
+        XCTAssertEqual(consumed, 0)
+    }
+
+    /// 增量语义：游标后续读只拿新增字节。
+    func test_forEachLine_incremental() throws {
+        let url = try makeFile(name: "inc.jsonl", contents: "one\n")
+        let first = JSONLStreamReader.forEachLine(fileURL: url, previous: nil) { _ in }
+
+        try append("two\n", to: url)
+        var lines: [String] = []
+        _ = JSONLStreamReader.forEachLine(fileURL: url, previous: first) { line in
+            lines.append(line)
+        }
+
+        XCTAssertEqual(lines, ["two"], "增量只读新增段")
+    }
+
     func test_firstRead_returnsAllLinesAndCursor() throws {
         let url = try makeFile(name: "a.jsonl", contents: "l1\nl2\n")
         let outcome = try XCTUnwrap(JSONLStreamReader.read(fileURL: url, previous: nil))
