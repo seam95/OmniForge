@@ -7,7 +7,7 @@ enum TokenUsageProviderStatusBuilder {
     /// 行尾状态文本；nil = 尚未拉取该 provider 快照（行内只剩品牌名）。
     ///
     /// - 已配置（正常）：`Pro · ✓ 已登录`（planLabel 可缺省，纯符号 ✓ 无需本地化）；
-    /// - 已配置但凭证过期：`需重新登录`（`LimitError.reauthRequired`）；
+    /// - 已配置但凭证被服务端拒绝（登录态或订阅失效，401/403 不区分根因）：`登录或订阅失效`（`LimitError.reauthRequired`）；
     /// - 未配置：`未登录 · 如何配置`（走 `tokenSettingsProviderStatusFormat` 装配）。
     static func statusText(limits: ProviderUsageLimits?, strings: Strings) -> String? {
         guard let limits else { return nil }
