@@ -204,16 +204,21 @@ final class CodexUsageCollector: UsageCollecting {
                 previous: cursor,
                 fileManager: fileManager
             ) else { continue }
+            // 模型状态跨扫描恢复：turn_context / session_meta 通常在文件头部，增量
+            // 扫描只读游标之后的新行（token_count 不带模型名），不恢复会把整段
+            // 增量归入 unknown 桶。游标里存的是 currentModel 终态（含回退链）。
             var state = FileScanState(
-                model: "",
+                model: cursor?.model ?? "",
                 sessionID: Self.sessionIDFromPath(fileURL),
                 isStreamStart: cursor == nil || outcome.reset
             )
             for line in outcome.lines {
                 processLine(line, decoder: decoder, aggregator: aggregator, seen: &seen, newSeen: &newSeen, state: &state)
             }
-            cursors[fileURL.path] = outcome.cursor
-            store.storeCursor(path: fileURL.path, cursor: outcome.cursor)
+            var updatedCursor = outcome.cursor
+            updatedCursor.model = state.currentModel == CodexUsageProcessing.defaultModel ? nil : state.currentModel
+            cursors[fileURL.path] = updatedCursor
+            store.storeCursor(path: fileURL.path, cursor: updatedCursor)
         }
 
         for state in aggregator.drainTouched() {
@@ -356,6 +361,8 @@ final class CodexUsageCollector: UsageCollecting {
 extension CodexUsageCollector {
     struct FileScanState {
         /// turn_context 最近值（空 = 未见；currentModel 依次回退 session_meta.model_provider → unknown）。
+        /// 增量扫描时以游标持久化的 currentModel 终态初始化——turn_context 在偏移
+        /// 之下不会重读，不恢复则新增 token_count 全部落入 unknown 桶。
         var model: String
         /// turn_context 未见时的模型兜底（session_meta.model_provider）。
         var fallbackModel: String?

@@ -322,6 +322,60 @@ final class CodexUsageCollectorTests: XCTestCase {
         XCTAssertEqual(bucket?.usage.totalTokens, 30)
     }
 
+    func test_incrementalScan_preservesModelAcrossScans() throws {
+        // turn_context / session_meta 在文件头部：增量扫描只读游标之后的新行
+        // （token_count 不带模型名），模型状态必须经游标跨扫描恢复，否则新增
+        // 增量整段落入 unknown 桶。
+        let contents1 = readLines([
+            sessionMetaLine(),
+            turnContextLine(model: "gpt-5-codex"),
+            tokenCountLine(last: usageDict(input: 100, total: 100), total: usageDict(input: 100, total: 100)),
+        ])
+        let file = try writeRollout(sessionsDir, contents: contents1)
+        collector.start()
+        collector.waitForIdle()
+        pumpUntil { self.collector.scanCount == 1 }
+        XCTAssertEqual(store.cursors[file.standardizedFileURL.path]?.model, "gpt-5-codex", "扫描结束把 currentModel 持久化进游标")
+
+        // 追加的新增段只有 token_count（无 turn_context / session_meta）。
+        try appendText(readLines([
+            tokenCountLine(last: usageDict(input: 40, total: 40), total: usageDict(input: 140, total: 140), timestamp: "2026-08-22T01:56:00Z"),
+        ]), to: file)
+        watcher.simulateChange()
+        collector.waitForIdle()
+        pumpUntil { self.collector.scanCount == 2 }
+
+        let models = Set(store.bucketsByKey.filter { $0.key.provider == .codex }.map(\.key.model))
+        XCTAssertEqual(models, ["gpt-5-codex"], "增量段沿用游标恢复的模型，不产生 unknown 桶")
+        XCTAssertEqual(store.totalTokens(), 140)
+        XCTAssertEqual(store.cursors[file.standardizedFileURL.path]?.model, "gpt-5-codex")
+    }
+
+    func test_incrementalScan_preservesFallbackProviderModel() throws {
+        // 无 turn_context 的会话以 session_meta.model_provider 兜底：该终态同样
+        // 经游标恢复，增量段不回退 unknown。
+        let contents1 = readLines([
+            sessionMetaLine(provider: "openai"),
+            tokenCountLine(last: usageDict(input: 50, total: 50), total: usageDict(input: 50, total: 50)),
+        ])
+        let file = try writeRollout(sessionsDir, contents: contents1)
+        collector.start()
+        collector.waitForIdle()
+        pumpUntil { self.collector.scanCount == 1 }
+        XCTAssertEqual(store.cursors[file.standardizedFileURL.path]?.model, "openai")
+
+        try appendText(readLines([
+            tokenCountLine(last: usageDict(input: 20, total: 20), total: usageDict(input: 70, total: 70), timestamp: "2026-08-22T01:56:00Z"),
+        ]), to: file)
+        watcher.simulateChange()
+        collector.waitForIdle()
+        pumpUntil { self.collector.scanCount == 2 }
+
+        let models = Set(store.bucketsByKey.filter { $0.key.provider == .codex }.map(\.key.model))
+        XCTAssertEqual(models, ["openai"], "兜底 provider 终态跨扫描保持")
+        XCTAssertEqual(store.totalTokens(), 70)
+    }
+
     func test_start_inUnitTestProcess_doesNotScanRealUserDirectory() throws {
         // 生产接线（FeatureRuntime bootstrap / AppState）会以默认目录构造并启动采集器；
         // 测试进程不得扫描用户正在写入的 ~/.codex（与真实应用争用 GRDB → 游标写入

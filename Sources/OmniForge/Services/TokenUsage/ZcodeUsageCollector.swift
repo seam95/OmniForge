@@ -50,7 +50,15 @@ final class ZcodeUsageCollector: OpencodeSchemaCollectorBase {
     override func isNativeMessage(_ data: OpencodeMessageData) -> Bool {
         // 兼容 v2 嵌套 model.providerID（fork 跟进 opencode2 schema 时同源）。
         let provider = (data.effectiveProviderID ?? "").lowercased()
-        guard !provider.isEmpty else { return false }
+        if provider.isEmpty {
+            // 2026-09 起 fork 新 schema 不再落 providerID：改按模型 id 前缀拦
+            // 子代理（claude / gpt / gemini / o 系，由 Claude/Codex/Gemini 独立
+            // 采集），其余放行——原生消息不得因 provider 字段缺失被静默丢弃。
+            let model = (data.effectiveModelID ?? "").lowercased()
+            guard !model.isEmpty else { return false }
+            let subagentModelPrefixes = ["claude", "gpt", "gemini", "o1", "o3", "o4"]
+            return !subagentModelPrefixes.contains(where: model.hasPrefix)
+        }
         return !(provider.contains("anthropic")
             || provider.contains("openai")
             || provider.contains("google"))
