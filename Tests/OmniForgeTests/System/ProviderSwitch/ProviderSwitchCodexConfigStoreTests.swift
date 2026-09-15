@@ -62,6 +62,33 @@ final class ProviderSwitchCodexConfigStoreTests: XCTestCase {
         """ + "\n")
     }
 
+    /// 回归（R01）：无空格合法 TOML 上完整 applyProfile 链（插入 provider → 更新 model）
+    /// 曾把行号推出文件末尾导致越界；必须成功且未知字段不丢失。
+    /// 行级原样保留契约：原地更新沿用原文词法（无空格风格不变）。
+    func test_applyProfile_noSpaceOriginalCompletesAndKeepsUnknownFields() throws {
+        try writeConfig("model=\"old\"\nnotify=[\"iTerm2\"]\n")
+        try makeStore().applyProfile(makeProfile())
+        let text = try String(contentsOf: configURL)
+
+        XCTAssertEqual(text, """
+        model="glm-4-7"
+        notify=["iTerm2"]
+        model_provider = "glm"
+
+        [model_providers.glm]
+        name = "GLM"
+        base_url = "https://open.bigmodel.cn/api/paas/v4"
+        wire_api = "chat"
+        experimental_bearer_token = "sk-glm"
+        """ + "\n")
+
+        // 落盘结果再读回：激活 provider 与凭证一致。
+        let (key, baseURL, token) = try makeStore().readActiveProvider()
+        XCTAssertEqual(key, "glm")
+        XCTAssertEqual(baseURL, "https://open.bigmodel.cn/api/paas/v4")
+        XCTAssertEqual(token, "sk-glm")
+    }
+
     func test_applyProfile_preservesUnrelatedContent() throws {
         try writeConfig("""
         # OpenAI API key configuration

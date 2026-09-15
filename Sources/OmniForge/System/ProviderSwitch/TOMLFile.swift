@@ -33,23 +33,31 @@ struct TOMLFile: Equatable {
 
     /// 解析失败（非注释行无法归类、引号未闭合）→ nil，调用方按「损坏」处理（不硬写）。
     static func parse(_ text: String) -> TOMLFile? {
-        var lines: [String] = []
+        var lines: [String] = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        // 文件通常以单个换行结尾；去掉拆出的尾部空行，避免 round-trip 多出一行空白。
+        while lines.last?.isEmpty == true {
+            lines.removeLast()
+        }
+        guard let entries = reparseEntries(lines: lines) else { return nil }
+        return TOMLFile(lines: lines, entries: entries)
+    }
+
+    /// 按行数组重建全部条目：行号、词法前缀均以实际行为准。
+    /// 返回 nil 表示存在无法归类的行（修改路径只写入合法行，理论不可达）。
+    private static func reparseEntries(lines: [String]) -> [Entry]? {
         var entries: [Entry] = []
         var currentTable: [String]? = nil
 
-        for raw in text.split(separator: "\n", omittingEmptySubsequences: false) {
-            let line = String(raw)
+        for (index, line) in lines.enumerated() {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
 
             if trimmed.isEmpty || trimmed.hasPrefix("#") {
-                lines.append(line)
                 continue
             }
 
             if trimmed.hasPrefix("[") {
                 guard let path = parseTableHeaderPath(trimmed) else { return nil }
                 currentTable = path
-                lines.append(line)
                 continue
             }
 
@@ -63,15 +71,10 @@ struct TOMLFile: Equatable {
                 prefix: prefix,
                 value: valueText,
                 suffix: suffix,
-                lineIndex: lines.count
+                lineIndex: index
             ))
-            lines.append(line)
         }
-        // 文件通常以单个换行结尾；去掉拆出的尾部空行，避免 round-trip 多出一行空白。
-        while lines.last?.isEmpty == true {
-            lines.removeLast()
-        }
-        return TOMLFile(lines: lines, entries: entries)
+        return entries
     }
 
     /// 解析表头 `[a.b]` / `[a.b] # 注释` → 路径。
@@ -87,20 +90,27 @@ struct TOMLFile: Equatable {
     }
 
     /// 解析 `key = value`：返回 (key, 值原文, 值前文本, 值后文本)。
+    /// 值前/值后文本保留**真实词法**（原空格、Tab、注释前空白），
+    /// 使条目行恒满足 `hasPrefix(prefix)`，原地更新时不改写用户原文风格。
     private static func parseKeyValue(line: String, trimmed: String) -> (String, String, String, String)? {
         guard let eq = indexOfEqualsOutsideQuotes(trimmed) else { return nil }
         let keyRaw = trimmed[trimmed.startIndex..<eq].trimmingCharacters(in: .whitespaces)
         guard !keyRaw.isEmpty else { return nil }
         let key = unquoteBare(keyRaw)
 
-        let valueStart = trimmed.index(after: eq)
-        let (valueText, comment) = splitTrailingComment(String(trimmed[valueStart...]))
+        var valueStart = trimmed.index(after: eq)
+        while valueStart < trimmed.endIndex, trimmed[valueStart].isWhitespace {
+            valueStart = trimmed.index(after: valueStart)
+        }
+        let (valueText, _) = splitTrailingComment(String(trimmed[valueStart...]))
         guard !valueText.isEmpty else { return nil }
 
         let leadingCount = line.count - line.drop(while: { $0.isWhitespace }).count
         let leading = String(line.prefix(leadingCount))
-        let prefix = leading + keyRaw + " = "
-        let suffix = comment.map { " " + $0 } ?? ""
+        let prefix = leading + String(trimmed[trimmed.startIndex..<valueStart])
+        // 值后原文：从值结束到行尾（含尾部空白与注释），保留原始间隔。
+        let valueEnd = trimmed.index(valueStart, offsetBy: valueText.count, limitedBy: trimmed.endIndex) ?? trimmed.endIndex
+        let suffix = String(trimmed[valueEnd...])
         return (key, valueText, prefix, suffix)
     }
 
@@ -275,7 +285,7 @@ struct TOMLFile: Equatable {
     /// 设置键值（写入转义后的基本字符串）。目标键已存在 → 原地替换（保留行尾注释）；否则追加到所在段末尾。
     mutating func setValue(_ value: String, key: String, table: [String]?) {
         let escaped = Self.escape(value)
-        if let entryIndex = entries.lastIndex(where: { $0.tablePath == table && $0.key == key }) {
+        if let entryIndex = validEntryIndex(key: key, table: table) {
             let entry = entries[entryIndex]
             lines[entry.lineIndex] = entry.prefix + escaped + entry.suffix
             entries[entryIndex].value = escaped
@@ -292,9 +302,7 @@ struct TOMLFile: Equatable {
         )
         lines.insert(entry.prefix + entry.value, at: insertionLine)
         entries.append(entry)
-        // 条目必须按行序排列，顺序扫描重建行号才有意义。
-        entries.sort { $0.lineIndex < $1.lineIndex }
-        rebuildEntryIndexes()
+        rebuildEntriesFromLines()
     }
 
     /// 确保表存在（缺失时在文档末尾追加表头）。
@@ -311,12 +319,12 @@ struct TOMLFile: Equatable {
 
     /// 删除键（含其整行）。
     mutating func remove(key: String, table: [String]?) {
-        guard let entryIndex = entries.lastIndex(where: { $0.tablePath == table && $0.key == key }) else {
+        guard let entryIndex = validEntryIndex(key: key, table: table) else {
             return
         }
         lines.remove(at: entries[entryIndex].lineIndex)
         entries.remove(at: entryIndex)
-        rebuildEntryIndexes()
+        rebuildEntriesFromLines()
     }
 
     /// 删除整张表（表头 + 段内所有键行 + 子表）。
@@ -346,7 +354,7 @@ struct TOMLFile: Equatable {
         for index in removal.sorted(by: >) {
             lines.remove(at: index)
         }
-        rebuildEntryIndexes()
+        rebuildEntriesFromLines()
     }
 
     /// 清理删除后遗留的空白：去掉行首空行、将连续 3 行以上空行折叠为 2 行（仅影响空白，不动任何键）。
@@ -366,7 +374,7 @@ struct TOMLFile: Equatable {
             }
         }
         lines = result
-        rebuildEntryIndexes()
+        rebuildEntriesFromLines()
     }
 
     /// 序列化回文本。
@@ -411,16 +419,27 @@ struct TOMLFile: Equatable {
         return lastLine + 1
     }
 
-    /// 行号全量重算：按条目顺序逐一匹配其 `prefix` 前缀的下一行（可处理删除后的位移）。
-    private mutating func rebuildEntryIndexes() {
-        var cursor = 0
-        for entryIndex in entries.indices {
-            let prefix = entries[entryIndex].prefix
-            while cursor < lines.count, !lines[cursor].hasPrefix(prefix) {
-                cursor += 1
-            }
-            entries[entryIndex].lineIndex = cursor
-            cursor += 1
+    /// 结构修改后按当前行重解析全部条目：行号与词法前缀都以实际行为唯一真源，
+    /// 不再用格式化字符串回查原文（原文 `key="v"` 等无空格写法会使回查错位，曾导致行号越界）。
+    /// 重解析失败（修改路径只写入合法行，理论不可达）时清除越界条目，防止后续写错行。
+    private mutating func rebuildEntriesFromLines() {
+        if let reparsed = Self.reparseEntries(lines: lines) {
+            entries = reparsed
+        } else {
+            entries.removeAll { $0.lineIndex >= lines.count }
         }
+    }
+
+    /// 查找键的最后一个有效条目：行号越界的条目（结构异常的防御路径）视为不存在并移除，
+    /// 避免更新/删除写错行。
+    private mutating func validEntryIndex(key: String, table: [String]?) -> Int? {
+        guard let entryIndex = entries.lastIndex(where: { $0.tablePath == table && $0.key == key }) else {
+            return nil
+        }
+        guard entries[entryIndex].lineIndex < lines.count else {
+            entries.remove(at: entryIndex)
+            return nil
+        }
+        return entryIndex
     }
 }
