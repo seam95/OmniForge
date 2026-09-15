@@ -255,6 +255,54 @@ final class GRDBUsageStore: UsageStoring {
         }
     }
 
+    /// 按 app（provider）聚合（`GROUP BY provider`，按总量降序）。
+    /// 返回复用 `UsageModelAggregate`：`model` 字段承载 provider rawValue（分组键语义）。
+    func loadProviderAggregates(
+        from start: Date,
+        to end: Date,
+        providers: Set<TokenUsageProvider>?
+    ) -> [UsageModelAggregate] {
+        guard let databaseQueue else { return [] }
+        do {
+            return try databaseQueue.read { db in
+                let rows: [Row]
+                if let providers, !providers.isEmpty {
+                    let placeholders = Array(repeating: "?", count: providers.count).joined(separator: ",")
+                    let arguments: StatementArguments = StatementArguments(
+                        [start.timeIntervalSince1970, end.timeIntervalSince1970]
+                    ) + StatementArguments(providers.map(\.rawValue))
+                    rows = try Row.fetchAll(
+                        db,
+                        sql: """
+                        SELECT provider, SUM(total_tokens) AS sum_total_tokens
+                        FROM usage_buckets
+                        WHERE bucket_start >= ? AND bucket_start < ? AND provider IN (\(placeholders))
+                        GROUP BY provider
+                        ORDER BY sum_total_tokens DESC
+                        """,
+                        arguments: arguments
+                    )
+                } else {
+                    rows = try Row.fetchAll(
+                        db,
+                        sql: """
+                        SELECT provider, SUM(total_tokens) AS sum_total_tokens
+                        FROM usage_buckets
+                        WHERE bucket_start >= ? AND bucket_start < ?
+                        GROUP BY provider
+                        ORDER BY sum_total_tokens DESC
+                        """,
+                        arguments: [start.timeIntervalSince1970, end.timeIntervalSince1970]
+                    )
+                }
+                return rows.map(Self.makeProviderAggregate)
+            }
+        } catch {
+            print("[GRDBUsageStore] loadProviderAggregates failed: \(error)")
+            return []
+        }
+    }
+
     // MARK: - 已见 key
 
     func loadSeenKeys() -> Set<String> {
@@ -626,6 +674,14 @@ final class GRDBUsageStore: UsageStoring {
     private static func makeModelAggregate(from row: Row) -> UsageModelAggregate {
         UsageModelAggregate(
             model: row["model"] as String,
+            totalTokens: Int(row["sum_total_tokens"] as Int64)
+        )
+    }
+
+    /// provider 聚合行解析：rawValue 填入 `model` 字段（分组键语义，见 `loadProviderAggregates`）。
+    private static func makeProviderAggregate(from row: Row) -> UsageModelAggregate {
+        UsageModelAggregate(
+            model: row["provider"] as String,
             totalTokens: Int(row["sum_total_tokens"] as Int64)
         )
     }

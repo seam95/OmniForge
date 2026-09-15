@@ -240,11 +240,12 @@ struct TokenUsagePanelView: View {
                     )
                 )
 
-                if !topModels.isEmpty {
+                if !topEntries.isEmpty {
                     hairline
                     usageSectionView(
                         TokenUsageTopModelsView(
-                            models: topModels,
+                            entries: topEntries,
+                            dimension: topDimensionBinding,
                             strings: strings
                         )
                     )
@@ -290,7 +291,11 @@ struct TokenUsagePanelView: View {
     /// 热力图/汇总卡可安全回退到内存聚合（只读 `usageDailyProviderAggregates`
     /// 缓存，不触存储）。
     private var renderData: TokenPanelUsageRenderData {
-        TokenPanelUsageRenderData(dashboard: manager.dashboardSnapshot, period: trendPeriod)
+        TokenPanelUsageRenderData(
+            dashboard: manager.dashboardSnapshot,
+            period: trendPeriod,
+            dimension: topDimension
+        )
     }
 
     private var usageHeatmap: UsageActivityHeatmap? {
@@ -302,8 +307,9 @@ struct TokenUsagePanelView: View {
         renderData.trendPoints
     }
 
-    private var topModels: [UsageTopModelEntry] {
-        renderData.topModels
+    /// 当前维度下的 Top 列表（模型 / App）。
+    private var topEntries: [UsageTopModelEntry] {
+        renderData.topEntries
     }
 
     /// 趋势周期（读写 `configuration.trendPeriodDefault`，持久化）。
@@ -315,6 +321,18 @@ struct TokenUsagePanelView: View {
         Binding(
             get: { preferences.configuration.trendPeriodDefault },
             set: { newValue in preferences.update { $0.trendPeriodDefault = newValue } }
+        )
+    }
+
+    /// Top 列表聚合维度（读写 `configuration.usageTopDimension`，持久化）。
+    private var topDimension: TokenUsageTopDimension {
+        preferences.configuration.usageTopDimension
+    }
+
+    private var topDimensionBinding: Binding<TokenUsageTopDimension> {
+        Binding(
+            get: { preferences.configuration.usageTopDimension },
+            set: { newValue in preferences.update { $0.usageTopDimension = newValue } }
         )
     }
 

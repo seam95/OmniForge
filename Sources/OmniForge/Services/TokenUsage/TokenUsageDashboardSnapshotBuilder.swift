@@ -14,6 +14,7 @@ enum TokenUsageDashboardSnapshotBuilder {
     ) -> TokenUsageDashboardSnapshot {
         var trendPoints: [TokenTrendPeriod: [UsageTrendPoint]] = [:]
         var topModels: [TokenTrendPeriod: [UsageTopModelEntry]] = [:]
+        var topProviders: [TokenTrendPeriod: [UsageTopModelEntry]] = [:]
         for period in TokenTrendPeriod.allCases {
             trendPoints[period] = self.trendPoints(
                 filteredBy: nil,
@@ -30,12 +31,20 @@ enum TokenUsageDashboardSnapshotBuilder {
                 now: now,
                 calendar: calendar
             )
+            topProviders[period] = self.topProviders(
+                filteredBy: nil,
+                period: period,
+                store: store,
+                now: now,
+                calendar: calendar
+            )
         }
         return TokenUsageDashboardSnapshot(
             summaryCards: summaryCards(filteredBy: nil, daily: daily, now: now, calendar: calendar),
             heatmap: heatmap(filteredBy: nil, daily: daily, now: now, calendar: calendar),
             trendPoints: trendPoints,
             topModels: topModels,
+            topProviders: topProviders,
             updatedAt: now
         )
     }
@@ -99,6 +108,33 @@ enum TokenUsageDashboardSnapshotBuilder {
             providers: providers
         )
         return UsageTopModelsBuilder.make(models: aggregates)
+    }
+
+    /// App 维度 Top：`GROUP BY provider` 聚合后复用模型 Top 构建器；
+    /// rawValue 反查回填 `provider` 并将 `name` 置为品牌展示名（未知 rawValue 兜底保留原名）。
+    static func topProviders(
+        filteredBy provider: TokenUsageProvider?,
+        period: TokenTrendPeriod,
+        store: UsageStoring?,
+        now: Date,
+        calendar: Calendar
+    ) -> [UsageTopModelEntry] {
+        guard let store else { return [] }
+        let window = modelWindow(period: period, now: now, calendar: calendar)
+        let providers = provider.map { Set([$0]) }
+        let aggregates = store.loadProviderAggregates(
+            from: window.start,
+            to: window.end,
+            providers: providers
+        )
+        return UsageTopModelsBuilder.make(models: aggregates).map { entry in
+            var entry = entry
+            if let provider = TokenUsageProvider(rawValue: entry.name) {
+                entry.name = provider.displayName
+                entry.provider = provider
+            }
+            return entry
+        }
     }
 
     // MARK: - 共享查询原语

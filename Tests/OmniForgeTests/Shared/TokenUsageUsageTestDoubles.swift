@@ -6,7 +6,8 @@ import XCTest
 /// 真实等价物：GRDBUsageStore / ClaudeUsageCollector / DispatchSourceDirectoryWatcher。
 
 /// 内存版用量存储 — 镜像 GRDB 语义（主键 upsert last-writer-wins / seen 集合 / 游标字典）。
-final class FakeUsageStore: UsageStoring {
+/// 非 final：允许用例覆写单方法注入边界（如未知 rawValue 兜底）。
+class FakeUsageStore: UsageStoring {
     var bucketsByKey: [UsageBucketKey: UsageBucketState] = [:]
     var seenKeys: Set<String> = []
     var cursors: [String: JSONLCursor] = [:]
@@ -80,6 +81,24 @@ final class FakeUsageStore: UsageStoring {
         }
         return totals
             .map { UsageModelAggregate(model: $0.key, totalTokens: $0.value) }
+            .sorted { $0.totalTokens > $1.totalTokens }
+    }
+
+    /// 镜像 GRDB 聚合语义：按 app（provider）归并窗口内半小时桶。
+    /// 返回复用 `UsageModelAggregate`：`model` 字段承载 provider rawValue（分组键语义）。
+    func loadProviderAggregates(
+        from start: Date,
+        to end: Date,
+        providers: Set<TokenUsageProvider>?
+    ) -> [UsageModelAggregate] {
+        var totals: [TokenUsageProvider: Int] = [:]
+        for state in bucketsByKey.values {
+            guard state.key.bucketStart >= start, state.key.bucketStart < end else { continue }
+            guard providers?.contains(state.key.provider) ?? true else { continue }
+            totals[state.key.provider, default: 0] += state.usage.totalTokens
+        }
+        return totals
+            .map { UsageModelAggregate(model: $0.key.rawValue, totalTokens: $0.value) }
             .sorted { $0.totalTokens > $1.totalTokens }
     }
 

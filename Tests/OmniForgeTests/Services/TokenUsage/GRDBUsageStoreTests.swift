@@ -176,6 +176,34 @@ final class GRDBUsageStoreTests: XCTestCase {
         XCTAssertEqual(claudeOnly.map(\.totalTokens), [500, 400])
     }
 
+    func test_loadProviderAggregates_groupsByProviderSortedDesc() {
+        XCTAssertTrue(store.loadProviderAggregates(from: .distantPast, to: .distantFuture, providers: nil).isEmpty)
+        let base = Date(timeIntervalSince1970: 1_784_700_000)
+        // 同 app 跨模型、跨桶累计；同模型跨 app 分属各自 app。
+        store.upsertBucket(state(model: "sonnet", bucket: base, total: 300))
+        store.upsertBucket(state(model: "opus", bucket: base.addingTimeInterval(1800), total: 200))
+        store.upsertBucket(state(model: "sonnet", bucket: base, total: 500, provider: .codex))
+        store.upsertBucket(state(model: "gpt", bucket: base.addingTimeInterval(3600), total: 100, provider: .codex))
+        store.upsertBucket(state(model: "k2", bucket: base, total: 50, provider: .zcode))
+
+        let providers = store.loadProviderAggregates(from: .distantPast, to: .distantFuture, providers: nil)
+        XCTAssertEqual(providers.map(\.model), ["codex", "claude", "zcode"], "model 字段承载 provider rawValue，按总量降序")
+        XCTAssertEqual(providers.map(\.totalTokens), [600, 500, 50], "同 app 跨模型累计")
+        let claudeOnly = store.loadProviderAggregates(from: .distantPast, to: .distantFuture, providers: [.claude])
+        XCTAssertEqual(claudeOnly.map(\.model), ["claude"])
+        XCTAssertEqual(claudeOnly.map(\.totalTokens), [500])
+    }
+
+    func test_loadProviderAggregates_filtersByTimeWindow() {
+        let base = Date(timeIntervalSince1970: 1_784_700_000)
+        store.upsertBucket(state(bucket: base, total: 100))
+        store.upsertBucket(state(bucket: base.addingTimeInterval(86_400), total: 200))
+        let window = store.loadProviderAggregates(
+            from: base, to: base.addingTimeInterval(3_600), providers: nil
+        )
+        XCTAssertEqual(window.map(\.totalTokens), [100], "窗口只覆盖第一个桶")
+    }
+
     // MARK: - 已见 key
 
     func test_seenKeys_roundTrip() {

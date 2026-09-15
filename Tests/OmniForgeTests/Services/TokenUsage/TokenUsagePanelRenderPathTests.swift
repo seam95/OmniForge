@@ -14,6 +14,7 @@ final class TokenUsagePanelRenderPathTests: XCTestCase {
         let data = TokenPanelUsageRenderData(dashboard: nil, period: .day)
         XCTAssertTrue(data.trendPoints.isEmpty, "快照未就绪 → 空展示（视图占位），不查询")
         XCTAssertTrue(data.topModels.isEmpty)
+        XCTAssertTrue(data.topProviders.isEmpty)
     }
 
     func test_renderData_emptyPeriodLists_areValidResults() {
@@ -23,11 +24,76 @@ final class TokenUsagePanelRenderPathTests: XCTestCase {
             heatmap: nil,
             trendPoints: [.day: []],
             topModels: [:],
+            topProviders: [:],
             updatedAt: Date()
         )
         let data = TokenPanelUsageRenderData(dashboard: snapshot, period: .day)
         XCTAssertEqual(data.trendPoints, [], "空趋势点为合法结果")
         XCTAssertTrue(data.topModels.isEmpty, "缺失键（全周期无模型）同样解析为空")
+    }
+
+    /// 维度切换：同一快照下 model/app 维度分别取各自序列（SPEC 维度切换）。
+    func test_renderData_dimensionSwitch_selectsTopSource() {
+        let snapshot = TokenUsageDashboardSnapshot(
+            summaryCards: .zero,
+            heatmap: nil,
+            trendPoints: [:],
+            topModels: [.total: [UsageTopModelEntry(name: "sonnet", tokens: 100, percent: 100)]],
+            topProviders: [.total: [UsageTopModelEntry(name: "Codex", tokens: 90, percent: 100, provider: .codex)]],
+            updatedAt: Date()
+        )
+        let modelData = TokenPanelUsageRenderData(dashboard: snapshot, period: .total, dimension: .model)
+        XCTAssertEqual(modelData.topEntries.map(\.name), ["sonnet"])
+        let appData = TokenPanelUsageRenderData(dashboard: snapshot, period: .total, dimension: .app)
+        XCTAssertEqual(appData.topEntries.map(\.name), ["Codex"])
+        XCTAssertEqual(appData.topEntries.first?.provider, .codex)
+    }
+
+    /// SnapshotBuilder App 维度：rawValue 反查回填 provider、name 置品牌展示名、按总量降序。
+    func test_snapshotBuilder_topProviders_mapsDisplayNamesAndProvider() {
+        let store = FakeUsageStore()
+        let base = Date(timeIntervalSince1970: 1_784_700_000)
+        store.upsertBucket(providerBucket(.codex, start: base, total: 600))
+        store.upsertBucket(providerBucket(.claude, start: base, total: 300))
+        store.upsertBucket(providerBucket(.zcode, start: base.addingTimeInterval(1800), total: 100))
+
+        let top = TokenUsageDashboardSnapshotBuilder.topProviders(
+            filteredBy: nil, period: .total, store: store, now: base.addingTimeInterval(86_400), calendar: .current
+        )
+        XCTAssertEqual(top.map(\.name), ["Codex", "Claude", "ZCode"], "按总量降序且为品牌展示名")
+        XCTAssertEqual(top.map(\.provider), [.codex, .claude, .zcode], "provider 字段回填")
+        XCTAssertEqual(top[0].tokens, 600)
+        XCTAssertEqual(top[0].percent, 60.0, accuracy: 0.001)
+    }
+
+    /// 无 rawValue 映射兜底：非枚举分组键（理论不出现）保留原名且 provider 为 nil。
+    func test_snapshotBuilder_topProviders_unknownKey_keepsRawName() {
+        final class GhostKeyStore: FakeUsageStore {
+            override func loadProviderAggregates(
+                from start: Date, to end: Date, providers: Set<TokenUsageProvider>?
+            ) -> [UsageModelAggregate] {
+                [UsageModelAggregate(model: "ghost-key", totalTokens: 50)]
+            }
+        }
+        let base = Date(timeIntervalSince1970: 1_784_700_000)
+        let top = TokenUsageDashboardSnapshotBuilder.topProviders(
+            filteredBy: nil, period: .total, store: GhostKeyStore(), now: base.addingTimeInterval(86_400), calendar: .current
+        )
+        XCTAssertEqual(top.map(\.name), ["ghost-key"], "未知 rawValue 兜底保留原名")
+        XCTAssertEqual(top.map(\.provider), [nil])
+    }
+
+    private func providerBucket(
+        _ provider: TokenUsageProvider, start: Date, total: Int
+    ) -> UsageBucketState {
+        UsageBucketState(
+            key: UsageBucketKey(provider: provider, model: "probe-model", bucketStart: start),
+            usage: TokenUsage(
+                inputTokens: total, cachedInputTokens: 0, cacheCreationInputTokens: 0,
+                outputTokens: 0, reasoningOutputTokens: 0, totalTokens: total
+            ),
+            conversationCount: 1
+        )
     }
 
     // MARK: - 快照构建：空周期必须产生键（防「空=未命中」回归）
@@ -48,6 +114,7 @@ final class TokenUsagePanelRenderPathTests: XCTestCase {
                 "\(period)：即使无数据也必须写入空列表键（合法结果，非未命中）"
             )
             XCTAssertNotNil(snapshot.trendPoints[period], "\(period)：趋势点键必须存在")
+            XCTAssertNotNil(snapshot.topProviders[period], "\(period)：App 维度键必须存在")
         }
     }
 
@@ -90,7 +157,7 @@ final class TokenUsagePanelRenderPathTests: XCTestCase {
         }
         XCTAssertEqual(
             store.readTotal, baseline,
-            "重复渲染不得触发存储读取（SPEC §9.2.2），读取明细：buckets=\(store.bucketReads) models=\(store.modelReads) daily=\(store.dailyReads)"
+            "重复渲染不得触发存储读取（SPEC §9.2.2），读取明细：buckets=\(store.bucketReads) models=\(store.modelReads) daily=\(store.dailyReads) providers=\(store.providerReads)"
         )
     }
 
@@ -174,8 +241,9 @@ final class CountingUsageStore: UsageStoring {
     private(set) var bucketReads = 0
     private(set) var modelReads = 0
     private(set) var dailyReads = 0
+    private(set) var providerReads = 0
 
-    var readTotal: Int { bucketReads + modelReads + dailyReads }
+    var readTotal: Int { bucketReads + modelReads + dailyReads + providerReads }
 
     init(base: FakeUsageStore) {
         self.base = base
@@ -206,6 +274,13 @@ final class CountingUsageStore: UsageStoring {
     ) -> [UsageModelAggregate] {
         modelReads += 1
         return base.loadModelAggregates(from: start, to: end, providers: providers)
+    }
+
+    func loadProviderAggregates(
+        from start: Date, to end: Date, providers: Set<TokenUsageProvider>?
+    ) -> [UsageModelAggregate] {
+        providerReads += 1
+        return base.loadProviderAggregates(from: start, to: end, providers: providers)
     }
 
     func loadSeenKeys() -> Set<String> { base.loadSeenKeys() }

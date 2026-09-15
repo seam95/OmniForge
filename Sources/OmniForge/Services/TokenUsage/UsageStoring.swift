@@ -45,6 +45,13 @@ protocol UsageStoring: AnyObject {
         to end: Date,
         providers: Set<TokenUsageProvider>?
     ) -> [UsageModelAggregate]
+    /// 按 app（provider）聚合（`GROUP BY provider`，按总量降序）。
+    /// 返回复用 `UsageModelAggregate`：`model` 字段承载 provider rawValue（分组键语义）。
+    func loadProviderAggregates(
+        from start: Date,
+        to end: Date,
+        providers: Set<TokenUsageProvider>?
+    ) -> [UsageModelAggregate]
 
     // 已见消息 id 集合（跨 sync 持久化；容量上限 LRU 截断）。
     func loadSeenKeys() -> Set<String>

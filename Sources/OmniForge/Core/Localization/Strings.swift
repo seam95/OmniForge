@@ -1145,6 +1145,11 @@ struct Strings: Equatable {
     let tokenTrendPeriodMonth: String
     let tokenTrendPeriodTotal: String
     let tokenTopModelsTitle: String
+    /// Top 列表 App 维度分区标题。
+    let tokenTopAppsTitle: String
+    /// Top 列表维度切换器选项：模型 / App。
+    let tokenTopDimensionModel: String
+    let tokenTopDimensionApp: String
     let tokenUnit: String
     let tokenSettingsGenericSection: String
     let tokenSettingsProvidersSection: String

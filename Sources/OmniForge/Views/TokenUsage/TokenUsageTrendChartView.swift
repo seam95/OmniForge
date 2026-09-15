@@ -21,7 +21,7 @@ struct TokenUsageTrendChartView: View {
                     .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.06))
                     .frame(height: 140)
                     .overlay(
-                        Text(strings.tokenEmptyHint)
+                        Text(strings.tokenUsageEmptyHint)
                             .font(Theme.Stats.font10Regular)
                             .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                     )
@@ -52,45 +52,13 @@ struct TokenUsageTrendChartView: View {
                 .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
                 .transition(.opacity)
             }
-            periodPicker
+            TokenUsageInlinePicker(
+                items: TokenTrendPeriod.allCases,
+                selection: $period,
+                label: { $0.label(strings) },
+                onChange: onPeriodChange
+            )
         }
-    }
-
-    // MARK: - 周期切换
-
-    private var periodPicker: some View {
-        HStack(spacing: 2) {
-            ForEach(TokenTrendPeriod.allCases) { item in
-                Button {
-                    period = item
-                    onPeriodChange(item)
-                } label: {
-                    Text(item.label(strings))
-                        .font(Theme.Stats.font10Regular)
-                        .foregroundStyle(
-                            item == period
-                                ? (colorScheme == .light ? Theme.Stats.text1 : Color.primary)
-                                : (colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
-                        )
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background {
-                            if item == period {
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .fill(colorScheme == .dark ? Color.white.opacity(0.14) : Theme.Stats.cardBackground)
-                            }
-                        }
-                        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(item == period ? .isSelected : [])
-            }
-        }
-        .padding(2)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.06))
-        )
     }
 
     // MARK: - 图表

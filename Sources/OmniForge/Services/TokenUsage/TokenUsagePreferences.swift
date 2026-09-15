@@ -39,6 +39,8 @@ struct TokenUsageConfiguration: Equatable, Codable {
     /// 会话窗阈值告警判据（缺省 90；设置页可调整为 70/85/90/95）。
     /// 存储层可选，旧配置无此键 → 解码回 nil，走计算属性默认值。
     var sessionAlertThresholdPercentStored: Double?
+    /// 用量 Top 列表聚合维度（模型 / App）。存储层可选，旧配置无此键 → 解码回 nil，走计算属性默认（模型）。
+    var usageTopDimensionStored: TokenUsageTopDimension?
 
     /// 趋势图默认周期（缺省 .month）。
     var trendPeriodDefault: TokenTrendPeriod {
@@ -74,6 +76,12 @@ struct TokenUsageConfiguration: Equatable, Codable {
     var sessionAlertThresholdPercent: Double {
         get { sessionAlertThresholdPercentStored ?? Self.sessionThresholdPercentDefault }
         set { sessionAlertThresholdPercentStored = newValue }
+    }
+
+    /// 用量 Top 列表聚合维度（缺省 .model）。
+    var usageTopDimension: TokenUsageTopDimension {
+        get { usageTopDimensionStored ?? .model }
+        set { usageTopDimensionStored = newValue }
     }
 
     /// 供应商展示顺序（包含全部已知供应商；未在自定义顺序中的供应商自动按默认顺序追加在末尾）。

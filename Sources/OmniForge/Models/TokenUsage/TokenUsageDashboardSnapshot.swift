@@ -12,5 +12,7 @@ struct TokenUsageDashboardSnapshot: Equatable {
     var trendPoints: [TokenTrendPeriod: [UsageTrendPoint]]
     /// 各趋势周期 Top Models。
     var topModels: [TokenTrendPeriod: [UsageTopModelEntry]]
+    /// 各趋势周期 Top Apps（按 provider 聚合；entry.name 为品牌展示名、provider 已回填）。
+    var topProviders: [TokenTrendPeriod: [UsageTopModelEntry]]
     var updatedAt: Date
 }
