@@ -45,7 +45,7 @@ final class GRDBStickyNoteStoreTests: XCTestCase {
             updatedAt: Date(timeIntervalSince1970: 1_750_000_000)
         )
 
-        store.saveNote(note)
+        try store.saveNote(note)
         let loaded = store.loadNotes()
 
         XCTAssertEqual(loaded.count, 1)
@@ -128,11 +128,11 @@ final class GRDBStickyNoteStoreTests: XCTestCase {
         XCTAssertEqual(loaded[0].fontSize, StickyNote.defaultFontSize)
     }
 
-    func test_saveNote_roundTripsNilReminderFields() {
+    func test_saveNote_roundTripsNilReminderFields() throws {
         let store = makeStore()
         let note = StickyNote(content: "", color: .yellow)
 
-        store.saveNote(note)
+        try store.saveNote(note)
         let loaded = store.loadNotes()
 
         XCTAssertEqual(loaded.count, 1)
@@ -140,15 +140,15 @@ final class GRDBStickyNoteStoreTests: XCTestCase {
         XCTAssertNil(loaded[0].reminderFiredAt)
     }
 
-    func test_saveNote_upsertsExistingRow() {
+    func test_saveNote_upsertsExistingRow() throws {
         let store = makeStore()
         var note = StickyNote(content: "初稿", color: .blue)
-        store.saveNote(note)
+        try store.saveNote(note)
 
         note.content = "定稿"
         note.color = .pink
         note.pinned = true
-        store.saveNote(note)
+        try store.saveNote(note)
 
         let loaded = store.loadNotes()
         XCTAssertEqual(loaded.count, 1)
@@ -157,10 +157,10 @@ final class GRDBStickyNoteStoreTests: XCTestCase {
         XCTAssertTrue(loaded[0].pinned)
     }
 
-    func test_deleteNote_removesRow() {
+    func test_deleteNote_removesRow() throws {
         let store = makeStore()
         let note = StickyNote(content: "待删除", color: .yellow)
-        store.saveNote(note)
+        try store.saveNote(note)
 
         store.deleteNote(id: note.id)
 
@@ -182,8 +182,8 @@ final class GRDBStickyNoteStoreTests: XCTestCase {
             updatedAt: Date(timeIntervalSince1970: 2_000)
         )
 
-        store.saveNote(late)
-        store.saveNote(early)
+        try store.saveNote(late)
+        try store.saveNote(early)
 
         let loaded = store.loadNotes()
         XCTAssertEqual(loaded.map(\.content), ["早", "晚"])

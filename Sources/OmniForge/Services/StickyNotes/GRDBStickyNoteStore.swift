@@ -77,8 +77,19 @@ final class GRDBStickyNoteStore: StickyNoteStore {
         return notes
     }
 
-    func saveNote(_ note: StickyNote) {
-        guard let databaseQueue else { return }
+    /// 数据库不可用错误（初始化降级后所有写操作的统一可观察失败）。
+    enum StoreError: LocalizedError {
+        case databaseUnavailable
+
+        var errorDescription: String? {
+            switch self {
+            case .databaseUnavailable: return "便签数据库不可用"
+            }
+        }
+    }
+
+    func saveNote(_ note: StickyNote) throws {
+        guard let databaseQueue else { throw StoreError.databaseUnavailable }
         do {
             try databaseQueue.write { db in
                 let record = StickyNoteDBRecord(from: note)
@@ -86,6 +97,7 @@ final class GRDBStickyNoteStore: StickyNoteStore {
             }
         } catch {
             print("[GRDBStickyNoteStore] Failed to save note: \(error)")
+            throw error
         }
     }
 

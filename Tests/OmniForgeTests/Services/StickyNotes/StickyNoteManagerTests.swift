@@ -34,6 +34,48 @@ final class StickyNoteManagerTests: XCTestCase {
         super.tearDown()
     }
 
+    // MARK: - teardown flush（审查 R12：防抖不再是退出丢数据窗口）
+
+    /// 编辑后立即 teardown（不等防抖）：最新内容必须同步落库。
+    func test_teardownFlushesPendingEditsImmediately() {
+        let manager = makeManager()
+        let note = manager.create()!
+
+        manager.updateContent(id: note.id, content: "退出前最后编辑")
+        let allSaved = manager.teardown()
+
+        XCTAssertTrue(allSaved)
+        let saved = store.savedNotes.first { $0.id == note.id }
+        XCTAssertEqual(saved?.content, "退出前最后编辑", "teardown 同步 flush 待保存正文")
+    }
+
+    /// flush 保存失败：teardown 返回 false，不得清成成功。
+    func test_teardownPersistFailureReturnsFalse() {
+        let manager = makeManager()
+        let note = manager.create()!
+
+        store.saveError = GRDBStickyNoteStore.StoreError.databaseUnavailable
+        manager.updateContent(id: note.id, content: "会丢的内容")
+        let allSaved = manager.teardown()
+
+        XCTAssertFalse(allSaved, "保存失败不得报告成功")
+        XCTAssertNotNil(manager.lastPersistError, "失败必须可观察")
+    }
+
+    /// dirty 标记后条目被删除：flush 跳过（不得复活已删除便签）。
+    func test_teardownSkipsDeletedDirtyNotes() {
+        let manager = makeManager()
+        let note = manager.create()!
+
+        manager.updateContent(id: note.id, content: "马上删")
+        manager.delete(id: note.id)
+        store.resetRecording()
+        let allSaved = manager.teardown()
+
+        XCTAssertTrue(allSaved)
+        XCTAssertTrue(store.savedNotes.filter { $0.id == note.id }.isEmpty, "已删除条目不得被 flush 复活")
+    }
+
     private func makeManager() -> StickyNoteManager {
         StickyNoteManager(
             store: store,
@@ -698,9 +740,15 @@ private final class FakeStickyNoteStore: StickyNoteStore {
         deletedIDs = []
     }
 
+    /// 置非 nil 时 saveNote 抛错（失败路径注入）。
+    var saveError: Error?
+
     func loadNotes() -> [StickyNote] { stubbedNotes }
 
-    func saveNote(_ note: StickyNote) {
+    func saveNote(_ note: StickyNote) throws {
+        if let saveError {
+            throw saveError
+        }
         saveCallCount += 1
         if let index = savedNotes.firstIndex(where: { $0.id == note.id }) {
             savedNotes[index] = note

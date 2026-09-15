@@ -39,6 +39,12 @@ final class StickyNoteManager: ObservableObject {
     @Published private(set) var notes: [StickyNote] = []
     /// 状态栏保存指示：true = 有防抖中的未落库编辑。
     @Published private(set) var isSaving = false
+    /// 最近一次落库失败原因（可观察保存结果）；nil = 无未决失败。
+    @Published private(set) var lastPersistError: String?
+
+    /// 有未可靠落库修改的便签（编辑防抖未触发、或上次落库失败待重试）。
+    /// teardown 前对 dirty 集合做同步 flush，防抖不再是退出丢数据的窗口（审查 R12）。
+    private var dirtyNoteIDs: Set<UUID> = []
 
     private let store: StickyNoteStore
     private let reminderScheduler: StickyNoteReminderScheduling
@@ -123,7 +129,7 @@ final class StickyNoteManager: ObservableObject {
             updatedAt: timestamp
         )
         notes.append(note)
-        store.saveNote(note)
+        saveImmediately(note: note)
         windowPresenter.show(note: note)
         return note
     }
@@ -136,6 +142,7 @@ final class StickyNoteManager: ObservableObject {
         guard notes[index].content != content else { return }
         notes[index].content = content
         notes[index].updatedAt = now()
+        dirtyNoteIDs.insert(id)
         isSaving = true
         schedulePersist(id: id)
     }
@@ -256,6 +263,7 @@ final class StickyNoteManager: ObservableObject {
         guard notes[index].frame != frame else { return }
         notes[index].frame = frame
         notes[index].updatedAt = now()
+        dirtyNoteIDs.insert(id)
         schedulePersist(id: id)
     }
 
@@ -320,12 +328,12 @@ final class StickyNoteManager: ObservableObject {
         }
     }
 
-    /// teardown：关全部窗口、失效定时器、撤销全部通知请求、注销快捷键。
-    func teardown() {
-        for task in persistTasks.values {
-            task.cancel()
-        }
-        persistTasks.removeAll()
+    /// teardown：先同步 flush 待保存内容（防抖不再成为退出丢数据窗口），
+    /// 再关全部窗口、失效定时器、撤销全部通知请求、注销快捷键。
+    /// 返回 flush 是否全部成功（失败保留待保存状态，调用方可提示重试）。
+    @discardableResult
+    func teardown() -> Bool {
+        let allSaved = flushDirtyNotesNow()
         isSaving = false
         windowPresenter.dismissAll()
         for note in notes {
@@ -333,6 +341,7 @@ final class StickyNoteManager: ObservableObject {
         }
         reminderScheduler.cancelAllNotifications()
         unregisterHotkey()
+        return allSaved
     }
 
     // MARK: - 快捷键（UserDefaults 真源 + 运行时镜像）
@@ -414,7 +423,7 @@ final class StickyNoteManager: ObservableObject {
         if let index = notes.firstIndex(where: { $0.id == id }) {
             notes[index] = note
         }
-        store.saveNote(note)
+        saveImmediately(note: note)
         if !note.completed {
             windowPresenter.show(note: note)
             windowPresenter.bringToFront(id: id)
@@ -463,7 +472,20 @@ final class StickyNoteManager: ObservableObject {
         transform(&note)
         note.updatedAt = now()
         notes[index] = note
-        store.saveNote(note)
+        saveImmediately(note: note)
+    }
+
+    /// 立即落库（颜色/置顶等非防抖路径）：成功清脏标记；失败保留 dirty，
+    /// 由防抖重试或退出 flush 兜底。
+    private func saveImmediately(note: StickyNote) {
+        do {
+            try store.saveNote(note)
+            dirtyNoteIDs.remove(note.id)
+            lastPersistError = nil
+        } catch {
+            dirtyNoteIDs.insert(note.id)
+            lastPersistError = error.localizedDescription
+        }
     }
 
     /// 将最新状态同步到窗口（颜色换肤 / 置顶层级 / 正文等）。
@@ -488,11 +510,48 @@ final class StickyNoteManager: ObservableObject {
 
     private func flushPersist(id: UUID) {
         persistTasks[id] = nil
-        guard let note = notes.first(where: { $0.id == id }) else { return }
-        store.saveNote(note)
+        guard let note = notes.first(where: { $0.id == id }) else {
+            dirtyNoteIDs.remove(id)
+            return
+        }
+        do {
+            try store.saveNote(note)
+            dirtyNoteIDs.remove(id)
+            lastPersistError = nil
+        } catch {
+            // 保留 dirty：防抖期间重试或退出 flush 兜底。
+            dirtyNoteIDs.insert(id)
+            lastPersistError = error.localizedDescription
+        }
         // 落库后同步窗口，驱动状态栏「保存中…」复位。
         syncWindow(id: id)
         updateSavingIndicator()
+    }
+
+    /// teardown 前的同步 flush（纯存储，不动窗口 — 不能在卸载期间重新显示窗口）：
+    /// dirty 便签按内存最新值落库；已删除条目跳过（不得复活）。
+    /// 返回是否全部成功；失败的条目保留 dirty 标记。
+    @discardableResult
+    private func flushDirtyNotesNow() -> Bool {
+        for task in persistTasks.values {
+            task.cancel()
+        }
+        persistTasks.removeAll()
+        var allSaved = true
+        for id in Array(dirtyNoteIDs) {
+            guard let note = notes.first(where: { $0.id == id }) else {
+                dirtyNoteIDs.remove(id)
+                continue
+            }
+            do {
+                try store.saveNote(note)
+                dirtyNoteIDs.remove(id)
+            } catch {
+                allSaved = false
+                lastPersistError = error.localizedDescription
+            }
+        }
+        return allSaved
     }
 
     private func updateSavingIndicator() {
