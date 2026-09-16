@@ -16,6 +16,8 @@ final class StickyNoteManagerTests: XCTestCase {
     private var isFeatureAvailable = true
     private var userDefaults: UserDefaults!
     private var defaultsSuiteName = ""
+    /// 注入的「鼠标指针位置」；默认主屏中央。
+    private var mouseLocation: CGPoint?
 
     override func setUp() {
         super.setUp()
@@ -24,6 +26,7 @@ final class StickyNoteManagerTests: XCTestCase {
         presenter = FakeStickyNotePresenter()
         hotkeyClient = FakeStickyNoteHotkeyClient()
         isFeatureAvailable = true
+        mouseLocation = CGPoint(x: 960, y: 522)
         defaultsSuiteName = "StickyNoteManagerTests-\(UUID().uuidString)"
         userDefaults = UserDefaults(suiteName: defaultsSuiteName)
     }
@@ -85,6 +88,7 @@ final class StickyNoteManagerTests: XCTestCase {
             userDefaults: userDefaults,
             isFeatureAvailable: { [weak self] in self?.isFeatureAvailable ?? false },
             visibleScreensProvider: { [screens] in screens },
+            mouseLocationProvider: { [weak self] in self?.mouseLocation },
             stringsProvider: { .en },
             now: { [nowDate] in nowDate },
             persistDebounce: 0.05
@@ -110,36 +114,55 @@ final class StickyNoteManagerTests: XCTestCase {
         XCTAssertEqual(presenter.shownNotes.count, 1)
     }
 
-    func test_create_cascadesFromMostRecentlyCreated() {
+    func test_create_appearsCenteredAtMouseLocation() {
+        let manager = makeManager()
+
+        let note = manager.create()!
+
+        XCTAssertEqual(note.frame.midX, 960, accuracy: 0.001)
+        XCTAssertEqual(note.frame.midY, 522, accuracy: 0.001)
+    }
+
+    func test_create_repeatedCreates_bothAppearAtMouseNotCascaded() {
         let manager = makeManager()
         let first = manager.create()!
 
         let second = manager.create()!
 
-        XCTAssertEqual(second.x, first.x + 28, accuracy: 0.001)
-        XCTAssertEqual(second.y, first.y - 28, accuracy: 0.001)
+        // 不再级联偏移：每次都落在鼠标位置
+        XCTAssertEqual(second.frame, first.frame)
     }
 
-    func test_create_cascadeBeyondScreensFallsBackToDefaultPosition() {
-        // 预置最近便签贴主屏右缘：级联候选必越界 → 回落主屏默认位置（左上角）。
-        store.stubbedNotes = [
-            StickyNote(
-                content: "旧",
-                color: .blue,
-                x: 1700,
-                y: 800,
-                width: 320,
-                height: 260,
-                createdAt: nowDate.addingTimeInterval(-60),
-                updatedAt: nowDate.addingTimeInterval(-60)
-            )
-        ]
+    func test_create_mouseOffAllScreens_fallsBackToDefaultPosition() {
+        mouseLocation = CGPoint(x: -500, y: -500)
         let manager = makeManager()
 
         let created = manager.create()!
 
         XCTAssertEqual(created.x, screens[0].minX + 16, accuracy: 0.001)
         XCTAssertEqual(created.y, screens[0].maxY - 260 - 16, accuracy: 0.001)
+    }
+
+    func test_create_withoutMouseLocation_fallsBackToDefaultPosition() {
+        mouseLocation = nil
+        let manager = makeManager()
+
+        let created = manager.create()!
+
+        XCTAssertEqual(created.x, screens[0].minX + 16, accuracy: 0.001)
+        XCTAssertEqual(created.y, screens[0].maxY - 260 - 16, accuracy: 0.001)
+    }
+
+    func test_create_nearScreenEdge_clampsFullyInsideScreen() {
+        mouseLocation = CGPoint(x: 1918, y: 1043)
+        let manager = makeManager()
+
+        let created = manager.create()!
+
+        XCTAssertLessThanOrEqual(created.frame.maxX, screens[0].maxX)
+        XCTAssertLessThanOrEqual(created.frame.maxY, screens[0].maxY)
+        XCTAssertGreaterThanOrEqual(created.frame.minX, screens[0].minX)
+        XCTAssertGreaterThanOrEqual(created.frame.minY, screens[0].minY)
     }
 
     func test_create_inheritsMostRecentlyUsedColor() {
@@ -206,6 +229,89 @@ final class StickyNoteManagerTests: XCTestCase {
         try await Task.sleep(nanoseconds: 200_000_000)
         XCTAssertEqual(store.savedNotes.count, 1)
         XCTAssertEqual(store.savedNotes[0].height, 300)
+    }
+
+    // MARK: - 2.1 默认尺寸记忆（最后手动调整即默认）
+
+    /// 手动缩放后，下一张新建便签沿用调整后的尺寸（且仍居中于鼠标）。
+    func test_create_afterManualResize_usesRememberedSize() {
+        let manager = makeManager()
+        let note = manager.create()!
+
+        manager.updateFrame(id: note.id, frame: CGRect(x: 10, y: 20, width: 400, height: 300))
+        let second = manager.create()!
+
+        XCTAssertEqual(second.width, 400, accuracy: 0.001)
+        XCTAssertEqual(second.height, 300, accuracy: 0.001)
+        XCTAssertEqual(second.frame.midX, 960, accuracy: 0.001)
+        XCTAssertEqual(second.frame.midY, 522, accuracy: 0.001)
+    }
+
+    /// 仅拖动（尺寸不变）不得改写默认尺寸偏好。
+    func test_updateFrame_moveOnly_doesNotRecordDefaultSize() {
+        let manager = makeManager()
+        let note = manager.create()!
+
+        manager.updateFrame(
+            id: note.id,
+            frame: CGRect(
+                x: 500, y: 400,
+                width: StickyNoteGeometry.defaultSize.width,
+                height: StickyNoteGeometry.defaultSize.height
+            )
+        )
+        let second = manager.create()!
+
+        XCTAssertEqual(second.width, StickyNoteGeometry.defaultSize.width, accuracy: 0.001)
+        XCTAssertEqual(second.height, StickyNoteGeometry.defaultSize.height, accuracy: 0.001)
+    }
+
+    /// 记录的尺寸跨 Manager 实例保留（重启后沿用）。
+    func test_create_rememberedSize_survivesManagerRecreation() {
+        let manager = makeManager()
+        let note = manager.create()!
+        manager.updateFrame(id: note.id, frame: CGRect(x: 0, y: 0, width: 420, height: 320))
+
+        let recreated = makeManager()
+        let created = recreated.create()!
+
+        XCTAssertEqual(created.width, 420, accuracy: 0.001)
+        XCTAssertEqual(created.height, 320, accuracy: 0.001)
+    }
+
+    /// 缩放值小于最小尺寸：写入前钳到最小尺寸，新建沿用最小尺寸而非非法值。
+    func test_create_afterResizeBelowMinimum_usesClampedMinimumSize() {
+        let manager = makeManager()
+        let note = manager.create()!
+
+        manager.updateFrame(id: note.id, frame: CGRect(x: 0, y: 0, width: 50, height: 40))
+        let second = manager.create()!
+
+        XCTAssertEqual(second.width, StickyNoteGeometry.minimumSize.width, accuracy: 0.001)
+        XCTAssertEqual(second.height, StickyNoteGeometry.minimumSize.height, accuracy: 0.001)
+    }
+
+    /// 偏好残留脏数据（小于最小尺寸）：回落静态默认尺寸。
+    func test_create_invalidStoredSize_fallsBackToDefaultSize() {
+        userDefaults.set(100.0, forKey: UserDefaultsKeys.stickyNoteDefaultNoteWidth)
+        userDefaults.set(100.0, forKey: UserDefaultsKeys.stickyNoteDefaultNoteHeight)
+        let manager = makeManager()
+
+        let created = manager.create()!
+
+        XCTAssertEqual(created.width, StickyNoteGeometry.defaultSize.width, accuracy: 0.001)
+        XCTAssertEqual(created.height, StickyNoteGeometry.defaultSize.height, accuracy: 0.001)
+    }
+
+    /// 偏好只剩单键（另一键缺失，视为不成对脏数据）：回落静态默认尺寸。
+    func test_create_partiallyStoredSize_fallsBackToDefaultSize() {
+        userDefaults.set(400.0, forKey: UserDefaultsKeys.stickyNoteDefaultNoteWidth)
+        let manager = makeManager()
+
+        let created = manager.create()!
+
+        XCTAssertEqual(created.width, StickyNoteGeometry.defaultSize.width, accuracy: 0.001)
+        XCTAssertEqual(created.height, StickyNoteGeometry.defaultSize.height, accuracy: 0.001)
     }
 
     // MARK: - 3 收起 / 完成 / 恢复

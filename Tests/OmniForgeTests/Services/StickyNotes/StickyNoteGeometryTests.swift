@@ -8,46 +8,96 @@ final class StickyNoteGeometryTests: XCTestCase {
     private let sideScreen = CGRect(x: 1920, y: 0, width: 1080, height: 1920)
     private var screens: [CGRect] { [mainScreen, sideScreen] }
 
-    func test_cascadeFrame_withoutHistory_returnsMainScreenDefaultPosition() {
-        let frame = StickyNoteGeometry.cascadeFrame(lastCreatedFrame: nil, visibleScreens: screens)
+    func test_frameAtMouse_centersFrameOnMouse() {
+        let mouse = CGPoint(x: 960, y: 522)
+        let frame = StickyNoteGeometry.frameAtMouse(
+            mouse,
+            size: StickyNoteGeometry.defaultSize,
+            visibleScreens: screens
+        )
 
-        XCTAssertEqual(frame.width, 320)
-        XCTAssertEqual(frame.height, 260)
-        // 主屏左上角，留 16pt 边距
-        XCTAssertEqual(frame.minX, mainScreen.minX + 16, accuracy: 0.001)
-        XCTAssertEqual(frame.maxY, mainScreen.maxY - 16, accuracy: 0.001)
+        XCTAssertEqual(frame.midX, mouse.x, accuracy: 0.001)
+        XCTAssertEqual(frame.midY, mouse.y, accuracy: 0.001)
+        XCTAssertEqual(frame.size, StickyNoteGeometry.defaultSize)
     }
 
-    func test_cascadeFrame_withHistory_offsetsVisuallyDownRight() {
-        let last = CGRect(x: 100, y: 600, width: 320, height: 260)
-        let frame = StickyNoteGeometry.cascadeFrame(lastCreatedFrame: last, visibleScreens: screens)
+    func test_frameAtMouse_nearScreenEdge_clampsFullyInsideScreen() {
+        // 鼠标贴主屏右上角：以鼠标为中心的 frame 会越界，须整体钳回可视区
+        let mouse = CGPoint(x: mainScreen.maxX - 4, y: mainScreen.maxY - 4)
+        let frame = StickyNoteGeometry.frameAtMouse(
+            mouse,
+            size: StickyNoteGeometry.defaultSize,
+            visibleScreens: screens
+        )
 
-        // AppKit y 向上为正：视觉右下 = x+28、y-28
-        XCTAssertEqual(frame.origin.x, 128, accuracy: 0.001)
-        XCTAssertEqual(frame.origin.y, 572, accuracy: 0.001)
-        XCTAssertEqual(frame.size, last.size)
+        XCTAssertTrue(StickyNoteGeometry.isFullyContained(frame, in: [mainScreen]))
     }
 
-    func test_cascadeFrame_whenCandidateExitsScreens_fallsBackToDefault() {
-        // 级联后右下角越出主屏右缘
-        let last = CGRect(x: 1650, y: 810, width: 320, height: 260)
-        let frame = StickyNoteGeometry.cascadeFrame(lastCreatedFrame: last, visibleScreens: screens)
+    func test_frameAtMouse_onSideScreen_landsOnSideScreen() {
+        let mouse = CGPoint(x: sideScreen.midX, y: sideScreen.midY)
+        let frame = StickyNoteGeometry.frameAtMouse(
+            mouse,
+            size: StickyNoteGeometry.defaultSize,
+            visibleScreens: screens
+        )
+
+        XCTAssertTrue(StickyNoteGeometry.isFullyContained(frame, in: [sideScreen]))
+        XCTAssertEqual(frame.midX, mouse.x, accuracy: 0.001)
+        XCTAssertEqual(frame.midY, mouse.y, accuracy: 0.001)
+    }
+
+    func test_frameAtMouse_withoutMouseLocation_fallsBackToDefault() {
+        let frame = StickyNoteGeometry.frameAtMouse(
+            nil,
+            size: StickyNoteGeometry.defaultSize,
+            visibleScreens: screens
+        )
 
         XCTAssertEqual(frame, StickyNoteGeometry.defaultFrame(on: screens))
     }
 
-    func test_cascadeFrame_whenCandidateFitsSideScreen_usesCandidate() {
-        // 最近便签位于副屏，级联后仍完整落在副屏内
-        let last = CGRect(x: 1950, y: 200, width: 320, height: 260)
-        let frame = StickyNoteGeometry.cascadeFrame(lastCreatedFrame: last, visibleScreens: screens)
+    func test_frameAtMouse_mouseOffAllScreens_fallsBackToDefault() {
+        let offScreens = CGPoint(x: -500, y: -500)
+        let frame = StickyNoteGeometry.frameAtMouse(
+            offScreens,
+            size: StickyNoteGeometry.defaultSize,
+            visibleScreens: screens
+        )
 
-        XCTAssertEqual(frame.origin.x, 1978, accuracy: 0.001)
-        XCTAssertEqual(frame.origin.y, 172, accuracy: 0.001)
+        XCTAssertEqual(frame, StickyNoteGeometry.defaultFrame(on: screens))
+    }
+
+    func test_frameAtMouse_sizeExceedsScreen_fitsInsideScreen() {
+        let mouse = CGPoint(x: mainScreen.midX, y: mainScreen.midY)
+        let oversized = CGSize(width: 3000, height: 2000)
+        let frame = StickyNoteGeometry.frameAtMouse(mouse, size: oversized, visibleScreens: [mainScreen])
+
+        XCTAssertEqual(frame.width, mainScreen.width, accuracy: 0.001)
+        XCTAssertEqual(frame.height, mainScreen.height, accuracy: 0.001)
+        XCTAssertTrue(StickyNoteGeometry.isFullyContained(frame, in: [mainScreen]))
+    }
+
+    func test_frameAtMouse_usesRememberedSize() {
+        let mouse = CGPoint(x: 960, y: 522)
+        let remembered = CGSize(width: 480, height: 360)
+        let frame = StickyNoteGeometry.frameAtMouse(mouse, size: remembered, visibleScreens: screens)
+
+        XCTAssertEqual(frame.size, remembered)
+        XCTAssertEqual(frame.midX, mouse.x, accuracy: 0.001)
     }
 
     func test_defaultFrame_withoutScreens_returnsZeroOriginDefaultSize() {
         let frame = StickyNoteGeometry.defaultFrame(on: [])
         XCTAssertEqual(frame, CGRect(origin: .zero, size: StickyNoteGeometry.defaultSize))
+    }
+
+    func test_defaultFrame_withCustomSize_usesGivenSizeAtTopLeft() {
+        let custom = CGSize(width: 480, height: 360)
+        let frame = StickyNoteGeometry.defaultFrame(size: custom, on: screens)
+
+        XCTAssertEqual(frame.size, custom)
+        XCTAssertEqual(frame.minX, mainScreen.minX + 16, accuracy: 0.001)
+        XCTAssertEqual(frame.maxY, mainScreen.maxY - 16, accuracy: 0.001)
     }
 
     func test_awakenFrame_centersHorizontallyBelowScreenTop() {

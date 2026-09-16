@@ -54,6 +54,8 @@ final class StickyNoteManager: ObservableObject {
     private let userDefaults: UserDefaults
     private let isFeatureAvailable: () -> Bool
     private let visibleScreensProvider: () -> [CGRect]
+    /// 鼠标指针当前位置（AppKit 全局坐标）；nil = 读不到。新建便签落点用。
+    private let mouseLocationProvider: () -> CGPoint?
     private let stringsProvider: () -> Strings
     /// 编辑 / frame 防抖落库间隔；测试注入短间隔。
     private let persistDebounce: TimeInterval
@@ -76,6 +78,7 @@ final class StickyNoteManager: ObservableObject {
         visibleScreensProvider: @escaping () -> [CGRect] = {
             NSScreen.screens.map(\.visibleFrame)
         },
+        mouseLocationProvider: @escaping () -> CGPoint? = { NSEvent.mouseLocation },
         stringsProvider: @escaping () -> Strings = { L10n(userDefaults: .standard).s },
         now: @escaping () -> Date = Date.init,
         persistDebounce: TimeInterval = 0.5
@@ -90,6 +93,7 @@ final class StickyNoteManager: ObservableObject {
         self.isFeatureAvailable = isFeatureAvailable
             ?? { FeatureRuntime.shared.isAvailable(.stickyNotes) }
         self.visibleScreensProvider = visibleScreensProvider
+        self.mouseLocationProvider = mouseLocationProvider
         self.stringsProvider = stringsProvider
         self.persistDebounce = persistDebounce
         notes = store.loadNotes()
@@ -103,20 +107,17 @@ final class StickyNoteManager: ObservableObject {
 
     // MARK: - 新建
 
-    /// 新建便签：位置 = 最近创建便签级联（越界回落主屏默认位），颜色继承最近使用色。
+    /// 新建便签：位置 = 鼠标指针处（居中并钳入所在屏，读不到指针回落主屏默认位），
+    /// 尺寸 = 上次手动调整值（无记录用默认尺寸），颜色继承最近使用色。
     @discardableResult
     func create() -> StickyNote? {
         let screens = visibleScreensProvider()
         let lastCreated = notes.max { $0.createdAt < $1.createdAt }
-        let frame: CGRect
-        if let lastCreated {
-            frame = StickyNoteGeometry.cascadeFrame(
-                lastCreatedFrame: lastCreated.frame,
-                visibleScreens: screens
-            )
-        } else {
-            frame = StickyNoteGeometry.defaultFrame(on: screens)
-        }
+        let frame = StickyNoteGeometry.frameAtMouse(
+            mouseLocationProvider(),
+            size: defaultNoteSize(),
+            visibleScreens: screens
+        )
         let timestamp = now()
         let note = StickyNote(
             content: "",
@@ -274,11 +275,16 @@ final class StickyNoteManager: ObservableObject {
     }
 
     /// 窗口拖动 / 缩放回调：更新内存并防抖落库。
+    /// 尺寸变化（= 用户手动缩放）同步记录为后续新建便签的默认尺寸。
     func updateFrame(id: UUID, frame: CGRect) {
         guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
         guard notes[index].frame != frame else { return }
+        let sizeChanged = notes[index].frame.size != frame.size
         notes[index].frame = frame
         notes[index].updatedAt = now()
+        if sizeChanged {
+            recordDefaultNoteSize(frame.size)
+        }
         dirtyNoteIDs.insert(id)
         schedulePersist(id: id)
     }
@@ -436,6 +442,27 @@ final class StickyNoteManager: ObservableObject {
             return StickyNote.defaultLineHeight
         }
         return stored
+    }
+
+    /// 新建便签的默认尺寸：读「最后手动调整即默认」偏好；宽高成对缺失、非有限值
+    /// 或小于最小尺寸（旧版本残留 / 脏数据）时回落静态默认。口径同 defaultFontSize()。
+    private func defaultNoteSize() -> CGSize {
+        guard let width = userDefaults.object(forKey: UserDefaultsKeys.stickyNoteDefaultNoteWidth) as? Double,
+              let height = userDefaults.object(forKey: UserDefaultsKeys.stickyNoteDefaultNoteHeight) as? Double,
+              width.isFinite, height.isFinite,
+              width >= StickyNoteGeometry.minimumSize.width,
+              height >= StickyNoteGeometry.minimumSize.height else {
+            return StickyNoteGeometry.defaultSize
+        }
+        return CGSize(width: width, height: height)
+    }
+
+    /// 用户手动缩放后记录为新建默认尺寸（最后使用即默认，对齐字号/行高偏好语义）。
+    /// 写入前钳到最小尺寸，保证读回值恒合法。
+    private func recordDefaultNoteSize(_ size: CGSize) {
+        let clamped = StickyNoteGeometry.clampedSize(size)
+        userDefaults.set(clamped.width, forKey: UserDefaultsKeys.stickyNoteDefaultNoteWidth)
+        userDefaults.set(clamped.height, forKey: UserDefaultsKeys.stickyNoteDefaultNoteHeight)
     }
 
     /// 物理回收未完成的空白便签（先取 ID 再删，避免遍历中变动 notes）。

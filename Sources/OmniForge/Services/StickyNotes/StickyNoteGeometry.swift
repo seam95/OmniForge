@@ -1,6 +1,6 @@
 import Foundation
 
-/// 便签几何纯函数：尺寸常量、级联位置、唤起位置。
+/// 便签几何纯函数：尺寸常量、鼠标落点位置、唤起位置。
 /// 全部接收屏幕矩形参数而非直接读 NSScreen，保证可单测。
 /// 坐标系为 AppKit 全局坐标（原点在左下，y 向上为正）。
 enum StickyNoteGeometry {
@@ -8,8 +8,6 @@ enum StickyNoteGeometry {
     static let defaultSize = CGSize(width: 320, height: 260)
     /// 最小尺寸（SPEC D12）。
     static let minimumSize = CGSize(width: 240, height: 180)
-    /// 新便签相对最近创建便签的级联偏移：视觉上向右下移动 28pt。
-    static let cascadeOffset = CGVector(dx: 28, dy: -28)
     /// 唤起 / 默认位置与屏幕边缘的安全边距。
     static let screenEdgeMargin: CGFloat = 16
     /// 折叠条高度：工具栏 26 + 上下内边距 10。
@@ -36,34 +34,39 @@ enum StickyNoteGeometry {
         )
     }
 
-    /// 新便签位置：最近创建便签 frame 级联偏移；无历史或越出屏幕可视区
-    /// （候选位置未被任何屏完整包含）时回落主屏默认位置。
+    /// 新便签位置：以鼠标指针为中心放置，整体钳进指针所在屏的可视区；
+    /// 无指针坐标或指针不在任何屏可视区内时，回落主屏默认位置。
     /// `visibleScreens` 首个元素视为主屏。
-    static func cascadeFrame(
-        lastCreatedFrame: CGRect?,
+    static func frameAtMouse(
+        _ mouseLocation: CGPoint?,
+        size: CGSize,
         visibleScreens: [CGRect]
     ) -> CGRect {
-        guard let lastCreatedFrame else {
-            return defaultFrame(on: visibleScreens)
+        guard let mouseLocation,
+              let screen = visibleScreens.first(where: { $0.contains(mouseLocation) }) else {
+            return defaultFrame(size: size, on: visibleScreens)
         }
-        let candidate = lastCreatedFrame.offsetBy(dx: cascadeOffset.dx, dy: cascadeOffset.dy)
-        if isFullyContained(candidate, in: visibleScreens) {
-            return candidate
-        }
-        return defaultFrame(on: visibleScreens)
+        let fitted = clampedSizeToFit(size, in: screen)
+        let centered = CGRect(
+            x: mouseLocation.x - fitted.width / 2,
+            y: mouseLocation.y - fitted.height / 2,
+            width: fitted.width,
+            height: fitted.height
+        )
+        return WindowFrameVisibility.clampedFrame(centered, toVisibleFrame: screen)
     }
 
-    /// 主屏默认位置：可视区左上角，留安全边距（级联链向右下展开）。
-    static func defaultFrame(on visibleScreens: [CGRect]) -> CGRect {
+    /// 主屏默认位置：可视区左上角，留安全边距。
+    static func defaultFrame(size: CGSize = defaultSize, on visibleScreens: [CGRect]) -> CGRect {
         guard let screen = visibleScreens.first else {
-            return CGRect(origin: .zero, size: defaultSize)
+            return CGRect(origin: .zero, size: clampedSize(size))
         }
-        let size = clampedSizeToFit(defaultSize, in: screen)
+        let fitted = clampedSizeToFit(size, in: screen)
         return CGRect(
             x: screen.minX + screenEdgeMargin,
-            y: screen.maxY - size.height - screenEdgeMargin,
-            width: size.width,
-            height: size.height
+            y: screen.maxY - fitted.height - screenEdgeMargin,
+            width: fitted.width,
+            height: fitted.height
         )
     }
 
