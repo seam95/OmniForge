@@ -410,6 +410,10 @@ struct Strings: Equatable {
     let onboardingDoneTitle: String
     let onboardingDoneHint: String
     // MARK: - Onboarding Enhancements
+    let onboardingStepPersona: String
+    let onboardingStepPlayground: String
+    let onboardingStepPermissions: String
+    let onboardingStepLaunch: String
     let onboardingPersonaTitle: String
     let onboardingPersonaSubtitle: String
     let onboardingPersonaAIDeveloperTitle: String

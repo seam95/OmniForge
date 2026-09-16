@@ -391,6 +391,10 @@ extension Strings {
         onboardingDoneTitle: "设置完成",
         onboardingDoneHint: "点击菜单栏图标开始使用 OmniForge。您可以在设置中随时修改配置。",
         // MARK: - Onboarding Enhancements
+        onboardingStepPersona: "场景预设",
+        onboardingStepPlayground: "快捷演练",
+        onboardingStepPermissions: "权限设置",
+        onboardingStepLaunch: "启航定锚",
         onboardingPersonaTitle: "选择你的启航场景",
         onboardingPersonaSubtitle: "OmniForge 将根据你的主要工作流预设默认功能，后续可随时调整",
         onboardingPersonaAIDeveloperTitle: "AI 开发者",

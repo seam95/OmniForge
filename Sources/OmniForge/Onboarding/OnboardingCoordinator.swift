@@ -90,19 +90,24 @@ final class OnboardingCoordinator: ObservableObject {
         userDefaults.set(currentAppVersion, forKey: UserDefaultsKeys.onboardingCompletedVersion)
         userDefaults.removeObject(forKey: UserDefaultsKeys.onboardingCurrentStep)
 
+        // 1. 立即标记不可见并重置步骤，窗口同步关闭
+        isWindowVisible = false
+        currentStep = 0
+        onApplyDockIconPreference?(retainDockIcon)
+
         let persona = selectedPersona
+        let anchorAction = onCompletionAnchoring
+
+        // 2. 异步应用特性预设，不阻塞主线程 UI
         Task { @MainActor in
             await persona.apply(to: FeatureRuntime.shared)
         }
 
-        onApplyDockIconPreference?(retainDockIcon)
-
-        currentStep = 0
-        isWindowVisible = false
-
-        let anchorAction = onCompletionAnchoring
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            anchorAction?()
+        // 3. 呼出控制中心定锚
+        if let anchorAction {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                anchorAction()
+            }
         }
     }
 

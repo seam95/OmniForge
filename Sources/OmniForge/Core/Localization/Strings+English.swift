@@ -391,6 +391,10 @@ extension Strings {
         onboardingDoneTitle: "Setup Complete",
         onboardingDoneHint: "Click the menu bar icon to start using OmniForge. You can change settings anytime.",
         // MARK: - Onboarding Enhancements
+        onboardingStepPersona: "Persona",
+        onboardingStepPlayground: "Try It",
+        onboardingStepPermissions: "Permissions",
+        onboardingStepLaunch: "Launch",
         onboardingPersonaTitle: "Choose Your Starting Persona",
         onboardingPersonaSubtitle: "OmniForge sets up tailored defaults for your workflow. You can customize them anytime.",
         onboardingPersonaAIDeveloperTitle: "AI Developer",

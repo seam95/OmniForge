@@ -70,7 +70,9 @@ final class OnboardingWindowController {
     }
 
     private func closeOnboardingWindow() {
-        onboardingWindow?.orderOut(nil)
+        guard let window = onboardingWindow else { return }
+        window.orderOut(nil)
+        window.close()
         onboardingWindow = nil
     }
 
