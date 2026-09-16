@@ -274,6 +274,8 @@ final class PinnedScreenshotWindowController: NSObject, NSWindowDelegate {
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        // macOS 26+ 起 orderFront/orderOut 默认带系统淡入淡出，钉图要求即时显隐。
+        panel.animationBehavior = .none
         panel.isMovableByWindowBackground = false
         panel.delegate = self
         return panel
@@ -562,5 +564,14 @@ final class PinnedScreenshotContentView: NSView {
 
     override func menu(for event: NSEvent) -> NSMenu? {
         menuProvider?()
+    }
+}
+
+// MARK: - 测试钩子
+
+extension PinnedScreenshotWindowController {
+    /// 测试用：暴露钉图面板建窗产物（与 present 同一建窗路径）。
+    func makePanelForTesting(frame: CGRect) -> NSPanel {
+        makePanel(frame: frame)
     }
 }

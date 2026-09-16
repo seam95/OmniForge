@@ -20,6 +20,8 @@ final class RecordingBorderPanel: NSPanel {
         backgroundColor = .clear
         ignoresMouseEvents = true
         hasShadow = false
+        // macOS 26+ 起 orderFront/orderOut 默认带系统淡入淡出，录屏边框要求即时显隐。
+        animationBehavior = .none
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         contentView = borderView
     }

@@ -116,6 +116,8 @@ final class ScrollCaptureHUDWindow: NSPanel {
         hasShadow = true
         isMovableByWindowBackground = false
         hidesOnDeactivate = false
+        // macOS 26+ 起 orderFront/orderOut 默认带系统淡入淡出，HUD 要求即时显隐。
+        animationBehavior = .none
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
         let container = NSView()
@@ -232,6 +234,8 @@ final class ScrollPreviewWindow: NSPanel {
         ignoresMouseEvents = true
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
+        // macOS 26+ 起 orderFront/orderOut 默认带系统淡入淡出，预览窗要求即时显隐。
+        animationBehavior = .none
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
         // 纯图片 + 圆角容器，无附加 chrome。
@@ -315,6 +319,8 @@ final class EditorInfoToastWindow: NSPanel {
         hasShadow = true
         ignoresMouseEvents = true
         hidesOnDeactivate = false
+        // macOS 26+ 起 orderFront/orderOut 默认带系统淡入淡出，toast 要求即时显隐。
+        animationBehavior = .none
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
 
         let container = NSView(frame: .zero)

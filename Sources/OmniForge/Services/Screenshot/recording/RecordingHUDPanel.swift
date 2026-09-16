@@ -43,6 +43,8 @@ final class RecordingHUDPanel: NSPanel {
         level = .statusBar + 2
         hidesOnDeactivate = false
         ignoresMouseEvents = false
+        // macOS 26+ 起 orderFront/orderOut 默认带系统淡入淡出，HUD 要求即时显隐。
+        animationBehavior = .none
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
         containerView.panel = self

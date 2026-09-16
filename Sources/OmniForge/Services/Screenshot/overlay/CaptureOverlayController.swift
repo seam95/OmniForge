@@ -463,6 +463,8 @@ final class CaptureOverlayController {
         panel.isOpaque = false
         panel.hasShadow = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        // macOS 26+ 起 orderFront/orderOut 默认带系统淡入淡出，遮罩要求即时显隐。
+        panel.animationBehavior = .none
         panel.acceptsMouseMovedEvents = true
         panel.ignoresMouseEvents = false
         panel.setFrame(frame, display: false)
@@ -949,6 +951,11 @@ private final class OverlayPanel: NSPanel {
 // MARK: - 测试钩子
 
 extension CaptureOverlayController {
+    /// 测试用：暴露遮罩面板建窗产物（与 startCapture/startEditor 同一建窗路径）。
+    func makeOverlayPanelForTesting(for screen: NSScreen) -> NSPanel {
+        createOverlayPanel(for: screen)
+    }
+
     /// 测试用：枚举当前所有 overlay 面板对应的 SelectionView。
     /// 仅用于断言多屏编辑器交互禁用等内部状态。
     var selectionViewsForTesting: [SelectionView] {
