@@ -91,6 +91,9 @@ enum UserDefaultsKeys {
     // Sticky Notes — 持久化字符串必须稳定，不得重命名
     static let stickyNoteHotkeyKeyCode = "stickyNote.hotkey.keyCode"
     static let stickyNoteHotkeyModifiers = "stickyNote.hotkey.modifiers"
+    // 新建便签的默认排版（「最后使用即默认」：任一便签调整字号/行高后成为后续新建便签的默认值）
+    static let stickyNoteDefaultFontSize = "stickyNote.defaultFontSize"
+    static let stickyNoteDefaultLineHeight = "stickyNote.defaultLineHeight"
     // Prompt Optimizer — 提示词优化（持久化字符串必须稳定，不得重命名）
     static let promptOptimizerBaseURL = "promptOptimizer.baseURL"
     static let promptOptimizerModel = "promptOptimizer.model"

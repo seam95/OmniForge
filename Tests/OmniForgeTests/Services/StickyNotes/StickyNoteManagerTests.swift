@@ -385,6 +385,73 @@ final class StickyNoteManagerTests: XCTestCase {
         XCTAssertEqual(store.saveCallCount, 0, "同档重复设置与非法档位值均不落库")
     }
 
+    // MARK: - 3.3 默认排版持久化（最后使用即默认，新建便签继承，重启保留）
+
+    /// 调整某张便签字号后，之后新建的便签继承该字号。
+    func test_setFontSize_becomesDefaultForNewNotes() {
+        let manager = makeManager()
+        let first = manager.create()!
+
+        manager.setFontSize(id: first.id, fontSize: 20)
+        let second = manager.create()!
+
+        XCTAssertEqual(second.fontSize, 20, "新建便签须沿用最近调整的字号")
+        XCTAssertEqual(second.lineHeight, StickyNote.defaultLineHeight, "未调整过的行高保持默认")
+    }
+
+    /// 调整某张便签行高后，之后新建的便签继承该行高。
+    func test_setLineHeight_becomesDefaultForNewNotes() {
+        let manager = makeManager()
+        let first = manager.create()!
+
+        manager.setLineHeight(id: first.id, lineHeight: 1.8)
+        let second = manager.create()!
+
+        XCTAssertEqual(second.lineHeight, 1.8, "新建便签须沿用最近调整的行高")
+        XCTAssertEqual(second.fontSize, StickyNote.defaultFontSize, "未调整过的字号保持默认")
+    }
+
+    /// 新 Manager 实例（模拟应用重启）读到同一 UserDefaults：默认排版仍然生效。
+    func test_defaultTypography_survivesManagerRecreation() {
+        let firstManager = makeManager()
+        let note = firstManager.create()!
+        firstManager.setFontSize(id: note.id, fontSize: 17)
+        firstManager.setLineHeight(id: note.id, lineHeight: 1.5)
+
+        let secondManager = makeManager()
+        let revived = secondManager.create()!
+
+        XCTAssertEqual(revived.fontSize, 17, "重启后新建便签须继承持久化字号")
+        XCTAssertEqual(revived.lineHeight, 1.5, "重启后新建便签须继承持久化行高")
+    }
+
+    /// 持久化值不在档位表内（旧版本残留 / 档位表调整）：回落静态默认，不得直接采用。
+    func test_defaultTypography_invalidStoredValues_fallBackToStaticDefaults() {
+        userDefaults.set(14.0, forKey: UserDefaultsKeys.stickyNoteDefaultFontSize)  // 非档位
+        userDefaults.set(1.3, forKey: UserDefaultsKeys.stickyNoteDefaultLineHeight)  // 非档位
+        let manager = makeManager()
+
+        let note = manager.create()!
+
+        XCTAssertEqual(note.fontSize, StickyNote.defaultFontSize)
+        XCTAssertEqual(note.lineHeight, StickyNote.defaultLineHeight)
+    }
+
+    /// 调整默认值只影响之后新建的便签：存量便签的字号 / 行高保持不变。
+    func test_setFontSize_doesNotRewriteExistingNotes() {
+        let manager = makeManager()
+        let first = manager.create()!
+        let second = manager.create()!
+
+        manager.setFontSize(id: second.id, fontSize: 24)
+
+        XCTAssertEqual(manager.notes.first { $0.id == first.id }?.fontSize, StickyNote.defaultFontSize,
+                       "存量便签字号不得被默认值变化改写")
+        XCTAssertEqual(store.savedNotes.filter { $0.id == first.id }.last?.fontSize,
+                       StickyNote.defaultFontSize,
+                       "存量便签落库记录不得被默认值变化改写")
+    }
+
     func test_complete_overridesCollapseAndHidesWindow() {
         let manager = makeManager()
         let note = manager.create()!

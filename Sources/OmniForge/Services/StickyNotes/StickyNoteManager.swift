@@ -125,6 +125,8 @@ final class StickyNoteManager: ObservableObject {
             y: frame.minY,
             width: frame.width,
             height: frame.height,
+            fontSize: defaultFontSize(),
+            lineHeight: defaultLineHeight(),
             createdAt: timestamp,
             updatedAt: timestamp
         )
@@ -171,20 +173,25 @@ final class StickyNoteManager: ObservableObject {
     }
 
     /// 设置正文字号（工具栏 Aa 档位面板）：仅接受档位表内的值。
+    /// 调整后写入「新建便签默认排版」偏好（最后使用即默认），重启后保留；
+    /// 存量便签各存各的列，不回写。
     func setFontSize(id: UUID, fontSize: Double) {
         guard StickyNote.fontSizeSteps.contains(fontSize),
               let note = notes.first(where: { $0.id == id }),
               note.fontSize != fontSize else { return }
         mutate(id) { $0.fontSize = fontSize }
+        userDefaults.set(fontSize, forKey: UserDefaultsKeys.stickyNoteDefaultFontSize)
         syncWindow(id: id)
     }
 
     /// 设置正文行高倍数（工具栏 Aa 档位面板）：仅接受档位表内的值。
+    /// 默认排版偏好语义同 setFontSize。
     func setLineHeight(id: UUID, lineHeight: Double) {
         guard StickyNote.lineHeightSteps.contains(lineHeight),
               let note = notes.first(where: { $0.id == id }),
               note.lineHeight != lineHeight else { return }
         mutate(id) { $0.lineHeight = lineHeight }
+        userDefaults.set(lineHeight, forKey: UserDefaultsKeys.stickyNoteDefaultLineHeight)
         syncWindow(id: id)
     }
 
@@ -412,6 +419,24 @@ final class StickyNoteManager: ObservableObject {
     }
 
     // MARK: - private
+
+    /// 新建便签的默认字号：读「最后使用即默认」偏好；缺失或不是档位表内的值（旧版本残留 / 档位表调整）回落静态默认。
+    private func defaultFontSize() -> Double {
+        guard let stored = userDefaults.object(forKey: UserDefaultsKeys.stickyNoteDefaultFontSize) as? Double,
+              StickyNote.fontSizeSteps.contains(stored) else {
+            return StickyNote.defaultFontSize
+        }
+        return stored
+    }
+
+    /// 新建便签的默认行高倍数；口径同 defaultFontSize()。
+    private func defaultLineHeight() -> Double {
+        guard let stored = userDefaults.object(forKey: UserDefaultsKeys.stickyNoteDefaultLineHeight) as? Double,
+              StickyNote.lineHeightSteps.contains(stored) else {
+            return StickyNote.defaultLineHeight
+        }
+        return stored
+    }
 
     /// 物理回收未完成的空白便签（先取 ID 再删，避免遍历中变动 notes）。
     private func recycleBlankNotes() {
