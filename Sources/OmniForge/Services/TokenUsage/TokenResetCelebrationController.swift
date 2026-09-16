@@ -137,9 +137,14 @@ private struct TokenResetCelebrationOverlayView: View {
             Color.clear
 
             if showsConfetti && fireworksShown {
-                VortexView(fireworks)
-                    .transition(.opacity)
-                    .allowsHitTesting(false)
+                VortexView(fireworks) {
+                    Circle()
+                        .fill(.white)
+                        .frame(width: 16, height: 16)
+                        .tag("circle")
+                }
+                .transition(.opacity)
+                .allowsHitTesting(false)
                     .onAppear {
                         DispatchQueue.main.asyncAfter(deadline: .now() + fireworksDuration) {
                             withAnimation(.easeOut(duration: 0.5)) { fireworksShown = false }

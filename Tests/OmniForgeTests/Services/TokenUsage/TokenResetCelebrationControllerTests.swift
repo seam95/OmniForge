@@ -72,4 +72,15 @@ final class TokenResetCelebrationControllerTests: XCTestCase {
         )
         controller.dismiss()
     }
+
+    func test_celebrationController_playAndDismiss() {
+        let controller = TokenResetCelebrationController()
+        controller.play(
+            message: "测试重置",
+            provider: .codex,
+            showsToast: true,
+            showsConfetti: true
+        )
+        controller.dismiss()
+    }
 }
