@@ -40,7 +40,7 @@ final class KeepAwakeSettingsStateTests: XCTestCase {
 
     func test_settingsNavigation_selectsKeepAwakeWhenAvailable() {
         let navigation = SettingsNavigationModel(selectedTab: .general)
-        navigation.select(.keepAwake, isAvailable: { $0 == .keepAwake || $0 == .launchAtLogin })
+        navigation.select(.keepAwake, isAvailable: { $0 == .keepAwake || $0 == .mouse })
         XCTAssertEqual(navigation.selectedTab, .keepAwake)
     }
 

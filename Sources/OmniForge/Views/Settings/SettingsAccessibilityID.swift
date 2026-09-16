@@ -12,6 +12,7 @@ enum SettingsAccessibilityID: String, CaseIterable {
     case performanceMonitorEnabled = "performance.monitor.enabled"
     case tokenUsageSegment = "tokenUsage.segment"
     case tokenUsageEnabled = "tokenUsage.enabled"
+    case featureHubSegment = "featureHub.segment"
     case tokenUsageRefreshInterval = "tokenUsage.refreshInterval"
     case tokenUsageDefaultPeriod = "tokenUsage.defaultPeriod"
     case tokenUsageSessionAlert = "tokenUsage.sessionAlert"

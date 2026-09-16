@@ -39,7 +39,7 @@ final class SmoothScrollService: ObservableObject {
     init(
         userDefaults: UserDefaults = .standard,
         featureAvailable: @escaping () -> Bool = {
-            MainActor.assumeIsolated { FeatureRuntime.shared.isAvailable(.smoothScroll) }
+            MainActor.assumeIsolated { FeatureRuntime.shared.isAvailable(.mouse) }
         },
         permissionGranted: @escaping () -> Bool = { AXIsProcessTrusted() },
         startOverride: (() throws -> Void)? = nil,

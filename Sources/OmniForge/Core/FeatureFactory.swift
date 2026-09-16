@@ -146,9 +146,6 @@ struct FeatureFactory {
             if runtime.manager(for: .shelf, as: ShelfService.self) == nil {
                 runtime.register(.shelf, manager: ShelfService(userDefaults: userDefaults))
             }
-        case .launchAtLogin:
-            // 极轻量，由 AppState/通用设置持有即可，不进重特性工厂
-            break
         case .cleaner:
             // 工具型特性，无后台 Manager 需注册；调度器随可用性启停。
             CleanerScheduler.shared.syncWithPreferences()
@@ -164,7 +161,7 @@ struct FeatureFactory {
         case .dshWeb:
             // 工具型特性：DSHWebManager 轻量单例，由视图懒加载，无需提前注册
             break
-        case .scrollInverter, .smoothScroll, .mouseNavigation, .dockClick:
+        case .mouse:
             // 进程级单例（系统内只能有一个事件 tap），不进注册表；
             // 启停由 FeatureRuntime bindings 调用各自 syncWithPreferences。
             break
@@ -394,8 +391,6 @@ struct FeatureFactory {
             // 卸载终态走显式 teardown（审查 R10）：封闭回调/计时器、关窗并解除
             // hosting 持有环；sync 只改可见性（hide 仅 orderOut，服务与图片不释放）。
             runtime.manager(for: .shelf, as: ShelfService.self)?.teardown()
-        case .launchAtLogin:
-            break
         case .cleaner:
             CleanerScheduler.shared.stop()
         case .uninstaller:
@@ -407,15 +402,12 @@ struct FeatureFactory {
         case .dshWeb:
             // 卸载时终止 dsh web 子进程并清空状态
             DSHWebManager.shared.shutdown()
-        case .scrollInverter, .smoothScroll, .mouseNavigation, .dockClick:
+        case .mouse:
             // 单例自管理：先停 tap 再卸载，避免权限撤销后残留活跃 tap
-            switch feature {
-            case .scrollInverter: ScrollInverter.shared.suspend()
-            case .smoothScroll: SmoothScrollService.shared.suspend()
-            case .mouseNavigation: MouseNavigationService.shared.suspend()
-            case .dockClick: DockClickService.shared.suspend()
-            default: break
-            }
+            ScrollInverter.shared.suspend()
+            SmoothScrollService.shared.suspend()
+            MouseNavigationService.shared.suspend()
+            DockClickService.shared.suspend()
         case .keepAwake:
             break
         case .screenshot:

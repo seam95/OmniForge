@@ -58,7 +58,7 @@ final class DockClickService: ObservableObject {
     init(
         userDefaults: UserDefaults = .standard,
         featureAvailable: @escaping () -> Bool = {
-            MainActor.assumeIsolated { FeatureRuntime.shared.isAvailable(.dockClick) }
+            MainActor.assumeIsolated { FeatureRuntime.shared.isAvailable(.mouse) }
         },
         permissionGranted: @escaping () -> Bool = { AXIsProcessTrusted() },
         startOverride: (() throws -> Void)? = nil,

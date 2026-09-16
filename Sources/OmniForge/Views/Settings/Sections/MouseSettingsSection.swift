@@ -16,13 +16,9 @@ struct MouseSettingsSection: View {
 
     let strings: Strings
 
-    static func visibleFeatures(isAvailable: (AppFeature) -> Bool) -> [AppFeature] {
-        AppFeature.mouseFeatures.filter(isAvailable)
-    }
-
     var body: some View {
         Group {
-            if runtime.isAvailable(.scrollInverter) {
+            if runtime.isAvailable(.mouse) {
                 Section(strings.scrollSection) {
                     Toggle(isOn: $inverterEnabled) {
                         InfoHintLabel(
@@ -34,9 +30,7 @@ struct MouseSettingsSection: View {
                     .onChange(of: inverterEnabled) { _, _ in inverter.syncWithPreferences() }
                     FeatureRunStateRow(state: inverter.runState, strings: strings, retry: inverter.retry)
                 }
-            }
 
-            if runtime.isAvailable(.smoothScroll) {
                 Section(strings.smoothScrollName) {
                     Toggle(isOn: $smoothScrollEnabled) {
                         InfoHintLabel(strings.smoothScrollName, hint: strings.smoothScrollCaption)
@@ -61,9 +55,7 @@ struct MouseSettingsSection: View {
                     }
                     FeatureRunStateRow(state: smoothScroll.runState, strings: strings, retry: smoothScroll.retry)
                 }
-            }
 
-            if runtime.isAvailable(.mouseNavigation) {
                 Section(strings.mouseNavigationSection) {
                     Toggle(isOn: $mouseNavigationEnabled) {
                         InfoHintLabel(strings.mouseNavigationEnable, hint: strings.mouseNavigationCaption)
@@ -76,9 +68,7 @@ struct MouseSettingsSection: View {
                         retry: mouseNavigation.retry
                     )
                 }
-            }
 
-            if runtime.isAvailable(.dockClick) {
                 Section(strings.dockClickSection) {
                     Toggle(isOn: $dockClickMinimize) {
                         InfoHintLabel(strings.dockClickMinimize, hint: strings.dockClickMinimizeCaption)

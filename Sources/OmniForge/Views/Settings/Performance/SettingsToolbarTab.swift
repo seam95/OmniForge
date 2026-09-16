@@ -28,7 +28,7 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
             case .screenshot:
                 return isAvailable(.screenshot)
             case .mouse:
-                return AppFeature.mouseFeatures.contains(where: isAvailable)
+                return isAvailable(.mouse)
             case .performance:
                 return isAvailable(.systemMonitor)
             case .tokenUsage:

@@ -37,7 +37,7 @@ final class OnboardingPersonaTests: XCTestCase {
         XCTAssertTrue(features.contains(.keepAwake))
         XCTAssertTrue(features.contains(.cleaner))
         XCTAssertTrue(features.contains(.uninstaller))
-        XCTAssertTrue(features.contains(.scrollInverter))
+        XCTAssertTrue(features.contains(.mouse))
     }
 
     func test_persona_displayTitleAndDesc_nonEmpty() {

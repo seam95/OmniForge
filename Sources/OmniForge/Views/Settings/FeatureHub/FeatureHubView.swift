@@ -23,37 +23,66 @@ struct FeatureHubView: View {
     }
 
     var body: some View {
+        // 分段 tab 与性能 / Token 用量页同构：置于页面顶部居中铺满、下接发丝线，
+        // 不再嵌进 Form Section（Form 的分组内缩会让 tab 看起来从属于某个分组）。
+        VStack(spacing: 0) {
+            Picker("", selection: $tab) {
+                Text(strings.featureHubTabFeatures)
+                    .tag(HubTab.overview)
+                Text(strings.featureHubTabPermissions)
+                    .tag(HubTab.permissions)
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier(SettingsAccessibilityID.featureHubSegment.rawValue)
+            .labelsHidden()
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            .padding(.bottom, 10)
+
+            Divider()
+
+            Group {
+                if tab == .overview {
+                    overviewForm
+                } else {
+                    permissionsForm
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+    }
+
+    private var overviewForm: some View {
         Form {
+            restartBannerSection
+
+            overviewSections
+        }
+        .settingsPageStyle()
+    }
+
+    /// 仅权限页需要分段说明；特性页说明合并到工具条下方，避免重复长文案。
+    private var permissionsForm: some View {
+        Form {
+            restartBannerSection
+
             Section {
-                Picker("", selection: $tab) {
-                    Text(strings.featureHubTabFeatures)
-                        .tag(HubTab.overview)
-                    Text(strings.featureHubTabPermissions)
-                        .tag(HubTab.permissions)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-            } footer: {
-                // 仅权限页需要分段说明；特性页说明合并到工具条下方，避免重复长文案
-                if tab == .permissions {
-                    Text(strings.featureHubPermissionsIntro)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            if runtime.needsRestartToUnload {
-                Section {
-                    FeatureRestartBanner(runtime: runtime, strings: strings)
-                }
-            }
-
-            if tab == .overview {
-                overviewSections
-            } else {
                 PermissionsPortalView(runtime: runtime, strings: strings)
+            } footer: {
+                Text(strings.featureHubPermissionsIntro)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .settingsPageStyle()
+    }
+
+    @ViewBuilder
+    private var restartBannerSection: some View {
+        if runtime.needsRestartToUnload {
+            Section {
+                FeatureRestartBanner(runtime: runtime, strings: strings)
+            }
+        }
     }
 
     @ViewBuilder

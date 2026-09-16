@@ -74,11 +74,7 @@ final class FeatureCatalogTests: XCTestCase {
         XCTAssertEqual(AppFeature.quickPhrase.group, .clipboard)
         XCTAssertEqual(AppFeature.systemMonitor.group, .monitor)
         XCTAssertEqual(AppFeature.networkDiagnostics.group, .maintenance)
-        XCTAssertEqual(AppFeature.launchAtLogin.group, .system)
-        XCTAssertEqual(AppFeature.scrollInverter.group, .mouse)
-        XCTAssertEqual(AppFeature.smoothScroll.group, .mouse)
-        XCTAssertEqual(AppFeature.mouseNavigation.group, .mouse)
-        XCTAssertEqual(AppFeature.dockClick.group, .mouse)
+        XCTAssertEqual(AppFeature.mouse.group, .mouse)
     }
 
     func test_enabledKeys_inputLock() {
@@ -93,7 +89,6 @@ final class FeatureCatalogTests: XCTestCase {
         XCTAssertTrue(AppFeature.quickPhrase.enabledKeys.isEmpty)
         XCTAssertTrue(AppFeature.systemMonitor.enabledKeys.isEmpty)
         XCTAssertTrue(AppFeature.networkDiagnostics.enabledKeys.isEmpty)
-        XCTAssertTrue(AppFeature.launchAtLogin.enabledKeys.isEmpty)
     }
 
     // MARK: - UI 属性测试
@@ -191,17 +186,11 @@ final class FeatureCatalogTests: XCTestCase {
         )
     }
 
-    func test_launchAtLoginSymbolName() {
-        XCTAssertEqual(AppFeature.launchAtLogin.symbolName, "power")
-    }
-
     func test_featureGroupFeaturesStaticMethod() {
         XCTAssertEqual(FeatureGroup.features(in: .input), [.inputLock])
         XCTAssertEqual(FeatureGroup.features(in: .clipboard), [.clipboardHistory, .quickPhrase])
         XCTAssertEqual(FeatureGroup.features(in: .monitor), [.systemMonitor, .tokenUsage])
-        XCTAssertEqual(FeatureGroup.features(in: .system), [.launchAtLogin])
-        XCTAssertEqual(FeatureGroup.features(in: .mouse),
-                       [.scrollInverter, .smoothScroll, .mouseNavigation, .dockClick])
+        XCTAssertEqual(FeatureGroup.features(in: .mouse), [.mouse])
         XCTAssertEqual(FeatureGroup.features(in: .energy), [.keepAwake])
     }
 
@@ -236,28 +225,27 @@ final class FeatureCatalogTests: XCTestCase {
         XCTAssertNil(AppFeature.keepAwake.permissionUsage(for: .fullDiskAccess))
     }
 
-    // MARK: - 鼠标与触控板特性
+    // MARK: - 鼠标与触控板特性（四能力合并为单一可插拔特性）
 
-    func test_mouseFeaturesRequireAccessibility() {
-        XCTAssertEqual(AppFeature.scrollInverter.permissions, [.accessibility])
-        XCTAssertEqual(AppFeature.smoothScroll.permissions, [.accessibility])
-        XCTAssertEqual(AppFeature.mouseNavigation.permissions, [.accessibility])
-        XCTAssertEqual(AppFeature.dockClick.permissions, [.accessibility])
+    func test_mouseFeatureRequiresAccessibility() {
+        XCTAssertEqual(AppFeature.mouse.permissions, [.accessibility])
     }
 
-    func test_mouseFeaturesEnabledKeys() {
-        XCTAssertEqual(AppFeature.scrollInverter.enabledKeys, [UserDefaultsKeys.scrollInverterEnabled])
-        XCTAssertEqual(AppFeature.smoothScroll.enabledKeys, [UserDefaultsKeys.smoothScrollEnabled])
-        XCTAssertEqual(AppFeature.mouseNavigation.enabledKeys, [UserDefaultsKeys.mouseNavigationEnabled])
-        XCTAssertEqual(AppFeature.dockClick.enabledKeys,
-                       [UserDefaultsKeys.dockClickMinimize, UserDefaultsKeys.dockClickCycleWindows])
+    func test_mouseFeatureEnabledKeys_coversAllFourAbilities() {
+        XCTAssertEqual(
+            AppFeature.mouse.enabledKeys,
+            [
+                UserDefaultsKeys.scrollInverterEnabled,
+                UserDefaultsKeys.smoothScrollEnabled,
+                UserDefaultsKeys.mouseNavigationEnabled,
+                UserDefaultsKeys.dockClickMinimize,
+                UserDefaultsKeys.dockClickCycleWindows,
+            ]
+        )
     }
 
-    func test_mouseFeatureSymbolNames() {
-        XCTAssertEqual(AppFeature.scrollInverter.symbolName, "arrow.up.arrow.down")
-        XCTAssertEqual(AppFeature.smoothScroll.symbolName, "cursorarrow.motionlines")
-        XCTAssertEqual(AppFeature.mouseNavigation.symbolName, "arrow.left.arrow.right")
-        XCTAssertEqual(AppFeature.dockClick.symbolName, "dock.arrow.down.rectangle")
+    func test_mouseFeatureSymbolName() {
+        XCTAssertEqual(AppFeature.mouse.symbolName, "computermouse")
     }
 
     func test_mouseGroupTitle() {
@@ -334,7 +322,6 @@ final class FeatureCatalogTests: XCTestCase {
         XCTAssertEqual(FeatureGroup.productivity.usageForm, .hotkey, "含暂存架")
         XCTAssertEqual(FeatureGroup.capture.usageForm, .hotkey, "含截图")
         XCTAssertEqual(FeatureGroup.input.usageForm, .configuration)
-        XCTAssertEqual(FeatureGroup.system.usageForm, .configuration)
         XCTAssertEqual(FeatureGroup.mouse.usageForm, .configuration)
         XCTAssertEqual(FeatureGroup.monitor.usageForm, .panel)
         XCTAssertEqual(FeatureGroup.maintenance.usageForm, .tool)
@@ -355,16 +342,16 @@ final class FeatureCatalogTests: XCTestCase {
         XCTAssertEqual(FeatureGroup.features(in: .ai), [.promptOptimizer, .providerSwitch])
     }
 
-    /// 全部 23 项都必须有明确的使用形态归属（穷尽 switch 的语义保障）。
+    /// 全部 19 项都必须有明确的使用形态归属（穷尽 switch 的语义保障）。
     func test_everyFeatureHasUsageForm() {
-        XCTAssertEqual(AppFeature.allCases.count, 23)
+        XCTAssertEqual(AppFeature.allCases.count, 19)
         XCTAssertEqual(
             AppFeature.allCases.filter { $0.usageForm == .hotkey }.count, 5,
             "热键直达型：剪贴板历史/快捷短语/暂存架/截图/提示词优化"
         )
         XCTAssertEqual(
-            AppFeature.allCases.filter { $0.usageForm == .configuration }.count, 6,
-            "参数配置型：输入法锁定/开机自启/鼠标四项"
+            AppFeature.allCases.filter { $0.usageForm == .configuration }.count, 2,
+            "参数配置型：输入法锁定/鼠标增强"
         )
         XCTAssertEqual(
             AppFeature.allCases.filter { $0.usageForm == .panel }.count, 3,

@@ -98,12 +98,9 @@ extension AppFeature {
         case .quickPhrase: return "text.bubble"
         case .systemMonitor: return "chart.bar"
         case .shelf: return "tray.full"
-        case .launchAtLogin: return "power"
-        case .cleaner, .uninstaller, .colorPicker, .networkDiagnostics, .dshWeb: return symbolName
-        // 鼠标与触控板特性复用 Hub 图标
-        case .scrollInverter, .smoothScroll, .mouseNavigation, .dockClick:
-            return symbolName
-        case .keepAwake, .screenshot, .tokenUsage, .providerSwitch, .stickyNotes, .cleaningMode, .promptOptimizer, .desktopPet:
+        case .cleaner, .uninstaller, .colorPicker, .networkDiagnostics, .dshWeb,
+             .mouse, .keepAwake, .screenshot, .tokenUsage, .providerSwitch,
+             .stickyNotes, .cleaningMode, .promptOptimizer, .desktopPet:
             return symbolName
         }
     }
@@ -115,12 +112,9 @@ extension AppFeature {
         case .quickPhrase: return strings.onboardingFeatureQuickPhraseTitle
         case .systemMonitor: return strings.onboardingFeatureSystemMonitorTitle
         case .shelf: return strings.onboardingFeatureShelfTitle
-        case .launchAtLogin: return strings.onboardingFeatureLaunchAtLoginTitle
-        case .cleaner, .uninstaller, .colorPicker, .networkDiagnostics, .dshWeb: return hubName(in: strings)
-        // 鼠标与触控板特性复用 Hub 名称
-        case .scrollInverter, .smoothScroll, .mouseNavigation, .dockClick:
-            return hubName(in: strings)
-        case .keepAwake, .screenshot, .tokenUsage, .providerSwitch, .stickyNotes, .cleaningMode, .promptOptimizer, .desktopPet:
+        case .cleaner, .uninstaller, .colorPicker, .networkDiagnostics, .dshWeb,
+             .mouse, .keepAwake, .screenshot, .tokenUsage, .providerSwitch,
+             .stickyNotes, .cleaningMode, .promptOptimizer, .desktopPet:
             return hubName(in: strings)
         }
     }
@@ -132,12 +126,9 @@ extension AppFeature {
         case .quickPhrase: return strings.onboardingFeatureQuickPhraseDescription
         case .systemMonitor: return strings.onboardingFeatureSystemMonitorDescription
         case .shelf: return strings.onboardingFeatureShelfDescription
-        case .launchAtLogin: return strings.onboardingFeatureLaunchAtLoginDescription
-        case .cleaner, .uninstaller, .colorPicker, .networkDiagnostics, .dshWeb: return hubDescription(in: strings)
-        // 鼠标与触控板特性复用 Hub 描述
-        case .scrollInverter, .smoothScroll, .mouseNavigation, .dockClick:
-            return hubDescription(in: strings)
-        case .keepAwake, .screenshot, .tokenUsage, .providerSwitch, .stickyNotes, .cleaningMode, .promptOptimizer, .desktopPet:
+        case .cleaner, .uninstaller, .colorPicker, .networkDiagnostics, .dshWeb,
+             .mouse, .keepAwake, .screenshot, .tokenUsage, .providerSwitch,
+             .stickyNotes, .cleaningMode, .promptOptimizer, .desktopPet:
             return hubDescription(in: strings)
         }
     }

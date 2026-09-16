@@ -66,10 +66,7 @@ final class NavigationRoutesTests: XCTestCase {
             .inputLock,
             .clipboardHistory,
             .shelf,
-            .scrollInverter,
-            .smoothScroll,
-            .mouseNavigation,
-            .dockClick,
+            .mouse,
         ]
 
         for availableFeature in formerControlFeatures {
@@ -83,9 +80,7 @@ final class NavigationRoutesTests: XCTestCase {
 
     func test_menuPanels_ignoreFeaturesWithoutControlCenterEntry() {
         XCTAssertEqual(
-            MenuPanel.visibleCases(isAvailable: { feature in
-                [.quickPhrase, .launchAtLogin].contains(feature)
-            }),
+            MenuPanel.visibleCases(isAvailable: { $0 == .quickPhrase }),
             []
         )
     }
@@ -188,7 +183,7 @@ final class NavigationRoutesTests: XCTestCase {
 
         XCTAssertEqual(
             SettingsToolbarTab.visibleCases(isAvailable: { feature in
-                [.inputLock, .shelf, .smoothScroll, .systemMonitor].contains(feature)
+                [.inputLock, .shelf, .mouse, .systemMonitor].contains(feature)
             }),
             [.general, .features, .inputMethod, .shelf, .mouse, .performance]
         )
@@ -225,14 +220,12 @@ final class NavigationRoutesTests: XCTestCase {
         )
     }
 
-    func test_settingsMouseTab_acceptsEveryMouseFeature() {
-        for availableFeature in AppFeature.mouseFeatures {
-            XCTAssertEqual(
-                SettingsToolbarTab.visibleCases(isAvailable: { $0 == availableFeature }),
-                [.general, .features, .mouse],
-                "\(availableFeature) 应使鼠标设置入口可见"
-            )
-        }
+    func test_settingsMouseTab_followsMergedMouseFeature() {
+        XCTAssertEqual(
+            SettingsToolbarTab.visibleCases(isAvailable: { $0 == .mouse }),
+            [.general, .features, .mouse],
+            "鼠标特性应使鼠标设置入口可见"
+        )
     }
 
     func test_settingsSelection_preservesValidSelectionAndRepairsInvalidSelection() {

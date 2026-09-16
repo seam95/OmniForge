@@ -319,7 +319,6 @@ final class FeatureRuntime: ObservableObject {
         .shelf: {
             shared.manager(for: .shelf, as: ShelfService.self)?.syncWithPreferences()
         },
-        .launchAtLogin: {},
         .cleaner: {
             CleanerScheduler.shared.syncWithPreferences()
         },
@@ -333,10 +332,12 @@ final class FeatureRuntime: ObservableObject {
             // availability 即启用：快捷键跟随可用性注册 / 注销。
             shared.manager(for: .promptOptimizer, as: PromptOptimizerManager.self)?.syncWithPreferences()
         },
-        .scrollInverter: { ScrollInverter.shared.syncWithPreferences() },
-        .smoothScroll: { SmoothScrollService.shared.syncWithPreferences() },
-        .mouseNavigation: { MouseNavigationService.shared.syncWithPreferences() },
-        .dockClick: { DockClickService.shared.syncWithPreferences() },
+        .mouse: {
+            ScrollInverter.shared.syncWithPreferences()
+            SmoothScrollService.shared.syncWithPreferences()
+            MouseNavigationService.shared.syncWithPreferences()
+            DockClickService.shared.syncWithPreferences()
+        },
         .keepAwake: {
             // binding：availability false 时注销快捷键；true 时由 composition root 接线
             if !shared.isAvailable(.keepAwake) {

@@ -73,7 +73,6 @@ enum OnboardingPersona: String, CaseIterable, Identifiable {
                 .systemMonitor,
                 .clipboardHistory,
                 .quickPhrase,
-                .launchAtLogin
             ]
         case .productivity:
             return [
@@ -83,7 +82,6 @@ enum OnboardingPersona: String, CaseIterable, Identifiable {
                 .stickyNotes,
                 .screenshot,
                 .colorPicker,
-                .launchAtLogin
             ]
         case .macGeek:
             return [
@@ -92,12 +90,8 @@ enum OnboardingPersona: String, CaseIterable, Identifiable {
                 .cleaner,
                 .uninstaller,
                 .networkDiagnostics,
-                .scrollInverter,
-                .smoothScroll,
-                .mouseNavigation,
-                .dockClick,
+                .mouse,
                 .cleaningMode,
-                .launchAtLogin
             ]
         case .allInOne:
             return Set(AppFeature.allCases)

@@ -11,15 +11,11 @@ enum AppFeature: String, CaseIterable {
     case networkDiagnostics
     case dshWeb
     case shelf
-    case launchAtLogin
     case cleaner
     case uninstaller
     case colorPicker
     // 鼠标与触控板
-    case scrollInverter
-    case smoothScroll
-    case mouseNavigation
-    case dockClick
+    case mouse
     case keepAwake
     case screenshot
     case providerSwitch
@@ -27,10 +23,6 @@ enum AppFeature: String, CaseIterable {
     case stickyNotes
     case cleaningMode
     case desktopPet
-
-    /// 设置「鼠标」分区与相关入口共用的功能集合。
-    /// 派生自 mouse 分组成员，新增鼠标特性只需改 group 归属，消除手抄列表漂移。
-    static let mouseFeatures: [AppFeature] = FeatureGroup.features(in: .mouse)
 }
 
 /// 使用形态（信息架构四象）：决定功能目录页与设置侧栏的分组先后。
@@ -41,7 +33,7 @@ enum AppFeature: String, CaseIterable {
 enum FeatureUsageForm: Int, CaseIterable, Comparable {
     /// 呼出即用即走（剪贴板、快捷短语、暂存架、截图、提示词优化）。
     case hotkey = 0
-    /// 一次配置长期生效（输入法锁定、开机自启、鼠标行为）。
+    /// 一次配置长期生效（输入法锁定、鼠标行为）。
     case configuration = 1
     /// 驻留扫视的状态面板（系统监控、Token 用量、供应商切换）。
     case panel = 2
@@ -63,7 +55,6 @@ enum FeatureGroup: String, CaseIterable {
     case capture      // 截图与捕获
     // 参数配置型
     case input        // 输入法相关
-    case system       // 系统集成
     case mouse        // 鼠标与触控板
     // 面板浏览型
     case monitor      // 系统监控
@@ -98,13 +89,12 @@ extension AppFeature {
         case .clipboardHistory, .quickPhrase: return .clipboard
         case .systemMonitor, .tokenUsage: return .monitor
         case .shelf: return .productivity
-        case .launchAtLogin: return .system
         // 系统维护：对系统做一次性操作的诊断/清理/卸载类工具。
         case .cleaner, .uninstaller, .colorPicker, .networkDiagnostics, .dshWeb, .cleaningMode:
             return .maintenance
         // 桌面常驻：留在桌面上陪伴或随手使用的窗口类功能。
         case .stickyNotes, .desktopPet: return .desktop
-        case .scrollInverter, .smoothScroll, .mouseNavigation, .dockClick: return .mouse
+        case .mouse: return .mouse
         case .keepAwake: return .energy
         case .screenshot: return .capture
         case .providerSwitch, .promptOptimizer: return .ai
@@ -117,8 +107,7 @@ extension AppFeature {
         switch self {
         case .clipboardHistory, .quickPhrase, .shelf, .screenshot, .promptOptimizer:
             return .hotkey
-        case .inputLock, .launchAtLogin,
-             .scrollInverter, .smoothScroll, .mouseNavigation, .dockClick:
+        case .inputLock, .mouse:
             return .configuration
         case .systemMonitor, .tokenUsage, .providerSwitch:
             return .panel
@@ -143,12 +132,15 @@ extension AppFeature {
         case .quickPhrase: return []
         case .systemMonitor, .networkDiagnostics, .tokenUsage: return []
         case .shelf: return [UserDefaultsKeys.shelfEnabled]
-        case .launchAtLogin: return []
         case .cleaner, .uninstaller, .colorPicker, .dshWeb: return []
-        case .scrollInverter: return [UserDefaultsKeys.scrollInverterEnabled]
-        case .smoothScroll: return [UserDefaultsKeys.smoothScrollEnabled]
-        case .mouseNavigation: return [UserDefaultsKeys.mouseNavigationEnabled]
-        case .dockClick: return [UserDefaultsKeys.dockClickMinimize, UserDefaultsKeys.dockClickCycleWindows]
+        case .mouse:
+            return [
+                UserDefaultsKeys.scrollInverterEnabled,
+                UserDefaultsKeys.smoothScrollEnabled,
+                UserDefaultsKeys.mouseNavigationEnabled,
+                UserDefaultsKeys.dockClickMinimize,
+                UserDefaultsKeys.dockClickCycleWindows,
+            ]
         case .keepAwake: return []
         case .screenshot: return [UserDefaultsKeys.screenshotEnabled]
         case .providerSwitch: return []
@@ -169,10 +161,9 @@ extension AppFeature {
         case .tokenUsage: return [.notifications]
         case .networkDiagnostics, .dshWeb: return []
         case .shelf: return []
-        case .launchAtLogin: return []
         case .cleaner, .uninstaller: return [.fullDiskAccess]
         case .colorPicker: return []
-        case .scrollInverter, .smoothScroll, .mouseNavigation, .dockClick: return [.accessibility]
+        case .mouse: return [.accessibility]
         case .keepAwake: return [.accessibility, .notifications]
         case .screenshot: return [.screenRecording]
         case .providerSwitch: return []
@@ -203,7 +194,7 @@ extension AppFeature {
             case .inputMonitoring, .fullDiskAccess, .screenRecording:
                 return nil
             }
-        case .inputLock, .scrollInverter, .smoothScroll, .mouseNavigation, .dockClick:
+        case .inputLock, .mouse:
             return permission == .accessibility ? .required : nil
         case .systemMonitor, .tokenUsage:
             return permission == .notifications ? .optional : nil
@@ -223,7 +214,7 @@ extension AppFeature {
         case .promptOptimizer:
             // AX 取词与合成 ⌘V 注入均依赖辅助功能。
             return permission == .accessibility ? .required : nil
-        case .clipboardHistory, .quickPhrase, .shelf, .launchAtLogin:
+        case .clipboardHistory, .quickPhrase, .shelf:
             return nil
         case .desktopPet:
             // 纯桌宠不监听全局输入、不读窗口标题，零系统权限。
@@ -246,15 +237,11 @@ extension AppFeature {
         case .tokenUsage: return "chart.line.uptrend.xyaxis"
         case .networkDiagnostics: return "network"
         case .shelf: return "tray.full"
-        case .launchAtLogin: return "power"
         case .cleaner: return "sparkles"
         case .uninstaller: return "trash"
         case .colorPicker: return "eyedropper"
         case .dshWeb: return "globe"
-        case .scrollInverter: return "arrow.up.arrow.down"
-        case .smoothScroll: return "cursorarrow.motionlines"
-        case .mouseNavigation: return "arrow.left.arrow.right"
-        case .dockClick: return "dock.arrow.down.rectangle"
+        case .mouse: return "computermouse"
         case .keepAwake: return "moon.zzz.fill"
         case .screenshot: return "camera.viewfinder"
         case .providerSwitch: return "arrow.triangle.swap"
@@ -275,15 +262,11 @@ extension AppFeature {
         case .tokenUsage: return strings.featureHubNameTokenUsage
         case .networkDiagnostics: return strings.featureHubNameNetworkDiagnostics
         case .shelf: return strings.featureHubNameShelf
-        case .launchAtLogin: return strings.featureHubNameLaunchAtLogin
         case .cleaner: return strings.cleanerName
         case .uninstaller: return strings.uninstallerName
         case .colorPicker: return strings.colorPickerName
         case .dshWeb: return strings.featureHubNameDSHWeb
-        case .scrollInverter: return strings.featureHubNameScrollInverter
-        case .smoothScroll: return strings.featureHubNameSmoothScroll
-        case .mouseNavigation: return strings.featureHubNameMouseNavigation
-        case .dockClick: return strings.featureHubNameDockClick
+        case .mouse: return strings.featureHubNameMouse
         case .keepAwake: return strings.featureHubNameKeepAwake
         case .screenshot: return strings.featureHubNameScreenshot
         case .providerSwitch: return strings.featureHubNameProviderSwitch
@@ -304,15 +287,11 @@ extension AppFeature {
         case .tokenUsage: return strings.featureHubDescTokenUsage
         case .networkDiagnostics: return strings.featureHubDescNetworkDiagnostics
         case .shelf: return strings.featureHubDescShelf
-        case .launchAtLogin: return strings.featureHubDescLaunchAtLogin
         case .cleaner: return strings.cleanerIntroCaption
         case .uninstaller: return strings.uninstallerEnableCaption
         case .colorPicker: return strings.colorPickerDescription
         case .dshWeb: return strings.featureHubDescDSHWeb
-        case .scrollInverter: return strings.featureHubDescScrollInverter
-        case .smoothScroll: return strings.featureHubDescSmoothScroll
-        case .mouseNavigation: return strings.featureHubDescMouseNavigation
-        case .dockClick: return strings.featureHubDescDockClick
+        case .mouse: return strings.featureHubDescMouse
         case .keepAwake: return strings.featureHubDescKeepAwake
         case .screenshot: return strings.featureHubDescScreenshot
         case .providerSwitch: return strings.featureHubDescProviderSwitch
@@ -335,7 +314,6 @@ extension FeatureGroup {
         case .productivity: return strings.featureHubGroupProductivity
         case .maintenance: return strings.featureHubGroupMaintenance
         case .desktop: return strings.featureHubGroupDesktop
-        case .system: return strings.featureHubGroupSystem
         case .mouse: return strings.featureHubGroupMouse
         case .energy: return strings.featureHubGroupEnergy
         case .capture: return strings.featureHubGroupCapture
