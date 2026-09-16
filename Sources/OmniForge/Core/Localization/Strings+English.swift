@@ -1008,6 +1008,7 @@ extension Strings {
         settingsTabTokenUsage: "Token Usage",
         tokenSettingsCaption: "Track token usage and official limit windows across AI CLIs. All data stays on this device.",
         tokenEmptyHint: "No login detected · Run any CLI once to get started",
+        tokenUsageEmptyHint: "No usage data yet · Run any CLI to start tracking",
         tokenReauthHint: "Credential rejected · Check your subscription or re-login via CLI",
         tokenRefresh: "Refresh",
         tokenSectionBalance: "Balance",

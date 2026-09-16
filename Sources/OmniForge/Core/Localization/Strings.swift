@@ -1085,6 +1085,8 @@ struct Strings: Equatable {
     let settingsTabTokenUsage: String
     let tokenSettingsCaption: String
     let tokenEmptyHint: String
+    /// 用量子 tab / 趋势图空态（已配置 provider 但本地无用量记录；不得表述为「未登录」）。
+    let tokenUsageEmptyHint: String
     let tokenReauthHint: String
     let tokenRefresh: String
     let tokenSectionBalance: String

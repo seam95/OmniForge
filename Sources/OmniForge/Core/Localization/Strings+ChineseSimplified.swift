@@ -1008,6 +1008,7 @@ extension Strings {
         settingsTabTokenUsage: "Token 用量",
         tokenSettingsCaption: "统计各家 AI CLI 的 token 用量与官方限额窗口，所有数据仅存本机。",
         tokenEmptyHint: "未检测到登录 · 运行一次任一 CLI 即可",
+        tokenUsageEmptyHint: "暂无用量数据 · 运行任一 CLI 后自动统计",
         tokenReauthHint: "凭证被拒绝 · 检查订阅状态或重新登录 CLI",
         tokenRefresh: "刷新",
         tokenSectionBalance: "余额",

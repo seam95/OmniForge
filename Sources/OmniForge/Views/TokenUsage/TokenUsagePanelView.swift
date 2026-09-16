@@ -254,7 +254,7 @@ struct TokenUsagePanelView: View {
                 localStatsCaption
             }
         } else {
-            sectionPlaceholder(strings.tokenEmptyHint)
+            sectionPlaceholder(strings.tokenUsageEmptyHint)
         }
     }
 
