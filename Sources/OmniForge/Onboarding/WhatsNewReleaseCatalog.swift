@@ -11,6 +11,15 @@ enum WhatsNewReleaseCatalog {
     /// 历次版本的更新内容，新版本在前
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            version: "3.11.0",
+            entries: [
+                WhatsNewEntry(type: .added, text: "新增应用内自动更新：自动检查、下载并一键安装新版本，无需再手动下载覆盖"),
+                WhatsNewEntry(type: .added, text: "应用菜单新增「检查更新…」入口，可随时手动检查"),
+                WhatsNewEntry(type: .changed, text: "本版本是最后一个需要手动下载安装的版本，之后的升级将全自动完成"),
+                WhatsNewEntry(type: .fixed, text: "修复额度重置烟花不可见的问题"),
+            ]
+        ),
+        WhatsNewRelease(
             version: "3.10.0",
             entries: [
                 WhatsNewEntry(type: .added, text: "桌面宠物交互升级：拖起后甩出带惯性与弹跳，拖动时随方向切换动作"),
