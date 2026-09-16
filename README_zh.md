@@ -39,11 +39,13 @@ OmniForge 常驻菜单栏、按需生长：在 **功能中心** 逐个启用功�
 ### 🤖 AI 工具
 
 - **Token 用量** — 汇总十余款 AI CLI（Claude Code、Codex、Cursor、Qoder、Trae、Kimi、Grok、OpenCode、Zcode、Antigravity 等）的 Token 消耗与额度窗口（5 小时 / 7 天重置、订阅余额），支持用量告警与重置提醒。
+- **提示词优化** — 任意应用选中文本，按 `⌥⌘P` 即可一键 AI 润色增强，支持浮窗对比预览或就地直接替换。
 - **供应商切换** — 菜单栏一键切换 Claude Code / Codex 的 API 供应商与中转配置；切换前自动备份，可随时恢复。
 
 ### 🧰 生产力
 
-- **桌面便签** — 多彩桌面便签，随手记录、随时查看。
+- **桌面宠物** — 像素猫与哆啦A梦常驻桌面，支持惯性抛掷、视线跟随、系统状态互动（复制、低电量、高温等）、自主小动作与对话气泡，并支持导入社区宠物。
+- **桌面便签** — 多彩桌面便签，随手记录、随时查看，支持正文字号与行高自定义。
 - **暂存架** — 停放文件、图片、链接与文本，稍后再拖入其他应用。
 - **清理** — 扫描残留、缓存、日志等项目，确认后再处理。
 - **清洁模式** — 擦拭键盘或屏幕时锁定全部输入。
@@ -77,9 +79,10 @@ OmniForge 常驻菜单栏、按需生长：在 **功能中心** 逐个启用功�
 
 ### ⚙️ 系统与体验
 
-- 开机自启、可选隐藏 Dock 图标
-- 首次引导、权限门户与功能中心
-- 语言：简体中文、英文，或跟随系统
+- **应用内自动更新** — 基于 Sparkle 2（EdDSA 签名校验，无感升级，保留系统权限）。
+- **场景化新手向导** — 4 大场景预设（AI 开发者 / 效率达人 / 系统极客 / 全能体验）、快捷键交互演练场与菜单栏定锚指引。
+- **设置与功能中心** — 按需开关各功能、开机自启、可选隐藏 Dock 图标。
+- **语言** — 简体中文、英文，或跟随系统。
 
 ## 📦 系统要求
 
@@ -160,6 +163,8 @@ swift test --disable-swift-testing
 
 - [GRDB.swift](https://github.com/groue/GRDB.swift) — 本地 SQLite
 - [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) — 全局快捷键
+- [Sparkle](https://github.com/sparkle-project/Sparkle) — 安全无感的应用内自动更新
+- [Vortex](https://github.com/zats/Vortex) — 烟花庆祝粒子系统
 
 ## 贡献
 

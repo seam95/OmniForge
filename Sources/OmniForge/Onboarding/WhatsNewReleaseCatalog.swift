@@ -13,9 +13,13 @@ enum WhatsNewReleaseCatalog {
         WhatsNewRelease(
             version: "3.11.0",
             entries: [
-                WhatsNewEntry(type: .added, text: "新增应用内自动更新：自动检查、下载并一键安装新版本，无需再手动下载覆盖"),
+                WhatsNewEntry(type: .added, text: "新增应用内自动更新：自动检查、下载并一键安装新版本，升级更无感"),
                 WhatsNewEntry(type: .added, text: "应用菜单新增「检查更新…」入口，可随时手动检查"),
+                WhatsNewEntry(type: .added, text: "升级场景化新手向导：引入 4 大场景预设卡片、快捷键演练场与菜单栏定锚指引"),
+                WhatsNewEntry(type: .changed, text: "提示词优化自动替换模式隔离剪贴板，并提供专属双态提示文案"),
+                WhatsNewEntry(type: .changed, text: "Antigravity Token 额度支持直接通过 agy CLI 兜底读取"),
                 WhatsNewEntry(type: .changed, text: "本版本是最后一个需要手动下载安装的版本，之后的升级将全自动完成"),
+                WhatsNewEntry(type: .fixed, text: "修复卸载器与清理器在紧凑模式下的各阶段高度对齐问题"),
                 WhatsNewEntry(type: .fixed, text: "修复额度重置烟花不可见的问题"),
             ]
         ),

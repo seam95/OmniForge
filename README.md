@@ -39,11 +39,13 @@ OmniForge lives in the menu bar and grows with you: enable features individually
 ### 🤖 AI tooling
 
 - **Token Usage** — Track token spend and quota windows (5-hour / 7-day resets, subscription balance) across a dozen-plus AI CLIs — Claude Code, Codex, Cursor, Qoder, Trae, Kimi, Grok, OpenCode, Zcode, Antigravity, and more — with usage alerts and reset reminders.
+- **Prompt Optimizer** — Polish, expand, or refine prompts anywhere with `⌥⌘P`; supports side-by-side comparison floating window or direct in-place replacement.
 - **Provider Switch** — One-click switching of API providers / relay profiles for Claude Code and Codex from the menu bar; configs are backed up before every switch and can be restored.
 
 ### 🧰 Productivity
 
-- **Sticky Notes** — Colorful sticky notes pinned to your desktop for quick capture.
+- **Desktop Pet** — Pixel cat and Doraemon companions living on your desktop with physics tossing, cursor gaze tracking, reaction to system states (copy, low battery, high temperature), speech bubbles, and community pet importing.
+- **Sticky Notes** — Colorful sticky notes pinned to your desktop for quick capture, with custom font size and line height.
 - **Shelf** — Park files, images, links, and text, then drag them into another app later.
 - **Cleaner** — Scan leftovers, caches, logs, and other junk; confirm before cleaning.
 - **Cleaning Mode** — Lock all input while you wipe your keyboard or screen.
@@ -77,9 +79,10 @@ OmniForge lives in the menu bar and grows with you: enable features individually
 
 ### ⚙️ System & experience
 
-- Launch at login, optional hide Dock icon
-- Onboarding, permission portal, and Feature Hub
-- Languages: Simplified Chinese, English, or follow system
+- **In-App Auto Update** — Seamless updates powered by Sparkle 2 (EdDSA verified, zero disruption).
+- **Scenario-based Onboarding** — 4 persona presets (AI Developer, Productivity Master, System Geek, All-in-one), interactive shortcut practice playground, permission transparency, and menubar anchoring guide.
+- **Settings & Feature Hub** — Enable/disable features individually, launch at login, optional hide Dock icon.
+- **Localization** — Simplified Chinese, English, or follow system.
 
 ## 📦 Requirements
 
@@ -160,6 +163,8 @@ Managed via [`Package.swift`](Package.swift):
 
 - [GRDB.swift](https://github.com/groue/GRDB.swift) — local SQLite
 - [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) — global shortcuts
+- [Sparkle](https://github.com/sparkle-project/Sparkle) — safe and seamless auto-updates
+- [Vortex](https://github.com/zats/Vortex) — particle effects engine
 
 ## Contributing
 
