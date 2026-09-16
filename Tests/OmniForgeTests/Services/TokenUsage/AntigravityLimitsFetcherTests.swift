@@ -211,16 +211,18 @@ final class AntigravityLimitsFetcherTests: XCTestCase {
         }
         private let lock = NSLock()
         private var callsStorage: [Call] = []
-        var calls: [Call] { lock.lock(); defer { lock.unlock() }; return callsStorage }
+        var calls: [Call] { lock.withLock { callsStorage } }
         var psOutput: String = ""
         var lsofOutput: String = ""
+        var agyOutput: String = ""
 
         func run(_ launchPath: String, _ arguments: [String], timeout: TimeInterval) async throws -> String {
-            lock.lock()
-            callsStorage.append(Call(launchPath: launchPath, arguments: arguments))
-            lock.unlock()
+            lock.withLock {
+                callsStorage.append(Call(launchPath: launchPath, arguments: arguments))
+            }
             if launchPath.hasSuffix("ps") { return psOutput }
             if launchPath.hasSuffix("lsof") { return lsofOutput }
+            if launchPath.hasSuffix("agy") { return agyOutput }
             return ""
         }
     }
@@ -245,13 +247,15 @@ final class AntigravityLimitsFetcherTests: XCTestCase {
     private func makeFetcher(
         shell: FakeShellRunner,
         client: FakeLocalClient,
-        hasInstall: Bool = false
+        hasInstall: Bool = false,
+        fileExists: @escaping (String) -> Bool = { _ in false }
     ) -> AntigravityLimitsFetcher {
         AntigravityLimitsFetcher(
             processRunner: { path, args, timeout in try await shell.run(path, args, timeout: timeout) },
             client: client,
             homeDirectory: { "/Users/tester" },
-            installEvidence: { _ in hasInstall }
+            installEvidence: { _ in hasInstall },
+            fileExists: fileExists
         )
     }
 
@@ -398,5 +402,126 @@ final class AntigravityLimitsFetcherTests: XCTestCase {
         } catch {
             XCTFail("unexpected \(error)")
         }
+    }
+
+    // MARK: - CLI 回退与配额解码测试
+
+    func test_decodeCliQuotaOutput_jsonOutputFormat() throws {
+        let json = """
+        {
+          "command": {
+            "name": "usage",
+            "data": {
+              "groups": [
+                {
+                  "name": "Gemini Models",
+                  "buckets": [
+                    {
+                      "id": "gemini-weekly",
+                      "remaining_fraction": 0.9358937740325928,
+                      "reset_time": "2026-09-23T05:55:03Z"
+                    },
+                    {
+                      "id": "gemini-5h",
+                      "remaining_fraction": 0.6187726855278015,
+                      "reset_time": "2026-09-16T10:55:03Z"
+                    }
+                  ]
+                },
+                {
+                  "name": "Claude and GPT models",
+                  "buckets": [
+                    {
+                      "id": "3p-weekly",
+                      "remaining_fraction": 1.0,
+                      "reset_time": "2026-09-23T06:36:58Z"
+                    },
+                    {
+                      "id": "3p-5h",
+                      "remaining_fraction": 0.8,
+                      "reset_time": "2026-09-16T11:36:58Z"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+        """
+        let windows = try XCTUnwrap(AntigravityUsageDecoder.decodeCliQuotaOutput(json))
+        XCTAssertEqual(windows.map(\.label), ["Cl 7d", "Cl 5h", "Gm 7d", "Gm 5h"])
+        XCTAssertEqual(windows[0].window.usedPercent, 0, "3p-weekly 1.0 remaining -> 0% used")
+        XCTAssertEqual(windows[1].window.usedPercent, 20, "3p-5h 0.8 remaining -> 20% used")
+        XCTAssertEqual(windows[2].window.usedPercent, 100 - (0.9358937740325928 * 100))
+        XCTAssertEqual(windows[3].window.usedPercent, 100 - (0.6187726855278015 * 100))
+    }
+
+    func test_decodeCliQuotaOutput_tsvFormat() throws {
+        let tsv = """
+        Gemini Models\tWeekly Limit Remaining\t94%\t2026-09-23T05:55:03Z
+        Gemini Models\tFive Hour Limit Remaining\t62%\t2026-09-16T10:55:03Z
+        Claude and GPT models\tWeekly Limit Remaining\t100%\t2026-09-23T06:36:40Z
+        Claude and GPT models\tFive Hour Limit Remaining\t80%\t2026-09-16T11:36:40Z
+        """
+        let windows = try XCTUnwrap(AntigravityUsageDecoder.decodeCliQuotaOutput(tsv))
+        XCTAssertEqual(windows.map(\.label), ["Cl 7d", "Cl 5h", "Gm 7d", "Gm 5h"])
+        XCTAssertEqual(windows[0].window.usedPercent, 0, "Cl 7d 100% remaining -> 0% used")
+        XCTAssertEqual(windows[1].window.usedPercent, 20, "Cl 5h 80% remaining -> 20% used")
+        XCTAssertEqual(windows[2].window.usedPercent, 6, "Gm 7d 94% remaining -> 6% used")
+        XCTAssertEqual(windows[3].window.usedPercent, 38, "Gm 5h 62% remaining -> 38% used")
+        XCTAssertEqual(windows[0].window.resetAt, ISO8601DateFormatter().date(from: "2026-09-23T06:36:40Z"))
+    }
+
+    func test_decodeCliQuotaOutput_invalidOrEmpty_returnsNil() {
+        XCTAssertNil(AntigravityUsageDecoder.decodeCliQuotaOutput(""))
+        XCTAssertNil(AntigravityUsageDecoder.decodeCliQuotaOutput("   \n\t  "))
+        XCTAssertNil(AntigravityUsageDecoder.decodeCliQuotaOutput("random garbage not matching format"))
+    }
+
+    func test_fetchLimits_agyCliRunningWithoutCsrf_fetchesViaCli() async throws {
+        let shell = FakeShellRunner()
+        shell.psOutput = "  50001 /Users/tester/.local/bin/agy\n"
+        shell.agyOutput = """
+        Gemini Models\tWeekly Limit Remaining\t94%\t2026-09-23T05:55:03Z
+        Gemini Models\tFive Hour Limit Remaining\t62%\t2026-09-16T10:55:03Z
+        Claude and GPT models\tWeekly Limit Remaining\t100%\t2026-09-23T06:36:40Z
+        Claude and GPT models\tFive Hour Limit Remaining\t100%\t2026-09-16T11:36:40Z
+        """
+        let fetcher = makeFetcher(shell: shell, client: FakeLocalClient(), fileExists: { $0.hasSuffix("/agy") })
+        let limits = try await fetcher.fetchLimits(force: false)
+
+        XCTAssertEqual(limits?.provider, .antigravity)
+        XCTAssertNil(limits?.issue)
+        XCTAssertEqual(limits?.windows[.session]?.usedPercent, 0, "Claude 5h: 100% remaining -> 0% used")
+        XCTAssertEqual(limits?.windows[.weekly]?.usedPercent, 0, "Claude 7d: 100% remaining -> 0% used")
+        XCTAssertEqual(limits?.labeledWindows?.map(\.label), ["Gm 7d", "Gm 5h"])
+        XCTAssertEqual(limits?.labeledWindows?[0].window.usedPercent, 6, "Gm 7d: 94% remaining -> 6% used")
+        XCTAssertEqual(limits?.labeledWindows?[1].window.usedPercent, 38, "Gm 5h: 62% remaining -> 38% used")
+        XCTAssertEqual(limits?.confidence, .official)
+        XCTAssertFalse(limits?.stale ?? true)
+    }
+
+    func test_fetchLimits_noProcess_forceRefresh_fetchesViaCli() async throws {
+        let shell = FakeShellRunner()
+        shell.psOutput = "  100 /sbin/launchd\n"
+        shell.agyOutput = """
+        Claude and GPT models\tWeekly Limit Remaining\t90%\t2026-09-23T06:36:40Z
+        Claude and GPT models\tFive Hour Limit Remaining\t75%\t2026-09-16T11:36:40Z
+        """
+        let fetcher = makeFetcher(shell: shell, client: FakeLocalClient(), hasInstall: true, fileExists: { $0.hasSuffix("/agy") })
+        let limits = try await fetcher.fetchLimits(force: true)
+
+        XCTAssertEqual(limits?.provider, .antigravity)
+        XCTAssertNil(limits?.issue)
+        XCTAssertEqual(limits?.windows[.session]?.usedPercent, 25)
+        XCTAssertEqual(limits?.windows[.weekly]?.usedPercent, 10)
+    }
+
+    func test_fetchLimits_agyCliRunning_binaryNotFound_reportsErrorState() async throws {
+        let shell = FakeShellRunner()
+        shell.psOutput = "  50001 agy\n"
+        let fetcher = makeFetcher(shell: shell, client: FakeLocalClient(), fileExists: { _ in false })
+        let limits = try await fetcher.fetchLimits(force: false)
+        XCTAssertEqual(limits?.issue, .notRunning)
     }
 }

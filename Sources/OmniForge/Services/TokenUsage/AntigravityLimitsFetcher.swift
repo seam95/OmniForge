@@ -126,6 +126,114 @@ enum AntigravityUsageDecoder {
         }
     }
 
+    // MARK: 来源④ CLI print /quota (TSV / JSON)
+
+    /// CLI `agy --print /quota` 输出解码（支持 JSON 或 TSV 格式）。
+    static func decodeCliQuotaOutput(_ raw: String) -> [LabeledUsageWindow]? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        // 1. 若输出为 JSON 格式（如 --output-format json），优先结构化解析
+        if let data = trimmed.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let windows = decodeCliJson(json) {
+                return windows
+            }
+            if let responseText = json["response"] as? String, !responseText.isEmpty {
+                return decodeCliTsv(responseText)
+            }
+        }
+
+        // 2. 纯文本 TSV 解析
+        return decodeCliTsv(trimmed)
+    }
+
+    /// CLI JSON 格式解析（兼容 command.data.groups / response.groups / groups）
+    static func decodeCliJson(_ json: [String: Any]) -> [LabeledUsageWindow]? {
+        let commandData = (json["command"] as? [String: Any])?["data"] as? [String: Any]
+        let groups = (commandData?["groups"] as? [[String: Any]])
+            ?? ((json["response"] as? [String: Any])?["groups"] as? [[String: Any]])
+            ?? (json["groups"] as? [[String: Any]])
+            ?? []
+        guard !groups.isEmpty else { return nil }
+
+        var buckets: [String: [String: Any]] = [:]
+        for group in groups {
+            for bucket in group["buckets"] as? [[String: Any]] ?? [] {
+                if let id = (bucket["id"] as? String) ?? (bucket["bucketId"] as? String) {
+                    buckets[id] = bucket
+                }
+            }
+        }
+        var labeled: [LabeledUsageWindow] = []
+        for (bucketId, label) in bucketWindows {
+            if let bucket = buckets[bucketId], let window = windowFromRemaining(bucket) {
+                labeled.append(LabeledUsageWindow(label: label, window: window))
+            }
+        }
+        return labeled.isEmpty ? nil : labeled
+    }
+
+    /// CLI TSV 格式解析（制表符分隔：模型族 \t 窗口名 \t 剩余百分比 \t 重置时间）
+    static func decodeCliTsv(_ text: String) -> [LabeledUsageWindow]? {
+        var windowsByLabel: [String: UsageWindow] = [:]
+        let lines = text.components(separatedBy: .newlines)
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { continue }
+            let parts = trimmed.components(separatedBy: "\t").map { $0.trimmingCharacters(in: .whitespaces) }
+            guard parts.count >= 3 else { continue }
+            let modelGroup = parts[0].lowercased()
+            let windowName = parts[1].lowercased()
+            let percentStr = parts[2]
+            let dateStr = parts.count > 3 ? parts[3] : nil
+
+            let label: String
+            if modelGroup.contains("claude") || modelGroup.contains("gpt") || modelGroup.contains("3p") {
+                if windowName.contains("week") || windowName.contains("7d") {
+                    label = "Cl 7d"
+                } else if windowName.contains("five") || windowName.contains("5h") || windowName.contains("5-hour") || windowName.contains("5 hour") {
+                    label = "Cl 5h"
+                } else {
+                    continue
+                }
+            } else if modelGroup.contains("gemini") {
+                if windowName.contains("week") || windowName.contains("7d") {
+                    label = "Gm 7d"
+                } else if windowName.contains("five") || windowName.contains("5h") || windowName.contains("5-hour") || windowName.contains("5 hour") {
+                    label = "Gm 5h"
+                } else {
+                    continue
+                }
+            } else {
+                continue
+            }
+
+            let cleanPercent = percentStr.replacingOccurrences(of: "%", with: "").trimmingCharacters(in: .whitespaces)
+            guard let remainingPercent = Double(cleanPercent) else { continue }
+            let usedPercent = min(max(100.0 - remainingPercent, 0.0), 100.0)
+            let resetAt = parseDate(dateStr)
+
+            windowsByLabel[label] = UsageWindow(
+                usedPercent: usedPercent,
+                resetAt: resetAt,
+                limit: nil,
+                used: nil,
+                remaining: nil,
+                unit: nil,
+                windowSeconds: nil
+            )
+        }
+
+        var labeled: [LabeledUsageWindow] = []
+        for (_, label) in bucketWindows {
+            if let window = windowsByLabel[label] {
+                labeled.append(LabeledUsageWindow(label: label, window: window))
+            }
+        }
+        return labeled.isEmpty ? nil : labeled
+    }
+
     // MARK: 模型条目
 
     struct ModelEntry {
@@ -196,11 +304,13 @@ enum AntigravityUsageDecoder {
     }
 
     /// bucket 条目 → 窗口（usedPercent = 100 − remainingFraction×100）。
-    private static func windowFromRemaining(_ bucket: [String: Any]) -> UsageWindow? {
-        guard let fraction = numeric(bucket["remainingFraction"]) else { return nil }
+    static func windowFromRemaining(_ bucket: [String: Any]) -> UsageWindow? {
+        let rawFraction = bucket["remainingFraction"] ?? bucket["remaining_fraction"]
+        guard let fraction = numeric(rawFraction) else { return nil }
+        let rawReset = bucket["resetTime"] ?? bucket["reset_time"]
         return UsageWindow(
             usedPercent: min(max(100 - fraction * 100, 0), 100),
-            resetAt: parseDate(bucket["resetTime"]),
+            resetAt: parseDate(rawReset),
             limit: nil,
             used: nil,
             remaining: nil,
@@ -272,6 +382,7 @@ enum AntigravityProcessProbe {
         var pid: Int
         var csrfToken: String?
         var extensionPort: Int?
+        var command: String? = nil
     }
 
     /// 命令行匹配：可执行名 agy；或 language_server* 且带 antigravity 标记
@@ -311,7 +422,7 @@ enum AntigravityProcessProbe {
         return String(commandLine[capture])
     }
 
-    /// ps 输出首条匹配 → Match（pid + csrf_token + extension_server_port）。
+    /// ps 输出首条匹配 → Match（pid + csrf_token + extension_server_port + command）。
     static func firstMatch(in output: String) -> Match? {
         for line in output.split(separator: "\n") {
             let trimmed = line.drop { $0 == " " }
@@ -322,7 +433,8 @@ enum AntigravityProcessProbe {
             return Match(
                 pid: pid,
                 csrfToken: extractFlag(command, "--csrf_token"),
-                extensionPort: extensionPort.flatMap { $0 > 0 ? $0 : nil }
+                extensionPort: extensionPort.flatMap { $0 > 0 ? $0 : nil },
+                command: command
             )
         }
         return nil
@@ -339,7 +451,7 @@ enum AntigravityProcessProbe {
         return String(line[line.index(after: idx)...])
     }
 
-    private static func firstCommandToken(_ commandLine: String) -> String {
+    static func firstCommandToken(_ commandLine: String) -> String {
         let trimmed = commandLine.trimmingCharacters(in: .whitespaces)
         return trimmed.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true).first.map(String.init) ?? ""
     }
@@ -359,17 +471,22 @@ final class AntigravityLimitsFetcher: LimitsFetching {
     private let homeDirectory: () -> String
     /// 安装证据探测：`~/.gemini` 下候选目录名 → 是否存在目录。
     private let installEvidence: (String) -> Bool
+    private let fileExists: (String) -> Bool
+    /// 测试注入：覆盖 agy 二进制路径
+    var binaryOverride: String?
 
     init(
         processRunner: @escaping (String, [String], TimeInterval) async throws -> String = AntigravityShell.run,
         client: AntigravityLocalJSONPosting = AntigravityLocalAPIClient(),
         homeDirectory: @escaping () -> String = { NSHomeDirectory() },
-        installEvidence: @escaping (String) -> Bool = AntigravityLimitsFetcher.defaultInstallEvidence
+        installEvidence: @escaping (String) -> Bool = AntigravityLimitsFetcher.defaultInstallEvidence,
+        fileExists: @escaping (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) || FileManager.default.fileExists(atPath: $0) }
     ) {
         self.processRunner = processRunner
         self.client = client
         self.homeDirectory = homeDirectory
         self.installEvidence = installEvidence
+        self.fileExists = fileExists
     }
 
     /// 生产实现：`~/.gemini/{antigravity,antigravity-ide,antigravity-cli}` 任一目录存在。
@@ -395,10 +512,106 @@ final class AntigravityLimitsFetcher: LimitsFetching {
             if !hasInstallEvidence() {
                 return nil
             }
+            if force, let cliLimits = try? await fetchViaCli() {
+                return cliLimits
+            }
             return errorLimits()
         }
 
-        // ② 端口发现：lsof 列监听端口。
+        // ② 若进程携带 CSRF token（例如 Antigravity IDE），优先走高速本地 Connect-RPC
+        if let csrf = match.csrfToken, !csrf.isEmpty {
+            if let rpcResult = try? await fetchViaConnectRPC(match: match) {
+                return rpcResult
+            }
+        }
+
+        // ③ 无 CSRF token（agy CLI 场景）或 Connect-RPC 失败 → 降级 CLI 直接取数
+        do {
+            if let cliLimits = try await fetchViaCli(runningCommand: match.command) {
+                return cliLimits
+            }
+        } catch {
+            if match.csrfToken == nil {
+                throw error
+            }
+        }
+
+        // ④ 兜底：若有 CSRF token 且 Connect-RPC 与 CLI 均无果，抛出 decoding 错误
+        if match.csrfToken != nil {
+            throw LimitError.decoding("Antigravity quota unavailable from all sources")
+        }
+
+        return errorLimits()
+    }
+
+    // MARK: - CLI 回退取数
+
+    /// 探测 agy 二进制路径
+    func resolveBinaryPath(runningCommand: String? = nil) -> String? {
+        if let binaryOverride {
+            return binaryOverride
+        }
+        if let runningCommand {
+            let candidate = AntigravityProcessProbe.firstCommandToken(runningCommand)
+            if candidate.hasPrefix("/") && fileExists(candidate) {
+                return candidate
+            }
+        }
+        let home = homeDirectory()
+        let candidates = [
+            home + "/.local/bin/agy",
+            home + "/.gemini/antigravity-cli/bin/agy",
+            "/usr/local/bin/agy",
+            "/opt/homebrew/bin/agy",
+            "/usr/bin/agy",
+        ]
+        for candidate in candidates {
+            if fileExists(candidate) {
+                return candidate
+            }
+        }
+        if let pathEnv = ProcessInfo.processInfo.environment["PATH"] {
+            for dir in pathEnv.split(separator: ":") {
+                let candidate = String(dir) + "/agy"
+                if fileExists(candidate) {
+                    return candidate
+                }
+            }
+        }
+        return nil
+    }
+
+    /// CLI 取数（agy --output-format json --print /quota 或 --print /quota）
+    private func fetchViaCli(runningCommand: String? = nil) async throws -> ProviderUsageLimits? {
+        guard let binary = resolveBinaryPath(runningCommand: runningCommand) else {
+            return nil
+        }
+        var rawOutput: String?
+        if let jsonOut = try? await processRunner(binary, ["--output-format", "json", "--print", "/quota"], 15) {
+            rawOutput = jsonOut
+        } else {
+            rawOutput = try await processRunner(binary, ["--print", "/quota"], 15)
+        }
+        guard let output = rawOutput,
+              let labeled = AntigravityUsageDecoder.decodeCliQuotaOutput(output) else {
+            throw LimitError.decoding("failed to parse agy quota output")
+        }
+        let email = supplementaryEmailFromDisk()
+        return providerLimits(labeled: labeled, email: email, planLabel: nil)
+    }
+
+    private func supplementaryEmailFromDisk() -> String? {
+        let accountsPath = homeDirectory() + "/.gemini/google_accounts.json"
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: accountsPath)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return json["active"] as? String
+    }
+
+    // MARK: - Connect-RPC 本地直连
+
+    private func fetchViaConnectRPC(match: AntigravityProcessProbe.Match) async throws -> ProviderUsageLimits? {
         let lsofOutput: String
         do {
             lsofOutput = try await processRunner("/usr/sbin/lsof", ["-nP", "-iTCP", "-sTCP:LISTEN", "-a", "-p", String(match.pid)], 4)
@@ -410,7 +623,6 @@ final class AntigravityLimitsFetcher: LimitsFetching {
             return errorLimits()
         }
 
-        // ③ 端口探测：https 优先；无 CSRF 时再试 http（agy CLI 双协议、免 CSRF）。
         var working: (port: Int, scheme: String)?
         for port in ports {
             if await client.probePort(scheme: "https", port: port, csrfToken: match.csrfToken) {
@@ -425,10 +637,9 @@ final class AntigravityLimitsFetcher: LimitsFetching {
             }
         }
         guard let endpoint = working else {
-            throw LimitError.network("no working API port found")
+            return nil
         }
 
-        // ④ 三级降级取数。
         if let summary = try? await client.postJSON(
             scheme: endpoint.scheme,
             port: endpoint.port,
@@ -436,7 +647,6 @@ final class AntigravityLimitsFetcher: LimitsFetching {
             body: AntigravityRequestBodies.defaultBody,
             csrfToken: match.csrfToken
         ), let labeled = AntigravityUsageDecoder.decodeQuotaSummary(summary) {
-            // quota summary 端点不带套餐信息 → 补发 GetUserStatus 仅取 planLabel。
             return providerLimits(
                 labeled: labeled,
                 email: nil,
@@ -454,7 +664,6 @@ final class AntigravityLimitsFetcher: LimitsFetching {
             return providerLimits(labeled: result.windows, email: result.email, planLabel: result.planLabel)
         }
 
-        // ⑤ GetCommandModelConfigs：优先 extensionPort，scheme 翻转规则同 B。
         let fallbackPort = (match.extensionPort.flatMap { $0 > 0 ? $0 : nil }) ?? endpoint.port
         let fallbackScheme: String = (!isCSRFPresent(match) && fallbackPort == endpoint.port)
             ? (endpoint.scheme == "https" ? "http" : "https")
@@ -469,7 +678,7 @@ final class AntigravityLimitsFetcher: LimitsFetching {
             return providerLimits(labeled: result.windows, email: result.email, planLabel: result.planLabel)
         }
 
-        throw LimitError.decoding("Antigravity quota unavailable from all sources")
+        return nil
     }
 
     // MARK: 内部
