@@ -11,6 +11,14 @@ enum WhatsNewReleaseCatalog {
     /// 历次版本的更新内容，新版本在前
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            version: "3.12.0",
+            entries: [
+                WhatsNewEntry(type: .added, text: "Token 用量统计支持中文单位：设置中切换为「万 / 亿」，如 100万、1.2亿"),
+                WhatsNewEntry(type: .changed, text: "「开机自启」移至通用设置，特性页不再单独列出"),
+                WhatsNewEntry(type: .changed, text: "反转滚动、平滑滚动、鼠标导航、Dock 点击合并为单一「鼠标增强」，一次开关整体启停"),
+            ]
+        ),
+        WhatsNewRelease(
             version: "3.11.0",
             entries: [
                 WhatsNewEntry(type: .added, text: "新增应用内自动更新：自动检查、下载并一键安装新版本，升级更无感"),
