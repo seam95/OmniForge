@@ -1115,6 +1115,7 @@ extension Strings {
         tokenResetConfettiLabel: "Fireworks on limit reset",
         tokenResetCelebrationFormat: "%@ limit reset 🎉",
         tokenSettingsDefaultPeriod: "Default usage period",
+        tokenSettingsNumberStyle: "Number style",
         tokenSettingsProviderStatusFormat: "%@ · %@",
         tokenSettingsLoggedIn: "Signed in",
         tokenSettingsNotConfigured: "Not signed in",

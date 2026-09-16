@@ -11,6 +11,24 @@ enum TokenUsageLimitsDisplay: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+/// 用量数字统计单位风格（K/M/B 英文缩写 / 万·亿中文单位）。
+enum TokenUsageNumberStyle: String, Codable, CaseIterable, Identifiable {
+    /// 英文缩写：1.5K / 2.3M / 8.8B。
+    case western
+    /// 中文单位：1.5万 / 230万 / 1.2亿。
+    case chinese
+
+    var id: String { rawValue }
+
+    /// 切换器选项文案：单位符号本身即语义，两语言一致，不进本地化表。
+    var label: String {
+        switch self {
+        case .western: return "K / M / B"
+        case .chinese: return "万 / 亿"
+        }
+    }
+}
+
 /// 用量统计周期见 `Models/TokenUsage/UsagePeriod.swift`（今日/本周/本月）。
 
 // MARK: - 配置
@@ -41,6 +59,8 @@ struct TokenUsageConfiguration: Equatable, Codable {
     var sessionAlertThresholdPercentStored: Double?
     /// 用量 Top 列表聚合维度（模型 / App）。存储层可选，旧配置无此键 → 解码回 nil，走计算属性默认（模型）。
     var usageTopDimensionStored: TokenUsageTopDimension?
+    /// 用量数字统计单位（K/M/B 或 万/亿）。存储层可选，旧配置无此键 → 解码回 nil，走计算属性默认（西文缩写）。
+    var numberStyleStored: TokenUsageNumberStyle?
 
     /// 趋势图默认周期（缺省 .month）。
     var trendPeriodDefault: TokenTrendPeriod {
@@ -82,6 +102,12 @@ struct TokenUsageConfiguration: Equatable, Codable {
     var usageTopDimension: TokenUsageTopDimension {
         get { usageTopDimensionStored ?? .model }
         set { usageTopDimensionStored = newValue }
+    }
+
+    /// 用量数字统计单位（缺省 .western 西文缩写）。
+    var numberStyle: TokenUsageNumberStyle {
+        get { numberStyleStored ?? .western }
+        set { numberStyleStored = newValue }
     }
 
     /// 供应商展示顺序（包含全部已知供应商；未在自定义顺序中的供应商自动按默认顺序追加在末尾）。

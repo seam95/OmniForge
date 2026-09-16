@@ -34,20 +34,31 @@ enum TokenUsageFormat {
         String(format: "%.1f%%", value)
     }
 
-    /// 仪表盘口径计数缩写：大写 K/M/B、
-    /// 1 位小数并去掉尾随 `.0`。789 → "789"；1500 → "1.5K"；2_300_000 → "2.3M"；
-    /// 8_800_000_000 → "8.8B"。供汇总卡 / 趋势轴 / 模型行。
-    static func compactTokens(_ count: Int) -> String {
+    /// 仪表盘口径计数缩写，1 位小数并去掉尾随 `.0`。
+    /// 西文风格（缺省）：大写 K/M/B（789 → "789"；1500 → "1.5K"；2_300_000 → "2.3M"；8_800_000_000 → "8.8B"）。
+    /// 中文风格：万/亿分级（万 = 1e4、亿 = 1e8；1500 → "1500"；2_300_000 → "230万"；120_000_000 → "1.2亿"）。
+    /// 供汇总卡 / 趋势轴 / 模型行；默认参数保持西文口径，兼容既有调用。
+    static func compactTokens(_ count: Int, style: TokenUsageNumberStyle = .western) -> String {
         let absCount = abs(Double(count))
         let sign = count < 0 ? "-" : ""
-        if absCount >= 1_000_000_000 {
-            return sign + compactScaled(absCount / 1_000_000_000) + "B"
-        }
-        if absCount >= 1_000_000 {
-            return sign + compactScaled(absCount / 1_000_000) + "M"
-        }
-        if absCount >= 1_000 {
-            return sign + compactScaled(absCount / 1_000) + "K"
+        switch style {
+        case .western:
+            if absCount >= 1_000_000_000 {
+                return sign + compactScaled(absCount / 1_000_000_000) + "B"
+            }
+            if absCount >= 1_000_000 {
+                return sign + compactScaled(absCount / 1_000_000) + "M"
+            }
+            if absCount >= 1_000 {
+                return sign + compactScaled(absCount / 1_000) + "K"
+            }
+        case .chinese:
+            if absCount >= 100_000_000 {
+                return sign + compactScaled(absCount / 100_000_000) + "亿"
+            }
+            if absCount >= 10_000 {
+                return sign + compactScaled(absCount / 10_000) + "万"
+            }
         }
         return "\(count)"
     }

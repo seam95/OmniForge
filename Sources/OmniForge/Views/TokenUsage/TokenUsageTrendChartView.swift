@@ -7,6 +7,7 @@ import SwiftUI
 struct TokenUsageTrendChartView: View {
     let points: [UsageTrendPoint]
     @Binding var period: TokenTrendPeriod
+    var numberStyle: TokenUsageNumberStyle = .western
     let strings: Strings
     var onPeriodChange: (TokenTrendPeriod) -> Void = { _ in }
     @Environment(\.colorScheme) private var colorScheme
@@ -46,7 +47,7 @@ struct TokenUsageTrendChartView: View {
             Spacer()
             if let hovered {
                 Text(
-                    "\(hovered.date.formatted(xAxisFormat)) - \(TokenUsageFormat.compactTokens(hovered.tokens)) \(strings.tokenUnit)"
+                    "\(hovered.date.formatted(xAxisFormat)) - \(TokenUsageFormat.compactTokens(hovered.tokens, style: numberStyle)) \(strings.tokenUnit)"
                 )
                 .font(Theme.Stats.font10Regular)
                 .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
@@ -131,7 +132,7 @@ struct TokenUsageTrendChartView: View {
                 AxisGridLine()
                 AxisValueLabel {
                     if let intValue = value.as(Int.self) {
-                        Text(TokenUsageFormat.compactTokens(intValue))
+                        Text(TokenUsageFormat.compactTokens(intValue, style: numberStyle))
                     }
                 }
             }

@@ -7,6 +7,7 @@ import SwiftUI
 /// （今日 = 会话数；7天/总计 = 活跃日；30天 = 平均每活跃日，SPEC 2.1）。
 struct TokenUsageSummaryCardsView: View {
     let cards: UsageSummaryCards
+    var numberStyle: TokenUsageNumberStyle = .western
     let strings: Strings
     @Environment(\.colorScheme) private var colorScheme
 
@@ -14,25 +15,25 @@ struct TokenUsageSummaryCardsView: View {
         HStack(alignment: .top, spacing: 0) {
             statColumn(
                 title: strings.tokenSummaryToday,
-                value: TokenUsageFormat.compactTokens(cards.todayTokens),
+                value: TokenUsageFormat.compactTokens(cards.todayTokens, style: numberStyle),
                 subtitle: String(format: strings.tokenSummaryConversationsFormat, cards.todayConversations)
             )
             statColumn(
                 title: strings.tokenSummarySevenDays,
-                value: TokenUsageFormat.compactTokens(cards.last7dTokens),
+                value: TokenUsageFormat.compactTokens(cards.last7dTokens, style: numberStyle),
                 subtitle: String(format: strings.tokenSummaryActiveDaysFormat, cards.last7dActiveDays)
             )
             statColumn(
                 title: strings.tokenSummaryThirtyDays,
-                value: TokenUsageFormat.compactTokens(cards.last30dTokens),
+                value: TokenUsageFormat.compactTokens(cards.last30dTokens, style: numberStyle),
                 subtitle: String(
                     format: strings.tokenSummaryAvgPerDayFormat,
-                    TokenUsageFormat.compactTokens(cards.last30dAvgPerActiveDay)
+                    TokenUsageFormat.compactTokens(cards.last30dAvgPerActiveDay, style: numberStyle)
                 )
             )
             statColumn(
                 title: strings.tokenSummaryTotal,
-                value: TokenUsageFormat.compactTokens(cards.totalTokens),
+                value: TokenUsageFormat.compactTokens(cards.totalTokens, style: numberStyle),
                 subtitle: String(format: strings.tokenSummaryActiveDaysFormat, cards.totalActiveDays)
             )
         }

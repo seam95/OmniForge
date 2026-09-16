@@ -8,8 +8,36 @@ final class TokenUsagePreferencesTests: XCTestCase {
         XCTAssertEqual(config.limitsDisplayMode, .used)
         XCTAssertEqual(config.trendPeriodDefault, .month)
         XCTAssertEqual(config.usageTopDimension, .model, "Top 列表维度缺省模型")
+        XCTAssertEqual(config.numberStyle, .western, "统计单位缺省西文缩写")
         XCTAssertTrue(config.sessionLimitAlertEnabled)
         XCTAssertTrue(config.paceOverrunAlertEnabled)
+    }
+
+    func test_numberStyle_roundTrip() {
+        let suite = "TokenUsagePreferencesTestsNumberStyle.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let preferences = TokenUsagePreferences(userDefaults: defaults)
+        XCTAssertEqual(preferences.configuration.numberStyle, .western)
+        preferences.update { $0.numberStyle = .chinese }
+        let reloaded = TokenUsagePreferences(userDefaults: defaults)
+        XCTAssertEqual(reloaded.configuration.numberStyle, .chinese)
+    }
+
+    /// 旧配置 JSON 无 numberStyleStored 键 → 解码回 nil，走默认（西文缩写），其余设置不丢。
+    func test_numberStyle_legacyDataWithoutKey_fallsBackToWestern() throws {
+        var config = TokenUsageConfiguration()
+        config.numberStyle = .chinese
+        config.trendPeriodDefault = .week
+        var data = try JSONEncoder().encode(config)
+        // 从 JSON 中剥离新键，模拟升级前落盘的旧配置。
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        object["numberStyleStored"] = nil
+        data = try JSONSerialization.data(withJSONObject: object)
+        let decoded = try JSONDecoder().decode(TokenUsageConfiguration.self, from: data)
+        XCTAssertEqual(decoded.numberStyle, .western)
+        XCTAssertEqual(decoded.trendPeriodDefault, .week, "旧配置其余键不受影响")
     }
 
     func test_usageTopDimension_roundTrip() {

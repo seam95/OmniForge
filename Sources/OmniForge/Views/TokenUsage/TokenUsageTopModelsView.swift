@@ -6,6 +6,7 @@ import SwiftUI
 struct TokenUsageTopModelsView: View {
     let entries: [UsageTopModelEntry]
     @Binding var dimension: TokenUsageTopDimension
+    var numberStyle: TokenUsageNumberStyle = .western
     let strings: Strings
     @Environment(\.colorScheme) private var colorScheme
 
@@ -57,7 +58,7 @@ struct TokenUsageTopModelsView: View {
                 .truncationMode(.tail)
                 .help(entry.name)
             Spacer(minLength: 4)
-            Text(TokenUsageFormat.compactTokens(entry.tokens))
+            Text(TokenUsageFormat.compactTokens(entry.tokens, style: numberStyle))
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
             Text(TokenUsageFormat.percentOneDecimal(entry.percent))

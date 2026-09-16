@@ -7,6 +7,7 @@ import SwiftUI
 /// 无数据时（`heatmap == nil`）显示占位块。
 struct TokenUsageActivityHeatmapView: View {
     let heatmap: UsageActivityHeatmap?
+    var numberStyle: TokenUsageNumberStyle = .western
     let strings: Strings
     @Environment(\.colorScheme) private var colorScheme
 
@@ -173,7 +174,7 @@ struct TokenUsageActivityHeatmapView: View {
     }
 
     private func hoverSummary(_ cell: UsageActivityHeatmapCell) -> String {
-        "\(Self.dayFormatter.string(from: cell.dayStart)) · \(TokenUsageFormat.compactTokens(cell.totalTokens)) \(strings.tokenUnit)"
+        "\(Self.dayFormatter.string(from: cell.dayStart)) · \(TokenUsageFormat.compactTokens(cell.totalTokens, style: numberStyle)) \(strings.tokenUnit)"
     }
 
     private static let monthFormatter: DateFormatter = {

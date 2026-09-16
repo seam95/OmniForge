@@ -115,6 +115,18 @@ struct TokenUsageGeneralSettingsView: View {
                 }
                 .accessibilityIdentifier(SettingsAccessibilityID.tokenUsageDefaultPeriod.rawValue)
             }
+
+            Section(strings.tokenSettingsNumberStyle) {
+                Picker(strings.tokenSettingsNumberStyle, selection: Binding(
+                    get: { preferences.configuration.numberStyle },
+                    set: { style in preferences.update { $0.numberStyle = style } }
+                )) {
+                    ForEach(TokenUsageNumberStyle.allCases) { style in
+                        Text(style.label).tag(style)
+                    }
+                }
+                .accessibilityIdentifier(SettingsAccessibilityID.tokenUsageNumberStyle.rawValue)
+            }
         }
         .settingsPageStyle()
     }

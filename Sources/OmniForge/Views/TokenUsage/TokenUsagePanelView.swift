@@ -41,6 +41,7 @@ struct TokenUsagePanelView: View {
     private var summaryCardsBlock: some View {
         TokenUsageSummaryCardsView(
             cards: manager.dashboardSnapshot?.summaryCards ?? manager.summaryCards(filteredBy: nil),
+            numberStyle: preferences.configuration.numberStyle,
             strings: strings
         )
     }
@@ -227,6 +228,7 @@ struct TokenUsagePanelView: View {
                 usageSectionView(
                     TokenUsageActivityHeatmapView(
                         heatmap: usageHeatmap,
+                        numberStyle: preferences.configuration.numberStyle,
                         strings: strings
                     )
                 )
@@ -236,6 +238,7 @@ struct TokenUsagePanelView: View {
                     TokenUsageTrendChartView(
                         points: trendPoints,
                         period: trendPeriodBinding,
+                        numberStyle: preferences.configuration.numberStyle,
                         strings: strings
                     )
                 )
@@ -246,6 +249,7 @@ struct TokenUsagePanelView: View {
                         TokenUsageTopModelsView(
                             entries: topEntries,
                             dimension: topDimensionBinding,
+                            numberStyle: preferences.configuration.numberStyle,
                             strings: strings
                         )
                     )

@@ -1115,6 +1115,7 @@ extension Strings {
         tokenResetConfettiLabel: "额度重置时烟花",
         tokenResetCelebrationFormat: "%@ 额度已重置 🎉",
         tokenSettingsDefaultPeriod: "用量统计周期默认",
+        tokenSettingsNumberStyle: "统计单位",
         tokenSettingsProviderStatusFormat: "%@ · %@",
         tokenSettingsLoggedIn: "已登录",
         tokenSettingsNotConfigured: "未登录",

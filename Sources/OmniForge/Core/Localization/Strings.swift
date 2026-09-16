@@ -1200,6 +1200,8 @@ struct Strings: Equatable {
     /// 重置庆祝 toast 文案格式（%@ = provider 名 + 窗口标签，如 "Codex 7d"）。
     let tokenResetCelebrationFormat: String
     let tokenSettingsDefaultPeriod: String
+    /// 用量数字统计单位设置项标题（选项 K/M/B 或 万/亿）。
+    let tokenSettingsNumberStyle: String
     let tokenSettingsProviderStatusFormat: String
     let tokenSettingsLoggedIn: String
     let tokenSettingsNotConfigured: String
