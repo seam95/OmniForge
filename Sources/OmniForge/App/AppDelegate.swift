@@ -58,6 +58,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MainMenuSettingsTarget
             UpdateManager.shared.start()
 
             let coordinator = OnboardingCoordinator.shared
+            coordinator.onCompletionAnchoring = { [weak root] in
+                root?.statusBarController.openPanel()
+            }
+            coordinator.onApplyDockIconPreference = { [weak root] retainDock in
+                root?.appState.setHideDockIcon(!retainDock)
+            }
             OnboardingWindowController.shared.startObserving(coordinator, l10n: root.appState.l10n, appearance: root.appState.appearance)
             DispatchQueue.main.async {
                 coordinator.startIfNeeded()

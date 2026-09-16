@@ -10,13 +10,13 @@ struct OnboardingView: View {
     var body: some View {
         VStack(spacing: 0) {
             TabView(selection: $coordinator.currentStep) {
-                WelcomeOnboardingPage(strings: l10n.s)
+                WelcomeOnboardingPage(coordinator: coordinator, strings: l10n.s)
                     .tag(0)
-                PermissionOnboardingPage(strings: l10n.s)
+                PlaygroundOnboardingPage(strings: l10n.s)
                     .tag(1)
-                FeatureShowcaseOnboardingPage(strings: l10n.s)
+                PermissionOnboardingPage(strings: l10n.s)
                     .tag(2)
-                DoneOnboardingPage(strings: l10n.s)
+                MenubarAnchoringOnboardingPage(coordinator: coordinator, strings: l10n.s)
                     .tag(3)
             }
             .tabViewStyle(.automatic)
@@ -31,7 +31,7 @@ struct OnboardingView: View {
 
             navigationBar
         }
-        .frame(width: 640, height: 480)
+        .frame(width: 660, height: 500)
         .background(Color(nsColor: .windowBackgroundColor))
         .omniNoFocusRing()
     }
@@ -58,7 +58,7 @@ struct OnboardingView: View {
 
             Spacer()
 
-            Button(coordinator.isLastStep ? l10n.s.onboardingFinish : l10n.s.onboardingNext) {
+            Button(coordinator.isLastStep ? l10n.s.onboardingStartTourButton : l10n.s.onboardingNext) {
                 if coordinator.isLastStep {
                     coordinator.complete()
                 } else {

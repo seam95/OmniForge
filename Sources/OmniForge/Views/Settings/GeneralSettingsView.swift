@@ -68,6 +68,19 @@ struct GeneralSettingsView: View {
                 }
                 .accessibilityIdentifier(SettingsAccessibilityID.generalHideDockIcon.rawValue)
             }
+
+            Section {
+                Button {
+                    OnboardingCoordinator.shared.relaunchOnboarding()
+                } label: {
+                    HStack {
+                        Label(state.l10n.s.onboardingRelaunchButton, systemImage: "sparkles")
+                        Spacer()
+                    }
+                }
+            } footer: {
+                Text(state.l10n.s.onboardingRelaunchHint)
+            }
         }
         .settingsPageStyle()
     }

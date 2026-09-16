@@ -8,12 +8,20 @@ import Foundation
 final class OnboardingCoordinator: ObservableObject {
     static let shared = OnboardingCoordinator()
 
-    /// Onboarding 总步骤数：欢迎 → 权限 → 特性概览 → 完成
+    /// Onboarding 总步骤数：场景预设 → 演练场 → 权限 → 菜单栏定锚
     static let totalSteps = 4
 
     @Published var currentStep: Int = 0
     @Published var isWindowVisible: Bool = false
     @Published var isWhatsNewVisible: Bool = false
+    @Published var selectedPersona: OnboardingPersona = .allInOne
+    @Published var retainDockIcon: Bool = false
+    @Published var launchAtLogin: Bool = true
+
+    /// 向导完成时的菜单栏锚定回调（如打开控制中心面板）
+    var onCompletionAnchoring: (() -> Void)?
+    /// 应用 Dock 偏好回调
+    var onApplyDockIconPreference: ((Bool) -> Void)?
 
     private let userDefaults: UserDefaults
 
@@ -81,8 +89,28 @@ final class OnboardingCoordinator: ObservableObject {
         userDefaults.set(true, forKey: UserDefaultsKeys.hasOnboarded)
         userDefaults.set(currentAppVersion, forKey: UserDefaultsKeys.onboardingCompletedVersion)
         userDefaults.removeObject(forKey: UserDefaultsKeys.onboardingCurrentStep)
+
+        let persona = selectedPersona
+        Task { @MainActor in
+            await persona.apply(to: FeatureRuntime.shared)
+        }
+
+        onApplyDockIconPreference?(retainDockIcon)
+
         currentStep = 0
         isWindowVisible = false
+
+        let anchorAction = onCompletionAnchoring
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            anchorAction?()
+        }
+    }
+
+    /// 重新运行新手引导（供设置页调用）
+    func relaunchOnboarding() {
+        currentStep = 0
+        userDefaults.removeObject(forKey: UserDefaultsKeys.onboardingCurrentStep)
+        showOnboarding()
     }
 
     // MARK: - What's New
@@ -120,5 +148,10 @@ final class OnboardingCoordinator: ObservableObject {
         currentStep = 0
         isWindowVisible = false
         isWhatsNewVisible = false
+        selectedPersona = .allInOne
+        retainDockIcon = false
+        launchAtLogin = true
+        onCompletionAnchoring = nil
+        onApplyDockIconPreference = nil
     }
 }

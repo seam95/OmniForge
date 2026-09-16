@@ -148,4 +148,29 @@ final class OnboardingCoordinatorTests: XCTestCase {
         coordinator.startIfNeeded()
         XCTAssertFalse(coordinator.isWindowVisible)
     }
+
+    // MARK: - 场景与重温引导
+
+    func test_persona_defaultsToAllInOne() {
+        XCTAssertEqual(coordinator.selectedPersona, .allInOne)
+    }
+
+    func test_relaunchOnboarding_resetsStepAndShowsWindow() {
+        coordinator.advanceStep()
+        coordinator.advanceStep()
+        XCTAssertEqual(coordinator.currentStep, 2)
+
+        coordinator.relaunchOnboarding()
+        XCTAssertEqual(coordinator.currentStep, 0)
+        XCTAssertTrue(coordinator.isWindowVisible)
+    }
+
+    func test_complete_invokesDockIconCallback() {
+        var appliedDock: Bool?
+        coordinator.onApplyDockIconPreference = { appliedDock = $0 }
+        coordinator.retainDockIcon = true
+
+        coordinator.complete()
+        XCTAssertEqual(appliedDock, true)
+    }
 }

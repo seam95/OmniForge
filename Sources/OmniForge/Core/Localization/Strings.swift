@@ -409,6 +409,38 @@ struct Strings: Equatable {
     let onboardingFeatureLaunchAtLoginDescription: String
     let onboardingDoneTitle: String
     let onboardingDoneHint: String
+    // MARK: - Onboarding Enhancements
+    let onboardingPersonaTitle: String
+    let onboardingPersonaSubtitle: String
+    let onboardingPersonaAIDeveloperTitle: String
+    let onboardingPersonaAIDeveloperDesc: String
+    let onboardingPersonaProductivityTitle: String
+    let onboardingPersonaProductivityDesc: String
+    let onboardingPersonaMacGeekTitle: String
+    let onboardingPersonaMacGeekDesc: String
+    let onboardingPersonaAllInOneTitle: String
+    let onboardingPersonaAllInOneDesc: String
+    let onboardingPlaygroundTitle: String
+    let onboardingPlaygroundSubtitle: String
+    let onboardingPlaygroundCardTitle: String
+    let onboardingPlaygroundCardPrompt: String
+    let onboardingPlaygroundSuccess: String
+    let onboardingPlaygroundWaiting: String
+    let onboardingPlaygroundTip: String
+    let onboardingPrivacyBanner: String
+    let onboardingZeroPermissionTitle: String
+    let onboardingZeroPermissionDesc: String
+    let onboardingSystemPermissionTitle: String
+    let onboardingPermissionScreenRecording: String
+    let onboardingPermissionScreenRecordingDescription: String
+    let onboardingMenubarTitle: String
+    let onboardingMenubarSubtitle: String
+    let onboardingOptionRetainDock: String
+    let onboardingOptionRetainDockDesc: String
+    let onboardingOptionLaunchAtLogin: String
+    let onboardingStartTourButton: String
+    let onboardingRelaunchButton: String
+    let onboardingRelaunchHint: String
     // MARK: - What's New
     let whatsNewTitle: String
     let whatsNewClose: String

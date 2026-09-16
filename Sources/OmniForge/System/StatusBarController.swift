@@ -808,7 +808,7 @@ final class StatusBarController: NSObject, NSWindowDelegate {
 
     /// 打开面板：装配内容（首显测高）→ 一次性定位 → 显示并激活。
     /// NSWindow 无锚定跟随机制，此后的数值宽度变化不会移动面板。
-    private func openPanel() {
+    func openPanel() {
         let totalHeight = installPanelContentIfNeeded()
         guard let button = statusItem.button, let window = button.window else { return }
         let anchor = window.convertToScreen(button.convert(button.bounds, to: nil))

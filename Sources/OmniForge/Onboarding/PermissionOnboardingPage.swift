@@ -1,74 +1,117 @@
 import SwiftUI
 
-/// Onboarding 第二步：权限请求页 — 引导用户授予 Accessibility 和通知权限。
-/// 权限状态通过 Permissions.shared 实时刷新（应用激活时自动 refresh）。
+/// Onboarding 第三步：透明分级权限 — 区分免权限能力与系统增强权限
 struct PermissionOnboardingPage: View {
     let strings: Strings
     @ObservedObject private var permissions = Permissions.shared
 
     var body: some View {
-        VStack(spacing: 24) {
-            VStack(spacing: 10) {
+        VStack(spacing: 16) {
+            // 头部标题与隐私承诺
+            VStack(spacing: 8) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .fill(Color.accentColor.opacity(0.12))
-                        .frame(width: 56, height: 56)
+                        .frame(width: 48, height: 48)
                     Image(systemName: "lock.shield")
-                        .font(.system(size: 24, weight: .semibold))
+                        .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(Color.accentColor)
                 }
+
                 Text(strings.onboardingPermissionsTitle)
                     .font(.system(size: 19, weight: .bold))
-                Text(strings.onboardingPermissionsBody)
-                    .font(.system(size: 12))
+
+                Text(strings.onboardingPrivacyBanner)
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 48)
+                    .padding(.horizontal, 28)
             }
-            .padding(.top, 30)
+            .padding(.top, 14)
 
+            // 绿色卡片：免权限功能公示
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 16))
+                    .foregroundStyle(.green)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(strings.onboardingZeroPermissionTitle)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.green)
+
+                    Text(strings.onboardingZeroPermissionDesc)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.green.opacity(0.06))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Color.green.opacity(0.2), lineWidth: 1)
+            )
+            .padding(.horizontal, 28)
+
+            // 需授权权限列表
             VStack(spacing: 0) {
                 permissionRow(
                     icon: "accessibility",
                     title: strings.onboardingPermissionAccessibility,
                     description: strings.onboardingPermissionAccessibilityDescription,
                     granted: permissions.accessibility,
-                    onRequest: requestAccessibility
+                    onRequest: { permissions.requestAccess(for: .accessibility) }
                 )
 
-                Divider().padding(.vertical, 8)
+                Divider().padding(.vertical, 6)
+
+                permissionRow(
+                    icon: "camera.viewfinder",
+                    title: strings.onboardingPermissionScreenRecording,
+                    description: strings.onboardingPermissionScreenRecordingDescription,
+                    granted: permissions.screenRecording,
+                    onRequest: { permissions.requestAccess(for: .screenRecording) }
+                )
+
+                Divider().padding(.vertical, 6)
 
                 permissionRow(
                     icon: "bell",
                     title: strings.onboardingPermissionNotifications,
                     description: strings.onboardingPermissionNotificationsDescription,
                     granted: permissions.notifications,
-                    onRequest: requestNotifications
+                    onRequest: { permissions.requestAccess(for: .notifications) }
                 )
             }
-            .padding(16)
+            .padding(12)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.primary.opacity(0.04))
+                    .fill(Color.primary.opacity(0.03))
             )
             .padding(.horizontal, 28)
 
-            Button {
-                permissions.refresh()
-            } label: {
-                Label(strings.onboardingRecheck, systemImage: "arrow.clockwise")
-            }
-            .controlSize(.small)
+            // 底部刷新与跳过提示
+            HStack(spacing: 12) {
+                Button {
+                    permissions.refresh()
+                } label: {
+                    Label(strings.onboardingRecheck, systemImage: "arrow.clockwise")
+                }
+                .controlSize(.small)
 
-            Text(strings.onboardingPermissionHint)
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 48)
+                Text(strings.onboardingPermissionHint)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
 
             Spacer()
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder
@@ -79,15 +122,15 @@ struct PermissionOnboardingPage: View {
         granted: Bool,
         onRequest: @escaping () -> Void
     ) -> some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: 10) {
             Image(systemName: icon)
-                .font(.system(size: 16))
+                .font(.system(size: 15))
                 .foregroundStyle(granted ? .green : .secondary)
-                .frame(width: 24)
+                .frame(width: 22)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                 Text(description)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
@@ -107,13 +150,6 @@ struct PermissionOnboardingPage: View {
                     .buttonStyle(.borderedProminent)
             }
         }
-    }
-
-    private func requestAccessibility() {
-        _ = permissions.requestAccessibility()
-    }
-
-    private func requestNotifications() {
-        permissions.requestNotifications()
+        .padding(.vertical, 2)
     }
 }
