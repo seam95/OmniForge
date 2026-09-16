@@ -138,7 +138,11 @@ struct OnboardingView: View {
                 // 右侧按钮：始终锁定在最右侧
                 Button(coordinator.isLastStep ? l10n.s.onboardingStartTourButton : l10n.s.onboardingNext) {
                     if coordinator.isLastStep {
-                        coordinator.complete()
+                        var transaction = Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) {
+                            coordinator.complete()
+                        }
                     } else {
                         coordinator.advanceStep()
                     }

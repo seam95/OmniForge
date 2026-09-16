@@ -24,7 +24,6 @@ final class OnboardingWindowController {
 
         coordinator.$isWindowVisible
             .removeDuplicates()
-            .receive(on: DispatchQueue.main)
             .sink { [weak self] visible in
                 if visible {
                     self?.showOnboardingWindow(coordinator: coordinator)
@@ -36,7 +35,6 @@ final class OnboardingWindowController {
 
         coordinator.$isWhatsNewVisible
             .removeDuplicates()
-            .receive(on: DispatchQueue.main)
             .sink { [weak self] visible in
                 if visible {
                     self?.showWhatsNewWindow(coordinator: coordinator)
