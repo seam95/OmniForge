@@ -10,47 +10,17 @@ extension ProviderTool {
     }
 }
 
-/// 供应商页面的宿主场景。
-///
-/// 两个场景都在自身容器内闭环新增：设置窗口用顶部主按钮，菜单栏用齿轮弹层动作，
-/// 均在当前容器弹出完整表单，不经设置窗中转（信息架构重构：数据管理跟随使用层）。
-enum ProviderSwitchPresentation: Equatable {
-    case settings
-    case menuBar
-
-    var showsInlineAddProviderButton: Bool {
-        self == .settings
-    }
-
-    /// 齿轮弹层是否提供「新增供应商」动作（菜单栏场景无顶部主按钮，收入弹层）。
-    var showsSettingsPopoverAddProvider: Bool {
-        self == .menuBar
-    }
-
-    /// 供应商管理菜单（编辑、复制启动命令、删除）统一在卡片中提供。
-    var showsProfileManagementMenu: Bool {
-        true
-    }
-
-    /// 复制入口已融入卡片更多菜单。
-    var showsLaunchCommandCopyButton: Bool {
-        false
-    }
-}
-
-/// 供应商切换设置页（卡片列表风格）：
+/// 供应商切换页（卡片列表风格，唯一入口为菜单栏控制中心 tab）：
 /// - 分段选择器：Claude Code / Codex 复用 `PanelSegmentedControl`，右端齿轮
 ///   设置入口（对齐 Token 面板「限额显示」齿轮：popover 收纳底部链接动作）
 /// - 卡片列表：官方行 + Profile 行各自成独立卡片（白底大圆角），激活卡片带 accent 描边
 ///   并展示「使用中」绿色胶囊微章，Profile 卡片右侧均展示 `•••` 更多操作菜单
-/// - 设置窗口：展示全宽「+ 新增供应商」主按钮并打开新增表单
-/// - 菜单栏：齿轮弹层内「新增供应商」动作在本容器打开同款表单（不经设置窗中转）
-/// - 齿轮弹层动作（编辑配置文件 / 恢复备份 / 菜单栏新增）作用于当前展示 tool
+/// - 新增供应商：齿轮弹层行动作在本容器打开完整表单（数据管理跟随使用层，不经设置窗中转）
+/// - 齿轮弹层动作（新增供应商 / 编辑配置文件 / 恢复备份）作用于当前展示 tool
 /// - 异常状态：未托管 / 损坏警示横幅以同款圆角卡片融入列表节奏
 struct ProviderSwitchSettingsView: View {
     @ObservedObject var manager: ProviderSwitchManager
     let strings: Strings
-    var presentation: ProviderSwitchPresentation = .settings
     var commandCopier: ProviderLaunchCommandCopying = ProviderLaunchCommandCopier()
 
     @State private var selectedTool: ProviderTool = .claudeCode
@@ -101,10 +71,6 @@ struct ProviderSwitchSettingsView: View {
 
                     unmanagedBanner(for: tool)
                     corruptedBanner(for: tool)
-
-                    if presentation.showsInlineAddProviderButton {
-                        addProviderButton(for: tool)
-                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
@@ -198,7 +164,6 @@ struct ProviderSwitchSettingsView: View {
         .popover(isPresented: $showsSettingsPopover, arrowEdge: .bottom) {
             ProviderSwitchSettingsPopover(
                 strings: strings,
-                showsAddProviderAction: presentation.showsSettingsPopoverAddProvider,
                 onAddProvider: {
                     showsSettingsPopover = false
                     addProvider(tool: displayedTool)
@@ -329,25 +294,23 @@ struct ProviderSwitchSettingsView: View {
                         inUseBadge
                     }
 
-                    if presentation.showsProfileManagementMenu {
-                        Menu {
-                            Button(strings.providerEdit) { editingProfile = profile }
-                            Button(strings.providerCopyLaunchCommand) { copyLaunchCommand(for: profile) }
-                            Button(strings.providerDelete, role: .destructive) {
-                                deletingProfile = profile
-                                deletePromptPresented = true
-                            }
-                        } label: {
-                            Image(systemName: "ellipsis")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(Color.secondary.opacity(0.8))
-                                .frame(width: 28, height: 28)
-                                .contentShape(Rectangle())
+                    Menu {
+                        Button(strings.providerEdit) { editingProfile = profile }
+                        Button(strings.providerCopyLaunchCommand) { copyLaunchCommand(for: profile) }
+                        Button(strings.providerDelete, role: .destructive) {
+                            deletingProfile = profile
+                            deletePromptPresented = true
                         }
-                        .menuStyle(.borderlessButton)
-                        .menuIndicator(.hidden)
-                        .fixedSize()
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Color.secondary.opacity(0.8))
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
                     }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
                 }
             }
             .padding(12)
@@ -464,34 +427,6 @@ struct ProviderSwitchSettingsView: View {
         .padding(.top, ProviderCardVisual.cardSpacing)
     }
 
-    // MARK: - 「+ 新增供应商」主按钮
-
-    private func addProviderButton(for tool: ProviderTool) -> some View {
-        Button {
-            addProvider(tool: tool)
-        } label: {
-            Text(strings.providerAddProvider)
-                .font(.system(size: 13.5, weight: .medium))
-                .foregroundStyle(ProviderCardVisual.accent(colorScheme))
-                .frame(maxWidth: .infinity)
-                .frame(height: 42)
-                .background(
-                    RoundedRectangle(cornerRadius: ProviderCardVisual.cornerRadius, style: .continuous)
-                        .fill(colorScheme == .dark ? Color(nsColor: .controlBackgroundColor) : Color.white)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: ProviderCardVisual.cornerRadius, style: .continuous)
-                        .strokeBorder(
-                            colorScheme == .dark ? Color.white.opacity(0.12) : Color.primary.opacity(0.12),
-                            lineWidth: 1
-                        )
-                )
-        }
-        .buttonStyle(ProviderAddButtonStyle())
-        .padding(.horizontal, 12)
-        .padding(.top, 12)
-    }
-
     // MARK: - 未托管 / 损坏警示
 
     @ViewBuilder
@@ -530,9 +465,8 @@ struct ProviderSwitchSettingsView: View {
 
     // MARK: - 动作
 
-    /// 新增供应商一律在**当前容器**弹出表单（设置窗走顶部主按钮，菜单栏走齿轮弹层
-    /// 动作，两者共用此路径），不再把菜单栏场景路由到设置窗——数据管理跟随使用层
-    /// （信息架构重构）。弹层动作先收起弹层再赋值，与同弹层的「编辑配置文件」
+    /// 新增供应商在**当前容器**弹出表单（齿轮弹层动作触发），不再路由到设置窗
+    /// ——数据管理跟随使用层。弹层动作先收起弹层再赋值，与同弹层的「编辑配置文件」
     /// 「恢复备份」一致。
     private func addProvider(tool: ProviderTool) {
         addingProfileForTool = tool
@@ -696,17 +630,6 @@ enum ProviderCardVisual {
     static let selectedCardFill = Color(red: 0xFB / 255.0, green: 0xFD / 255.0, blue: 0xFF / 255.0)
     static func selectedCardShadow(_ scheme: ColorScheme) -> Color {
         accent(scheme).opacity(scheme == .dark ? 0.16 : 0.10)
-    }
-}
-
-/// 新增供应商按钮样式（带 Hover 微反馈）
-private struct ProviderAddButtonStyle: ButtonStyle {
-    @State private var isHovered = false
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .opacity(configuration.isPressed ? 0.75 : (isHovered ? 0.88 : 1.0))
-            .onHover { isHovered = $0 }
     }
 }
 

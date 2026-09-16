@@ -322,8 +322,7 @@ struct ControlCenterContainerView: View {
                    runtime.isAvailable(.providerSwitch) {
                     ProviderSwitchSettingsView(
                         manager: manager,
-                        strings: state.l10n.s,
-                        presentation: .menuBar
+                        strings: state.l10n.s
                     )
                 } else {
                     unavailablePanel

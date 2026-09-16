@@ -18,12 +18,12 @@ final class SettingsToolbarTabScreenshotTests: XCTestCase {
     }
 
     func test_allCases_includesScreenshotInStableOrder() {
-        XCTAssertEqual(SettingsToolbarTab.allCases.count, 12)
+        XCTAssertEqual(SettingsToolbarTab.allCases.count, 11)
         XCTAssertEqual(
             SettingsToolbarTab.allCases,
             [
                 .general, .features, .inputMethod, .clipboard, .shelf, .screenshot, .mouse,
-                .performance, .tokenUsage, .keepAwake, .providerSwitch, .promptOptimizer
+                .performance, .tokenUsage, .keepAwake, .promptOptimizer
             ]
         )
     }

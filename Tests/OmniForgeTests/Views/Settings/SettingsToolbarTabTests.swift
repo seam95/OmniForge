@@ -3,13 +3,13 @@ import XCTest
 
 final class SettingsToolbarTabTests: XCTestCase {
     func test_sidebarContainsStableTabs() {
-        // 终态 12 项（信息架构重构阶段③）：清理/卸载全页壳移除。
-        XCTAssertEqual(SettingsToolbarTab.allCases.count, 12)
+        // 终态 11 项：供应商切换设置页移除（唯一入口=菜单栏控制中心 tab）。
+        XCTAssertEqual(SettingsToolbarTab.allCases.count, 11)
         XCTAssertEqual(
             SettingsToolbarTab.allCases,
             [
                 .general, .features, .inputMethod, .clipboard, .shelf, .screenshot, .mouse,
-                .performance, .tokenUsage, .keepAwake, .providerSwitch, .promptOptimizer
+                .performance, .tokenUsage, .keepAwake, .promptOptimizer
             ]
         )
     }
@@ -21,7 +21,7 @@ final class SettingsToolbarTabTests: XCTestCase {
             SettingsToolbarTab.visibleSections(isAvailable: { _ in true }),
             [
                 SettingsSidebarSection(group: .clipboard, tabs: [.clipboard]),
-                SettingsSidebarSection(group: .ai, tabs: [.providerSwitch, .promptOptimizer]),
+                SettingsSidebarSection(group: .ai, tabs: [.promptOptimizer]),
                 SettingsSidebarSection(group: .productivity, tabs: [.shelf]),
                 SettingsSidebarSection(group: .capture, tabs: [.screenshot]),
                 SettingsSidebarSection(group: .input, tabs: [.inputMethod]),

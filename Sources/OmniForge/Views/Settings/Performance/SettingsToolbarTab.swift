@@ -12,7 +12,6 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
     case performance
     case tokenUsage
     case keepAwake
-    case providerSwitch
     case promptOptimizer
 
     static func visibleCases(isAvailable: (AppFeature) -> Bool) -> [SettingsToolbarTab] {
@@ -36,8 +35,6 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
                 return isAvailable(.tokenUsage)
             case .keepAwake:
                 return isAvailable(.keepAwake)
-            case .providerSwitch:
-                return isAvailable(.providerSwitch)
             case .promptOptimizer:
                 return isAvailable(.promptOptimizer)
             }
@@ -82,7 +79,7 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
             return .monitor
         case .keepAwake:
             return .energy
-        case .providerSwitch, .promptOptimizer:
+        case .promptOptimizer:
             return .ai
         }
     }
@@ -98,7 +95,6 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
         case .performance: return "gauge.with.dots.needle.33percent"
         case .tokenUsage: return "chart.line.uptrend.xyaxis"
         case .keepAwake: return "moon.zzz.fill"
-        case .providerSwitch: return "arrow.triangle.swap"
         case .promptOptimizer: return "wand.and.stars"
         case .features: return "puzzlepiece.extension"
         }
@@ -117,7 +113,6 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
         case .performance: return .green
         case .tokenUsage: return .orange
         case .keepAwake: return .purple
-        case .providerSwitch: return .blue
         case .promptOptimizer: return .purple
         }
     }
@@ -133,7 +128,6 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
         case .performance: return strings.settingsTabPerformance
         case .tokenUsage: return strings.settingsTabTokenUsage
         case .keepAwake: return strings.featureHubNameKeepAwake
-        case .providerSwitch: return strings.settingsTabProviderSwitch
         case .promptOptimizer: return strings.settingsTabPromptOptimizer
         case .features: return strings.settingsTabFeatures
         }

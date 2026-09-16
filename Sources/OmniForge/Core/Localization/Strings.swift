@@ -1235,7 +1235,6 @@ struct Strings: Equatable {
     let featureHubDescProviderSwitch: String
     /// AI 分组标题。
     let featureHubGroupAI: String
-    let settingsTabProviderSwitch: String
     /// 控制中心分段标题。
     let controlcenterTabProviderSwitch: String
     /// 控制中心导航标题。
@@ -1269,8 +1268,6 @@ struct Strings: Equatable {
     let providerCopyLaunchCommand: String
     let providerLaunchCommandCopied: String
     let providerLaunchCommandCopyFailed: String
-    /// 顶部新增供应商按钮。
-    let providerAddProvider: String
     /// 齿轮弹层「新增供应商」动作行文案（无「+」前缀：列表项不带头部符号）。
     let providerAddProviderAction: String
     /// 新增按钮（%@ = 工具名）。

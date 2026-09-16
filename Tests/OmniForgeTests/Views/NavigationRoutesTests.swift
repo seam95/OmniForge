@@ -169,12 +169,12 @@ final class NavigationRoutesTests: XCTestCase {
     }
 
     func test_settingsTabs_followFeatureAvailabilityAndStableOrder() {
-        // 终态 12 项（信息架构重构阶段③）：清理/卸载全页壳移除，功能本体在工具详情页。
+        // 终态 11 项：清理/卸载全页壳移除（功能本体在工具详情页），供应商切换设置页移除。
         XCTAssertEqual(
             SettingsToolbarTab.visibleCases(isAvailable: { _ in true }),
             [
                 .general, .features, .inputMethod, .clipboard, .shelf, .screenshot, .mouse,
-                .performance, .tokenUsage, .keepAwake, .providerSwitch, .promptOptimizer
+                .performance, .tokenUsage, .keepAwake, .promptOptimizer
             ]
         )
 

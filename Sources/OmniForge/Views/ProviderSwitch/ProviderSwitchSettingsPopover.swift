@@ -1,15 +1,12 @@
 import SwiftUI
 
 /// 供应商页齿轮弹层（对齐 Token「限额显示」弹层模式）：
-/// 收纳原底部链接的三个动作——新增供应商（仅菜单栏场景，设置窗口顶部
-/// 已有大按钮不重复）、编辑配置文件、恢复备份。动作行对齐 Token 弹层
+/// 收纳三个动作——新增供应商、编辑配置文件、恢复备份。动作行对齐 Token 弹层
 /// 主体行规格（body 主色文字 + 紧凑行距），动作目标 tool 由宿主按
 /// displayedTool 快照注入。
 struct ProviderSwitchSettingsPopover: View {
     let strings: Strings
-    /// 是否展示「新增供应商」动作（菜单栏场景；设置窗口走顶部主按钮）。
-    var showsAddProviderAction = false
-    var onAddProvider: (() -> Void)? = nil
+    let onAddProvider: () -> Void
     let onEditConfigFile: () -> Void
     let onRestoreBackup: () -> Void
 
@@ -21,13 +18,11 @@ struct ProviderSwitchSettingsPopover: View {
                 .padding(.top, 10)
                 .padding(.bottom, 6)
 
-            if showsAddProviderAction, let onAddProvider {
-                actionRow(
-                    title: strings.providerAddProviderAction,
-                    accessibilityID: SettingsAccessibilityID.providerSwitchPopoverAddProvider.rawValue
-                ) {
-                    onAddProvider()
-                }
+            actionRow(
+                title: strings.providerAddProviderAction,
+                accessibilityID: SettingsAccessibilityID.providerSwitchPopoverAddProvider.rawValue
+            ) {
+                onAddProvider()
             }
 
             actionRow(

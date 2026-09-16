@@ -3,32 +3,14 @@ import SwiftUI
 @testable import OmniForge
 
 final class ProviderSwitchSettingsViewTests: XCTestCase {
-    func test_settingsPresentation_properties() {
-        XCTAssertTrue(ProviderSwitchPresentation.settings.showsInlineAddProviderButton)
-        // 设置窗口顶部已有「+ 新增供应商」主按钮，弹层内不重复提供。
-        XCTAssertFalse(ProviderSwitchPresentation.settings.showsSettingsPopoverAddProvider)
-        XCTAssertTrue(ProviderSwitchPresentation.settings.showsProfileManagementMenu)
-        XCTAssertFalse(ProviderSwitchPresentation.settings.showsLaunchCommandCopyButton)
-    }
-
-    func test_menuBarPresentation_properties() {
-        XCTAssertFalse(ProviderSwitchPresentation.menuBar.showsInlineAddProviderButton)
-        // 菜单栏无顶部主按钮，「新增供应商」收入齿轮弹层。
-        XCTAssertTrue(ProviderSwitchPresentation.menuBar.showsSettingsPopoverAddProvider)
-        XCTAssertTrue(ProviderSwitchPresentation.menuBar.showsProfileManagementMenu)
-        XCTAssertFalse(ProviderSwitchPresentation.menuBar.showsLaunchCommandCopyButton)
-    }
-
-    /// 信息架构重构：两个场景都在自身容器内打开表单，不存在跨窗口路由分支；
-    /// 每个场景恰好暴露一个「新增」入口，避免双入口。
-    func test_eachPresentationExposesExactlyOneAddEntry() {
-        for presentation in [ProviderSwitchPresentation.settings, .menuBar] {
-            let entryCount = [
-                presentation.showsInlineAddProviderButton,
-                presentation.showsSettingsPopoverAddProvider,
-            ].filter { $0 }.count
-            XCTAssertEqual(entryCount, 1, "\(presentation) 应恰好暴露一个新增入口")
-        }
+    /// 供应商切换的唯一界面入口是菜单栏控制中心 tab：设置侧栏不再有该页
+    /// （功能本体 AppFeature.providerSwitch 保留，仅供控制中心消费）。
+    func test_providerSwitchEntry_isMenuBarOnly() {
+        XCTAssertNil(SettingsToolbarTab(rawValue: "providerSwitch"))
+        XCTAssertEqual(
+            MenuPanel.visibleCases(isAvailable: { $0 == .providerSwitch }),
+            [.providerSwitch]
+        )
     }
 
     func test_providerBrandVisual_resolvesExpectedLetters() {
@@ -86,8 +68,8 @@ final class ProviderSwitchSettingsViewTests: XCTestCase {
         }
     }
 
-    /// 齿轮弹层（收纳原底部三链接动作）标题与动作文案中英齐全；
-    /// 弹层动作行为列表项，不带「+」前缀（该前缀仅顶部主按钮使用）。
+    /// 齿轮弹层（收纳新增 / 编辑配置文件 / 恢复备份三个动作）标题与动作文案中英齐全；
+    /// 弹层动作行为纯文字列表项，不带「+」前缀。
     func test_settingsPopoverLocalization_isAvailable() {
         for strings in [Strings.zhHans, Strings.en] {
             XCTAssertFalse(strings.providerSettingsPopoverTitle.isEmpty)
@@ -96,7 +78,7 @@ final class ProviderSwitchSettingsViewTests: XCTestCase {
             XCTAssertFalse(strings.providerRestoreBackup.isEmpty)
             XCTAssertFalse(
                 strings.providerAddProviderAction.hasPrefix("+"),
-                "弹层动作行不应带「+」前缀（前缀由顶部主按钮文案 providerAddProvider 承担）"
+                "弹层动作行不应带「+」前缀"
             )
         }
     }
