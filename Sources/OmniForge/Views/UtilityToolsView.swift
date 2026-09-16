@@ -55,13 +55,36 @@ enum UtilityContentLayout: Equatable {
         case .compact: Self.compactResultsListHeight
         }
     }
+
+    /// 紧凑结果页列表高度契约：扣除指定工具结果页固定的 Hero、Footer 与发丝线占高，
+    /// 使结果页自然总高与 `stageMinHeight` 精确对齐，阶段切换零伸缩抖动。
+    func resultsListHeight(for tool: UtilityTool) -> CGFloat? {
+        switch self {
+        case .settings:
+            return nil
+        case .compact:
+            switch tool {
+            case .uninstaller:
+                // targetHero (88pt) + footer (53pt) + 2 条发丝线 (2pt) = 143pt
+                return max(100, stageMinHeight - 143)
+            case .cleaner:
+                // resultsHero (108pt) + resultsFooter (53pt) + 2 条发丝线 (2pt) = 163pt
+                return max(100, stageMinHeight - 163)
+            default:
+                return Self.compactResultsListHeight
+            }
+        }
+    }
 }
 
 extension View {
     /// 紧凑布局给结果 `List` 明确高度，避免嵌套 ScrollView 时列表区域消失。
+    /// 指定 tool 时自动扣减该工具 Hero/Footer 高度，对齐 stageMinHeight 契约。
     @ViewBuilder
-    func utilityResultsListHeight(_ layout: UtilityContentLayout) -> some View {
-        if let height = layout.resultsListHeight {
+    func utilityResultsListHeight(_ layout: UtilityContentLayout, for tool: UtilityTool? = nil) -> some View {
+        if let tool, let height = layout.resultsListHeight(for: tool) {
+            self.frame(height: height)
+        } else if let height = layout.resultsListHeight {
             self.frame(height: height)
         } else {
             self

@@ -45,8 +45,8 @@ struct UninstallerContentView: View {
     // MARK: Empty / drop
 
     private var emptyState: some View {
-        VStack(spacing: 20) {
-            Spacer()
+        VStack(spacing: layout == .compact ? 12 : 20) {
+            Spacer(minLength: 0)
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6, 6]))
                 .foregroundStyle(dropTargeted ? tint : (colorScheme == .light ? Theme.Stats.separator : Color.secondary.opacity(0.35)))
@@ -80,7 +80,7 @@ struct UninstallerContentView: View {
                 .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
 
             if !permissions.fullDiskAccess { fullDiskAccessNote }
-            Spacer()
+            Spacer(minLength: 0)
         }
         .padding(layout.horizontalPadding)
         .frame(maxWidth: .infinity, minHeight: layout.stageMinHeight)
@@ -172,10 +172,11 @@ struct UninstallerContentView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .utilityResultsListHeight(layout)
+            .utilityResultsListHeight(layout, for: .uninstaller)
             FlatHairline()
             footer
         }
+        .frame(maxWidth: .infinity, minHeight: layout.stageMinHeight)
     }
 
     /// 结果页主角：app 徽章 + 总量大数字 + 类别比例条（平铺白底）。

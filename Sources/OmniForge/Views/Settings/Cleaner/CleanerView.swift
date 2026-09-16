@@ -192,8 +192,8 @@ struct CleanerContentView: View {
     // MARK: Idle
 
     private var idleState: some View {
-        VStack(spacing: 16) {
-            Spacer()
+        VStack(spacing: layout == .compact ? 10 : 16) {
+            Spacer(minLength: 0)
             UtilityGlyphTile(symbol: "sparkles", tint: tint, size: 56)
             VStack(spacing: 6) {
                 Text(strings.cleanerIntroTitle)
@@ -212,7 +212,7 @@ struct CleanerContentView: View {
                 .tint(tint)
             fullScheduleCard
             if !permissions.fullDiskAccess { fdaNote }
-            Spacer()
+            Spacer(minLength: 0)
         }
         .padding(layout.horizontalPadding)
         .frame(maxWidth: .infinity, minHeight: layout.stageMinHeight)
@@ -536,11 +536,12 @@ struct CleanerContentView: View {
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
-                .utilityResultsListHeight(layout)
+                .utilityResultsListHeight(layout, for: .cleaner)
                 FlatHairline()
                 resultsFooter
             }
         }
+        .frame(maxWidth: .infinity, minHeight: layout.stageMinHeight)
     }
 
     /// 结果页主角：徽章 + 总量大数字 + 安全/可选比例条与图例（平铺白底）。

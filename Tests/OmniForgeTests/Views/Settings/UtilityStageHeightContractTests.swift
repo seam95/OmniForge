@@ -48,6 +48,75 @@ final class UtilityStageHeightContractTests: XCTestCase {
                                  "empty 高出 busy 的部分只允许来自 FDA 提示横幅（~10pt）")
     }
 
+    func test_uninstaller_resultsHeight_measured() throws {
+        let scanner = MockUninstallerScannerWithItems()
+        let uninstaller = AppUninstaller(scanner: scanner)
+        uninstaller.select(target: AppUninstaller.Target(
+            name: "FakeApp",
+            bundleID: "com.example.fakeapp",
+            url: URL(fileURLWithPath: "/Applications/FakeApp.app"),
+            icon: NSImage()
+        ))
+        let expectation = expectation(description: "scan complete")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { expectation.fulfill() }
+        wait(for: [expectation], timeout: 1.0)
+
+        let height = try measureNaturalHeight(
+            UninstallerContentView(strings: .en, layout: .compact, uninstaller: uninstaller)
+        )
+        print(">>> measured uninstaller resultsHeight: \(height)")
+        XCTAssertEqual(height, UtilityContentLayout.compact.stageMinHeight, accuracy: 1,
+                       "uninstaller 结果页自然高度必须精确落在契约下限")
+    }
+
+    func test_cleaner_resultsHeight_measured() throws {
+        let items: [JunkCleaner.Item] = [
+            .init(url: URL(fileURLWithPath: "/tmp/cache1"), category: .caches, size: 5_000_000, detail: "cache", recommended: true),
+            .init(url: URL(fileURLWithPath: "/tmp/log1"), category: .logs, size: 2_000_000, detail: "log", recommended: true)
+        ]
+        let scanner = MockJunkScannerWithItems(items: items)
+        let cleaner = JunkCleaner(scanner: scanner)
+        cleaner.scan()
+        let expectation = expectation(description: "scan complete")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { expectation.fulfill() }
+        wait(for: [expectation], timeout: 1.0)
+        XCTAssertEqual(cleaner.phase, .results)
+
+        let height = try measureNaturalHeight(
+            CleanerContentView(
+                strings: .en,
+                layout: .compact,
+                cleaner: cleaner,
+                readNotificationStatus: { $0(.notDetermined) }
+            )
+        )
+        print(">>> measured cleaner resultsHeight (with items): \(height)")
+        XCTAssertEqual(height, UtilityContentLayout.compact.stageMinHeight, accuracy: 1,
+                       "cleaner 有结果时自然高度必须精确落在契约下限")
+    }
+
+    func test_cleaner_emptyResultsHeight_measured() throws {
+        let scanner = MockJunkScannerWithItems(items: [])
+        let cleaner = JunkCleaner(scanner: scanner)
+        cleaner.scan()
+        let expectation = expectation(description: "scan complete")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { expectation.fulfill() }
+        wait(for: [expectation], timeout: 1.0)
+        XCTAssertEqual(cleaner.phase, .results)
+
+        let height = try measureNaturalHeight(
+            CleanerContentView(
+                strings: .en,
+                layout: .compact,
+                cleaner: cleaner,
+                readNotificationStatus: { $0(.notDetermined) }
+            )
+        )
+        print(">>> measured cleaner emptyResultsHeight: \(height)")
+        XCTAssertEqual(height, UtilityContentLayout.compact.stageMinHeight, accuracy: 1,
+                       "cleaner 无结果空态时自然高度必须由 stageMinHeight 保底")
+    }
+
     // MARK: - 完成态：与阶段契约对齐
 
     func test_doneView_compact_matchesStageContract() throws {
@@ -184,3 +253,25 @@ private final class GatedJunkScanner: JunkCleanerScanning {
 
     func open() { gate.signal() }
 }
+
+private final class MockUninstallerScannerWithItems: AppUninstallerScanning {
+    func scan(target: AppUninstaller.Target) -> AppUninstaller.ScanResult {
+        .init(items: [
+            .init(url: URL(fileURLWithPath: "/Applications/FakeApp.app"), category: .app, size: 50_000_000),
+            .init(url: URL(fileURLWithPath: "/Users/test/Library/Caches/FakeApp"), category: .caches, size: 10_000_000)
+        ], failures: [])
+    }
+}
+
+private final class MockJunkScannerWithItems: JunkCleanerScanning {
+    let items: [JunkCleaner.Item]
+    init(items: [JunkCleaner.Item]) { self.items = items }
+
+    func scan(
+        progress: @escaping (CleanerScanProgress) -> Void,
+        cancellation: CleanerScanCancellation
+    ) throws -> JunkCleaner.ScanResult {
+        .init(items: items, failures: [])
+    }
+}
+
