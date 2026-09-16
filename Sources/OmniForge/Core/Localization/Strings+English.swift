@@ -266,6 +266,7 @@ extension Strings {
         quickphraseSearchPlaceholder: "Search quick phrases...",
         menuAbout: "About OmniForge",
         menuSettings: "Settings…",
+        menuCheckForUpdates: "Check for Updates…",
         menuHide: "Hide",
         menuHideOthers: "Hide Others",
         menuShowAll: "Show All",

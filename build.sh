@@ -115,12 +115,44 @@ if [[ -d Resources/Pets ]]; then
     cp -R Resources/Pets "$STAGE/Contents/Resources/"
 fi
 
+# Step 4c: 嵌入 Sparkle.framework（自动更新）。
+# SPM 对可执行文件只注入 @loader_path 一个 rpath；.app 内 framework 位于
+# Contents/Frameworks，必须额外补 @loader_path/../Frameworks，否则 dyld 找不到。
+# ditto 原样拷贝以保留 framework 内的符号链接（Versions/Current、Autoupdate、
+# Updater.app、XPCServices 均为符号链接；跟随链接展开会破坏后续重签与加载）。
+SPARKLE_FRAMEWORK=".build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
+if [[ -d "$SPARKLE_FRAMEWORK" ]]; then
+    mkdir -p "$STAGE/Contents/Frameworks"
+    ditto "$SPARKLE_FRAMEWORK" "$STAGE/Contents/Frameworks/Sparkle.framework"
+    install_name_tool -add_rpath "@loader_path/../Frameworks" "$STAGE/Contents/MacOS/$EXECUTABLE" 2>/dev/null || true
+else
+    echo "⚠ 未找到 Sparkle.framework（请先 swift build 拉取 SPM 产物），将不含自动更新" >&2
+fi
+
 # Step 5: 清除扩展属性（xattr 会导致 codesign 失败）
 xattr -c -r "$STAGE" 2>/dev/null || true
 
 # Step 6: 签名（优先 Developer ID，其次 Apple Development；仅 stage 可 ad-hoc）
+# 嵌入 Sparkle 后必须先按顺序重签其嵌套代码再签外层 .app：Hardened Runtime 的
+# Library Validation 要求嵌套代码与宿主 Team ID 一致，Sparkle 发行件为 ad-hoc 签名，
+# 不重签会被拒绝加载。顺序由内向外，切勿用 --deep（会破坏嵌套签名）。
+SPARKLE_EMBEDDED="$STAGE/Contents/Frameworks/Sparkle.framework"
 if [[ -n "$SIGNING_IDENTITY" ]]; then
     echo "▸ Signing with stable identity (hardened runtime): $SIGNING_IDENTITY"
+    if [[ -d "$SPARKLE_EMBEDDED" ]]; then
+        for nested in \
+            "$SPARKLE_EMBEDDED/Versions/B/XPCServices/Installer.xpc" \
+            "$SPARKLE_EMBEDDED/Versions/B/XPCServices/Downloader.xpc" \
+            "$SPARKLE_EMBEDDED/Versions/B/Autoupdate" \
+            "$SPARKLE_EMBEDDED/Versions/B/Updater.app"; do
+            if [[ -e "$nested" ]]; then
+                codesign --force --options runtime --timestamp \
+                    --sign "$SIGNING_IDENTITY" "$nested"
+            fi
+        done
+        codesign --force --options runtime --timestamp \
+            --sign "$SIGNING_IDENTITY" "$SPARKLE_EMBEDDED"
+    fi
     codesign --force --strip-disallowed-xattrs --options runtime --timestamp \
         --entitlements "$ENTITLEMENTS" --sign "$SIGNING_IDENTITY" "$STAGE"
 else

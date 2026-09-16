@@ -23,6 +23,15 @@ enum MainMenuInstaller {
             keyEquivalent: ""
         )
         appMenu.addItem(aboutItem)
+
+        // 检查更新：转发给 UpdateManager（Sparkle），canCheckForUpdates 控制启用态。
+        let updateItem = NSMenuItem(
+            title: strings.menuCheckForUpdates,
+            action: #selector(MainMenuSettingsTarget.checkForUpdates),
+            keyEquivalent: ""
+        )
+        updateItem.target = target
+        appMenu.addItem(updateItem)
         appMenu.addItem(.separator())
 
         let settingsItem = NSMenuItem(
@@ -171,6 +180,7 @@ enum MainMenuInstaller {
 @MainActor @objc protocol MainMenuSettingsTarget: AnyObject {
     @objc func openSettings()
     @objc func openShelf()
+    @objc func checkForUpdates()
     @objc func captureScreenshotAllInOne()
     @objc func captureScreenshotFullscreen()
 }

@@ -54,6 +54,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MainMenuSettingsTarget
             MainMenuInstaller.install(target: self, strings: root.appState.l10n.s)
             self.setupSettingsManager()
             self.setupPermissionSubscriptions()
+            // 自动更新：应用就绪后再确认启动 updater（LSUIElement 菜单栏应用，周期检查延迟于启动）。
+            UpdateManager.shared.start()
 
             let coordinator = OnboardingCoordinator.shared
             OnboardingWindowController.shared.startObserving(coordinator, l10n: root.appState.l10n, appearance: root.appState.appearance)
@@ -126,6 +128,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MainMenuSettingsTarget
 
     @objc func openShelf() {
         FeatureRuntime.shared.manager(for: .shelf, as: ShelfService.self)?.summon()
+    }
+
+    @objc func checkForUpdates() {
+        // LSUIElement 应用：先激活，避免 Sparkle 更新窗口在后台弹出被忽略。
+        NSApp.activate(ignoringOtherApps: true)
+        UpdateManager.shared.checkForUpdates()
     }
 
     // MARK: - Screenshot 主菜单入口

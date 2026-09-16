@@ -37,5 +37,9 @@
 	<string>14.0</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>SUFeedURL</key>
+	<string>https://github.com/seam95/OmniForge/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>nVaLrgAik2nEbGOo6DsrkiypK0uHsR7KBaxFTvbKpzw=</string>
 </dict>
 </plist>

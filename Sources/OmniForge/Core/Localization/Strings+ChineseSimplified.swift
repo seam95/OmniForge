@@ -266,6 +266,7 @@ extension Strings {
         quickphraseSearchPlaceholder: "搜索快捷用语...",
         menuAbout: "关于 OmniForge",
         menuSettings: "设置…",
+        menuCheckForUpdates: "检查更新…",
         menuHide: "隐藏",
         menuHideOthers: "隐藏其他",
         menuShowAll: "全部显示",

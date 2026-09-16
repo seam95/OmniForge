@@ -8,6 +8,7 @@ final class MainMenuInstallerTests: XCTestCase {
     private final class FakeTarget: NSObject {
         @objc func openSettings() {}
         @objc func openShelf() {}
+        @objc func checkForUpdates() {}
         @objc func captureScreenshotAllInOne() {}
         @objc func captureScreenshotFullscreen() {}
     }
@@ -66,6 +67,19 @@ final class MainMenuInstallerTests: XCTestCase {
         XCTAssertNotNil(settingsItem)
         XCTAssertEqual(settingsItem?.target as? FakeTarget, target)
         XCTAssertEqual(settingsItem?.action, #selector(FakeTarget.openSettings))
+    }
+
+    func test_makeMenu_hasCheckForUpdatesItem() {
+        let target = FakeTarget()
+        let menu = MainMenuInstaller.makeMenu(target: target, strings: .en)
+
+        let appMenu = menu.item(at: 0)?.submenu
+        let updateItem = appMenu?.items.first {
+            $0.action == #selector(FakeTarget.checkForUpdates)
+        }
+        XCTAssertNotNil(updateItem)
+        XCTAssertEqual(updateItem?.title, Strings.en.menuCheckForUpdates)
+        XCTAssertEqual(updateItem?.target as? FakeTarget, target)
     }
 
     func test_makeMenu_hasOpenShelfAfterSettings() {

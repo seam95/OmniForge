@@ -283,6 +283,7 @@ struct Strings: Equatable {
     // MARK: - Menu
     let menuAbout: String
     let menuSettings: String
+    let menuCheckForUpdates: String
     let menuHide: String
     let menuHideOthers: String
     let menuShowAll: String
