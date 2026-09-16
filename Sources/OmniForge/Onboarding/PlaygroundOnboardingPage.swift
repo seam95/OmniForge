@@ -92,30 +92,7 @@ struct PlaygroundOnboardingPage: View {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(hasTriggeredShortcut ? Color.green.opacity(0.5) : Color.primary.opacity(0.08), lineWidth: 1)
             )
-            .padding(.horizontal, 36)
-
-            // 次级指引卡片：控制中心
-            HStack(spacing: 14) {
-                Image(systemName: "menubar.rectangle")
-                    .font(.system(size: 20))
-                    .foregroundStyle(Color.accentColor)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(strings.onboardingMenubarTitle)
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(strings.onboardingMenubarSubtitle)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-            }
-            .padding(14)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.primary.opacity(0.025))
-            )
-            .padding(.horizontal, 36)
+            .padding(.horizontal, 44)
 
             Spacer()
         }

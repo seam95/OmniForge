@@ -30,6 +30,7 @@ struct OnboardingView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
             .animation(
                 PageSwitchMotionToken.peerContent(reduceMotion: reduceMotion),
                 value: coordinator.currentStep
@@ -39,7 +40,7 @@ struct OnboardingView: View {
 
             navigationBar
         }
-        .frame(width: 660, height: 510)
+        .frame(width: 660, height: 520)
         .background(Color(nsColor: .windowBackgroundColor))
         .omniNoFocusRing()
     }
@@ -64,6 +65,7 @@ struct OnboardingView: View {
         )
         .padding(.top, 12)
         .padding(.bottom, 8)
+        .frame(height: 50)
     }
 
     @ViewBuilder
@@ -153,7 +155,7 @@ struct OnboardingView: View {
             }
         }
         .padding(.horizontal, 24)
-        .padding(.vertical, 14)
+        .frame(height: 60)
     }
 }
 
