@@ -4,6 +4,7 @@ enum SettingsAccessibilityID: String, CaseIterable {
     case generalLaunchAtLogin = "settings.general.launchAtLogin"
     case generalHideDockIcon = "settings.general.hideDockIcon"
     case generalLaunchAtLoginError = "settings.general.launchAtLogin.error"
+    case generalCheckForUpdates = "settings.general.checkForUpdates"
 
     case cleanerCancelScan = "cleaner.scan.cancel"
 

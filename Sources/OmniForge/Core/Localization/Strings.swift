@@ -29,6 +29,10 @@ struct Strings: Equatable {
     let settingsNoHotkeysDetected: String
     let settingsHotkeysNote: String
     let settingsGeneralSection: String
+    let settingsSoftwareUpdateSection: String
+    let settingsVersionFormat: String
+    let settingsSoftwareUpdateHint: String
+    let settingsCheckForUpdates: String
     let settingsClipboardSection: String
     let settingsClipboardHotkey: String
     let settingsClipboardHotkeyRecording: String
@@ -320,11 +324,7 @@ struct Strings: Equatable {
     let featureHubNameSystemMonitor: String
     let featureHubNameNetworkDiagnostics: String
     let featureHubNameShelf: String
-    let featureHubNameLaunchAtLogin: String
-    let featureHubNameScrollInverter: String
-    let featureHubNameSmoothScroll: String
-    let featureHubNameMouseNavigation: String
-    let featureHubNameDockClick: String
+    let featureHubNameMouse: String
     let featureHubNameKeepAwake: String
     let featureHubNameScreenshot: String
     let featureHubNameDSHWeb: String
@@ -334,11 +334,7 @@ struct Strings: Equatable {
     let featureHubDescSystemMonitor: String
     let featureHubDescNetworkDiagnostics: String
     let featureHubDescShelf: String
-    let featureHubDescLaunchAtLogin: String
-    let featureHubDescScrollInverter: String
-    let featureHubDescSmoothScroll: String
-    let featureHubDescMouseNavigation: String
-    let featureHubDescDockClick: String
+    let featureHubDescMouse: String
     let featureHubDescKeepAwake: String
     let featureHubDescScreenshot: String
     let featureHubDescDSHWeb: String
@@ -348,7 +344,6 @@ struct Strings: Equatable {
     let featureHubGroupProductivity: String
     let featureHubGroupMaintenance: String
     let featureHubGroupDesktop: String
-    let featureHubGroupSystem: String
     let featureHubGroupMouse: String
     let featureHubGroupEnergy: String
     let featureHubGroupCapture: String

@@ -14,12 +14,14 @@ final class SettingsAccessibilityIDTests: XCTestCase {
             SettingsAccessibilityID.generalLaunchAtLogin.rawValue,
             SettingsAccessibilityID.generalHideDockIcon.rawValue,
             SettingsAccessibilityID.generalLaunchAtLoginError.rawValue,
+            SettingsAccessibilityID.generalCheckForUpdates.rawValue,
         ]
 
         XCTAssertEqual(Set(identifiers).count, identifiers.count)
         XCTAssertEqual(SettingsAccessibilityID.generalLanguage.rawValue, "settings.general.language")
         XCTAssertEqual(SettingsAccessibilityID.generalLaunchAtLogin.rawValue, "settings.general.launchAtLogin")
         XCTAssertEqual(SettingsAccessibilityID.generalHideDockIcon.rawValue, "settings.general.hideDockIcon")
+        XCTAssertEqual(SettingsAccessibilityID.generalCheckForUpdates.rawValue, "settings.general.checkForUpdates")
     }
 
     func test_cleanerCancelScanIdentifierIsStable() {

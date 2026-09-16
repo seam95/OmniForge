@@ -1,12 +1,28 @@
+import AppKit
 import SwiftUI
 
+@MainActor
 struct GeneralSettingsView: View {
     let state: AppState
     @ObservedObject private var appearance: AppearanceSettings
+    let onCheckForUpdates: @MainActor () -> Void
 
-    init(state: AppState) {
+    @MainActor
+    init(
+        state: AppState,
+        onCheckForUpdates: @escaping @MainActor () -> Void = {
+            NSApp.activate(ignoringOtherApps: true)
+            UpdateManager.shared.checkForUpdates()
+        }
+    ) {
         self.state = state
+        self.onCheckForUpdates = onCheckForUpdates
         _appearance = ObservedObject(wrappedValue: state.appearance)
+    }
+
+    private var currentVersionText: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
+        return String(format: state.l10n.s.settingsVersionFormat, version)
     }
 
     var body: some View {
@@ -67,6 +83,23 @@ struct GeneralSettingsView: View {
                     InfoHintLabel(state.l10n.s.settingsHideDockIcon, hint: state.l10n.s.settingsHideDockIconHint)
                 }
                 .accessibilityIdentifier(SettingsAccessibilityID.generalHideDockIcon.rawValue)
+            }
+
+            Section(state.l10n.s.settingsSoftwareUpdateSection) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(currentVersionText)
+                            .font(.body)
+                        Text(state.l10n.s.settingsSoftwareUpdateHint)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button(state.l10n.s.settingsCheckForUpdates) {
+                        onCheckForUpdates()
+                    }
+                    .accessibilityIdentifier(SettingsAccessibilityID.generalCheckForUpdates.rawValue)
+                }
             }
 
             Section {
