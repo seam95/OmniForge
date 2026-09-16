@@ -64,7 +64,9 @@ final class ClipboardWindowControllerTests: XCTestCase {
         }
 
         XCTAssertTrue(window.styleMask.contains(.borderless))
-        XCTAssertTrue(window.isMovableByWindowBackground)
+        // macOS 27 起系统背景拖动对无边框面板失效；拖动由 WindowDragHostingView 自实现。
+        XCTAssertFalse(window.isMovableByWindowBackground)
+        XCTAssertTrue(window.contentView is WindowDragHostingView)
         XCTAssertEqual(window.standardWindowButton(.closeButton), nil)
         XCTAssertEqual(window.standardWindowButton(.miniaturizeButton), nil)
         XCTAssertEqual(window.standardWindowButton(.zoomButton), nil)
@@ -107,22 +109,23 @@ final class ClipboardWindowControllerTests: XCTestCase {
         )
         let panel = tryUnwrapPanel(from: controller)
 
-        XCTAssertNil(panel.contentViewController)
+        XCTAssertFalse(panel.contentView is WindowDragHostingView)
 
-        weak var initialContentViewController: NSViewController?
+        weak var initialContentView: NSView?
         autoreleasepool {
             controller.show()
-            initialContentViewController = panel.contentViewController
-            XCTAssertNotNil(initialContentViewController)
+            initialContentView = panel.contentView
+            XCTAssertNotNil(initialContentView)
+            XCTAssertTrue(initialContentView is WindowDragHostingView)
             XCTAssertTrue(hasUIState(controller))
 
             controller.hide()
 
-            XCTAssertNil(panel.contentViewController)
+            XCTAssertNil(panel.contentView)
             XCTAssertFalse(hasUIState(controller))
         }
 
-        XCTAssertNil(initialContentViewController)
+        XCTAssertNil(initialContentView)
         XCTAssertEqual(clearCount, 1)
         XCTAssertEqual(clipboardStore.releaseMemoryCallCount, 1)
         XCTAssertEqual(quickPhraseStore.releaseMemoryCallCount, 1)
@@ -130,8 +133,8 @@ final class ClipboardWindowControllerTests: XCTestCase {
         controller.show()
         defer { controller.hide() }
 
-        XCTAssertNotNil(panel.contentViewController)
-        XCTAssertFalse(panel.contentViewController === initialContentViewController)
+        XCTAssertNotNil(panel.contentView)
+        XCTAssertFalse(panel.contentView === initialContentView)
     }
 
     func test_windowIsNonActivatingPanelAndFloatsAboveStatusBar() {

@@ -53,6 +53,36 @@ final class ClipboardWindowControllerFrameTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: UserDefaultsKeys.clipboardWindowFrame)
     }
 
+    func test_restoreWindowFrame_clampsPartiallyHangingFrameFullyInside() throws {
+        let visible = try XCTUnwrap(NSScreen.screens.first?.visibleFrame)
+        // 底边悬出可见区 200pt：尺寸合法且相交 ≥50×50（旧口径会原样放行）
+        let hanging = NSRect(
+            x: visible.minX + 40,
+            y: visible.minY - 200,
+            width: 720,
+            height: 460
+        )
+        UserDefaults.standard.set(
+            [
+                "x": hanging.origin.x,
+                "y": hanging.origin.y,
+                "width": hanging.size.width,
+                "height": hanging.size.height
+            ],
+            forKey: UserDefaultsKeys.clipboardWindowFrame
+        )
+
+        // init 即执行 restore + 夹回
+        let controller = ClipboardWindowController(state: makeFrameTestState(suiteName: suiteName))
+        let panel = tryUnwrapPanel(from: controller)
+
+        let frame = panel.frame
+        let fullyInside = NSScreen.screens.contains { screen in
+            screen.visibleFrame.contains(frame)
+        }
+        XCTAssertTrue(fullyInside, "半悬屏外的位置应被完整夹回某屏可见区内，得到 \(frame)")
+    }
+
     private func tryUnwrapPanel(
         from controller: ClipboardWindowController,
         file: StaticString = #filePath,

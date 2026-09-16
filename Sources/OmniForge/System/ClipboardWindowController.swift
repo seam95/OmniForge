@@ -71,7 +71,9 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
         panel.isFloatingPanel = true
         panel.becomesKeyOnlyIfNeeded = false
         panel.level = .statusBar
-        panel.isMovableByWindowBackground = true
+        // macOS 27 起无边框面板的系统背景拖动失效（属性链正常但不再发起拖动会话）；
+        // 拖动改由 WindowDragHostingView 自实现（阈值门控 + performDrag），全系统版本行为一致。
+        panel.isMovableByWindowBackground = false
         panel.hasShadow = true
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -217,7 +219,8 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
         self.quickPhraseState = quickPhraseState
         self.tabState = tabState
 
-        panel.contentViewController = NSHostingController(
+        // 直接挂 contentView（不经 NSHostingController）：拖动由 WindowDragHostingView 承担。
+        panel.contentView = WindowDragHostingView(
             rootView: AnyView(TabPanelView(
                 tabState: tabState,
                 clipboardView: ClipboardHistoryView(
@@ -242,7 +245,9 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
     }
 
     private func installViewIfNeeded() {
-        guard panel.contentViewController == nil else { return }
+        // 不能以 contentView 判空：NSWindow 自带默认空白 content view（非 nil），
+        // 而 releaseViewSession 会显式置 nil；会话安装状态以 tabState 为准。
+        guard tabState == nil else { return }
         installView()
     }
 
@@ -276,10 +281,9 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
         clearImageCache()
         clipboardHistory?.releaseMemory()
         quickPhrases?.releaseMemory()
-        if let hostingController = panel.contentViewController as? NSHostingController<AnyView> {
-            hostingController.rootView = AnyView(EmptyView())
+        if let hostingView = panel.contentView as? NSHostingView<AnyView> {
+            hostingView.rootView = AnyView(EmptyView())
         }
-        panel.contentViewController = nil
         panel.contentView = nil
         uiState = nil
         quickPhraseState = nil
@@ -318,7 +322,7 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
         applyNormalizedFrame(candidate, persistIfChanged: true)
     }
 
-    /// show 前校正：尺寸被压扁时回退到记忆/持久化 frame；屏外时居中。
+    /// show 前校正：尺寸被压扁时回退到记忆/持久化 frame；位置半悬屏外时夹回可见区，完全屏外时居中。
     private func ensureValidVisibleFrame() {
         let candidate: NSRect
         if isValidWindowSize(panel.frame.size) {
@@ -339,7 +343,9 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
             height: max(candidate.height, minimumWindowSize.height)
         )
         let sized = NSRect(origin: candidate.origin, size: size)
-        let normalized = WindowFrameVisibility.normalizedFrameOnCurrentScreens(sized) {
+        // 夹回口径：部分悬出屏幕（系统升级/屏幕重排后的存量位置）时拉回可见区，
+        // 完全不相交才居中；不能用「≥50×50 即放行」，否则半悬位置会被原样保留。
+        let normalized = WindowFrameVisibility.clampedFrameOnCurrentScreens(sized) {
             self.centeredFrame(size: size)
         }
         // 始终写入：content 重建后 origin 可能相同但 size 已被压扁。

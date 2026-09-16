@@ -52,4 +52,55 @@ enum WindowFrameVisibility {
             centerFallback: centerFallback
         )
     }
+
+    /// 「面板必须完整可见」口径的归一化：与某屏可见区相交时把 origin 夹进相交面积
+    /// 最大的屏（保持尺寸），完全不相交时才回落居中。
+    ///
+    /// 与 `normalizedFrame` 的「≥50×50 即放行」不同——系统升级或屏幕重排后，持久化
+    /// 位置可能半悬屏外（底部伸出屏幕），旧口径会原样放行。
+    static func clampedFrame(
+        _ frame: NSRect,
+        visibleScreens: [NSRect],
+        centerFallback: () -> NSRect
+    ) -> NSRect {
+        var best: (screen: NSRect, area: CGFloat)?
+        for screen in visibleScreens {
+            let intersection = frame.intersection(screen)
+            guard !intersection.isNull, !intersection.isInfinite else { continue }
+            let area = intersection.width * intersection.height
+            if area > (best?.area ?? 0) {
+                best = (screen, area)
+            }
+        }
+        guard let target = best?.screen else { return centerFallback() }
+        return clampedFrame(frame, toVisibleFrame: target)
+    }
+
+    /// 把 origin 夹入指定可见区，保持尺寸；窗口比可见区大时对齐 minX/minY。
+    static func clampedFrame(_ frame: NSRect, toVisibleFrame visible: NSRect) -> NSRect {
+        var origin = frame.origin
+        if frame.width <= visible.width {
+            origin.x = min(max(origin.x, visible.minX), visible.maxX - frame.width)
+        } else {
+            origin.x = visible.minX
+        }
+        if frame.height <= visible.height {
+            origin.y = min(max(origin.y, visible.minY), visible.maxY - frame.height)
+        } else {
+            origin.y = visible.minY
+        }
+        return NSRect(origin: origin, size: frame.size)
+    }
+
+    /// 使用当前 `NSScreen.screens` 的 visibleFrame 做夹回归一化。
+    static func clampedFrameOnCurrentScreens(
+        _ frame: NSRect,
+        centerFallback: () -> NSRect
+    ) -> NSRect {
+        clampedFrame(
+            frame,
+            visibleScreens: NSScreen.screens.map(\.visibleFrame),
+            centerFallback: centerFallback
+        )
+    }
 }
