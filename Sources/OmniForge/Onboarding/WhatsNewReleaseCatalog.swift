@@ -11,6 +11,25 @@ enum WhatsNewReleaseCatalog {
     /// 历次版本的更新内容，新版本在前
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            version: "3.10.0",
+            entries: [
+                WhatsNewEntry(type: .added, text: "桌面宠物交互升级：拖起后甩出带惯性与弹跳，拖动时随方向切换动作"),
+                WhatsNewEntry(type: .added, text: "桌面宠物会转头看向鼠标，悬停时有回应；尺寸支持连续滑杆调节，并内置哆啦A梦素材"),
+                WhatsNewEntry(type: .added, text: "桌面宠物新增对话气泡与自主小动作，日常表现更生动"),
+                WhatsNewEntry(type: .added, text: "桌面便签新建时在鼠标位置弹出，并沿用上次调整的尺寸"),
+                WhatsNewEntry(type: .added, text: "Token 用量 Top 列表支持按模型 / App 维度切换"),
+                WhatsNewEntry(type: .changed, text: "便签正文字号与行高支持调节，调整结果自动成为新便签的默认排版"),
+                WhatsNewEntry(type: .changed, text: "移除风扇监控与控制功能"),
+                WhatsNewEntry(type: .changed, text: "供应商管理入口收敛到控制中心，设置窗口移除重复的切换页"),
+                WhatsNewEntry(type: .fixed, text: "修复 macOS 27 下剪贴板面板无法拖动、位置半悬屏外"),
+                WhatsNewEntry(type: .fixed, text: "修复多屏环境下控制中心首次打开位置偏移与页面高度震荡"),
+                WhatsNewEntry(type: .fixed, text: "修复退出应用时便签中未保存的内容可能丢失"),
+                WhatsNewEntry(type: .fixed, text: "修复 zcode / codex 用量统计中断与模型归属错误"),
+                WhatsNewEntry(type: .fixed, text: "修复桌宠走路停不下来、社区宠物抚摸消失等播放异常"),
+                WhatsNewEntry(type: .fixed, text: "修复截图时窗口遮罩的异常淡入淡出动画"),
+            ]
+        ),
+        WhatsNewRelease(
             version: "3.9.0",
             entries: [
                 WhatsNewEntry(type: .added, text: "新增桌面宠物：像素猫常驻桌面，会散步休息，并对复制、低电量、高温等状态做出反应，支持导入社区宠物"),
