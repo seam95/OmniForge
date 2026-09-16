@@ -1515,6 +1515,7 @@ struct Strings: Equatable {
     let promptOptimizerPrivacyHint: String
     let promptOptimizerRunning: String
     let promptOptimizerSuccess: String
+    let promptOptimizerSuccessReplaced: String
     let promptOptimizerErrorNotConfigured: String
     let promptOptimizerErrorNoSelection: String
     let promptOptimizerErrorNoAccessibility: String

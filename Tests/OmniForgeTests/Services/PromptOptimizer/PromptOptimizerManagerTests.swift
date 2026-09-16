@@ -96,6 +96,18 @@ private final class FakeKeyboardShortcutsClient: PromptOptimizerKeyboardShortcut
     func fireKeyUp() { handler?() }
 }
 
+private final class RecordingSuspender: ClipboardCaptureSuspending {
+    private(set) var events: [String] = []
+
+    func suspendCapture() {
+        events.append("suspend")
+    }
+
+    func resumeCapture() {
+        events.append("resume")
+    }
+}
+
 // MARK: - 测试
 
 /// 编排状态机与各路径的 HUD/交付断言（全依赖注入，无真实 AX/网络/剪贴板）。
@@ -110,6 +122,9 @@ final class PromptOptimizerManagerTests: XCTestCase {
     private var hud: FakePromptOptimizerHUD!
     private var shortcuts: FakeKeyboardShortcutsClient!
     private var fallbackCopier: FakeSelectionCopier!
+    private var suspender: RecordingSuspender!
+    private var snapshotCount = 0
+    private var restoreCount = 0
     private var serviceConfigured = true
 
     override func setUp() {
@@ -124,6 +139,9 @@ final class PromptOptimizerManagerTests: XCTestCase {
         hud = FakePromptOptimizerHUD()
         shortcuts = FakeKeyboardShortcutsClient()
         fallbackCopier = FakeSelectionCopier()
+        suspender = RecordingSuspender()
+        snapshotCount = 0
+        restoreCount = 0
         serviceConfigured = true
     }
 
@@ -134,7 +152,8 @@ final class PromptOptimizerManagerTests: XCTestCase {
 
     private func makeManager(
         isFeatureAvailable: @escaping () -> Bool = { true },
-        isAccessibilityGranted: @escaping () -> Bool = { true }
+        isAccessibilityGranted: @escaping () -> Bool = { true },
+        autoReplaceRestoreDelay: TimeInterval = 0
     ) -> PromptOptimizerManager {
         PromptOptimizerManager(
             userDefaults: defaults,
@@ -147,7 +166,15 @@ final class PromptOptimizerManagerTests: XCTestCase {
             writer: writer,
             keyPoster: poster,
             hud: hud,
-            keyboardShortcuts: shortcuts
+            keyboardShortcuts: shortcuts,
+            captureSuspender: suspender,
+            snapshotter: { [weak self] in
+                self?.snapshotCount += 1
+                return {
+                    self?.restoreCount += 1
+                }
+            },
+            autoReplaceRestoreDelay: autoReplaceRestoreDelay
         )
     }
 
@@ -200,8 +227,6 @@ final class PromptOptimizerManagerTests: XCTestCase {
         XCTAssertEqual(shortcuts.appliedShortcuts[.promptOptimizer].flatMap { $0 }?.carbonKeyCode, Int(kVK_ANSI_O))
     }
 
-    // MARK: - 成功路径
-
     func test_success_writesClipboardShowsOutcomeWithoutPaste() async {
         reader.stubbedResult = .success("原始提示词")
         service.stubbedResult = "优化后的提示词"
@@ -213,6 +238,9 @@ final class PromptOptimizerManagerTests: XCTestCase {
         XCTAssertEqual(writer.clearedCount, 1)
         XCTAssertEqual(writer.writtenStrings, ["优化后的提示词"])
         XCTAssertEqual(poster.commandVCount, 0, "autoReplace 默认关：不注入粘贴")
+        XCTAssertEqual(snapshotCount, 0, "未勾选自动替换：不创建剪贴板快照")
+        XCTAssertEqual(restoreCount, 0, "未勾选自动替换：不恢复剪贴板")
+        XCTAssertTrue(suspender.events.isEmpty, "未勾选自动替换：正常进入自家历史，不暂停采集")
         XCTAssertEqual(hud.runningTexts, ["优化中…"])
         XCTAssertEqual(hud.outcomes, [.init(text: "已复制优化结果", isFailure: false)])
     }
@@ -227,6 +255,52 @@ final class PromptOptimizerManagerTests: XCTestCase {
 
         XCTAssertEqual(poster.commandVCount, 1)
         XCTAssertEqual(writer.writtenStrings, ["优化后"])
+        XCTAssertEqual(snapshotCount, 1, "勾选自动替换：必须制作原剪贴板快照")
+        XCTAssertEqual(restoreCount, 1, "勾选自动替换：必须恢复原剪贴板快照，内容不留在剪贴板")
+        XCTAssertEqual(suspender.events, ["suspend", "resume"], "勾选自动替换：必须暂停并在恢复后解除剪贴板历史采集")
+        XCTAssertEqual(hud.outcomes, [.init(text: "已替换选中文本", isFailure: false)], "勾选自动替换：显示专属替换文案")
+    }
+
+    func test_realPasteboardRoundTrip_autoReplaceRestoresOriginalClipboard() async {
+        let original = "原始剪贴板测试文本"
+        let pasteboard = NSPasteboard.general
+        let previous = pasteboard.string(forType: .string)
+        defer {
+            pasteboard.clearContents()
+            if let previous {
+                pasteboard.setString(previous, forType: .string)
+            }
+        }
+        pasteboard.clearContents()
+        pasteboard.setString(original, forType: .string)
+
+        defaults.set(true, forKey: UserDefaultsKeys.promptOptimizerAutoReplace)
+        reader.stubbedResult = .success("待优化提示词")
+        service.stubbedResult = "优化后全新提示词"
+
+        // 用真实的 SystemPasteboardWriter 和真实 snapshotter
+        let realWriter = SystemPasteboardWriter(pasteboard: pasteboard)
+        let manager = PromptOptimizerManager(
+            userDefaults: defaults,
+            isFeatureAvailable: { true },
+            isAccessibilityGranted: { true },
+            stringsProvider: { .zhHans },
+            reader: reader,
+            fallbackCopier: fallbackCopier,
+            serviceFactory: { [weak self] in self?.serviceConfigured == true ? self?.service : nil },
+            writer: realWriter,
+            keyPoster: poster,
+            hud: hud,
+            keyboardShortcuts: shortcuts,
+            captureSuspender: suspender,
+            autoReplaceRestoreDelay: 0
+        )
+
+        await runOnce(manager)
+
+        XCTAssertEqual(poster.commandVCount, 1, "注入合成 ⌘V")
+        XCTAssertEqual(pasteboard.string(forType: .string), original, "优化后内容不留在剪贴板，原剪贴板内容被完整恢复")
+        XCTAssertEqual(hud.outcomes, [.init(text: "已替换选中文本", isFailure: false)])
     }
 
     // MARK: - 预检失败路径
@@ -351,6 +425,7 @@ final class PromptOptimizerManagerTests: XCTestCase {
         let serviceHolder = ServiceHolder(service: slowService)
         let manager = PromptOptimizerManager(
             userDefaults: defaults,
+            isAccessibilityGranted: { true },
             stringsProvider: { .zhHans },
             reader: reader,
             serviceFactory: { serviceHolder.service },

@@ -52,6 +52,9 @@ final class PromptOptimizerManager: ObservableObject {
     private let keyPoster: KeyEventPosting
     private let hud: PromptOptimizerHUDPresenting
     private let keyboardShortcuts: PromptOptimizerKeyboardShortcutsClient
+    private let captureSuspender: ClipboardCaptureSuspending?
+    private let snapshotter: () -> (() -> Void)
+    private let autoReplaceRestoreDelay: TimeInterval
 
     @Published private(set) var isListening = false
     private var registeredHandler = false
@@ -67,7 +70,10 @@ final class PromptOptimizerManager: ObservableObject {
         writer: PasteboardWriting = SystemPasteboardWriter(),
         keyPoster: KeyEventPosting = SystemKeyEventPoster(),
         hud: PromptOptimizerHUDPresenting,
-        keyboardShortcuts: PromptOptimizerKeyboardShortcutsClient = LivePromptOptimizerKeyboardShortcutsClient()
+        keyboardShortcuts: PromptOptimizerKeyboardShortcutsClient = LivePromptOptimizerKeyboardShortcutsClient(),
+        captureSuspender: ClipboardCaptureSuspending? = nil,
+        snapshotter: (() -> (() -> Void))? = nil,
+        autoReplaceRestoreDelay: TimeInterval = 0.1
     ) {
         self.userDefaults = userDefaults
         self.isFeatureAvailable = isFeatureAvailable
@@ -80,6 +86,14 @@ final class PromptOptimizerManager: ObservableObject {
         self.keyPoster = keyPoster
         self.hud = hud
         self.keyboardShortcuts = keyboardShortcuts
+        self.captureSuspender = captureSuspender
+        self.snapshotter = snapshotter ?? {
+            let snapshot = PasteboardSnapshot(of: .general)
+            return {
+                snapshot.restore(to: .general)
+            }
+        }
+        self.autoReplaceRestoreDelay = autoReplaceRestoreDelay
     }
 
     // MARK: - 生命周期
@@ -174,13 +188,25 @@ final class PromptOptimizerManager: ObservableObject {
         hud.showRunning(stringsProvider().promptOptimizerRunning)
         do {
             let enhanced = try await service.optimize(selectedText: selectedText)
-            writer.clearContents()
-            writer.setString(enhanced, forType: .string)
             if isAutoReplaceEnabled {
-                // 粘贴作用于返回时刻焦点应用的当前选区/光标（决策 D6 的预期行为语义）。
+                let restore = snapshotter()
+                captureSuspender?.suspendCapture()
+                defer {
+                    restore()
+                    captureSuspender?.resumeCapture()
+                }
+                writer.clearContents()
+                writer.setString(enhanced, forType: .string)
                 keyPoster.postCommandV()
+                if autoReplaceRestoreDelay > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64(autoReplaceRestoreDelay * 1_000_000_000))
+                }
+                hud.showOutcome(stringsProvider().promptOptimizerSuccessReplaced, isFailure: false)
+            } else {
+                writer.clearContents()
+                writer.setString(enhanced, forType: .string)
+                hud.showOutcome(stringsProvider().promptOptimizerSuccess, isFailure: false)
             }
-            hud.showOutcome(stringsProvider().promptOptimizerSuccess, isFailure: false)
         } catch let error as PromptOptimizerErrorKind {
             hud.showOutcome(Self.failureText(for: error, strings: stringsProvider()), isFailure: true)
         } catch {

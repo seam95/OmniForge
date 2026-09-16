@@ -304,7 +304,8 @@ struct FeatureFactory {
                         guard !baseURL.isEmpty, !model.isEmpty else { return nil }
                         return PromptOptimizerService(baseURL: baseURL, model: model, apiKey: apiKey)
                     },
-                    hud: EditorToastPromptOptimizerHUD()
+                    hud: EditorToastPromptOptimizerHUD(),
+                    captureSuspender: RuntimeClipboardCaptureSuspender()
                 )
                 runtime.register(.promptOptimizer, manager: manager)
             }
