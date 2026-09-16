@@ -45,6 +45,9 @@ tools/
 
 .scratch/
 
+# Sparkle 自动更新的 EdDSA 私钥（敏感，绝不入库；即便 .scratch 规则被改也不泄露）
+.scratch/sparkle-ed25519-private-key
+
 .workbuddy/
 
 outputs/
