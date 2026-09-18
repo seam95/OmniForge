@@ -176,8 +176,7 @@ enum ClaudeForkUsageProcessing {
 
     /// 毫秒时间戳 → UTC 半小时桶起点。
     static func bucketStart(fromMilliseconds ms: Double?) -> Date? {
-        guard let ms, ms > 0, ms.isFinite else { return nil }
-        let seconds = Int(ms / 1000)
+        guard let seconds = ms.flatMap(UsageTimestampSanitizer.epochSeconds(fromMilliseconds:)) else { return nil }
         return Date(timeIntervalSince1970: Double((seconds / 1800) * 1800))
     }
 }

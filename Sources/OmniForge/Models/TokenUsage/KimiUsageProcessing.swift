@@ -179,15 +179,14 @@ enum KimiUsageProcessing {
 
     /// 毫秒时间戳（Kimi Code `time`）→ UTC 半小时桶起点。
     static func bucketStart(fromMilliseconds ms: Double?) -> Date? {
-        guard let ms, ms > 0 else { return nil }
-        let seconds = ms / 1000
-        return Date(timeIntervalSince1970: Double((Int(seconds) / 1800) * 1800))
+        guard let seconds = ms.flatMap(UsageTimestampSanitizer.epochSeconds(fromMilliseconds:)) else { return nil }
+        return Date(timeIntervalSince1970: Double((seconds / 1800) * 1800))
     }
 
     /// 秒时间戳（旧版 `timestamp`，可含小数）→ UTC 半小时桶起点。
     static func bucketStart(fromSeconds seconds: Double?) -> Date? {
-        guard let seconds, seconds > 0 else { return nil }
-        return Date(timeIntervalSince1970: Double((Int(seconds) / 1800) * 1800))
+        guard let seconds = seconds.flatMap({ UsageTimestampSanitizer.epochSeconds($0) }) else { return nil }
+        return Date(timeIntervalSince1970: Double((seconds / 1800) * 1800))
     }
 
     // MARK: 模型名

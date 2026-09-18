@@ -43,6 +43,18 @@ final class CodexUsageProcessingTests: XCTestCase {
         XCTAssertNil(CodexUsageProcessing.normalized(from: counts), "全零行不产生计数")
     }
 
+    func test_normalized_splitsReasoningFromOutput() throws {
+        // OpenAI Responses API：output_tokens 含 reasoning（reasoning 是其子集）。
+        // output 列存净额、total = input + 净 output + reasoning——
+        // 否则全局迁移公式 (i+o+r) 会把 reasoning 重复计入。
+        var counts = makeCounts(input: 100, cached: 0, creation: 0, output: 90, total: 999)
+        counts.reasoningOutputTokens = 30
+        let usage = try XCTUnwrap(CodexUsageProcessing.normalized(from: counts))
+        XCTAssertEqual(usage.outputTokens, 60, "output 净额 = 90 - 30")
+        XCTAssertEqual(usage.reasoningOutputTokens, 30)
+        XCTAssertEqual(usage.totalTokens, 190, "total = 100 + 60 + 30（不信任事件累计字段）")
+    }
+
     // MARK: - 行级增量口径
 
     func test_delta_prefersLastTokenUsage_whenPresent() throws {

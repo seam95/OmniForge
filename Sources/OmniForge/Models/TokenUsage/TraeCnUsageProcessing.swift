@@ -124,22 +124,24 @@ enum TraeCnUsageProcessing {
         return Contribution(model: model, bucketStart: bucketStart, usage: usage)
     }
 
-    /// 秒时间戳 → UTC 半小时桶起点。
+    /// 秒时间戳 → UTC 半小时桶起点（坏值 → nil，行被丢弃）。
     static func bucketStart(fromSeconds seconds: Double?) -> Date? {
-        guard let seconds, seconds > 0, seconds.isFinite else { return nil }
-        let intSeconds = Int(seconds)
+        guard let intSeconds = seconds.flatMap({ UsageTimestampSanitizer.epochSeconds($0) }) else { return nil }
         return Date(timeIntervalSince1970: Double((intSeconds / 1800) * 1800))
     }
 
-    /// 毫秒时间戳 → 半小时桶起点（窗口对齐用）。
+    /// 毫秒时间戳 → 半小时桶起点（窗口对齐用；坏值回退当前时间桶）。
     static func bucketStart(fromMilliseconds ms: Double) -> Date {
-        let seconds = Int(ms / 1000)
+        guard let seconds = UsageTimestampSanitizer.epochSeconds(fromMilliseconds: ms) else {
+            let now = Int(Date().timeIntervalSince1970)
+            return Date(timeIntervalSince1970: Double((now / 1800) * 1800))
+        }
         return Date(timeIntervalSince1970: Double((seconds / 1800) * 1800))
     }
 
-    /// 安全整数（API 返回 JSON 数字；非法/负值 → nil）。
+    /// 安全整数（API 返回 JSON 数字；非法/负值/超出 Int64 表示 → nil）。
     private static func safeInteger(_ value: Double?) -> Int? {
         guard let value, value.isFinite, value == value.rounded() else { return nil }
-        return Int(value)
+        return Int(exactly: value)
     }
 }

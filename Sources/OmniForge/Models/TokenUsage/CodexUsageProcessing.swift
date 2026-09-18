@@ -95,20 +95,25 @@ enum CodexUsageProcessing {
 
     // MARK: 归一化 + cached 减法
 
-    /// 六列归一化（含 cached 减法与 total 重算）；全零 → nil（不产生计数）。
+    /// 六列归一化（含 cached 减法、reasoning 拆分与 total 重算）；全零 → nil（不产生计数）。
     static func normalized(from counts: CodexTokenCounts) -> TokenUsage? {
         let input = max(0, canonical(counts.inputTokens) - canonical(counts.cachedInputTokens))
         let cached = canonical(counts.cachedInputTokens)
         let creation = canonical(counts.cacheCreationInputTokens ?? counts.cacheWriteInputTokens)
-        let output = canonical(counts.outputTokens)
-        let total = input + output
+        // OpenAI Responses API 口径：output_tokens **含** reasoning（reasoning 是其
+        // 子集）。六列口径 output 应存净额、total = input + 净 output + reasoning，
+        // 与全局口径及 ClaudeFork 的 completion 拆分一致；否则迁移重算公式
+        // (i+o+r) 会把 reasoning 重复计入。
+        let reasoning = canonical(counts.reasoningOutputTokens)
+        let output = max(0, canonical(counts.outputTokens) - reasoning)
+        let total = input + output + reasoning
         guard total > 0 else { return nil }
         return TokenUsage(
             inputTokens: input,
             cachedInputTokens: cached,
             cacheCreationInputTokens: creation,
             outputTokens: output,
-            reasoningOutputTokens: canonical(counts.reasoningOutputTokens),
+            reasoningOutputTokens: reasoning,
             totalTokens: total
         )
     }

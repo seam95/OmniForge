@@ -137,14 +137,17 @@ enum GrokUsageProcessing {
 
     /// 事件时间戳（毫秒）→ UTC 半小时桶起点。
     static func bucketStart(fromMilliseconds ms: Double?) -> Date? {
-        guard let ms, ms > 0, ms.isFinite else { return nil }
-        let seconds = Int(ms / 1000)
+        guard let seconds = ms.flatMap(UsageTimestampSanitizer.epochSeconds(fromMilliseconds:)) else { return nil }
         return Date(timeIntervalSince1970: Double((seconds / 1800) * 1800))
     }
 
     /// 毫秒时间戳 → 桶起点（语义与 bucketStart 相同，供兜底路径复用）。
+    /// 坏值（非有限/超界）回退当前时间桶，杜绝 Int(Double) trap。
     static func bucketStart(forEpochMs ms: Double) -> Date {
-        let seconds = Int(ms / 1000)
+        guard let seconds = UsageTimestampSanitizer.epochSeconds(fromMilliseconds: ms) else {
+            let now = Int(Date().timeIntervalSince1970)
+            return Date(timeIntervalSince1970: Double((now / 1800) * 1800))
+        }
         return Date(timeIntervalSince1970: Double((seconds / 1800) * 1800))
     }
 

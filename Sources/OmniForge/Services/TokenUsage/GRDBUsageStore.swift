@@ -603,6 +603,19 @@ final class GRDBUsageStore: UsageStoring {
                 )
             }
         }
+        // Codex reasoning 拆分（2026-09-18）：归一化改为 output 存净额（raw 已含
+        // reasoning）、total = input + 净 output + reasoning。存量 codex 桶行的
+        // output_tokens 列仍是含 reasoning 的原值，且上一迁移按 i+o+r 重算 total 时
+        // 把 reasoning 重复计入了——修正为 total = input + output（reasoning 已含于
+        // 原 output 内）。codex 走游标+seen keys，无 provider_message_state 账本需改。
+        // 本迁移只处理存量；其后新行走新归一化，两者 total 口径一致（=真实总量）。
+        migrator.registerMigration("recalculateCodexTotalsAfterReasoningSplit") { db in
+            try db.execute(sql: """
+                UPDATE usage_buckets
+                SET total_tokens = input_tokens + output_tokens
+                WHERE provider = 'codex'
+                """)
+        }
         return migrator
     }
 
