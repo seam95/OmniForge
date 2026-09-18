@@ -73,14 +73,38 @@ struct PetSpriteView: View {
 
 /// 图集切片缓存：按资产与帧序号缓存切好的图，避免每帧重切。
 /// 渲染（NSImage）与命中层（CGImage 像素）共享同一裁剪结果。
+/// 图集缓存带 LRU 上限：整张图集解码位图约 11-14MB/张，无上限时每切换
+/// 一只宠物永久累积一张（曾实测一天 38 张 = 417MB Image IO 脏页）。
 @MainActor
 final class SpriteAtlasImageProvider {
     static let shared = SpriteAtlasImageProvider()
 
-    private var atlasImageCache: [String: CGImage] = [:]
-    private var frameCache: [String: CGImage] = [:]
+    /// 图集解码器（默认磁盘解码；测试注入以观测解码次数）。
+    typealias AtlasDecoder = (URL) -> CGImage?
 
-    private init() {}
+    /// 图集缓存上限（张）：当前宠物 + 近期切换的两只，内存封顶约 40MB。
+    static let atlasCacheLimit = 3
+
+    private var atlasImageCache: [String: CGImage] = [:]
+    /// LRU 序（尾端 = 最近使用）：超限时逐出首端（最久未用）。
+    /// 当前宠物每帧请求会持续命中并续期，因此活跃宠物永不逐出。
+    private var atlasUsageOrder: [String] = []
+    /// 帧切片按资产分组：切片 CGImage 共享父图集 backing store，
+    /// 必须随父图集同进同出——残留切片会把已逐出的父图集位图继续钉在内存。
+    private var frameCache: [String: [Int: CGImage]] = [:]
+    private let decodeAtlas: AtlasDecoder
+
+    init(decodeAtlas: @escaping AtlasDecoder = SpriteAtlasImageProvider.defaultAtlasDecoder) {
+        self.decodeAtlas = decodeAtlas
+    }
+
+    static func defaultAtlasDecoder(url: URL) -> CGImage? {
+        guard let image = NSImage(contentsOf: url),
+              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return nil
+        }
+        return cgImage
+    }
 
     /// 取指定帧的切图；图集缺失时返回 nil（调用方回退占位）。
     func image(asset: PetSpriteAsset, frameIndex: Int) -> NSImage? {
@@ -94,31 +118,56 @@ final class SpriteAtlasImageProvider {
 
     /// 取指定帧的 CGImage（命中层读像素用，与渲染同一份裁剪缓存）。
     func frameCGImage(asset: PetSpriteAsset, frameIndex: Int) -> CGImage? {
-        let frameKey = "\(asset.id)#\(frameIndex)"
-        if let cached = frameCache[frameKey] { return cached }
+        if let cached = frameCache[asset.id]?[frameIndex] {
+            // 切片命中也要续期：渲染的常态路径是逐帧命中切片（不经过图集层），
+            // 活跃宠物的续期必须在此发生，否则会被逐出、下一帧重新解码整图。
+            touchAtlasUsage(asset.id)
+            return cached
+        }
         guard let cropped = crop(asset: asset, frameIndex: frameIndex) else {
             return nil
         }
-        frameCache[frameKey] = cropped
+        frameCache[asset.id, default: [:]][frameIndex] = cropped
         return cropped
     }
 
     /// 清空缓存（资产热更新或测试用）。
     func clearCache() {
         atlasImageCache.removeAll()
+        atlasUsageOrder.removeAll()
         frameCache.removeAll()
     }
 
-    /// 图集 CGImage：按资产缓存，避免逐帧重复解码。
+    /// 图集 CGImage：按资产缓存（LRU 上限），避免逐帧重复解码。
     private func atlasImage(asset: PetSpriteAsset) -> CGImage? {
-        if let cached = atlasImageCache[asset.id] { return cached }
+        if let cached = atlasImageCache[asset.id] {
+            touchAtlasUsage(asset.id)
+            return cached
+        }
         guard let url = PetAssetLocator.atlasURL(asset: asset),
-              let image = NSImage(contentsOf: url),
-              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+              let cgImage = decodeAtlas(url) else {
             return nil
         }
         atlasImageCache[asset.id] = cgImage
+        atlasUsageOrder.append(asset.id)
+        evictStaleAtlasesIfNeeded()
         return cgImage
+    }
+
+    /// 命中续期：移到 LRU 序尾。
+    private func touchAtlasUsage(_ id: String) {
+        guard let index = atlasUsageOrder.firstIndex(of: id) else { return }
+        atlasUsageOrder.remove(at: index)
+        atlasUsageOrder.append(id)
+    }
+
+    /// 逐出最久未用的图集及其全部帧切片。
+    private func evictStaleAtlasesIfNeeded() {
+        while atlasUsageOrder.count > Self.atlasCacheLimit {
+            let evicted = atlasUsageOrder.removeFirst()
+            atlasImageCache.removeValue(forKey: evicted)
+            frameCache.removeValue(forKey: evicted)
+        }
     }
 
     /// 从图集裁出单元格。

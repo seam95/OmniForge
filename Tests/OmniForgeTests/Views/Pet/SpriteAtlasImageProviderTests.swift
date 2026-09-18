@@ -233,4 +233,70 @@ final class SpriteAtlasImageProviderTests: XCTestCase {
         XCTAssertNil(SpriteAtlasImageProvider.shared.image(asset: asset, frameIndex: -1))
         XCTAssertNil(SpriteAtlasImageProvider.shared.image(asset: asset, frameIndex: 8 * 9))
     }
+
+    // MARK: - 图集缓存 LRU 上限
+
+    /// 图集缓存 LRU 上限回归：超限逐出最久未用的资产；活跃资产命中续期不逐出；
+    /// 被逐资产的帧切片连带清除（切片强持有父图集 backing，残留即白逐出——
+    /// 若未连带清除，被逐资产请求帧时直接命中旧切片、不再触发解码）。
+    /// 历史回归：无上限图集缓存曾随宠物切换无限累积（一天 38 张 ≈ 417MB）。
+    func testAtlasCacheEvictsLeastRecentlyUsedAsset() throws {
+        let petA = try makeColorCodedAsset(slug: "lru-pet-a")
+        let petB = try makeColorCodedAsset(slug: "lru-pet-b")
+        let petC = try makeColorCodedAsset(slug: "lru-pet-c")
+        let petD = try makeColorCodedAsset(slug: "lru-pet-d")
+
+        var decodeCount = 0
+        let provider = SpriteAtlasImageProvider(decodeAtlas: { url in
+            decodeCount += 1
+            return SpriteAtlasImageProvider.defaultAtlasDecoder(url: url)
+        })
+
+        func requestFrame0(_ asset: PetSpriteAsset) throws -> CGImage {
+            try XCTUnwrap(provider.frameCGImage(asset: asset, frameIndex: 0))
+        }
+
+        // 填满上限（3）：A、B、C 各解码一次。
+        _ = try requestFrame0(petA)
+        _ = try requestFrame0(petB)
+        _ = try requestFrame0(petC)
+        XCTAssertEqual(decodeCount, 3, "三只不同宠物各应解码一次")
+
+        // A 命中续期（LRU 序移尾），不产生新解码。
+        _ = try requestFrame0(petA)
+        XCTAssertEqual(decodeCount, 3, "缓存内资产命中不得重新解码")
+
+        // D 进入超限：应逐出最久未用的 B（而非续期过的 A）。
+        _ = try requestFrame0(petD)
+        XCTAssertEqual(decodeCount, 4, "第四只宠物应触发解码并逐出最久未用资产")
+
+        // A 仍在缓存（续期生效）。
+        _ = try requestFrame0(petA)
+        XCTAssertEqual(decodeCount, 4, "续期过的活跃资产不得被逐出")
+
+        // B 已被逐（含帧切片）：再次请求必须重新解码。
+        _ = try requestFrame0(petB)
+        XCTAssertEqual(decodeCount, 5, "被逐资产的帧切片应连带清除，再请求须重新解码")
+    }
+
+    /// 缓存上限内多资产共存：不误逐、不重复解码。
+    func testAtlasCacheHoldsAssetsUpToLimit() throws {
+        let pets = try (0..<SpriteAtlasImageProvider.atlasCacheLimit).map {
+            try makeColorCodedAsset(slug: "limit-pet-\($0)")
+        }
+        var decodeCount = 0
+        let provider = SpriteAtlasImageProvider(decodeAtlas: { url in
+            decodeCount += 1
+            return SpriteAtlasImageProvider.defaultAtlasDecoder(url: url)
+        })
+
+        for asset in pets { _ = try XCTUnwrap(provider.frameCGImage(asset: asset, frameIndex: 0)) }
+        XCTAssertEqual(decodeCount, pets.count, "上限内资产各解码一次")
+
+        for asset in pets {
+            let frame = try XCTUnwrap(provider.frameCGImage(asset: asset, frameIndex: 1))
+            XCTAssertEqual(frame.width, 12)
+        }
+        XCTAssertEqual(decodeCount, pets.count, "上限内资产二次请求不同帧不得重新解码图集")
+    }
 }
