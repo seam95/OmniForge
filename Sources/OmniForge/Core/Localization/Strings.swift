@@ -284,6 +284,25 @@ struct Strings: Equatable {
     let alertsBodyBattery: String
     // MARK: - Quick Phrase
     let quickphraseSearchPlaceholder: String
+    let quickphraseTabAll: String
+    let quickphraseEmptyTitle: String
+    let quickphraseEmptyHint: String
+    let quickphraseAdd: String
+    let quickphrasePasteHintWithApp: String
+    let quickphrasePasteHint: String
+    let quickphraseContextMenuEdit: String
+    let quickphraseContextMenuDelete: String
+    let quickphraseEditorAddTitle: String
+    let quickphraseEditorEditTitle: String
+    let quickphraseEditorGroupLabel: String
+    let quickphraseEditorGroupPick: String
+    let quickphraseEditorGroupCustom: String
+    let quickphraseEditorGroupNone: String
+    let quickphraseEditorGroupPlaceholder: String
+    let quickphraseEditorCancel: String
+    let quickphraseEditorSave: String
+    let quickphraseEditorSaveFailedFormat: String
+    let quickphraseEditorStorageUnavailable: String
     // MARK: - Menu
     let menuAbout: String
     let menuSettings: String

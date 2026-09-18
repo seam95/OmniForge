@@ -46,6 +46,7 @@ struct QuickPhraseView: View {
         .sheet(isPresented: $showEditor) {
             QuickPhraseEditorView(
                 phrase: editingPhrase,
+                strings: l10n.s,
                 allGroups: manager.allGroups(),
                 onSave: { content, group in
                     let saved = savePhrase(content: content, group: group)
@@ -95,7 +96,7 @@ struct QuickPhraseView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 GroupChip(
-                    title: "全部",
+                    title: l10n.s.quickphraseTabAll,
                     isSelected: uiState.selectedGroup == nil,
                     action: { uiState.selectedGroup = nil }
                 )
@@ -124,6 +125,7 @@ struct QuickPhraseView: View {
                     ForEach(filteredPhrases) { phrase in
                         PhraseRow(
                             phrase: phrase,
+                            strings: l10n.s,
                             isSelected: uiState.selectedPhraseID == phrase.id,
                             isHovered: hoveredPhraseID == phrase.id,
                             onTap: { uiState.selectedPhraseID = phrase.id },
@@ -158,10 +160,10 @@ struct QuickPhraseView: View {
             Image(systemName: "text.alignleft")
                 .font(.system(size: 40))
                 .foregroundColor(.secondary.opacity(0.6))
-            Text("暂无快捷用语")
+            Text(l10n.s.quickphraseEmptyTitle)
                 .font(.system(size: 14))
                 .foregroundColor(.secondary)
-            Text("点击下方「添加」按钮创建")
+            Text(l10n.s.quickphraseEmptyHint)
                 .font(.system(size: 12))
                 .foregroundColor(.secondary.opacity(0.6))
         }
@@ -174,7 +176,7 @@ struct QuickPhraseView: View {
             Button(action: { showEditor = true; editingPhrase = nil }) {
                 HStack(spacing: 6) {
                     Image(systemName: "plus.circle.fill")
-                    Text("添加")
+                    Text(l10n.s.quickphraseAdd)
                 }
                 .font(.system(size: 13))
                 .foregroundColor(.secondary)
@@ -198,9 +200,9 @@ struct QuickPhraseView: View {
 
     private var pasteHint: String {
         if let appName = uiState.pasteTargetAppName {
-            return "回车粘贴到 \(appName)"
+            return String(format: l10n.s.quickphrasePasteHintWithApp, appName)
         }
-        return "回车粘贴"
+        return l10n.s.quickphrasePasteHint
     }
 
     private var headerBackground: Color {
@@ -340,6 +342,7 @@ private struct GroupChip: View {
 
 private struct PhraseRow: View {
     let phrase: QuickPhraseEntry
+    let strings: Strings
     let isSelected: Bool
     let isHovered: Bool
     let onTap: () -> Void
@@ -417,9 +420,9 @@ private struct PhraseRow: View {
             onHover(isHovered ? phrase.id : nil)
         }
         .contextMenu {
-            Button(action: onEdit) { Label("编辑", systemImage: "pencil") }
+            Button(action: onEdit) { Label(strings.quickphraseContextMenuEdit, systemImage: "pencil") }
             Divider()
-            Button(action: onDelete) { Label("删除", systemImage: "trash") }
+            Button(action: onDelete) { Label(strings.quickphraseContextMenuDelete, systemImage: "trash") }
         }
     }
 
