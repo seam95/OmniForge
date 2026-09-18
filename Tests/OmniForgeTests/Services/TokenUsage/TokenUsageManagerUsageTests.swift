@@ -52,6 +52,7 @@ final class TokenUsageManagerUsageTests: XCTestCase {
         let collector = FakeUsageCollector(provider: .claude)
         let manager = makeManager(store: FakeUsageStore(), collectors: [.claude: collector])
         manager.start()
+        manager.waitForOverviewSettledForTesting()
         XCTAssertEqual(collector.startCount, 1)
         manager.stop()
         XCTAssertEqual(collector.stopCount, 1)
@@ -63,6 +64,7 @@ final class TokenUsageManagerUsageTests: XCTestCase {
         store.upsertBucket(todayBuckets(total: 128_400, conversations: 3))
         let manager = makeManager(store: store, collectors: [.claude: FakeUsageCollector(provider: .claude)])
         manager.start()
+        manager.waitForOverviewSettledForTesting()
         XCTAssertEqual(manager.usageOverview?.totalTokens, 128_400)
         XCTAssertEqual(manager.usageOverview?.conversations, 3)
         XCTAssertEqual(manager.usageOverview?.daily.map(\.totalTokens).reduce(0, +), 128_400)
@@ -76,11 +78,13 @@ final class TokenUsageManagerUsageTests: XCTestCase {
         let collector = FakeUsageCollector(provider: .claude)
         let manager = makeManager(store: store, collectors: [.claude: collector])
         manager.start()
+        manager.waitForOverviewSettledForTesting()
         XCTAssertNil(manager.usageOverview, "无数据时为 nil → 用量区块隐藏")
         XCTAssertFalse(manager.hasUsageData)
 
         store.upsertBucket(todayBuckets(total: 42_000))
         collector.simulateUsageChanged()
+        manager.waitForOverviewSettledForTesting()
         XCTAssertEqual(manager.usageOverview?.totalTokens, 42_000, "采集回调驱动快照刷新")
         XCTAssertTrue(manager.hasUsageData)
         XCTAssertEqual(manager.summaryCards(filteredBy: nil).todayTokens, 42_000)
@@ -92,6 +96,7 @@ final class TokenUsageManagerUsageTests: XCTestCase {
         store.upsertBucket(todayBuckets(total: 20, provider: .codex))
         let manager = makeManager(store: store, collectors: [.claude: FakeUsageCollector(provider: .claude)])
         manager.start()
+        manager.waitForOverviewSettledForTesting()
         XCTAssertEqual(manager.summaryCards(filteredBy: nil).todayTokens, 30, "聚合口径含全部 provider")
         XCTAssertEqual(manager.summaryCards(filteredBy: .claude).todayTokens, 10)
         XCTAssertEqual(manager.summaryCards(filteredBy: .codex).todayTokens, 20)
@@ -102,6 +107,7 @@ final class TokenUsageManagerUsageTests: XCTestCase {
         let collector = FakeUsageCollector(provider: .claude)
         let manager = makeManager(store: FakeUsageStore(), collectors: [.claude: collector])
         manager.start()
+        manager.waitForOverviewSettledForTesting()
         XCTAssertFalse(manager.usageBackfilling)
         collector.simulateBackfill(true)
         XCTAssertTrue(manager.usageBackfilling)
@@ -119,6 +125,7 @@ final class TokenUsageManagerUsageTests: XCTestCase {
             usageCollectors: [.claude: collector]
         )
         manager.start()
+        manager.waitForOverviewSettledForTesting()
         XCTAssertNil(manager.usageOverview)
         XCTAssertFalse(manager.showingUsageBlock)
     }
@@ -152,6 +159,7 @@ final class TokenUsageManagerUsageTests: XCTestCase {
         store.upsertBucket(bucket(daysAgo: 40, total: 400))
         let manager = makeManager(store: store, collectors: [.claude: FakeUsageCollector(provider: .claude)])
         manager.start()
+        manager.waitForOverviewSettledForTesting()
 
         let cards = manager.summaryCards(filteredBy: nil)
         XCTAssertEqual(cards.todayTokens, 100)
@@ -174,6 +182,7 @@ final class TokenUsageManagerUsageTests: XCTestCase {
         store.upsertBucket(bucket(at: todayStart.addingTimeInterval(TimeInterval(currentHour * 3600 + 60)), total: 42))
         let manager = makeManager(store: store, collectors: [.claude: FakeUsageCollector(provider: .claude)])
         manager.start()
+        manager.waitForOverviewSettledForTesting()
 
         let points = manager.trendPoints(filteredBy: nil, period: .day)
         XCTAssertEqual(points.count, currentHour + 1, "逐时补零至当前小时")
@@ -187,6 +196,7 @@ final class TokenUsageManagerUsageTests: XCTestCase {
         store.upsertBucket(bucket(daysAgo: 40, total: 999))
         let manager = makeManager(store: store, collectors: [.claude: FakeUsageCollector(provider: .claude)])
         manager.start()
+        manager.waitForOverviewSettledForTesting()
 
         let week = manager.trendPoints(filteredBy: nil, period: .week)
         XCTAssertEqual(week.count, 7)
@@ -202,6 +212,7 @@ final class TokenUsageManagerUsageTests: XCTestCase {
         store.upsertBucket(bucket(daysAgo: 40, total: 999))
         let manager = makeManager(store: store, collectors: [.claude: FakeUsageCollector(provider: .claude)])
         manager.start()
+        manager.waitForOverviewSettledForTesting()
 
         let total = manager.trendPoints(filteredBy: nil, period: .total)
         XCTAssertFalse(total.isEmpty)
@@ -214,6 +225,7 @@ final class TokenUsageManagerUsageTests: XCTestCase {
         store.upsertBucket(bucket(daysAgo: 0, total: 20, provider: .codex))
         let manager = makeManager(store: store, collectors: [.claude: FakeUsageCollector(provider: .claude)])
         manager.start()
+        manager.waitForOverviewSettledForTesting()
 
         XCTAssertEqual(manager.trendPoints(filteredBy: .claude, period: .week).reduce(0) { $0 + $1.tokens }, 10)
         XCTAssertEqual(manager.trendPoints(filteredBy: .codex, period: .week).reduce(0) { $0 + $1.tokens }, 20)
@@ -227,6 +239,7 @@ final class TokenUsageManagerUsageTests: XCTestCase {
         store.upsertBucket(bucket(daysAgo: 40, total: 1000, model: "sonnet"))
         let manager = makeManager(store: store, collectors: [.claude: FakeUsageCollector(provider: .claude)])
         manager.start()
+        manager.waitForOverviewSettledForTesting()
 
         let week = manager.topModels(filteredBy: nil, period: .week)
         XCTAssertEqual(week.map(\.name), ["sonnet", "opus"])
@@ -244,6 +257,7 @@ final class TokenUsageManagerUsageTests: XCTestCase {
         store.upsertBucket(bucket(daysAgo: 0, total: 20, provider: .codex, model: "gpt-5"))
         let manager = makeManager(store: store, collectors: [.claude: FakeUsageCollector(provider: .claude)])
         manager.start()
+        manager.waitForOverviewSettledForTesting()
 
         let claudeOnly = manager.topModels(filteredBy: .claude, period: .week)
         XCTAssertEqual(claudeOnly.map(\.name), ["opus"])
@@ -258,6 +272,7 @@ final class TokenUsageManagerUsageTests: XCTestCase {
         store.upsertBucket(bucket(daysAgo: 3, total: 20))
         let manager = makeManager(store: store, collectors: [.claude: FakeUsageCollector(provider: .claude)])
         manager.start()
+        manager.waitForOverviewSettledForTesting()
 
         let heatmap = manager.activityHeatmap(filteredBy: nil)
         XCTAssertNotNil(heatmap)
@@ -277,6 +292,7 @@ final class TokenUsageManagerUsageTests: XCTestCase {
         store.upsertBucket(bucket(daysAgo: 0, total: 20, provider: .codex))
         let manager = makeManager(store: store, collectors: [.claude: FakeUsageCollector(provider: .claude)])
         manager.start()
+        manager.waitForOverviewSettledForTesting()
 
         XCTAssertEqual(manager.activityHeatmap(filteredBy: .claude)?.activeDays, 1)
         XCTAssertEqual(manager.activityHeatmap(filteredBy: .codex)?.activeDays, 1)
@@ -292,6 +308,7 @@ final class TokenUsageManagerUsageTests: XCTestCase {
         store.upsertBucket(bucket(daysAgo: -3, total: 8_000))
         let manager = makeManager(store: store, collectors: [.claude: FakeUsageCollector(provider: .claude)])
         manager.start()
+        manager.waitForOverviewSettledForTesting()
 
         try await waitUntil { manager.dashboardSnapshot != nil }
         let snapshot = try XCTUnwrap(manager.dashboardSnapshot)

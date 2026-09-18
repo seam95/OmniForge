@@ -64,6 +64,8 @@ final class TokenUsageManager: ObservableObject {
     private var dashboardGeneration = 0
     /// usageOverview / usageDailyProviderAggregates 后台重建的代际令牌。
     private var overviewGeneration = 0
+    /// 已落定（主线程赋值完成）的代际；与 overviewGeneration 相等 = 无在途重建。
+    private var overviewSettledGeneration = 0
 
     init(
         preferences: TokenUsagePreferences,
@@ -318,9 +320,21 @@ final class TokenUsageManager: ObservableObject {
                 guard let self, self.overviewGeneration == generation else { return }
                 self.usageOverview = overview
                 self.usageDailyProviderAggregates = daily
+                self.overviewSettledGeneration = generation
+                // dashboard 快照的数据源是 daily 聚合：必须在 daily 落定之后构建，
+                // 否则读到上一轮旧值（后台化前同步顺序保证了这一点）。
+                self.rebuildDashboardSnapshot()
             }
         }
-        rebuildDashboardSnapshot()
+    }
+
+    /// 测试用：自旋主 RunLoop 直到在途的 overview 后台重建落回主线程
+    ///（refreshUsageSnapshot 已后台化，同步断言前须等待）。
+    func waitForOverviewSettledForTesting(timeout: TimeInterval = 2) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while overviewSettledGeneration != overviewGeneration, Date() < deadline {
+            RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
+        }
     }
 
     nonisolated private static func calendarTomorrow(now: Date) -> Date {
