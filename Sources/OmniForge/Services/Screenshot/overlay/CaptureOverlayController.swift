@@ -242,6 +242,10 @@ final class CaptureOverlayController {
         self.isTornDown = false
         self.endedByUserCancel = false
         self.snapshotGeneration &+= 1
+        // 二次 complete 分流依赖 editorController 判空；防御性清掉上一会话可能残留的
+        // 编辑器，避免迟到回调写入的残留编辑器吞掉新会话的选区完成事件。
+        editorController = nil
+        editorHostView = nil
         self.screenSnapshots = preSnapshots
         self.onComplete = completion
 
@@ -675,12 +679,20 @@ extension CaptureOverlayController: SelectionViewDelegate {
         }
 
         let preSnapshot = screenSnapshots[displayID]
+        // Capture generation for async fallback: cancel/tearDown must not late-finish into a new session.
+        // 同 deliverDirectCapture 的守卫口径——编辑器路径漏守卫会把编辑器嵌入已拆除的
+        // SelectionView，残留 editorController 劫持下一次会话并吞键盘。
+        let generation = snapshotGeneration
         Task { [weak self] in
             guard let self else { return }
             do {
                 let cgImage = try await client.captureRegion(captureRect, displayID: displayID, scaleFactor: screen.backingScaleFactor)
                 let image = NSImage(cgImage: cgImage, size: alignedRect.size)
                 await MainActor.run {
+                    guard !self.isTornDown, self.snapshotGeneration == generation else {
+                        Self.logger.info("selectionDidComplete async success ignored (tornDown/generation)")
+                        return
+                    }
                     self.handleCapturedImage(
                         image,
                         selectionRect: alignedRect,
@@ -692,6 +704,10 @@ extension CaptureOverlayController: SelectionViewDelegate {
                 }
             } catch {
                 await MainActor.run {
+                    guard !self.isTornDown, self.snapshotGeneration == generation else {
+                        Self.logger.info("selectionDidComplete async error ignored (tornDown/generation)")
+                        return
+                    }
                     Self.logger.notice("captureRegion(#5) 抛错：\(error.localizedDescription)")
                     self.tearDown()
                     self.onComplete?(nil)

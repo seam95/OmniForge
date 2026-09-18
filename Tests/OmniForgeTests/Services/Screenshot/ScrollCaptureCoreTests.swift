@@ -428,19 +428,17 @@ final class ScrollCaptureCoreTests: XCTestCase {
         let ids = ScrollCaptureExclusion.excludedWindowIDs(
             hostWindowNumber: 42,
             hudWindowNumber: 7,
-            previewWindowNumber: 9,
-            toastWindowNumber: 11
+            previewWindowNumber: 9
         )
         XCTAssertEqual(ids.first, 42, "host overlay 必须排首位：引擎按首个排除窗口之下采集")
-        XCTAssertEqual(ids, [42, 7, 9, 11])
+        XCTAssertEqual(ids, [42, 7, 9])
     }
 
     func test_scrollCaptureExclusion_skipsNonPositiveAndDedupes() {
         let ids = ScrollCaptureExclusion.excludedWindowIDs(
             hostWindowNumber: 0,
             hudWindowNumber: 5,
-            previewWindowNumber: 5,
-            toastWindowNumber: -1
+            previewWindowNumber: 5
         )
         XCTAssertEqual(ids, [5])
     }

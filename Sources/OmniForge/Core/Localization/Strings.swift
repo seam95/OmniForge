@@ -991,15 +991,6 @@ struct Strings: Equatable {
     let annotationCropFlipVertical: String
     /// 有标注对象时禁用旋转/翻转的说明
     let annotationCropTransformDisabledHelp: String
-    let annotationBeautifyEnabled: String
-    let annotationBeautifyBackground: String
-    let annotationBeautifyBackgroundSolid: String
-    let annotationBeautifyBackgroundBlur: String
-    let annotationBeautifySolidColor: String
-    let annotationBeautifyPadding: String
-    let annotationBeautifyCornerRadius: String
-    let annotationBeautifyShadow: String
-    let annotationBeautifyShadowIntensity: String
     let annotationStyleStroke: String
     let annotationStyleFill: String
     let annotationStyleFillColor: String

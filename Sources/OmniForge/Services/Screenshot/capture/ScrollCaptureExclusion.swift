@@ -13,8 +13,7 @@ enum ScrollCaptureExclusion {
     static func excludedWindowIDs(
         hostWindowNumber: Int?,
         hudWindowNumber: Int? = nil,
-        previewWindowNumber: Int? = nil,
-        toastWindowNumber: Int? = nil
+        previewWindowNumber: Int? = nil
     ) -> [CGWindowID] {
         var seen = Set<CGWindowID>()
         var ids: [CGWindowID] = []
@@ -22,7 +21,6 @@ enum ScrollCaptureExclusion {
             hostWindowNumber,
             hudWindowNumber,
             previewWindowNumber,
-            toastWindowNumber,
         ]
         for number in candidates {
             guard let number, number > 0 else { continue }

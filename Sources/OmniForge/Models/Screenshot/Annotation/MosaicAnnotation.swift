@@ -54,11 +54,6 @@ struct MosaicAnnotation: Annotation, Equatable {
 
     func withColor(_ color: NSColor) -> Annotation { self }
     func withLineWidth(_ lineWidth: CGFloat) -> Annotation { self }
-
-    /// 调整模式：替换矩形（保持原像素位图）。
-    func withRect(_ rect: NSRect) -> MosaicAnnotation {
-        MosaicAnnotation(uuid: uuid, rect: rect, pixelatedImage: pixelatedImage ?? NSImage(), blockSize: blockSize)
-    }
 }
 
 /// 马赛克区域像素化工具。参照 capcap `MosaicTool`：

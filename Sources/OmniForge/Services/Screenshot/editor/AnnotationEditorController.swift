@@ -79,7 +79,6 @@ final class AnnotationEditorController {
     private var scrollCapturer: ScrollCapturer?
     private var scrollCaptureHUDWindow: ScrollCaptureHUDWindow?
     private var scrollPreviewWindow: ScrollPreviewWindow?
-    private var infoToastWindow: EditorInfoToastWindow?
     private var scrollCaptureKeyMonitor: Any?
 
     private var isScrollCaptureBusy: Bool { isScrollCapturing || isScrollCaptureFinalizing }
@@ -104,13 +103,6 @@ final class AnnotationEditorController {
     private var currentEmoji: String?
     private var emojiPopover: NSPopover?
     private var recentEmojis: [String] = Defaults.recentEmojis()
-
-    /// 美化开关与预设（参照 capcap）。启用时 compositeImage 末尾应用
-    /// BeautifyRenderer.render（背景 + 圆角 + 双层阴影 + padding）。
-    private var beautifyEnabled: Bool = false
-    private var beautifyPreset: BeautifyPreset = .defaultPreset
-    /// 美化壁纸位图（wallpaper 预设时异步加载）。
-    private var beautifyWallpaper: NSImage?
 
     /// 编辑器嵌入区域（选区视图坐标）。
     private var selectionViewRect: NSRect
@@ -970,7 +962,7 @@ final class AnnotationEditorController {
     /// 合成位图按 `sourceBackingScaleFactor` 显式指定像素密度：若用
     /// `NSImage.lockFocus`，其后端密度会跟随隐式主屏 backingScaleFactor，
     /// 与钉住时用的源屏 `pointPixelScale` 不一致，导致多屏 DPI 不同时钉住尺寸
-    /// 被放大/缩小。此处与 `BeautifyRenderer.render` 用同一范式：显式建 rep。
+    /// 被放大/缩小。做法是显式新建位图 rep 并指定密度。
     /// 长截图 `previewImage` 优先于 `baseImage`。
     func compositeImage() -> NSImage? {
         let sourceImage = canvasView?.resolveBaseImageForEditing() ?? baseImage
@@ -1012,44 +1004,7 @@ final class AnnotationEditorController {
 
         let composite = NSImage(size: size)
         composite.addRepresentation(rep)
-
-        // 美化（参照 capcap）：底图 + 标注合成后，应用背景/圆角/双层阴影/padding。
-        // composite 的 representation 已携带正确 pixelsWide，BeautifyRenderer 据此算对密度。
-        if beautifyEnabled {
-            let wallpaper = beautifyPreset.isWallpaper ? beautifyWallpaper : nil
-            return BeautifyRenderer.render(innerImage: composite, preset: beautifyPreset, wallpaperImage: wallpaper)
-        }
         return composite
-    }
-
-    // MARK: - 美化（参照 capcap toggleBeautify/applyBeautifyPreset）
-
-    /// 切换美化开关。
-    func toggleBeautify() {
-        beautifyEnabled.toggle()
-        if beautifyEnabled, beautifyPreset.isWallpaper, beautifyWallpaper == nil {
-            loadBeautifyWallpaper()
-        }
-        canvasView?.needsDisplay = true
-    }
-
-    /// 切换美化预设。
-    func applyBeautifyPreset(_ preset: BeautifyPreset) {
-        beautifyPreset = preset
-        beautifyEnabled = true
-        if preset.isWallpaper, beautifyWallpaper == nil {
-            loadBeautifyWallpaper()
-        }
-        canvasView?.needsDisplay = true
-    }
-
-    /// 异步加载当前屏幕桌面壁纸（wallpaper 预设用）。参照 capcap loadBeautifyWallpaper。
-    private func loadBeautifyWallpaper() {
-        guard let screen = NSScreen.main else { return }
-        BeautifyRenderer.loadWallpaperImage(for: screen) { [weak self] image in
-            self?.beautifyWallpaper = image
-            self?.canvasView?.needsDisplay = true
-        }
     }
 
     // MARK: - 错误反馈
@@ -1097,7 +1052,6 @@ final class AnnotationEditorController {
             isScrollCaptureFinalizing = false
         }
         dismissScrollCaptureChrome()
-        dismissInfoToast()
         dismissEmojiPopover()
         removeKeyboardShortcuts()
         selectionChromeOverlay?.removeFromSuperview()
@@ -1398,7 +1352,6 @@ final class AnnotationEditorController {
         cancellingCapturer?.cancelSession()
 
         dismissScrollCaptureChrome()
-        dismissInfoToast()
         updateEditorInteractionState()
         bringEditorToFront()
         Self.logger.info("scroll-capture cancelled reason=\(reason, privacy: .public)")
@@ -1469,8 +1422,7 @@ final class AnnotationEditorController {
         ScrollCaptureExclusion.excludedWindowIDs(
             hostWindowNumber: hostSelectionView?.window?.windowNumber,
             hudWindowNumber: scrollCaptureHUDWindow?.windowNumber,
-            previewWindowNumber: scrollPreviewWindow?.windowNumber,
-            toastWindowNumber: infoToastWindow?.windowNumber
+            previewWindowNumber: scrollPreviewWindow?.windowNumber
         )
     }
 
@@ -1478,14 +1430,12 @@ final class AnnotationEditorController {
     func scrollCaptureExcludedWindowIDsForTesting(
         hostWindowNumber: Int?,
         hudWindowNumber: Int? = nil,
-        previewWindowNumber: Int? = nil,
-        toastWindowNumber: Int? = nil
+        previewWindowNumber: Int? = nil
     ) -> [CGWindowID] {
         return ScrollCaptureExclusion.excludedWindowIDs(
             hostWindowNumber: hostWindowNumber,
             hudWindowNumber: hudWindowNumber,
-            previewWindowNumber: previewWindowNumber,
-            toastWindowNumber: toastWindowNumber
+            previewWindowNumber: previewWindowNumber
         )
     }
 
@@ -1521,8 +1471,11 @@ final class AnnotationEditorController {
 
     private func installScrollCaptureKeyMonitor() {
         removeScrollCaptureKeyMonitor()
-        scrollCaptureKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] _ in
+        scrollCaptureKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, self.isScrollCapturing else { return }
+            // 全局监听只能观察不能吞事件：仅 ESC（keyCode 53）取消会话，
+            // 空格/方向键等键盘滚动键不得中断（与本地 ESC-only 语义一致）。
+            guard event.keyCode == 53 else { return }
             DispatchQueue.main.async {
                 self.cancelScrollCapture(reason: "global-key")
             }
@@ -1549,11 +1502,6 @@ final class AnnotationEditorController {
         toolbars.forEach { $0.isHidden = false }
     }
 
-    private func dismissInfoToast() {
-        infoToastWindow?.dismiss()
-        infoToastWindow = nil
-    }
-
     /// Selection rect in AppKit screen coordinates.
     private func selectionScreenRect() -> NSRect {
         guard let host = hostSelectionView, let window = host.window else {
@@ -1561,14 +1509,5 @@ final class AnnotationEditorController {
         }
         let windowRect = host.convert(selectionViewRect, to: nil)
         return window.convertToScreen(windowRect)
-    }
-
-    private func presentInfoMessage(_ message: String) {
-        // Non-blocking toast (permission / hard errors stay on NSAlert).
-        Self.logger.info("scroll-capture: \(message, privacy: .public)")
-        let toast = infoToastWindow ?? EditorInfoToastWindow()
-        infoToastWindow = toast
-        let screen = hostSelectionView?.window?.screen ?? NSScreen.main
-        toast.present(message, near: screen)
     }
 }
