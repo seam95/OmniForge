@@ -58,6 +58,8 @@ struct Strings: Equatable {
     let clipboardEmpty: String
     let clipboardPasteHint: String
     let clipboardPasteUnknown: String
+    let clipboardStorageError: String
+    let clipboardStorageRetry: String
     let clipboardSectionToday: String
     let clipboardSectionYesterday: String
     let clipboardSectionThisWeek: String

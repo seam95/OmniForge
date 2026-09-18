@@ -2,9 +2,15 @@ import CryptoKit
 import Foundation
 import GRDB
 import ImageIO
+import os
 
 final class GRDBClipboardStore: ClipboardStore {
+    private static let logger = Logger(subsystem: "com.omniforge.clipboard", category: "store")
+
     private let databaseQueue: DatabaseQueue?
+    /// 最近一次存储层错误；nil = 健康。init 失败与读写 catch 都会更新，
+    /// 由 Manager 透出为界面错误态（不再伪装空库静默丢写）。
+    private(set) var storageErrorMessage: String?
 
     init(
         databaseURL: URL,
@@ -27,7 +33,9 @@ final class GRDBClipboardStore: ClipboardStore {
                 Self.removeLegacyStoreFiles(in: legacyDirectoryURL, fileManager: fileManager)
             }
         } catch {
+            Self.logger.error("clipboard store init failed: \(error.localizedDescription, privacy: .public)")
             self.databaseQueue = nil
+            self.storageErrorMessage = error.localizedDescription
         }
     }
 
@@ -54,6 +62,8 @@ final class GRDBClipboardStore: ClipboardStore {
                 return records.compactMap { $0.toLightweightClipboardEntry() }
             }
         } catch {
+            Self.logger.error("loadEntries failed: \(error.localizedDescription, privacy: .public)")
+            storageErrorMessage = error.localizedDescription
             return []
         }
     }
@@ -72,7 +82,8 @@ final class GRDBClipboardStore: ClipboardStore {
                 }
             }
         } catch {
-            return
+            Self.logger.error("saveEntries failed: \(error.localizedDescription, privacy: .public)")
+            storageErrorMessage = error.localizedDescription
         }
     }
 
@@ -87,7 +98,8 @@ final class GRDBClipboardStore: ClipboardStore {
                 try record.save(db)
             }
         } catch {
-            return
+            Self.logger.error("saveEntry failed: \(error.localizedDescription, privacy: .public)")
+            storageErrorMessage = error.localizedDescription
         }
     }
 
@@ -102,7 +114,8 @@ final class GRDBClipboardStore: ClipboardStore {
                     .deleteAll(db)
             }
         } catch {
-            return
+            Self.logger.error("deleteEntries failed: \(error.localizedDescription, privacy: .public)")
+            storageErrorMessage = error.localizedDescription
         }
     }
 

@@ -54,6 +54,8 @@ extension Strings {
         clipboardEmpty: "No clipboard entries",
         clipboardPasteHint: "Paste to",
         clipboardPasteUnknown: "Active app",
+        clipboardStorageError: "Clipboard database unavailable; history won't be saved",
+        clipboardStorageRetry: "Retry",
         clipboardSectionToday: "Today",
         clipboardSectionYesterday: "Yesterday",
         clipboardSectionThisWeek: "This Week",

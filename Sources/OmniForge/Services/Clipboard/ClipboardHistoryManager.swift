@@ -28,6 +28,9 @@ enum ClipboardHistoryLimits {
 @MainActor
 final class ClipboardHistoryManager: ObservableObject {
     @Published private(set) var entries: [ClipboardEntry]
+    /// 存储层错误（nil = 健康）：数据库不可用时界面据此提示，
+    /// 不得伪装为空历史继续静默丢弃写入（审查 R19，对齐 QuickPhraseManager）。
+    @Published private(set) var storageError: String?
     @Published var retentionDays: Int {
         didSet {
             let normalized = ClipboardHistoryLimits.clampRetentionDays(retentionDays)
@@ -117,12 +120,19 @@ final class ClipboardHistoryManager: ObservableObject {
             maxEntries: initialMaxEntries
         )
         self.entries = pruned
+        self.storageError = store.storageErrorMessage
 
         // 增量删除被裁剪的条目
         let removedIDs = Set(loaded.map(\.id)).subtracting(Set(pruned.map(\.id)))
         if !removedIDs.isEmpty {
             store.deleteEntries(ids: removedIDs)
         }
+    }
+
+    /// 存储错误态的重试入口：重新加载历史并刷新错误标记。
+    func retryLoading() {
+        entries = store.loadEntries()
+        storageError = store.storageErrorMessage
     }
 
     func startMonitoring(interval: TimeInterval = 0.4) {

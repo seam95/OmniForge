@@ -54,6 +54,8 @@ extension Strings {
         clipboardEmpty: "暂无剪贴板记录",
         clipboardPasteHint: "Paste to",
         clipboardPasteUnknown: "当前应用",
+        clipboardStorageError: "剪贴板数据库不可用，历史将不会保存",
+        clipboardStorageRetry: "重试",
         clipboardSectionToday: "今天",
         clipboardSectionYesterday: "昨天",
         clipboardSectionThisWeek: "本周",

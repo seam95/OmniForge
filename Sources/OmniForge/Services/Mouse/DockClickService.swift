@@ -239,8 +239,8 @@ final class DockClickService: ObservableObject {
         }
         guard !windows.hasFullscreen else { return Unmanaged.passUnretained(event) }
 
-        let cycleEnabled = UserDefaults.standard.bool(forKey: UserDefaultsKeys.dockClickCycleWindows)
-        let minimizeEnabled = UserDefaults.standard.bool(forKey: UserDefaultsKeys.dockClickMinimize)
+        let cycleEnabled = userDefaults.bool(forKey: UserDefaultsKeys.dockClickCycleWindows)
+        let minimizeEnabled = userDefaults.bool(forKey: UserDefaultsKeys.dockClickMinimize)
         // 启动器式应用可能误报 isActive；工作区的前台应用是裁决者。
         let frontmost = app.isActive
             || NSWorkspace.shared.frontmostApplication?.processIdentifier == pid

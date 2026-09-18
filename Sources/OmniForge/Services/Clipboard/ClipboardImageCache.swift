@@ -44,27 +44,8 @@ final class ClipboardImageCache {
     }
 
     /// 获取详情图片；缓存键包含显示尺寸，避免复用分辨率不足的图片。
-    func detailImage(
-        for entryID: UUID,
-        maxPixelSize: Int,
-        loader: () -> Data?
-    ) -> NSImage? {
-        guard maxPixelSize > 0 else { return nil }
-        let key = detailKey(entryID: entryID, maxPixelSize: maxPixelSize)
-        if let cached = detailCache.object(forKey: key) {
-            return cached
-        }
-        guard let data = loader(),
-              let image = ClipboardImageDownsampler.image(
-                  data: data,
-                  maxPixelSize: maxPixelSize
-              ) else {
-            return nil
-        }
-        let cost = estimateImageCost(image)
-        detailCache.setObject(image, forKey: key, cost: cost)
-        return image
-    }
+    /// 后台解码链路统一走 `ClipboardDetailImageLoader`（cachedDetailImage /
+    /// storeDetailImage + Task.detached）——不要在此新增同步 loader 入口。
 
     private func detailKey(entryID: UUID, maxPixelSize: Int) -> NSString {
         "\(entryID.uuidString):\(maxPixelSize)" as NSString

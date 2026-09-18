@@ -196,8 +196,35 @@ struct ClipboardHistoryView: View {
 
     private var contentArea: some View {
         HStack(spacing: 0) {
-            historyList
-                .frame(width: 270)
+            VStack(spacing: 0) {
+                if history.storageError != nil {
+                    // 存储错误态（审查 R19）：不再伪装空历史，提示 + 重试；
+                    // 技术细节经 accessibility 携带，不直接展示原始错误串。
+                    HStack(spacing: 8) {
+                        Image(systemName: "externaldrive.badge.exclamationmark")
+                            .foregroundStyle(.orange)
+                        Text(l10n.s.clipboardStorageError)
+                            .font(Theme.Stats.font11Regular)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                        Spacer(minLength: 0)
+                        Button(l10n.s.clipboardStorageRetry) {
+                            history.retryLoading()
+                        }
+                        .font(Theme.Stats.font12Medium)
+                        .buttonStyle(.link)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .accessibilityLabel(Text(l10n.s.clipboardStorageError))
+                    Rectangle()
+                        .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05))
+                        .frame(height: 1)
+                }
+                historyList
+                    .frame(width: 270)
+            }
+            .frame(width: 270)
 
             Rectangle()
                 .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.05))

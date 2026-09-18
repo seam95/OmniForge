@@ -171,7 +171,7 @@ final class SmoothScrollService: ObservableObject {
         }
 
         let step = Double(SmoothScrollSupport.sanitizedStep(
-            UserDefaults.standard.integer(forKey: UserDefaultsKeys.smoothScrollStep)))
+            userDefaults.integer(forKey: UserDefaultsKeys.smoothScrollStep)))
         remainingVertical = SmoothScrollSupport.remaining(afterTicks: vertical,
                                                           step: step,
                                                           current: remainingVertical)

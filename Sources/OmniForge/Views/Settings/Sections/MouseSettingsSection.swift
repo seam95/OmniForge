@@ -1,11 +1,11 @@
 import SwiftUI
 
 struct MouseSettingsSection: View {
-    @ObservedObject private var runtime = FeatureRuntime.shared
-    @ObservedObject private var inverter = ScrollInverter.shared
-    @ObservedObject private var smoothScroll = SmoothScrollService.shared
-    @ObservedObject private var mouseNavigation = MouseNavigationService.shared
-    @ObservedObject private var dockClick = DockClickService.shared
+    @ObservedObject private var runtime: FeatureRuntime
+    @ObservedObject private var inverter: ScrollInverter
+    @ObservedObject private var smoothScroll: SmoothScrollService
+    @ObservedObject private var mouseNavigation: MouseNavigationService
+    @ObservedObject private var dockClick: DockClickService
 
     @AppStorage(UserDefaultsKeys.scrollInverterEnabled) private var inverterEnabled = false
     @AppStorage(UserDefaultsKeys.smoothScrollEnabled) private var smoothScrollEnabled = false
@@ -15,6 +15,22 @@ struct MouseSettingsSection: View {
     @AppStorage(UserDefaultsKeys.dockClickCycleWindows) private var dockClickCycleWindows = false
 
     let strings: Strings
+
+    init(
+        strings: Strings,
+        runtime: FeatureRuntime = .shared,
+        inverter: ScrollInverter = .shared,
+        smoothScroll: SmoothScrollService = .shared,
+        mouseNavigation: MouseNavigationService = .shared,
+        dockClick: DockClickService = .shared
+    ) {
+        self.strings = strings
+        self.runtime = runtime
+        self.inverter = inverter
+        self.smoothScroll = smoothScroll
+        self.mouseNavigation = mouseNavigation
+        self.dockClick = dockClick
+    }
 
     var body: some View {
         Group {
