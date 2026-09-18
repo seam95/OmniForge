@@ -388,22 +388,8 @@ struct Strings: Equatable {
     let onboardingPermissionGranted: String
     let onboardingRecheck: String
     let onboardingPermissionHint: String
-    let onboardingFeaturesTitle: String
-    let onboardingFeaturesBody: String
-    let onboardingFeatureInputLockTitle: String
-    let onboardingFeatureInputLockDescription: String
-    let onboardingFeatureClipboardHistoryTitle: String
-    let onboardingFeatureClipboardHistoryDescription: String
-    let onboardingFeatureQuickPhraseTitle: String
-    let onboardingFeatureQuickPhraseDescription: String
-    let onboardingFeatureSystemMonitorTitle: String
-    let onboardingFeatureSystemMonitorDescription: String
-    let onboardingFeatureShelfTitle: String
-    let onboardingFeatureShelfDescription: String
     let onboardingFeatureLaunchAtLoginTitle: String
     let onboardingFeatureLaunchAtLoginDescription: String
-    let onboardingDoneTitle: String
-    let onboardingDoneHint: String
     // MARK: - Onboarding Enhancements
     let onboardingStepPersona: String
     let onboardingStepPlayground: String
@@ -420,6 +406,7 @@ struct Strings: Equatable {
     let onboardingPersonaAllInOneTitle: String
     let onboardingPersonaAllInOneDesc: String
     let onboardingPlaygroundTitle: String
+    let onboardingPlaygroundTestKeys: String
     let onboardingPlaygroundSubtitle: String
     let onboardingPlaygroundCardTitle: String
     let onboardingPlaygroundCardPrompt: String
@@ -433,6 +420,7 @@ struct Strings: Equatable {
     let onboardingPermissionScreenRecording: String
     let onboardingPermissionScreenRecordingDescription: String
     let onboardingMenubarTitle: String
+    let onboardingMenubarCompletionHint: String
     let onboardingMenubarSubtitle: String
     let onboardingOptionRetainDock: String
     let onboardingOptionRetainDockDesc: String

@@ -4,8 +4,11 @@ import SwiftUI
 
 /// Onboarding 窗口管理器 — 创建并管理独立的 NSWindow，
 /// 监听 OnboardingCoordinator 的状态变化自动显示/关闭窗口。
+/// 同时担任窗口 delegate：用户经标题栏红钮（而非应用内按钮）关闭时，
+/// 同步 coordinator 状态，避免 `isWindowVisible` 残留 true 导致
+/// 「重新运行引导」失灵、What's New 每次启动重弹。
 @MainActor
-final class OnboardingWindowController {
+final class OnboardingWindowController: NSObject, NSWindowDelegate {
     static let shared = OnboardingWindowController()
 
     private var onboardingWindow: NSWindow?
@@ -14,7 +17,9 @@ final class OnboardingWindowController {
     private var l10n: L10n?
     private weak var appearance: AppearanceSettings?
 
-    private init() {}
+    private override init() {
+        super.init()
+    }
 
     /// 开始监听 coordinator 状态，自动管理窗口
     func startObserving(_ coordinator: OnboardingCoordinator, l10n: L10n, appearance: AppearanceSettings) {
@@ -62,9 +67,24 @@ final class OnboardingWindowController {
         window.isReleasedWhenClosed = false
 
         onboardingWindow = window
+        window.delegate = self
         appearance?.attach(window)
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// 红钮关闭：先置空引用（阻断 sink 回调的递归），再同步 coordinator 状态。
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        if window === onboardingWindow {
+            onboardingWindow = nil
+            if OnboardingCoordinator.shared.isWindowVisible {
+                OnboardingCoordinator.shared.isWindowVisible = false
+            }
+        } else if window === whatsNewWindow {
+            whatsNewWindow = nil
+            OnboardingCoordinator.shared.skipWhatsNew()
+        }
     }
 
     private func closeOnboardingWindow() {
@@ -92,6 +112,7 @@ final class OnboardingWindowController {
         window.isReleasedWhenClosed = false
 
         whatsNewWindow = window
+        window.delegate = self
         appearance?.attach(window)
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)

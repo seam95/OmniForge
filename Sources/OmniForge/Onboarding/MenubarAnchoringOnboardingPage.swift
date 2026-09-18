@@ -68,7 +68,7 @@ struct MenubarAnchoringOnboardingPage: View {
                 Image(systemName: "sparkles")
                     .foregroundStyle(Color.accentColor)
                     .font(.system(size: 12))
-                Text("完成向导后，OmniForge 将自动在右上角为您展开控制中心")
+                Text(strings.onboardingMenubarCompletionHint)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }

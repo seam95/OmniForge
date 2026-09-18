@@ -235,6 +235,9 @@ final class AppCompositionRoot {
                 self?.wireKeepAwakeHotkey()
                 self?.wireScreenshotHotkeys()
                 self?.wireStickyNotesHotkey()
+                // 桌宠运行期卸载后重装会新建 manager，openSettingsHandler
+                // 必须随 revision 重接，否则右键「打开设置」静默失效。
+                self?.wireDesktopPetSettings()
             }
             .store(in: &sinks)
     }

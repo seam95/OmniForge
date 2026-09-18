@@ -64,6 +64,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MainMenuSettingsTarget
             coordinator.onApplyDockIconPreference = { [weak root] retainDock in
                 root?.appState.setHideDockIcon(!retainDock)
             }
+            coordinator.onApplyLaunchAtLogin = { [weak root] enabled in
+                _ = root?.appState.launchAtLogin.setEnabled(enabled)
+            }
             OnboardingWindowController.shared.startObserving(coordinator, l10n: root.appState.l10n, appearance: root.appState.appearance)
             DispatchQueue.main.async {
                 coordinator.startIfNeeded()

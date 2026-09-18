@@ -76,7 +76,7 @@ struct PlaygroundOnboardingPage: View {
                             hasTriggeredShortcut = true
                         }
                     } label: {
-                        Text("测试按键效果")
+                        Text(strings.onboardingPlaygroundTestKeys)
                             .font(.system(size: 11))
                     }
                     .buttonStyle(.link)

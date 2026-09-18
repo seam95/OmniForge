@@ -22,6 +22,8 @@ final class OnboardingCoordinator: ObservableObject {
     var onCompletionAnchoring: (() -> Void)?
     /// 应用 Dock 偏好回调
     var onApplyDockIconPreference: ((Bool) -> Void)?
+    /// 应用开机自启偏好回调（由 AppDelegate 转发 LaunchAtLoginManager）
+    var onApplyLaunchAtLogin: ((Bool) -> Void)?
 
     private let userDefaults: UserDefaults
 
@@ -94,6 +96,7 @@ final class OnboardingCoordinator: ObservableObject {
         isWindowVisible = false
         currentStep = 0
         onApplyDockIconPreference?(retainDockIcon)
+        onApplyLaunchAtLogin?(launchAtLogin)
 
         let persona = selectedPersona
         let anchorAction = onCompletionAnchoring
@@ -158,5 +161,6 @@ final class OnboardingCoordinator: ObservableObject {
         launchAtLogin = true
         onCompletionAnchoring = nil
         onApplyDockIconPreference = nil
+        onApplyLaunchAtLogin = nil
     }
 }
