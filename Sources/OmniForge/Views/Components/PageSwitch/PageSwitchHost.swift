@@ -135,9 +135,9 @@ struct PageSwitchHost<Route: Equatable, Content: View>: View {
             startExit()
         case .mounting(let displayed):
             // mounting 中新请求直接透明替换挂载目标（SPEC §6.2）：
-            // 立即重挂新目标并重启屏障。
-            if case .mounting = before {
-                mountRoute(displayed)
+            // 立即重挂新目标并重启屏障。进入动效按「旧挂载目标→新目标」解析。
+            if case .mounting(let previous) = before {
+                mountRoute(displayed, from: previous)
             }
         default:
             break
@@ -164,7 +164,7 @@ struct PageSwitchHost<Route: Equatable, Content: View>: View {
     }
 
     private func swapRoute() {
-        guard case .exiting(_, let pending) = machine.phase else { return }
+        guard case .exiting(let displayed, let pending) = machine.phase else { return }
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
@@ -175,15 +175,19 @@ struct PageSwitchHost<Route: Equatable, Content: View>: View {
         onPhaseEvent?(.routeSwapped)
         PageSwitchSignpost.emit(PageSwitchSignpost.Event.routeSwapped)
 
-        mountRoute(pending)
+        mountRoute(pending, from: displayed)
     }
 
     /// 透明状态下挂载 route 并启动进入前置屏障；无屏障时立即淡入
     ///（与固定尺寸路径行为一致）。表面样式与展示回调在每个挂载点同步
     /// 更新——透明替换链的挂载点同样是合法交换点（SPEC §8.2.3）。
-    private func mountRoute(_ route: Route) {
+    /// 进入动效必须按「旧 route → 新 route」解析：exitCompleted 后
+    /// displayedRoute 已是新值，若取 semantics(displayedRoute, route)
+    /// 等于 semantics(新,新)，lateral 恒为 peer（进入位移归零）、
+    /// 层级返回方向反转——故由调用方显式传入旧 route。
+    private func mountRoute(_ route: Route, from previousRoute: Route) {
         let motion = PageSwitchMotion.resolved(
-            semantics: semantics(machine.displayedRoute, route),
+            semantics: semantics(previousRoute, route),
             reduceMotion: effectiveReduceMotion
         )
         transitionMotion = motion

@@ -130,8 +130,12 @@ private struct ShelfRegisteredSettingsSection: View {
 
     private var appPickerSheet: some View {
         let excluded = Set(shelf.automaticExclusions)
-        return ShelfAppPickerView(
-            strings: strings,
+        return InstalledAppPickerView(
+            title: strings.shelfAppPickerTitle,
+            cancelTitle: strings.shelfAppPickerCancel,
+            searchPlaceholder: strings.shelfAppPickerSearch,
+            loadingText: strings.shelfAppPickerLoading,
+            emptyText: strings.shelfAppPickerEmpty,
             loadApps: { InstalledApps.installedBundleApplications(excluding: excluded) },
             onCancel: { showingAppPicker = false },
             onSelect: { url in

@@ -468,6 +468,7 @@ extension Strings {
         shelfAddApp: "Add app…",
         shelfAppPickerTitle: "Choose an App",
         shelfAppPickerSearch: "Search",
+        shelfAppPickerLoading: "Loading apps…",
         shelfAppPickerCancel: "Cancel",
         shelfAppPickerEmpty: "No apps found.",
         // Uninstaller
@@ -585,6 +586,7 @@ extension Strings {
         dshWebStateStarting: "Starting…",
         dshWebStateStopping: "Stopping…",
         dshWebStateFailed: "Failed: %@",
+        dshWebStateFailedBadge: "Failed",
         dshWebPortOccupied: "Port 3080 is already in use; dsh web or another service may be running",
         dshWebPortOccupiedFormat: "Port %d is already in use; dsh web or another service may be running",
         dshWebStartTimeout: "Startup timed out; the service did not become ready",

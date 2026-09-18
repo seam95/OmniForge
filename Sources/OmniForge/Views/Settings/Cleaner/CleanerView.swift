@@ -303,6 +303,9 @@ struct CleanerContentView: View {
         .frame(maxWidth: .infinity)
         .modifier(ScheduleChangeSync(notify: $scheduleNotify,
                                      frequency: $scheduleFrequencyRaw,
+                                     hour: $scheduleHour,
+                                     minute: $scheduleMinute,
+                                     weekday: $scheduleWeekday,
                                      refresh: refreshNotificationStatus,
                                      canAccessNotificationCenter: notificationStatusGate.canAccessNotificationCenter))
     }
@@ -389,6 +392,11 @@ struct CleanerContentView: View {
     private struct ScheduleChangeSync: ViewModifier {
         @Binding var notify: Bool
         @Binding var frequency: String
+        // 调度器不监听 UserDefaults，只认 syncWithPreferences() 时的快照；
+        // 时/分/星期任一变化都必须触发重排，否则定时器按旧时刻触发。
+        @Binding var hour: Int
+        @Binding var minute: Int
+        @Binding var weekday: Int
         let refresh: () -> Void
         let canAccessNotificationCenter: Bool
 
@@ -400,6 +408,9 @@ struct CleanerContentView: View {
                     refresh()
                 }
                 .onChange(of: frequency) { _, _ in CleanerScheduler.shared.syncWithPreferences() }
+                .onChange(of: hour) { _, _ in CleanerScheduler.shared.syncWithPreferences() }
+                .onChange(of: minute) { _, _ in CleanerScheduler.shared.syncWithPreferences() }
+                .onChange(of: weekday) { _, _ in CleanerScheduler.shared.syncWithPreferences() }
                 .onChange(of: notify) { _, wanted in
                     if wanted { requestNotificationPermission() }
                     refresh()

@@ -488,6 +488,7 @@ struct Strings: Equatable {
     let shelfAddApp: String
     let shelfAppPickerTitle: String
     let shelfAppPickerSearch: String
+    let shelfAppPickerLoading: String
     let shelfAppPickerCancel: String
     let shelfAppPickerEmpty: String
 
@@ -616,6 +617,8 @@ struct Strings: Equatable {
     let dshWebStateStarting: String
     let dshWebStateStopping: String
     let dshWebStateFailed: String     // + failed reason
+    /// 徽章用的无参失败短文案（dshWebStateFailed 带原因参数，不适合徽章）
+    let dshWebStateFailedBadge: String
     let dshWebPortOccupied: String
     let dshWebPortOccupiedFormat: String
     let dshWebStartTimeout: String

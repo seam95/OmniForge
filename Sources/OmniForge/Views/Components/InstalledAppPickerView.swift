@@ -1,8 +1,14 @@
 import SwiftUI
 
-/// Minimal app picker for shelf automatic exclusions.
-struct ShelfAppPickerView: View {
-    let strings: Strings
+/// 通用「选择已安装 App」sheet（搜索 + 列表），复用 InstalledApps 枚举。
+/// 卸载器选目标 App 与 Shelf 自动排除选 App 共用；文案、加载来源由调用方注入。
+struct InstalledAppPickerView: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let title: String
+    let cancelTitle: String
+    let searchPlaceholder: String
+    let loadingText: String
+    let emptyText: String
     let loadApps: () -> [InstalledApps.InstalledApp]
     let onCancel: () -> Void
     let onSelect: (URL) -> Void
@@ -10,6 +16,7 @@ struct ShelfAppPickerView: View {
     @State private var apps: [InstalledApps.InstalledApp] = []
     @State private var query = ""
     @State private var isLoading = false
+    @FocusState private var searchFocused: Bool
 
     private var filteredApps: [InstalledApps.InstalledApp] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -23,20 +30,36 @@ struct ShelfAppPickerView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                Text(strings.shelfAppPickerTitle)
-                    .font(.system(size: 16, weight: .semibold))
+                Text(title)
+                    .font(Theme.Stats.font13SemiBold)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                 Spacer()
-                Button(strings.shelfAppPickerCancel, action: onCancel)
+                Button(cancelTitle, action: onCancel)
+                    .font(Theme.Stats.font12Medium)
             }
 
-            TextField(strings.shelfAppPickerSearch, text: $query)
+            TextField(searchPlaceholder, text: $query)
                 .textFieldStyle(.roundedBorder)
+                .font(Theme.Stats.font12Medium)
+                .focused($searchFocused)
 
             appList
         }
         .padding(18)
         .frame(width: 520, height: 560)
-        .onAppear { loadAppsIfNeeded() }
+        // sheet 首个可聚焦控件（取消按钮）会带出系统蓝色键盘焦点环，按仓库惯例禁用。
+        .omniNoFocusRing()
+        .onAppear {
+            loadAppsIfNeeded()
+            focusSearchField()
+        }
+    }
+
+    /// sheet 过场动画期间直接设焦点常被系统初始焦点覆盖，延后到动画落地后再聚焦。
+    private func focusSearchField() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            searchFocused = true
+        }
     }
 
     @ViewBuilder
@@ -45,19 +68,19 @@ struct ShelfAppPickerView: View {
         if isLoading {
             VStack(spacing: 8) {
                 ProgressView()
-                Text(strings.shelfAppPickerSearch)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
+                Text(loadingText)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if apps.isEmpty {
             VStack(spacing: 8) {
                 Image(systemName: "app.dashed")
                     .font(.system(size: 34, weight: .light))
-                    .foregroundStyle(.secondary)
-                Text(strings.shelfAppPickerEmpty)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
+                Text(emptyText)
+                    .font(Theme.Stats.font11Regular)
+                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -73,11 +96,12 @@ struct ShelfAppPickerView: View {
                                     .frame(width: 28, height: 28)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(app.name)
-                                        .font(.system(size: 13, weight: .medium))
+                                        .font(Theme.Stats.font12Medium)
+                                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                                         .lineLimit(1)
                                     Text(app.bundleID ?? app.url.path)
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(.secondary)
+                                        .font(Theme.Stats.font10Regular)
+                                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
                                         .lineLimit(1)
                                         .truncationMode(.middle)
                                 }

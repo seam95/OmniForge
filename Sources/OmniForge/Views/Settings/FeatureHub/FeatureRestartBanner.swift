@@ -17,7 +17,13 @@ struct FeatureRestartBanner: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 10)
                 Button(strings.featureHubRestartButton) {
-                    NSApp.terminate(nil)
+                    // 文案承诺「重启」：走 relaunchApp（退出后自动重开），
+                    // 仅在无法触达 AppDelegate 时退化为纯退出。
+                    if let delegate = NSApp.delegate as? AppDelegate {
+                        delegate.relaunchApp()
+                    } else {
+                        NSApp.terminate(nil)
+                    }
                 }
                 .buttonStyle(.borderedProminent)
             }

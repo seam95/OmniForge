@@ -85,12 +85,21 @@ struct UninstallerContentView: View {
         .padding(layout.horizontalPadding)
         .frame(maxWidth: .infinity, minHeight: layout.stageMinHeight)
         .sheet(isPresented: $showingAppPicker) {
-            UninstallerAppPickerView(strings: strings) {
-                showingAppPicker = false
-            } onSelect: { url in
-                showingAppPicker = false
-                uninstaller.select(appURL: url)
-            }
+            InstalledAppPickerView(
+                title: strings.uninstallerPickerTitle,
+                cancelTitle: strings.uninstallerCancel,
+                searchPlaceholder: strings.uninstallerPickerSearch,
+                loadingText: strings.uninstallerScanning,
+                emptyText: strings.uninstallerPickerEmpty,
+                loadApps: { InstalledApps.installedApplications() },
+                onCancel: {
+                    showingAppPicker = false
+                },
+                onSelect: { url in
+                    showingAppPicker = false
+                    uninstaller.select(appURL: url)
+                }
+            )
         }
         .dropDestination(for: URL.self) { urls, _ in
             guard let app = urls.first(where: { $0.pathExtension == "app" }) ?? urls.first else { return false }

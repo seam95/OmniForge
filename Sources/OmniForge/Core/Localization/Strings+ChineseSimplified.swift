@@ -468,6 +468,7 @@ extension Strings {
         shelfAddApp: "添加 App…",
         shelfAppPickerTitle: "选择 App",
         shelfAppPickerSearch: "搜索",
+        shelfAppPickerLoading: "正在加载应用列表…",
         shelfAppPickerCancel: "取消",
         shelfAppPickerEmpty: "未找到 App。",
         // Uninstaller
@@ -585,6 +586,7 @@ extension Strings {
         dshWebStateStarting: "启动中…",
         dshWebStateStopping: "停止中…",
         dshWebStateFailed: "失败：%@",
+        dshWebStateFailedBadge: "异常",
         dshWebPortOccupied: "端口 3080 已被占用，可能已有 dsh web 或其它服务在运行",
         dshWebPortOccupiedFormat: "端口 %d 已被占用，可能已有 dsh web 或其它服务在运行",
         dshWebStartTimeout: "启动超时，服务未就绪",

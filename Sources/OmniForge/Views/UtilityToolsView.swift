@@ -448,7 +448,7 @@ private struct UtilityDSHWebStatusBadge: View {
                 Circle()
                     .fill(Theme.Stats.up)
                     .frame(width: 5.5, height: 5.5)
-                Text("异常")
+                Text(strings.dshWebStateFailedBadge)
                     .font(Theme.Stats.font11Regular)
                     .foregroundStyle(Theme.Stats.up)
             }
