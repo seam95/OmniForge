@@ -52,7 +52,10 @@ struct MonitorContainerView: View {
             content(for: currentRoute)
         }
         .onAppear {
-            coordinator.onToggle = { onExpandedMetric($0) }
+            // 捕获列表只取回调闭包本身：直接引用 self 成员会捕获整个视图值拷贝
+            // （含 @ObservedObject coordinator），与长命协调器互持成环——
+            // 曾实测滞留宿主全部视图状态（StoredLocation/尺寸上下文等 600KB+）。
+            coordinator.onToggle = { [notify = onExpandedMetric] in notify($0) }
             if deviceSummary.hostName.isEmpty {
                 deviceSummary = deviceSummaryProvider.makeSummary(
                     fallbackHostName: strings.monitorDeviceFallbackName
@@ -69,7 +72,8 @@ struct MonitorContainerView: View {
             // 不解绑 onToggle：自适应高度等流程会在面板打开期重建内容树，
             // 旧实例的 onDisappear 可能晚于新实例的 onAppear 执行，解绑会把
             // 新绑定一并清掉，导致展开请求永久丢失（排行页永卡 loading）。
-            // 绑定闭包仅捕获长命对象（manager/coordinator），保留无泄漏风险。
+            // 绑定闭包经捕获列表只持长命服务对象（manager），不持任何视图状态，
+            // 协调器持有它不构成环（见 onAppear 处注释）。
             coordinator.close()
         }
         // 配置变化（展示分区/开关/功能可用性）重断言采样需求。

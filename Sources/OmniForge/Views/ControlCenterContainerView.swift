@@ -284,7 +284,12 @@ struct ControlCenterContainerView: View {
                                     )
                                 )
                             },
-                            onExpandedMetric: { monitor.setExpandedProcessMetric($0) },
+                            // 捕获列表只取 monitor（长命服务对象）：此闭包会被
+                            // 进程展开协调器持久持有，直接引用 self 成员会捕获
+                            // 整个宿主视图值拷贝（@StateObject 回指协调器成环）。
+                            onExpandedMetric: { [monitor] kind in
+                                monitor.setExpandedProcessMetric(kind)
+                            },
                             onStartSpeedTest: { monitor.startSpeedTest() },
                             onOpenSettings: { onOpenSettings(nil) },
                             showsSettingsAction: false,
