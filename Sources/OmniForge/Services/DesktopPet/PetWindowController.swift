@@ -148,6 +148,11 @@ final class PetWindowController {
         panel?.contentView = nil
         panel?.close()
         panel = nil
+        // 新窗口 ignoresMouseEvents 默认 false（接收事件）；缓存必须同步复位，
+        // 否则换宠/重启后首个 tick 的 setReceivesMouseEvents 会命中残留值
+        // 直接 return，透明区穿透失效、点击误触发抚摸，直到指针首次跨越
+        // 实体/透明边界才自愈。
+        receivesMouseEvents = true
     }
 
     // MARK: - 尺寸与位置
