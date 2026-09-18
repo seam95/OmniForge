@@ -17,6 +17,7 @@ final class KeepAwakeManager: ObservableObject {
     private let scheduler: KeepAwakeScheduling
     private let clock: KeepAwakeClock
     private let notifications: UserNotificationPosting?
+    private let stringsProvider: () -> Strings
     private let pointerService: PointerActivityService?
     private let isFeatureAvailable: () -> Bool
     private let blocksStart: () -> Bool
@@ -46,6 +47,7 @@ final class KeepAwakeManager: ObservableObject {
         clock: KeepAwakeClock,
         configuration: @escaping () throws -> KeepAwakeConfigurationSnapshot,
         notifications: UserNotificationPosting? = nil,
+        stringsProvider: @escaping () -> Strings = { L10n().s },
         pointerService: PointerActivityService? = nil,
         isFeatureAvailable: @escaping () -> Bool = { true },
         blocksStart: @escaping () -> Bool = { false },
@@ -60,6 +62,7 @@ final class KeepAwakeManager: ObservableObject {
         self.clock = clock
         self.configuration = configuration
         self.notifications = notifications
+        self.stringsProvider = stringsProvider
         self.pointerService = pointerService
         self.isFeatureAvailable = isFeatureAvailable
         self.blocksStart = blocksStart
@@ -965,21 +968,23 @@ final class KeepAwakeManager: ObservableObject {
 
     private func deliverNotification(_ decision: KeepAwakeNotificationDecision) {
         guard let notifications else { return }
-        let title = Strings.en.keepAwakeNotificationTitle
+        // 通知文案跟随应用语言（此前硬编码 Strings.en，中文用户收到英文通知）。
+        let s = stringsProvider()
+        let title = s.keepAwakeNotificationTitle
         let payload: (String, String)?
         switch decision {
         case .none:
             payload = nil
         case .sessionEnded(.durationElapsed):
-            payload = (title, Strings.en.keepAwakeNotifDurationElapsed)
+            payload = (title, s.keepAwakeNotifDurationElapsed)
         case .sessionEnded(.lowBattery):
-            payload = (title, Strings.en.keepAwakeNotifLowBattery)
+            payload = (title, s.keepAwakeNotifLowBattery)
         case .sessionEnded:
             payload = nil
         case .cleanupRequiredWarning(.durationElapsed):
-            payload = (title, Strings.en.keepAwakeNotifCleanupDuration)
+            payload = (title, s.keepAwakeNotifCleanupDuration)
         case .cleanupRequiredWarning(.lowBattery):
-            payload = (title, Strings.en.keepAwakeNotifCleanupLowBattery)
+            payload = (title, s.keepAwakeNotifCleanupLowBattery)
         case .cleanupRequiredWarning:
             payload = nil
         }

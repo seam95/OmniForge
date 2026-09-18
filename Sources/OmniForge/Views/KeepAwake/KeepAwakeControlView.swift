@@ -50,8 +50,7 @@ struct KeepAwakeControlPresentation: Equatable {
 
 /// 控制中心剩余时间：>0 时 `H:MM:SS`（>=1h）或 `M:SS`；<=0 为 `0:00`。不显示负数。
 enum KeepAwakeControlCountdownFormatter {
-    static func text(endDate: Date, now: Date, strings: Strings = .en) -> String {
-        _ = strings
+    static func text(endDate: Date, now: Date) -> String {
         let remaining = max(0, Int(endDate.timeIntervalSince(now).rounded(.down)))
         let hours = remaining / 3600
         let minutes = (remaining % 3600) / 60
@@ -154,7 +153,7 @@ enum KeepAwakeControlPresentationBuilder {
             let status: String
             let subtitle: String
             if let lastError {
-                let errText = shortError(lastError)
+                let errText = shortError(lastError, strings: strings)
                 status = String(format: strings.keepAwakeStatusNotActiveWithError, errText)
                 subtitle = String(format: strings.keepAwakeStatusCurrentPrefix, status)
             } else {
@@ -214,8 +213,7 @@ enum KeepAwakeControlPresentationBuilder {
                 guard let endDate else { return nil }
                 return KeepAwakeControlCountdownFormatter.text(
                     endDate: endDate,
-                    now: now,
-                    strings: strings
+                    now: now
                 )
             }()
             let line: String = {
@@ -327,26 +325,27 @@ enum KeepAwakeControlPresentationBuilder {
         }
     }
 
-    private static func shortError(_ error: KeepAwakeError) -> String {
+    /// 面板副文案用的错误短语（中英）；诊断细节走完整错误文案。
+    private static func shortError(_ error: KeepAwakeError, strings: Strings) -> String {
         switch error {
-        case .systemAssertionFailed: return "system assertion failed"
-        case .displayAssertionFailed: return "display assertion failed"
-        case .featureUnavailable: return "feature unavailable"
-        case .operationInProgress: return "busy"
-        case .accessibilityPermissionMissing: return "accessibility permission missing"
-        case .pointerEventFailed: return "pointer event failed"
-        case .batteryReadFailed: return "battery read failed"
-        case .invalidPointerInterval: return "invalid pointer interval"
-        case .invalidDuration: return "invalid duration"
-        case .invalidBatteryLimit: return "invalid battery limit"
-        case .alreadyActive: return "already active"
-        case .alreadyInactive: return "already inactive"
-        case .assertionReleaseFailed: return "assertion release failed"
-        case .assertionRollbackFailed: return "assertion rollback failed"
-        case .hotkeyRegistrationFailed: return "hotkey registration failed"
-        case .administratorAuthorizationCancelled: return "authorization cancelled"
-        case .clamshellUnsupported: return "clamshell unsupported"
-        default: return "error"
+        case .systemAssertionFailed: return strings.keepAwakeErrShortSystemAssertion
+        case .displayAssertionFailed: return strings.keepAwakeErrShortDisplayAssertion
+        case .featureUnavailable: return strings.keepAwakeErrShortFeatureUnavailable
+        case .operationInProgress: return strings.keepAwakeErrBusy
+        case .accessibilityPermissionMissing: return strings.keepAwakeErrShortAccessibility
+        case .pointerEventFailed: return strings.keepAwakeErrShortPointerEvent
+        case .batteryReadFailed: return strings.keepAwakeErrShortBatteryRead
+        case .invalidPointerInterval: return strings.keepAwakeErrShortInvalidPointerInterval
+        case .invalidDuration: return strings.keepAwakeErrShortInvalidDuration
+        case .invalidBatteryLimit: return strings.keepAwakeErrShortInvalidBatteryLimit
+        case .alreadyActive: return strings.keepAwakeErrShortAlreadyActive
+        case .alreadyInactive: return strings.keepAwakeErrShortAlreadyInactive
+        case .assertionReleaseFailed: return strings.keepAwakeErrShortAssertionRelease
+        case .assertionRollbackFailed: return strings.keepAwakeErrShortAssertionRollback
+        case .hotkeyRegistrationFailed: return strings.keepAwakeErrShortHotkeyRegistration
+        case .administratorAuthorizationCancelled: return strings.keepAwakeErrCancelled
+        case .clamshellUnsupported: return strings.keepAwakeErrShortClamshellUnsupported
+        default: return strings.keepAwakeErrShortGeneric
         }
     }
 
@@ -358,18 +357,17 @@ enum KeepAwakeControlPresentationBuilder {
         session: KeepAwakeSessionState,
         strings: Strings
     ) -> String? {
-        _ = strings
         var parts: [String] = []
         if case .inactive = session {
             // inactive：lastError 已写进 statusLine，不重复
         } else if let lastError {
-            parts.append(shortError(lastError))
+            parts.append(shortError(lastError, strings: strings))
         }
         if let pointerError {
-            parts.append(shortError(pointerError))
+            parts.append(shortError(pointerError, strings: strings))
         }
         if let batteryError {
-            parts.append(shortError(batteryError))
+            parts.append(shortError(batteryError, strings: strings))
         }
         guard !parts.isEmpty else { return nil }
         return parts.joined(separator: " · ")
@@ -564,7 +562,7 @@ struct KeepAwakeControlView: View {
                         .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
                     if let endDate = presentation.countdownEndDate {
                         TimelineView(.periodic(from: .now, by: 1)) { context in
-                            Text(KeepAwakeControlCountdownFormatter.text(endDate: endDate, now: context.date, strings: strings))
+                            Text(KeepAwakeControlCountdownFormatter.text(endDate: endDate, now: context.date))
                                 .font(Theme.Stats.font24Bold.monospacedDigit())
                                 .foregroundStyle(MonitorOverviewPalette.primary(colorScheme))
                                 .contentTransition(.numericText())

@@ -95,7 +95,7 @@ final class KeepAwakeControlStateTests: XCTestCase {
     func test_countdown_underOneHour_includesSeconds() {
         let now = Date(timeIntervalSince1970: 1_000_000)
         let end = now.addingTimeInterval(12 * 60 + 5) // 12m5s
-        let text = KeepAwakeControlCountdownFormatter.text(endDate: end, now: now, strings: .en)
+        let text = KeepAwakeControlCountdownFormatter.text(endDate: end, now: now)
         // 固定格式：H:MM:SS 若 >= 1h，否则 M:SS 或 "12:05 remaining" — 实现采用：
         // remaining >= 3600 -> "H:MM:SS"
         // remaining > 0 -> "M:SS"  (分钟可不补零到小时)
@@ -106,14 +106,14 @@ final class KeepAwakeControlStateTests: XCTestCase {
     func test_countdown_overOneHour() {
         let now = Date(timeIntervalSince1970: 1_000_000)
         let end = now.addingTimeInterval(1 * 3600 + 2 * 60 + 3)
-        let text = KeepAwakeControlCountdownFormatter.text(endDate: end, now: now, strings: .en)
+        let text = KeepAwakeControlCountdownFormatter.text(endDate: end, now: now)
         XCTAssertEqual(text, "1:02:03")
     }
 
     func test_countdown_expired_isZero() {
         let now = Date(timeIntervalSince1970: 1_000_000)
         let end = now.addingTimeInterval(-5)
-        let text = KeepAwakeControlCountdownFormatter.text(endDate: end, now: now, strings: .en)
+        let text = KeepAwakeControlCountdownFormatter.text(endDate: end, now: now)
         XCTAssertEqual(text, "0:00")
     }
 
@@ -216,7 +216,7 @@ final class KeepAwakeControlStateTests: XCTestCase {
         )
         XCTAssertEqual(
             pointer.secondaryStatusLine,
-            "accessibility permission missing · battery read failed"
+            "Accessibility permission missing · Battery read failed"
         )
 
         let interval = KeepAwakeControlPresentationBuilder.build(
@@ -230,7 +230,7 @@ final class KeepAwakeControlStateTests: XCTestCase {
         )
         XCTAssertEqual(
             interval.secondaryStatusLine,
-            "invalid pointer interval · pointer event failed"
+            "Invalid pointer interval · Pointer event failed"
         )
 
         // inactive：lastError 进主 statusLine；pointer 仍进 secondary
@@ -243,8 +243,8 @@ final class KeepAwakeControlStateTests: XCTestCase {
             pointerError: .pointerEventFailed,
             strings: .en
         )
-        XCTAssertTrue(inactive.statusLine.contains("system assertion failed"))
-        XCTAssertEqual(inactive.secondaryStatusLine, "pointer event failed")
+        XCTAssertTrue(inactive.statusLine.contains("System assertion failed"))
+        XCTAssertEqual(inactive.secondaryStatusLine, "Pointer event failed")
     }
 
     func test_cleanupRequired_retryButton_disablesToggle() {

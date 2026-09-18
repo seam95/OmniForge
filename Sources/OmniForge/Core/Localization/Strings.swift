@@ -813,6 +813,22 @@ struct Strings: Equatable {
     let keepAwakeErrSudoersFormat: String
     let keepAwakeErrRemovalFormat: String
     let keepAwakeErrBusy: String
+    let keepAwakeErrShortSystemAssertion: String
+    let keepAwakeErrShortDisplayAssertion: String
+    let keepAwakeErrShortFeatureUnavailable: String
+    let keepAwakeErrShortAccessibility: String
+    let keepAwakeErrShortPointerEvent: String
+    let keepAwakeErrShortBatteryRead: String
+    let keepAwakeErrShortInvalidPointerInterval: String
+    let keepAwakeErrShortInvalidDuration: String
+    let keepAwakeErrShortInvalidBatteryLimit: String
+    let keepAwakeErrShortAlreadyActive: String
+    let keepAwakeErrShortAlreadyInactive: String
+    let keepAwakeErrShortAssertionRelease: String
+    let keepAwakeErrShortAssertionRollback: String
+    let keepAwakeErrShortHotkeyRegistration: String
+    let keepAwakeErrShortClamshellUnsupported: String
+    let keepAwakeErrShortGeneric: String
     let keepAwakeErrClamshellUnsupportedFormat: String
     // 通知 body
     let keepAwakeNotifDurationElapsed: String
