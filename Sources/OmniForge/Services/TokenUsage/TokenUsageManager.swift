@@ -62,6 +62,8 @@ final class TokenUsageManager: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     /// 仪表盘快照代际：每次发起重建自增，晚到结果不覆盖新代际（SPEC §9.2.3）。
     private var dashboardGeneration = 0
+    /// usageOverview / usageDailyProviderAggregates 后台重建的代际令牌。
+    private var overviewGeneration = 0
 
     init(
         preferences: TokenUsagePreferences,
@@ -293,29 +295,42 @@ final class TokenUsageManager: ObservableObject {
 
     private func refreshUsageSnapshot() {
         guard let usageStore else { return }
-        let now = Date()
-        let (start, end) = snapshotWindow(now: now)
-        let buckets = usageStore.loadBuckets(from: start, to: end, providers: nil)
-        usageOverview = UsageOverviewBuilder.make(buckets: buckets, now: now, calendar: .current)
-        // 全历史日聚合缓存（仪表盘汇总卡/热力图/趋势数据源；1970 起覆盖全部历史）。
-        let historyStart = Date(timeIntervalSince1970: 0)
-        let tomorrow = calendarTomorrow(now: now)
-        usageDailyProviderAggregates = usageStore.loadDailyAggregates(
-            from: historyStart,
-            to: tomorrow,
-            providers: nil
-        )
+        // 存储读取与全历史聚合移出主线程（SPEC §9.2.3，对齐 rebuildDashboardSnapshot）：
+        // loadBuckets（7 日窗口全行物化）+ loadDailyAggregates（全历史 GROUP BY）
+        // 是同步 DB I/O，多采集器每 5 分钟回调时在主线程执行会卡面板与菜单栏。
+        let store = usageStore
+        overviewGeneration &+= 1
+        let generation = overviewGeneration
+        Task.detached(priority: .utility) { [weak self] in
+            let now = Date()
+            let (start, end) = Self.snapshotWindow(now: now)
+            let buckets = store.loadBuckets(from: start, to: end, providers: nil)
+            let overview = UsageOverviewBuilder.make(buckets: buckets, now: now, calendar: .current)
+            // 全历史日聚合缓存（仪表盘汇总卡/热力图/趋势数据源；1970 起覆盖全部历史）。
+            let historyStart = Date(timeIntervalSince1970: 0)
+            let tomorrow = Self.calendarTomorrow(now: now)
+            let daily = store.loadDailyAggregates(
+                from: historyStart,
+                to: tomorrow,
+                providers: nil
+            )
+            await MainActor.run { [weak self] in
+                guard let self, self.overviewGeneration == generation else { return }
+                self.usageOverview = overview
+                self.usageDailyProviderAggregates = daily
+            }
+        }
         rebuildDashboardSnapshot()
     }
 
-    private func calendarTomorrow(now: Date) -> Date {
+    nonisolated private static func calendarTomorrow(now: Date) -> Date {
         let calendar = Calendar.current
         let todayStart = calendar.startOfDay(for: now)
         return calendar.date(byAdding: .day, value: 1, to: todayStart) ?? now.addingTimeInterval(86_400)
     }
 
     /// 快照窗口：近 7 日（今日起往前 6 天）~ 明日 0 点。
-    private func snapshotWindow(now: Date) -> (start: Date, end: Date) {
+    nonisolated private static func snapshotWindow(now: Date) -> (start: Date, end: Date) {
         let calendar = Calendar.current
         let todayStart = calendar.startOfDay(for: now)
         let weekStart = calendar.date(

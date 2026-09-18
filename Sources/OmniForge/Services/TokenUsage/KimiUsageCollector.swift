@@ -190,6 +190,9 @@ final class KimiUsageCollector: UsageCollecting {
             store.loadBucket(key)
         }
         let decoder = JSONDecoder()
+        // 原子提交（审查 R14，对齐 JSONLUsageCollectorBase）：桶/游标/新见 key
+        // 同一事务落库；提交失败不推进任何进度，下轮从旧游标重读重算。
+        var commit = ScanCommit()
 
         for fileURL in files {
             let previous = cursors[fileURL.path]
@@ -216,16 +219,22 @@ final class KimiUsageCollector: UsageCollecting {
                 model: state.model
             )
             cursors[fileURL.path] = cursor
-            store.storeCursor(path: fileURL.path, cursor: cursor)
+            commit.cursors[fileURL.path] = cursor
         }
 
-        for state in aggregator.drainTouched() {
-            store.upsertBucket(state)
-        }
-        guard !newSeen.isEmpty else { return }
+        commit.buckets = aggregator.drainTouched()
+        commit.newSeenKeys = newSeen
         // 只写新见 key（seen_at = 首次实际看见时间），避免每次扫描把全量
         // key 的 seen_at 整体重写（截断退化、LRU 语义失真；参考 #09 评审 H4）。
-        store.storeSeenKeys(newSeen, asOf: Date())
+        commit.seenAt = Date()
+
+        do {
+            try store.commitScan(commit)
+            seen.formUnion(newSeen)
+        } catch {
+            // 提交失败：内存进度随本轮丢弃，下轮重扫重算。
+            print("[UsageCollector] kimi commitScan failed, will rescan from last committed cursors: \(error)")
+        }
     }
 
     /// 单行处理：坏行跳过；只触碰已声明的身份/用量字段（隐私最小化）。

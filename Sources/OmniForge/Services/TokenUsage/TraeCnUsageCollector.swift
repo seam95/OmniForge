@@ -153,7 +153,7 @@ final class TraeCnUsageCollector: UsageCollecting {
         if isBackfill {
             notifyBackfill(true)
         }
-        reconcile(contributions: contributions, now: now)
+        reconcile(contributions: contributions)
         if isBackfill {
             backfillCompleted = true
             notifyBackfill(false)
@@ -162,19 +162,22 @@ final class TraeCnUsageCollector: UsageCollecting {
     }
 
     /// 会话级对账：状态账本（providerMessageState）→ 减旧桶加新桶。
-    private func reconcile(contributions: [String: TraeCnUsageProcessing.Contribution], now: Date) {
-        var state = store.loadProviderMessageState(provider)
+    /// 差分提交（审查 R15）：账本只写 dirty 条目，未变会话的 updated_at
+    /// 不被全量刷新；桶与账本经 commitScan 同一事务落库（R14），提交失败
+    /// 两者都不生效，下轮按旧账本重新对账。
+    private func reconcile(contributions: [String: TraeCnUsageProcessing.Contribution]) {
+        let baseline = store.loadProviderMessageState(provider)
         let aggregator = UsageAggregator { [store] key in
             store.loadBucket(key)
         }
-        var changed = false
+        var dirtyState: [String: String] = [:]
         for (sessionID, contribution) in contributions.sorted(by: { $0.key < $1.key }) {
             let currentState = SessionState(
                 model: contribution.model,
                 bucketStart: contribution.bucketStart.timeIntervalSince1970,
                 totals: contribution.usage
             )
-            let previous = SessionState.decode(state[sessionID])
+            let previous = SessionState.decode(baseline[sessionID])
             if previous == currentState {
                 continue
             }
@@ -201,14 +204,17 @@ final class TraeCnUsageCollector: UsageCollecting {
                     bucketStart: contribution.bucketStart
                 )
             )
-            state[sessionID] = currentState.encode()
-            changed = true
+            dirtyState[sessionID] = currentState.encode()
         }
-        guard changed else { return }
-        for bucket in aggregator.drainTouched() {
-            store.upsertBucket(bucket)
+        guard !dirtyState.isEmpty else { return }
+        var commit = ScanCommit()
+        commit.buckets = aggregator.drainTouched()
+        commit.messageStateUpdates = [(provider, dirtyState)]
+        do {
+            try store.commitScan(commit)
+        } catch {
+            print("[UsageCollector] traecn commitScan failed, ledger and buckets unchanged: \(error)")
         }
-        store.storeProviderMessageState(provider, entries: state)
     }
 
     private func negated(_ usage: TokenUsage) -> TokenUsage {
