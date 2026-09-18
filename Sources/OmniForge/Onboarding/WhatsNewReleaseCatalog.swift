@@ -11,6 +11,19 @@ enum WhatsNewReleaseCatalog {
     /// 历次版本的更新内容，新版本在前
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            version: "3.12.1",
+            entries: [
+                WhatsNewEntry(type: .fixed, text: "修复系统监控读数异常：温度等 SMC 指标读取失效、CPU 占用采样溢出、菜单栏指标重复显示"),
+                WhatsNewEntry(type: .fixed, text: "修复切换桌面宠物后内存持续增长（长时间运行可膨胀数百 MB），及关闭桌宠后点击穿透未复位"),
+                WhatsNewEntry(type: .fixed, text: "修复 Token 用量统计：Codex 推理 token 重复计入、异常数据导致崩溃、多采集器刷新卡顿"),
+                WhatsNewEntry(type: .fixed, text: "修复截图取消后偶发无法再次框选；长截图中键盘滚动不再意外中断会话"),
+                WhatsNewEntry(type: .fixed, text: "修复新手向导「开机自启」选项不生效，及红钮关闭后 What's New 反复弹出"),
+                WhatsNewEntry(type: .fixed, text: "修复清理计划修改触发时间后仍按旧时间执行、页面切换动效方向错乱"),
+                WhatsNewEntry(type: .fixed, text: "修复剪贴板历史数据库故障时伪装成空列表，现显示错误原因与重试入口"),
+                WhatsNewEntry(type: .fixed, text: "快捷用语、保持唤醒、新手向导等页面文案接入中英双语，英文环境不再残留中文"),
+            ]
+        ),
+        WhatsNewRelease(
             version: "3.12.0",
             entries: [
                 WhatsNewEntry(type: .added, text: "Token 用量统计支持中文单位：设置中切换为「万 / 亿」，如 100万、1.2亿"),
