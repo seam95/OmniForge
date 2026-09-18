@@ -362,12 +362,15 @@ final class StatusBarController: NSObject, NSWindowDelegate {
     }
 
     /// 单一 title 写入：countdown 前缀 + metrics attributedTitle。
+    /// separate 模式下 metrics 已由独立状态项承载，主图标只保留 countdown，
+    /// 不得再重复拼接（否则每个指标显示两次）。
     private func applyComposedMainTitle(keepAwakeRender: StatusBarRenderState?) {
         guard let button = statusItem.button else { return }
         let countdown = keepAwakeRender?.countdown.displayString ?? ""
+        let metricsTitle = lastMetricsSeparate ? NSAttributedString(string: "") : lastMetricsMergedTitle
         let composed = Self.composeMainTitle(
             countdown: countdown,
-            metricsTitle: lastMetricsMergedTitle
+            metricsTitle: metricsTitle
         )
         if composed.length == 0 {
             // 无 countdown 且无 metrics：保留 metric coordinator 已写内容的清理路径。
@@ -401,11 +404,7 @@ final class StatusBarController: NSObject, NSWindowDelegate {
             result.append(NSAttributedString(string: " \(trimmedCountdown)"))
         }
         if metricsTitle.length > 0 {
-            if result.length > 0 {
-                result.append(NSAttributedString(string: " "))
-            } else {
-                result.append(NSAttributedString(string: " "))
-            }
+            result.append(NSAttributedString(string: " "))
             result.append(metricsTitle)
         }
         return result

@@ -119,12 +119,16 @@ public final class SMCClient: SMCReading {
     }
 }
 
+/// 与 AppleSMC 驱动用户态 ABI 逐字段对齐的经典布局。
+/// `padding` 必须是单个 `UInt8`：若放宽为 `UInt16`，`result`/`status`/`data8`
+/// 的偏移会整体后移 2 字节（驱动在 data8@40 读命令码、在 result@38 写返回码），
+/// 所有 SMC 调用静默失败。布局契约由 SMCParamStructLayoutTests 锁定。
 struct SMCParamStruct {
     var key: UInt32 = 0
     var vers = SMCVersion()
     var pLimitData = SMCPLimitData()
     var keyInfo = SMCKeyInfoData()
-    var padding: UInt16 = 0
+    var padding: UInt8 = 0
     var result: UInt8 = 0
     var status: UInt8 = 0
     var data8: UInt8 = 0
