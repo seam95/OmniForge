@@ -10,7 +10,10 @@ enum KeepAwakeDiagnostics {
     static let logger = Logger(subsystem: "com.omniforge.app", category: "KeepAwake")
 
     static func info(_ message: String) {
-        logger.info("\(message, privacy: .public)")
+        // notice（default 级）持久化落盘：info 级仅内存态，`log show` 与
+        // 事后 `log stream` 均不可见，真机排障时 start.request 等关键链路
+        // 无迹可查。保持 print 前缀不变。
+        logger.notice("\(message, privacy: .public)")
         print("[KeepAwake] \(message)")
     }
 
