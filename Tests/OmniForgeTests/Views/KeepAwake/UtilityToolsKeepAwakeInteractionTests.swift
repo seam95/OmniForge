@@ -209,7 +209,46 @@ final class UtilityToolsKeepAwakeInteractionTests: XCTestCase {
         )
     }
 
-    // MARK: - harness
+    // MARK: - 测试 3：刷新链（state 变化必须经 AppState 转发到视图观察源）
+
+    /// 真机症状：点击开关后 start() 成功（日志/pmset 双证）、但页面纹丝不动。
+    /// 渲染像素断言在离屏下不可靠（cacheDisplay 抓不到 GPU 绘制内容，实测
+    /// 彩色控件全丢失仅剩灰阶文字），故以可依赖的结构化断言锁定刷新链前段：
+    /// manager 的每次 objectWillChange（state/lastOperationError 等全部
+    /// @Published）必须 1:1 转发到 AppState——这是 ControlCenterContainerView
+    /// (@ObservedObject state) body 重算的唯一驱动源。
+    func test_refreshChain_managerChangesForwardedToAppState() async throws {
+        makeIsolatedRuntime()
+        let manager = makeManager()
+        FeatureRuntime.shared.register(.keepAwake, manager: manager)
+
+        let appState = AppState(
+            l10n: L10n(),
+            appearance: AppearanceSettings(),
+            launchAtLogin: LaunchAtLoginManager(client: FakeLaunchAtLoginClient())
+        )
+        XCTAssertTrue(
+            appState.keepAwakeManager === manager,
+            "生产路径（bindToRuntime）取到的必须是注册表同一实例"
+        )
+
+        var forwarded = 0
+        let cancellable = appState.objectWillChange.sink { _ in
+            forwarded += 1
+        }
+        defer { _ = cancellable }
+
+        manager.start()
+        try await tick(0.1)
+        let afterStart = forwarded
+        manager.stop(reason: .manual)
+        try await tick(0.3)
+        let afterStop = forwarded
+
+        XCTAssertGreaterThan(afterStart, 0, "start 的 state 发布必须转发到 AppState")
+        XCTAssertGreaterThan(afterStop, afterStart, "stop 的 state 发布必须转发到 AppState")
+        XCTAssertEqual(manager.state, .inactive, "stop 后应回到 inactive")
+    }
 
     /// 在 NSHostingView 本地（flipped，左上原点）坐标处派发一对真实
     /// mouseDown/mouseUp（经 NSApp.sendEvent 走 SwiftUI 命中分发路径）。
