@@ -11,6 +11,16 @@ enum WhatsNewReleaseCatalog {
     /// 历次版本的更新内容，新版本在前
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            version: "3.13.0",
+            entries: [
+                WhatsNewEntry(type: .added, text: "Token 用量趋势图与热力图的悬浮数值改为跟随鼠标的气泡，读数不再遮挡图表"),
+                WhatsNewEntry(type: .added, text: "通用设置新增「显示菜单栏图标」开关，可只保留指标文字与倒计时"),
+                WhatsNewEntry(type: .changed, text: "菜单栏状态改由图标右下角圆点表达：唤醒中橙色、待清理红色，自动适配明暗"),
+                WhatsNewEntry(type: .fixed, text: "修复打开保持唤醒后菜单栏图标显示为黑色"),
+                WhatsNewEntry(type: .fixed, text: "修复总开关开启后菜单栏图标被误隐藏、保持唤醒页开关点击无反应"),
+            ]
+        ),
+        WhatsNewRelease(
             version: "3.12.1",
             entries: [
                 WhatsNewEntry(type: .fixed, text: "修复系统监控读数异常：温度等 SMC 指标读取失效、CPU 占用采样溢出、菜单栏指标重复显示"),
