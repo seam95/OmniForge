@@ -22,6 +22,8 @@ struct Strings: Equatable {
     let settingsLaunchAtLogin: String
     let settingsHideDockIcon: String
     let settingsHideDockIconHint: String
+    let settingsMenuBarIcon: String
+    let settingsMenuBarIconHint: String
     let settingsAccessibility: String
     let settingsAccessibilityDescription: String
     let settingsGrantAccess: String

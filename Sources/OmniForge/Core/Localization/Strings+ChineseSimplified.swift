@@ -19,6 +19,8 @@ extension Strings {
         settingsLaunchAtLogin: "开机自启",
         settingsHideDockIcon: "隐藏 Dock 图标",
         settingsHideDockIconHint: "隐藏后应用只保留菜单栏图标。需要再次打开设置时，点击菜单栏图标进入「设置」。",
+        settingsMenuBarIcon: "显示菜单栏图标",
+        settingsMenuBarIconHint: "关闭后菜单栏不再显示应用图标与状态圆点（指标文字与倒计时保留）。需要重新开启时，再次启动本应用即可唤出设置。图标自动适配菜单栏明暗，保持唤醒活动中图标右下角圆点变橙色。",
         settingsAccessibility: "辅助功能权限",
         settingsAccessibilityDescription: "需要此权限来拦截输入法切换快捷键",
         settingsGrantAccess: "授予权限",

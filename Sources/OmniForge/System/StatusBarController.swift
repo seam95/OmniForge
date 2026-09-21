@@ -201,7 +201,8 @@ final class StatusBarController: NSObject, NSWindowDelegate {
         state.appearance.attach(panel)
 
         if let button = statusItem.button {
-            button.image = Self.menuBarIcon()
+            // 尊重「显示菜单栏图标」总开关：关闭时不设图标，避免启动瞬间闪现。
+            button.image = menuBarIconEnabled ? Self.menuBarIcon() : nil
             button.imagePosition = .imageOnly
             button.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
             button.alignment = .left
@@ -248,11 +249,10 @@ final class StatusBarController: NSObject, NSWindowDelegate {
         if let lockState = state.lockState {
             cancellable = lockState.$isLocked
                 .receive(on: DispatchQueue.main)
-                .sink { [weak self] isLocked in
-                    guard let self else { return }
-                    self.updateLockBadgeVisibility(isLocked: isLocked)
+                .sink { [weak self] _ in
+                    self?.refreshBadgeVisibility()
                 }
-            updateLockBadgeVisibility(isLocked: lockState.isLocked)
+            refreshBadgeVisibility()
         } else {
             blueDotView?.isHidden = true
         }
@@ -301,7 +301,14 @@ final class StatusBarController: NSObject, NSWindowDelegate {
             && state.keepAwakeManager != nil
     }
 
-    /// 单一 keep-awake 相关写入：固定活动着色 / 倒计时后缀 / tooltip / 右键菜单。
+    /// 通用设置「显示菜单栏图标」总开关；未写入时默认开启。
+    private var menuBarIconEnabled: Bool {
+        UserDefaults.standard.object(forKey: UserDefaultsKeys.menuBarIconVisible) == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: UserDefaultsKeys.menuBarIconVisible)
+    }
+
+    /// 单一 keep-awake 相关写入：template 图标 / 倒计时后缀 / 圆点 / tooltip / 右键菜单。
     private func refreshKeepAwakeRender() {
         var showCountdown = false
         if UserDefaults.standard.object(forKey: UserDefaultsKeys.keepAwakeShowCountdown) != nil {
@@ -318,6 +325,7 @@ final class StatusBarController: NSObject, NSWindowDelegate {
             hideMainIconWhenMetricsVisible: isMainIconHiddenByMetrics,
             hasVisibleMetrics: isMainIconHiddenByMetrics,
             metricsSeparateItems: false,
+            menuBarIconEnabled: menuBarIconEnabled,
             now: Date()
         )
         let next = StatusBarRenderStateBuilder.build(input)
@@ -329,34 +337,22 @@ final class StatusBarController: NSObject, NSWindowDelegate {
     private func applyKeepAwakeRender(_ render: StatusBarRenderState) {
         guard let button = statusItem.button else { return }
 
-        // 图标着色（仅图标；cleanup 红色覆盖用户 tint）
-        let baseImage = Self.menuBarIcon()
-        switch render.iconColor {
-        case .template:
-            button.image = baseImage
-            button.contentTintColor = nil
-        case .tint(let tint):
-            button.image = baseImage
-            button.contentTintColor = nsColor(for: tint)
-        case .cleanupWarning:
-            button.image = baseImage
-            button.contentTintColor = .systemRed
-        }
+        // 图标恒以 template 渲染（深浅菜单栏自动反色）；曾用 contentTintColor
+        // 着色活动图标，但该组合在 NSStatusBarButton 上渲染为黑色，已移除。
+        button.image = render.iconVisible ? Self.menuBarIcon() : nil
+        button.contentTintColor = nil
 
         // 倒计时与 metrics 统一由 composeMainTitle 写入；此处只刷新 icon/tooltip/menu。
         applyComposedMainTitle(keepAwakeRender: render)
 
-        // 活动会话必须保持主 item 可见，覆盖 metrics hide-main。
-        if render.mainItemVisible {
+        // 活动会话必须保持主 item 可见，覆盖 metrics hide-main；
+        // 图标总开关关闭时不强制（可见性收口在 composeMainTitle）。
+        if render.mainItemVisible, render.iconVisible {
             statusItem.isVisible = true
         }
 
         button.toolTip = tooltipString(for: render.tooltip)
-        let shouldHideBadge = !render.showLockBadge || isMainIconHiddenByMetrics
-        blueDotView?.isHidden = shouldHideBadge
-        if !shouldHideBadge {
-            layoutLockBadge()
-        }
+        refreshBadgeVisibility()
 
         installRightClickMenu(render)
     }
@@ -364,6 +360,7 @@ final class StatusBarController: NSObject, NSWindowDelegate {
     /// 单一 title 写入：countdown 前缀 + metrics attributedTitle。
     /// separate 模式下 metrics 已由独立状态项承载，主图标只保留 countdown，
     /// 不得再重复拼接（否则每个指标显示两次）。
+    /// 同时是主 item 可见性收口：图标总开关关闭且无文字内容时整个收起。
     private func applyComposedMainTitle(keepAwakeRender: StatusBarRenderState?) {
         guard let button = statusItem.button else { return }
         let countdown = keepAwakeRender?.countdown.displayString ?? ""
@@ -386,10 +383,16 @@ final class StatusBarController: NSObject, NSWindowDelegate {
                     layoutLockBadge()
                 }
             }
+            // 图标总开关关闭且无文字可显示：整个主 item 收起（连同圆点）。
+            if !menuBarIconEnabled {
+                statusItem.isVisible = false
+            }
             return
         }
         button.attributedTitle = composed
         button.imagePosition = .imageLeading
+        // 有文字内容（倒计时/指标）时 item 保留，即使图标已关闭。
+        statusItem.isVisible = true
         layoutLockBadge()
     }
 
@@ -692,17 +695,6 @@ final class StatusBarController: NSObject, NSWindowDelegate {
         NSApp.terminate(nil)
     }
 
-    private func nsColor(for tint: KeepAwakeIconTint) -> NSColor? {
-        switch tint {
-        case .orange: return .systemOrange
-        case .green: return .systemGreen
-        case .blue: return .systemBlue
-        case .purple: return .systemPurple
-        case .pink: return .systemPink
-        case .none: return nil
-        }
-    }
-
     private func tooltipString(for kind: StatusBarTooltipKind) -> String {
         let s = state.l10n.s
         switch kind {
@@ -752,12 +744,28 @@ final class StatusBarController: NSObject, NSWindowDelegate {
         layoutLockBadge()
     }
 
-    private func updateLockBadgeVisibility(isLocked: Bool) {
-        let shouldHide = isMainIconHiddenByMetrics || !isLocked
-        blueDotView?.isHidden = shouldHide
-        if !shouldHide {
-            layoutLockBadge()
+    /// 圆点单一裁决：保持唤醒状态（render）优先于输入锁定（lockState）。
+    private func refreshBadgeVisibility() {
+        guard menuBarIconEnabled, !isMainIconHiddenByMetrics else {
+            blueDotView?.isHidden = true
+            return
         }
+        let style: LockBadgeDotView.Style
+        switch lastKeepAwakeRender?.badge {
+        case .keepAwakeActive:
+            style = .keepAwakeActive
+        case .keepAwakeWarning:
+            style = .keepAwakeWarning
+        default:
+            guard state.lockState?.isLocked == true else {
+                blueDotView?.isHidden = true
+                return
+            }
+            style = .lock
+        }
+        blueDotView?.style = style
+        blueDotView?.isHidden = false
+        layoutLockBadge()
     }
 
     private func layoutLockBadge() {
@@ -926,6 +934,7 @@ final class StatusBarController: NSObject, NSWindowDelegate {
                     configuration: config
                 )
                 // active/transitional keep-awake 覆盖 hide-main（builder 已把 active 等标为 mainItemVisible=true）。
+                // 图标总开关关闭时强制隐藏，活动会话也不得拉回图钉。
                 let keepAwakeForcesVisible = self.lastKeepAwakeRender?.mainItemVisible == true
                     && self.state.keepAwakeManager.map { manager in
                         switch manager.state {
@@ -933,9 +942,10 @@ final class StatusBarController: NSObject, NSWindowDelegate {
                         case .active, .activating, .deactivating, .cleanupRequired: return true
                         }
                     } == true
-                let hideMain = config.hideMainIconWithMetrics && !metrics.isEmpty && !keepAwakeForcesVisible
+                let hideMain = !self.menuBarIconEnabled
+                    || (config.hideMainIconWithMetrics && !metrics.isEmpty && !keepAwakeForcesVisible)
                 self.isMainIconHiddenByMetrics = hideMain
-                self.updateLockBadgeVisibility(isLocked: isLocked)
+                self.refreshBadgeVisibility()
                 self.lastMetricsMergedTitle = mergedTitle
                 self.lastMetricsSeparateGroups = separateGroups
                 self.lastMetricsSeparate = config.separateStatusItems
@@ -948,7 +958,7 @@ final class StatusBarController: NSObject, NSWindowDelegate {
                     separateGroups: separateGroups,
                     separate: config.separateStatusItems,
                     hideMainIcon: hideMain,
-                    mainIcon: Self.menuBarIcon()
+                    mainIcon: self.menuBarIconEnabled ? Self.menuBarIcon() : nil
                 )
                 self.applyComposedMainTitle(keepAwakeRender: self.lastKeepAwakeRender)
             }
@@ -957,13 +967,13 @@ final class StatusBarController: NSObject, NSWindowDelegate {
 
     private func clearMenuBarMetricsUI(isLocked: Bool = false) {
         isMainIconHiddenByMetrics = false
-        updateLockBadgeVisibility(isLocked: isLocked)
+        refreshBadgeVisibility()
         metricCoordinator?.apply(
             mergedTitle: NSAttributedString(string: ""),
             separateGroups: [],
             separate: false,
             hideMainIcon: false,
-            mainIcon: Self.menuBarIcon()
+            mainIcon: menuBarIconEnabled ? Self.menuBarIcon() : nil
         )
     }
 
@@ -1120,9 +1130,24 @@ final class StatusBarController: NSObject, NSWindowDelegate {
 
 // MARK: - LockBadgeDotView
 
-/// 菜单栏输入法锁定状态角标圆点：采用动态自绘制，在浅色与深色菜单栏下均保持高亮清晰与立体对比度。
+/// 菜单栏图标右下角状态圆点：动态自绘制，浅色与深色菜单栏下均保持高亮清晰与立体对比度。
+/// 蓝色 = 输入法锁定；橙色 = 保持唤醒活动中；红色 = 保持唤醒残留待清理。
 final class LockBadgeDotView: NSView {
     static let size: CGFloat = 6.5
+
+    enum Style {
+        case lock
+        case keepAwakeActive
+        case keepAwakeWarning
+    }
+
+    var style: Style = .lock {
+        didSet {
+            if oldValue != style {
+                needsDisplay = true
+            }
+        }
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: NSRect(x: frameRect.origin.x, y: frameRect.origin.y, width: Self.size, height: Self.size))
@@ -1141,10 +1166,24 @@ final class LockBadgeDotView: NSView {
         let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let insetBounds = bounds.insetBy(dx: 0.5, dy: 0.5)
 
-        // 1. 核心亮蓝色：深色模式采用明亮高饱和 #0A84FF，浅色模式采用 #007AFF
-        let dotColor = isDark
-            ? NSColor(srgbRed: 0.04, green: 0.52, blue: 1.0, alpha: 1.0)
-            : NSColor(srgbRed: 0.0, green: 0.48, blue: 1.0, alpha: 1.0)
+        // 1. 核心填充色：深色模式取明亮高饱和变体，浅色模式取标准变体
+        let dotColor: NSColor
+        switch style {
+        case .lock:
+            dotColor = isDark
+                ? NSColor(srgbRed: 0.04, green: 0.52, blue: 1.0, alpha: 1.0)
+                : NSColor(srgbRed: 0.0, green: 0.48, blue: 1.0, alpha: 1.0)
+        case .keepAwakeActive:
+            // 系统橙：深色 #FF9F0A / 浅色 #FF9500
+            dotColor = isDark
+                ? NSColor(srgbRed: 1.0, green: 0.62, blue: 0.04, alpha: 1.0)
+                : NSColor(srgbRed: 1.0, green: 0.58, blue: 0.0, alpha: 1.0)
+        case .keepAwakeWarning:
+            // 系统红：深色 #FF453A / 浅色 #FF3B30
+            dotColor = isDark
+                ? NSColor(srgbRed: 1.0, green: 0.27, blue: 0.23, alpha: 1.0)
+                : NSColor(srgbRed: 1.0, green: 0.23, blue: 0.19, alpha: 1.0)
+        }
 
         // 2. 边框：暗色模式采用半透明亮白边缘确保在黑色背景与白色图钉旁清晰分离，浅色模式采用纯白外圈
         let strokeColor = isDark

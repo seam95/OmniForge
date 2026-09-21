@@ -10,7 +10,8 @@ final class StatusBarRenderStateTests: XCTestCase {
         showCountdown: Bool = true,
         locked: Bool = false,
         hideMain: Bool = false,
-        hasMetrics: Bool = false
+        hasMetrics: Bool = false,
+        menuBarIconEnabled: Bool = true
     ) -> StatusBarRenderInput {
         StatusBarRenderInput(
             isFeatureAvailable: true,
@@ -21,6 +22,7 @@ final class StatusBarRenderStateTests: XCTestCase {
             hideMainIconWhenMetricsVisible: hideMain,
             hasVisibleMetrics: hasMetrics,
             metricsSeparateItems: false,
+            menuBarIconEnabled: menuBarIconEnabled,
             now: now
         )
     }
@@ -80,33 +82,47 @@ final class StatusBarRenderStateTests: XCTestCase {
         XCTAssertEqual(text, .hidden)
     }
 
-    // MARK: - Icon color
+    // MARK: - Icon visibility & badge style
 
-    func test_active_usesFixedOrangeTint() {
+    func test_active_showsKeepAwakeBadgeDot() {
         let state = StatusBarRenderStateBuilder.build(
             baseInput(state: .active(endDate: now.addingTimeInterval(600)))
         )
-        XCTAssertEqual(state.iconColor, .tint(.orange))
+        XCTAssertTrue(state.iconVisible)
+        XCTAssertEqual(state.badge, .keepAwakeActive)
     }
 
-    func test_inactive_usesTemplateIconColor() {
+    func test_inactive_iconAdaptsTemplate_withoutBadge() {
         let state = StatusBarRenderStateBuilder.build(
             baseInput(state: .inactive)
         )
-        XCTAssertEqual(state.iconColor, .template)
+        XCTAssertTrue(state.iconVisible)
+        XCTAssertEqual(state.badge, .hidden)
     }
 
-    func test_cleanupRequired_overridesTintWithWarning() {
+    func test_cleanupRequired_showsWarningBadge() {
         let residual = KeepAwakeResidualEffects.systemAssertion
         let state = StatusBarRenderStateBuilder.build(
             baseInput(
                 state: .cleanupRequired(residual, .assertionReleaseFailed(kind: "system", code: 1))
             )
         )
-        XCTAssertEqual(state.iconColor, .cleanupWarning)
+        XCTAssertEqual(state.badge, .keepAwakeWarning)
         XCTAssertEqual(state.tooltip, .cleanupRequired)
         XCTAssertEqual(state.contextMenu, .cleanupRequired)
         XCTAssertEqual(state.countdown, .hidden)
+    }
+
+    func test_menuBarIconDisabled_hidesIconRegardlessOfSession() {
+        let state = StatusBarRenderStateBuilder.build(
+            baseInput(
+                state: .active(endDate: nil),
+                menuBarIconEnabled: false
+            )
+        )
+        XCTAssertFalse(state.iconVisible)
+        // 圆点样式仍由会话状态推导（controller 在开关关闭时统一抑制显示）。
+        XCTAssertEqual(state.badge, .keepAwakeActive)
     }
 
     // MARK: - Main item visibility
@@ -169,13 +185,22 @@ final class StatusBarRenderStateTests: XCTestCase {
         XCTAssertEqual(state.countdown, .minutes(2))
     }
 
-    // MARK: - Lock badge / equality
+    // MARK: - Badge priority / equality
 
-    func test_lockBadge_independentOfSession() {
-        let a = StatusBarRenderStateBuilder.build(baseInput(locked: true))
-        let b = StatusBarRenderStateBuilder.build(baseInput(locked: false))
-        XCTAssertTrue(a.showLockBadge)
-        XCTAssertFalse(b.showLockBadge)
+    func test_badge_keepAwakeTakesPriorityOverLock() {
+        // 活动会话 + 输入锁定 → 橙点优先
+        let active = StatusBarRenderStateBuilder.build(
+            baseInput(state: .active(endDate: nil), locked: true)
+        )
+        XCTAssertEqual(active.badge, .keepAwakeActive)
+
+        // 非活动 + 输入锁定 → 蓝点
+        let lockedIdle = StatusBarRenderStateBuilder.build(baseInput(locked: true))
+        XCTAssertEqual(lockedIdle.badge, .lock)
+
+        // 非活动 + 未锁定 → 无圆点
+        let idle = StatusBarRenderStateBuilder.build(baseInput(locked: false))
+        XCTAssertEqual(idle.badge, .hidden)
     }
 
     func test_build_isDeterministic_forInterleavedInputs() {
@@ -194,7 +219,8 @@ final class StatusBarRenderStateTests: XCTestCase {
         let second = StatusBarRenderStateBuilder.build(input)
         XCTAssertEqual(first, second)
         XCTAssertEqual(first.countdown, .hoursMinutes(hours: 1, minutes: 0))
-        XCTAssertEqual(first.iconColor, .tint(.orange))
+        XCTAssertTrue(first.iconVisible)
+        XCTAssertEqual(first.badge, .keepAwakeActive)
         XCTAssertTrue(first.mainItemVisible)
     }
 
@@ -202,7 +228,7 @@ final class StatusBarRenderStateTests: XCTestCase {
         var input = baseInput(state: .active(endDate: nil))
         input.isFeatureAvailable = false
         let state = StatusBarRenderStateBuilder.build(input)
-        XCTAssertEqual(state.iconColor, .template)
+        XCTAssertTrue(state.iconVisible)
         XCTAssertEqual(state.countdown, .hidden)
         XCTAssertFalse(state.includeOpenKeepAwakeSettings)
         XCTAssertTrue(state.includeQuit)

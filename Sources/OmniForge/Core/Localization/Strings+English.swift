@@ -19,6 +19,8 @@ extension Strings {
         settingsLaunchAtLogin: "Launch at login",
         settingsHideDockIcon: "Hide Dock Icon",
         settingsHideDockIconHint: "When hidden, the app lives only in the menu bar. To reopen Settings, click the menu bar icon and choose Settings.",
+        settingsMenuBarIcon: "Show Menu Bar Icon",
+        settingsMenuBarIconHint: "When off, the app icon and status dot leave the menu bar (metric text and countdown stay). To turn it back on, launch the app again to reopen Settings. The icon adapts to menu bar appearance; while Keep Awake is active the dot below the icon turns orange.",
         settingsAccessibility: "Accessibility Permission",
         settingsAccessibilityDescription: "Required to intercept input source switch shortcuts",
         settingsGrantAccess: "Grant Access",

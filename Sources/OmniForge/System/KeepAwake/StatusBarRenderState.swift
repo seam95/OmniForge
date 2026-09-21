@@ -12,16 +12,23 @@ struct StatusBarRenderInput: Equatable {
     var hideMainIconWhenMetricsVisible: Bool
     var hasVisibleMetrics: Bool
     var metricsSeparateItems: Bool
+    /// 通用设置「显示菜单栏图标」总开关；参与相等比较以击穿 render 短路。
+    var menuBarIconEnabled: Bool
     /// 菜单栏刷新用“当前时间”；倒计时按分钟向上取整。
     var now: Date
 }
 
 // MARK: - 输出状态
 
-enum StatusBarIconColorPolicy: Equatable {
-    case template
-    case tint(KeepAwakeIconTint)
-    case cleanupWarning
+/// 图标右下角圆点样式：保持唤醒状态优先于输入锁定。
+enum StatusBarBadgeStyle: Equatable {
+    case hidden
+    /// 输入法锁定（蓝）
+    case lock
+    /// 保持唤醒活动中（橙）
+    case keepAwakeActive
+    /// 保持唤醒残留待清理（红）
+    case keepAwakeWarning
 }
 
 enum StatusBarCountdownText: Equatable {
@@ -64,9 +71,10 @@ enum StatusBarContextMenuModel: Equatable {
 /// 单一 render 写入者消费的纯值状态。
 struct StatusBarRenderState: Equatable {
     var mainItemVisible: Bool
-    var iconColor: StatusBarIconColorPolicy
+    /// 图标是否可见（通用设置总开关）；图标恒以 template 渲染自动适配菜单栏明暗。
+    var iconVisible: Bool
+    var badge: StatusBarBadgeStyle
     var countdown: StatusBarCountdownText
-    var showLockBadge: Bool
     var tooltip: StatusBarTooltipKind
     var contextMenu: StatusBarContextMenuModel
     /// 始终提供；菜单项是否启用由 model 决定。
@@ -82,9 +90,9 @@ enum StatusBarRenderStateBuilder {
         guard input.isFeatureAvailable else {
             return StatusBarRenderState(
                 mainItemVisible: true,
-                iconColor: .template,
+                iconVisible: input.menuBarIconEnabled,
+                badge: input.isInputLocked ? .lock : .hidden,
                 countdown: .hidden,
-                showLockBadge: input.isInputLocked,
                 tooltip: .inactive,
                 contextMenu: .inactive(canRetryLastStart: false),
                 includeOpenKeepAwakeSettings: false,
@@ -93,16 +101,16 @@ enum StatusBarRenderStateBuilder {
         }
 
         let mainItemVisible = resolveMainItemVisible(input)
-        let iconColor = resolveIconColor(input.sessionState)
+        let badge = resolveBadge(input)
         let countdown = resolveCountdown(input)
         let tooltip = resolveTooltip(input)
         let menu = resolveContextMenu(input)
 
         return StatusBarRenderState(
             mainItemVisible: mainItemVisible,
-            iconColor: iconColor,
+            iconVisible: input.menuBarIconEnabled,
+            badge: badge,
             countdown: countdown,
-            showLockBadge: input.isInputLocked,
             tooltip: tooltip,
             contextMenu: menu,
             includeOpenKeepAwakeSettings: true,
@@ -148,17 +156,17 @@ enum StatusBarRenderStateBuilder {
         }
     }
 
-    /// 活动会话固定橙色；不再提供用户可配置的图标颜色。
-    private static func resolveIconColor(
-        _ state: KeepAwakeSessionState
-    ) -> StatusBarIconColorPolicy {
-        switch state {
+    /// 图标右下角圆点：保持唤醒状态优先于输入锁定。
+    /// contentTintColor 在 NSStatusBarButton 上会把 template 图标渲染成黑色
+    /// （系统行为），图标着色已整体移除，状态语义改由圆点颜色承载。
+    private static func resolveBadge(_ input: StatusBarRenderInput) -> StatusBarBadgeStyle {
+        switch input.sessionState {
         case .cleanupRequired:
-            return .cleanupWarning
-        case .active:
-            return .tint(.orange)
-        case .inactive, .activating, .deactivating:
-            return .template
+            return .keepAwakeWarning
+        case .active, .activating, .deactivating:
+            return .keepAwakeActive
+        case .inactive:
+            return input.isInputLocked ? .lock : .hidden
         }
     }
 

@@ -83,6 +83,20 @@ struct GeneralSettingsView: View {
                     InfoHintLabel(state.l10n.s.settingsHideDockIcon, hint: state.l10n.s.settingsHideDockIconHint)
                 }
                 .accessibilityIdentifier(SettingsAccessibilityID.generalHideDockIcon.rawValue)
+
+                Toggle(isOn: Binding(
+                    get: {
+                        UserDefaults.standard.object(forKey: UserDefaultsKeys.menuBarIconVisible) == nil
+                            ? true
+                            : UserDefaults.standard.bool(forKey: UserDefaultsKeys.menuBarIconVisible)
+                    },
+                    set: { value in
+                        UserDefaults.standard.set(value, forKey: UserDefaultsKeys.menuBarIconVisible)
+                    }
+                )) {
+                    InfoHintLabel(state.l10n.s.settingsMenuBarIcon, hint: state.l10n.s.settingsMenuBarIconHint)
+                }
+                .accessibilityIdentifier(SettingsAccessibilityID.generalMenuBarIcon.rawValue)
             }
 
             Section(state.l10n.s.settingsSoftwareUpdateSection) {

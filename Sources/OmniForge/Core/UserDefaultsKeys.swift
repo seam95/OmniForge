@@ -5,6 +5,8 @@ enum UserDefaultsKeys {
     static let appearanceMode = "appearanceMode"
     static let launchAtLogin = "launchAtLogin"
     static let hideDockIcon = "hideDockIcon"
+    // 通用设置「显示菜单栏图标」；未写入时默认开启
+    static let menuBarIconVisible = "menuBar.iconVisible"
     static let clipboardRetentionDays = "clipboardRetentionDays"
     static let clipboardMaxEntries = "clipboardMaxEntries"
     static let clipboardHotkeyKeyCode = "clipboardHotkeyKeyCode"

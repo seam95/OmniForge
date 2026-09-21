@@ -84,6 +84,16 @@ final class StatusBarControllerTests: XCTestCase {
         // verify draw call succeeds without crash
         dot.draw(dot.bounds)
     }
+
+    func test_lockBadgeDotView_allStylesDrawWithoutCrash() {
+        // 三种状态圆点（锁定蓝 / 唤醒橙 / 清理红）绘制冒烟。
+        for style in [LockBadgeDotView.Style.lock, .keepAwakeActive, .keepAwakeWarning] {
+            let dot = LockBadgeDotView(frame: .zero)
+            dot.style = style
+            XCTAssertEqual(dot.style, style)
+            dot.draw(dot.bounds)
+        }
+    }
 }
 
 @MainActor
