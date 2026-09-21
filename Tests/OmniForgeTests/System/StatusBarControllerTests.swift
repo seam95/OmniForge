@@ -94,6 +94,53 @@ final class StatusBarControllerTests: XCTestCase {
             dot.draw(dot.bounds)
         }
     }
+
+    func test_menuBarIconVisible_overridesHideMainIconWithMetricsAfterMetricRefresh() {
+        // 回归锁：总开关开启后，指标刷新（monitor sink）不得把图钉藏回。
+        // 旧代码 hideMain 仍叠加 hideMainIconWithMetrics，导致开关打开后
+        // 图标短暂出现（keep-awake 路径）又随 2s 指标刷新消失。
+        let state = makeStatusBarState()
+        state.monitorPreferences?.update {
+            $0.isEnabled = true
+            $0.hideMainIconWithMetrics = true
+            $0.enabledMenuBarMetrics = [.cpu]
+        }
+        FeatureRuntime.shared.setAvailable(.systemMonitor, true)
+        defer { FeatureRuntime.shared.setAvailable(.systemMonitor, false) }
+
+        let windowController = ClipboardWindowController(state: state)
+        let controller = StatusBarController(state: state, clipboardWindowController: windowController)
+
+        // 模拟用户在通用设置打开「显示菜单栏图标」。
+        UserDefaults.standard.set(true, forKey: UserDefaultsKeys.menuBarIconVisible)
+        defer { UserDefaults.standard.removeObject(forKey: UserDefaultsKeys.menuBarIconVisible) }
+
+        // 泵 runloop：让 metrics sink（combineLatest 初推 + defaults 变化链）执行。
+        state.monitorPreferences?.update { $0.hideMainIconWithMetrics = true }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+
+        XCTAssertNotNil(controller.mainButtonImageForTesting)
+    }
+
+    func test_menuBarIconDisabled_hidesIconAfterMetricRefresh() {
+        // 关闭方向：总开关关闭时，指标刷新后图钉必须为 nil（即便性能页未开隐藏）。
+        let state = makeStatusBarState()
+        state.monitorPreferences?.update {
+            $0.isEnabled = true
+            $0.enabledMenuBarMetrics = [.cpu]
+        }
+        FeatureRuntime.shared.setAvailable(.systemMonitor, true)
+        defer { FeatureRuntime.shared.setAvailable(.systemMonitor, false) }
+
+        let windowController = ClipboardWindowController(state: state)
+        let controller = StatusBarController(state: state, clipboardWindowController: windowController)
+
+        UserDefaults.standard.set(false, forKey: UserDefaultsKeys.menuBarIconVisible)
+        defer { UserDefaults.standard.removeObject(forKey: UserDefaultsKeys.menuBarIconVisible) }
+
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertNil(controller.mainButtonImageForTesting)
+    }
 }
 
 @MainActor

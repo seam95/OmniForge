@@ -92,6 +92,11 @@ struct GeneralSettingsView: View {
                     },
                     set: { value in
                         UserDefaults.standard.set(value, forKey: UserDefaultsKeys.menuBarIconVisible)
+                        // 总开关开启即要图标：清掉性能页冲突的「有指标时隐藏主图标」，
+                        // 避免该开关残留为「开着却不生效」的迷惑状态。
+                        if value, state.monitorPreferences?.configuration.hideMainIconWithMetrics == true {
+                            state.monitorPreferences?.update { $0.hideMainIconWithMetrics = false }
+                        }
                     }
                 )) {
                     InfoHintLabel(state.l10n.s.settingsMenuBarIcon, hint: state.l10n.s.settingsMenuBarIconHint)

@@ -141,6 +141,8 @@ final class StatusBarController: NSObject, NSWindowDelegate {
     private var cancellable: AnyCancellable?
     private var blueDotView: LockBadgeDotView?
     var lockBadgeView: NSView? { blueDotView }
+    /// 测试观察：主状态项按钮当前图标（nil = 图钉被隐藏）。
+    var mainButtonImageForTesting: NSImage? { statusItem.button?.image }
     private var metricCoordinator: StatusBarMetricCoordinator?
     /// 必须强引用：coordinator 内部只 weak 持有 sink，局部创建会立刻释放，导致 apply 空跑。
     private var metricSink: StatusBarMetricSink?
@@ -933,17 +935,9 @@ final class StatusBarController: NSObject, NSWindowDelegate {
                     metrics: metrics,
                     configuration: config
                 )
-                // active/transitional keep-awake 覆盖 hide-main（builder 已把 active 等标为 mainItemVisible=true）。
-                // 图标总开关关闭时强制隐藏，活动会话也不得拉回图钉。
-                let keepAwakeForcesVisible = self.lastKeepAwakeRender?.mainItemVisible == true
-                    && self.state.keepAwakeManager.map { manager in
-                        switch manager.state {
-                        case .inactive: return false
-                        case .active, .activating, .deactivating, .cleanupRequired: return true
-                        }
-                    } == true
+                // 图标总开关说了算：开启=常显（压制性能页「有指标时隐藏主图标」，
+                // 否则开关打开后图标会随指标刷新被藏回），关闭=强制隐藏。
                 let hideMain = !self.menuBarIconEnabled
-                    || (config.hideMainIconWithMetrics && !metrics.isEmpty && !keepAwakeForcesVisible)
                 self.isMainIconHiddenByMetrics = hideMain
                 self.refreshBadgeVisibility()
                 self.lastMetricsMergedTitle = mergedTitle
