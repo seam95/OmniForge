@@ -2,8 +2,8 @@ import Charts
 import SwiftUI
 
 /// 趋势面积图：AreaMark 渐变 + LineMark 平滑插值，
-/// 区头右侧自带 日/周/月/总计 切换器；hover 画 RuleMark + PointMark 并把该点数值内联到区头
-/// （NSPopover 内无法悬浮 tooltip）。空数据时显示占位块。
+/// 区头右侧自带 日/周/月/总计 切换器；hover 画 RuleMark + PointMark，
+/// 数值气泡跟随鼠标显示（`CursorBubbleAnchor` 悬挂，贴近顶部时翻到下方）。空数据时显示占位块。
 struct TokenUsageTrendChartView: View {
     let points: [UsageTrendPoint]
     @Binding var period: TokenTrendPeriod
@@ -13,6 +13,8 @@ struct TokenUsageTrendChartView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var hovered: UsageTrendPoint?
+    /// 光标在图表内的位置（驱动气泡跟随鼠标）。
+    @State private var hoverLocation: CGPoint?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -30,7 +32,10 @@ struct TokenUsageTrendChartView: View {
                 chart
             }
         }
-        .onChange(of: period) { _, _ in hovered = nil }
+        .onChange(of: period) { _, _ in
+            hovered = nil
+            hoverLocation = nil
+        }
     }
 
     // MARK: - 区头
@@ -45,14 +50,6 @@ struct TokenUsageTrendChartView: View {
                 .tracking(1)
                 .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
             Spacer()
-            if let hovered {
-                Text(
-                    "\(hovered.date.formatted(xAxisFormat)) - \(TokenUsageFormat.compactTokens(hovered.tokens, style: numberStyle)) \(strings.tokenUnit)"
-                )
-                .font(Theme.Stats.font10Regular)
-                .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
-                .transition(.opacity)
-            }
             TokenUsageInlinePicker(
                 items: TokenTrendPeriod.allCases,
                 selection: $period,
@@ -103,22 +100,29 @@ struct TokenUsageTrendChartView: View {
         }
         .chartOverlay { proxy in
             GeometryReader { geo in
-                Rectangle()
-                    .fill(Color.clear)
-                    .contentShape(Rectangle())
-                    .onContinuousHover { phase in
-                        switch phase {
-                        case .active(let location):
-                            if let plotFrame = proxy.plotFrame {
-                                let plotOrigin = geo[plotFrame].origin
-                                if let date: Date = proxy.value(atX: location.x - plotOrigin.x) {
-                                    hovered = nearestPoint(to: date)
+                ZStack {
+                    Rectangle()
+                        .fill(Color.clear)
+                        .contentShape(Rectangle())
+                        .onContinuousHover { phase in
+                            switch phase {
+                            case .active(let location):
+                                hoverLocation = location
+                                if let plotFrame = proxy.plotFrame {
+                                    let plotOrigin = geo[plotFrame].origin
+                                    if let date: Date = proxy.value(atX: location.x - plotOrigin.x) {
+                                        hovered = nearestPoint(to: date)
+                                    }
                                 }
+                            case .ended:
+                                hovered = nil
+                                hoverLocation = nil
                             }
-                        case .ended:
-                            hovered = nil
                         }
+                    if let hovered, let hoverLocation {
+                        hoverBubble(hovered, location: hoverLocation, in: geo.size)
                     }
+                }
             }
         }
         .chartXAxis {
@@ -138,6 +142,26 @@ struct TokenUsageTrendChartView: View {
             }
         }
         .frame(height: 140)
+    }
+
+    // MARK: - 悬浮气泡
+
+    /// 跟随鼠标的数值气泡：主行 token 数、次行采样点日期（与图内定位用同一套轴格式）。
+    private func hoverBubble(_ point: UsageTrendPoint, location: CGPoint, in size: CGSize) -> some View {
+        let placed = CursorBubbleLocator.anchor(location: location, in: size)
+        return CursorBubbleAnchor(anchor: placed.anchor, alignment: placed.alignment) {
+            SparklineBubbleShell(colorScheme: colorScheme) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(
+                        "\(TokenUsageFormat.compactTokens(point.tokens, style: numberStyle)) \(strings.tokenUnit)"
+                    )
+                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                    Text(point.date.formatted(xAxisFormat))
+                        .font(.system(size: 10, weight: .regular).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
     }
 
     private var xStride: Calendar.Component {

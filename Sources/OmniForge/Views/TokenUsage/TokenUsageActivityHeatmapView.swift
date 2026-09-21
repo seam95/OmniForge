@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// 活跃度年度热力图：月标签行 + 周列 × 7 行网格 + 「少/多」图例 + hover 内联提示。
+/// 活跃度年度热力图：月标签行 + 周列 × 7 行网格 + 「少/多」图例 + 跟随鼠标的悬浮气泡。
 ///
-/// NSPopover 内无法悬浮 tooltip，
-/// hover 某格时区头内联显示「M月d日 · X tokens」，否则显示「N 活跃日」。
+/// hover 某格时气泡显示「M月d日 · X tokens」（挂在鼠标上方，贴近顶部翻到下方），
+/// 区头恒显「N 活跃日」。气泡挂在组件顶层 overlay，避开横向 ScrollView 的内容裁剪。
 /// 无数据时（`heatmap == nil`）显示占位块。
 struct TokenUsageActivityHeatmapView: View {
     let heatmap: UsageActivityHeatmap?
@@ -13,6 +13,9 @@ struct TokenUsageActivityHeatmapView: View {
 
     private let cellSize: CGFloat = 11
     private let spacing: CGFloat = 3
+
+    /// 悬浮位置上报用的命名坐标系（相对本组件整体 bounds）。
+    private static let spaceName = "activity-heatmap"
 
     /// 五档色阶（0 = 空 / 1...4 = 数据强度），用主强调蓝。
     private static let levelColors: [Color] = [
@@ -24,6 +27,8 @@ struct TokenUsageActivityHeatmapView: View {
     ]
 
     @State private var hovered: HoveredCellKey?
+    /// 光标在本组件内的位置（驱动气泡跟随鼠标）。
+    @State private var hoverLocation: CGPoint?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -35,6 +40,12 @@ struct TokenUsageActivityHeatmapView: View {
                 RoundedRectangle(cornerRadius: 6)
                     .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.06))
                     .frame(height: 7 * (cellSize + spacing) - spacing)
+            }
+        }
+        .coordinateSpace(name: Self.spaceName)
+        .overlay {
+            if let heatmap, let cell = hoveredCell(in: heatmap), let hoverLocation {
+                hoverBubble(cell, location: hoverLocation)
             }
         }
         .animation(.easeOut(duration: 0.12), value: hovered)
@@ -52,12 +63,7 @@ struct TokenUsageActivityHeatmapView: View {
                 .tracking(1)
                 .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
             Spacer()
-            if let heatmap, let cell = hoveredCell(in: heatmap) {
-                Text(hoverSummary(cell))
-                    .font(Theme.Stats.font10Regular)
-                    .foregroundStyle(MonitorOverviewPalette.secondary(colorScheme))
-                    .transition(.opacity)
-            } else if let heatmap {
+            if let heatmap {
                 Text(String(format: strings.tokenSummaryActiveDaysFormat, heatmap.activeDays))
                     .font(Theme.Stats.font10Regular)
                     .foregroundStyle(MonitorOverviewPalette.auxiliary(colorScheme))
@@ -113,12 +119,15 @@ struct TokenUsageActivityHeatmapView: View {
                 RoundedRectangle(cornerRadius: 2)
                     .strokeBorder(Color.primary.opacity(isHovered ? 0.55 : 0), lineWidth: 1)
             )
-            .onHover { inside in
-                guard cell != nil else { return }
-                if inside {
+            .onContinuousHover(coordinateSpace: .named(Self.spaceName)) { phase in
+                switch phase {
+                case .active(let location):
+                    guard cell != nil else { return }
                     hovered = key
-                } else if hovered == key {
-                    hovered = nil
+                    hoverLocation = location
+                case .ended:
+                    if hovered == key { hovered = nil }
+                    hoverLocation = nil
                 }
             }
     }
@@ -173,8 +182,28 @@ struct TokenUsageActivityHeatmapView: View {
         return heatmap.weeks[key.week][key.day]
     }
 
-    private func hoverSummary(_ cell: UsageActivityHeatmapCell) -> String {
-        "\(Self.dayFormatter.string(from: cell.dayStart)) · \(TokenUsageFormat.compactTokens(cell.totalTokens, style: numberStyle)) \(strings.tokenUnit)"
+    // MARK: - 悬浮气泡
+
+    /// 跟随鼠标的数值气泡：主行 token 数、次行 M月d日。位置来自命名坐标系上报，
+    /// 挂在组件顶层 overlay（网格的横向 ScrollView 会裁剪越界内容，气泡不能放格子里）。
+    private func hoverBubble(_ cell: UsageActivityHeatmapCell, location: CGPoint) -> some View {
+        GeometryReader { geo in
+            let placed = CursorBubbleLocator.anchor(location: location, in: geo.size)
+            CursorBubbleAnchor(anchor: placed.anchor, alignment: placed.alignment) {
+                SparklineBubbleShell(colorScheme: colorScheme) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(
+                            "\(TokenUsageFormat.compactTokens(cell.totalTokens, style: numberStyle)) \(strings.tokenUnit)"
+                        )
+                        .font(.system(size: 11, weight: .medium).monospacedDigit())
+                        Text(Self.dayFormatter.string(from: cell.dayStart))
+                            .font(.system(size: 10, weight: .regular).monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .allowsHitTesting(false)
     }
 
     private static let monthFormatter: DateFormatter = {
