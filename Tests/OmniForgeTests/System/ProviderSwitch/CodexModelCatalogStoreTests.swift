@@ -87,6 +87,48 @@ final class CodexModelCatalogStoreTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: catalogURL.path))
     }
 
+    func test_writeCatalog_multipleModels_writesAllEntriesInOrder() throws {
+        let profile = ProviderProfile(
+            id: "glm",
+            name: "GLM",
+            tool: .codex,
+            baseURL: "https://open.bigmodel.cn/api/paas/v4",
+            token: "sk-test",
+            reasoningEffort: "medium",
+            codexModels: ["glm-5.3", "glm-4.7-air"],
+            managedBy: ProviderProfile.managedByMarker
+        )
+        try store.writeCatalog(for: profile)
+
+        let data = try Data(contentsOf: catalogURL)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let models = try XCTUnwrap(json["models"] as? [[String: Any]])
+        XCTAssertEqual(models.count, 2)
+
+        XCTAssertEqual(models[0]["slug"] as? String, "glm-5.3")
+        XCTAssertEqual(models[0]["display_name"] as? String, "GLM (glm-5.3)")
+        XCTAssertEqual(models[0]["default_reasoning_level"] as? String, "medium")
+        XCTAssertEqual(models[0]["priority"] as? Int, 1000)
+        XCTAssertEqual(models[1]["slug"] as? String, "glm-4.7-air")
+        XCTAssertEqual(models[1]["display_name"] as? String, "GLM (glm-4.7-air)")
+        XCTAssertEqual(models[1]["default_reasoning_level"] as? String, "medium")
+    }
+
+    func test_writeCatalog_emptyCodexModelsArray_removesExistingCatalog() throws {
+        try Data("{}".utf8).write(to: catalogURL)
+        let profile = ProviderProfile(
+            id: "glm",
+            name: "GLM",
+            tool: .codex,
+            baseURL: "https://open.bigmodel.cn/api/paas/v4",
+            token: "sk-test",
+            codexModels: [],
+            managedBy: ProviderProfile.managedByMarker
+        )
+        try store.writeCatalog(for: profile)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: catalogURL.path), "删空列表即清理目录")
+    }
+
     func test_removeCatalog_deletesFileIfExists() throws {
         try Data("{}".utf8).write(to: catalogURL)
         XCTAssertTrue(FileManager.default.fileExists(atPath: catalogURL.path))

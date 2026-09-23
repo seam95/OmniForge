@@ -34,30 +34,33 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
     ]
 
     func writeCatalog(for profile: ProviderProfile) throws {
-        guard let model = profile.modelOverride, !model.isEmpty else {
-            // 没有自定义模型覆盖时不生成目录
+        let models = profile.codexModelList
+        // 没有模型时不生成目录
+        guard !models.isEmpty else {
             try? removeCatalog()
             return
         }
 
         let defaultEffort = profile.reasoningEffort?.isEmpty == false ? profile.reasoningEffort! : "high"
-        let modelEntry: [String: Any] = [
-            "slug": model,
-            "display_name": "\(profile.name) (\(model))",
-            "description": "OmniForge 托管 · \(profile.name)",
-            "default_reasoning_level": defaultEffort,
-            "supported_reasoning_levels": Self.standardReasoningLevels,
-            "context_window": 1_000_000,
-            "max_context_window": 1_000_000,
-            "effective_context_window_percent": 95,
-            "input_modalities": ["text"],
-            "supported_in_api": true,
-            "visibility": "list",
-            "priority": 1000,
-        ]
+        let modelEntries: [[String: Any]] = models.map { model in
+            [
+                "slug": model,
+                "display_name": "\(profile.name) (\(model))",
+                "description": "OmniForge 托管 · \(profile.name)",
+                "default_reasoning_level": defaultEffort,
+                "supported_reasoning_levels": Self.standardReasoningLevels,
+                "context_window": 1_000_000,
+                "max_context_window": 1_000_000,
+                "effective_context_window_percent": 95,
+                "input_modalities": ["text"],
+                "supported_in_api": true,
+                "visibility": "list",
+                "priority": 1000,
+            ]
+        }
 
         let root: [String: Any] = [
-            "models": [modelEntry]
+            "models": modelEntries
         ]
 
         let data = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])

@@ -243,6 +243,54 @@ final class ProviderSwitchProfileStoreTests: XCTestCase {
         XCTAssertEqual(listed[0].token, "sk-a\"b\\c\n中#文")
     }
 
+    func test_codexProfile_multipleModelsRoundTripTOML() throws {
+        let store = makeStore()
+        try store.upsert(ProviderProfile(
+            id: "",
+            name: "GLM",
+            tool: .codex,
+            baseURL: "https://open.bigmodel.cn/api/paas/v4",
+            token: "sk-glm",
+            codexModels: ["glm-5.3", "glm-4.7-air"],
+            managedBy: ProviderProfile.managedByMarker
+        ))
+        let text = try String(contentsOf: codexDir.appendingPathComponent("glm.config.toml"))
+        XCTAssertTrue(text.contains("models = [\"glm-5.3\", \"glm-4.7-air\"]"))
+        XCTAssertFalse(text.contains("model_override"), "新格式只写 models 数组")
+
+        let listed = store.list(for: .codex)
+        XCTAssertEqual(listed[0].codexModels, ["glm-5.3", "glm-4.7-air"])
+        XCTAssertEqual(listed[0].codexModelList, ["glm-5.3", "glm-4.7-air"])
+    }
+
+    func test_codexProfile_legacyModelOverrideMigratesToList() throws {
+        try FileManager.default.createDirectory(at: codexDir, withIntermediateDirectories: true)
+        try Data("""
+        name = "GLM"
+        base_url = "https://open.bigmodel.cn/api/paas/v4"
+        token = "sk-glm"
+        model_override = "glm-5.3"
+        _managedBy = "omniforge"
+        """.utf8).write(to: codexDir.appendingPathComponent("glm.config.toml"))
+
+        let listed = makeStore().list(for: .codex)
+        XCTAssertEqual(listed.count, 1)
+        XCTAssertEqual(listed[0].codexModels, ["glm-5.3"], "旧键迁移为列表首位")
+        XCTAssertEqual(listed[0].codexModelList, ["glm-5.3"])
+    }
+
+    func test_codexProfile_legacyModelOverridePrependedToModels() throws {
+        try FileManager.default.createDirectory(at: codexDir, withIntermediateDirectories: true)
+        try Data("""
+        name = "GLM"
+        models = ["glm-4.7-air"]
+        model_override = "glm-5.3"
+        """.utf8).write(to: codexDir.appendingPathComponent("glm.config.toml"))
+
+        let listed = makeStore().list(for: .codex)
+        XCTAssertEqual(listed[0].codexModelList, ["glm-5.3", "glm-4.7-air"])
+    }
+
     // MARK: - 删除 / 收编
 
     func test_delete_removesFile() throws {

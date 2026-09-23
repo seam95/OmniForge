@@ -228,6 +228,70 @@ struct TOMLFile: Equatable {
         return nil
     }
 
+    /// 读取单行字符串数组（`["a", "b"]`）。非数组、引号未闭合或跨行 → nil。
+    func stringArrayValue(key: String, table: [String]? = nil) -> [String]? {
+        guard let raw = stringValue(key: key, table: table) else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("["), trimmed.hasSuffix("]"), trimmed.count >= 2 else { return nil }
+        let body = String(trimmed.dropFirst().dropLast())
+        guard !body.contains("\n") else { return nil }
+
+        // 按引号感知的逗号切分：引号内的逗号/引号不作为分隔。
+        var elements: [String] = []
+        var current = ""
+        var inBasic = false
+        var inLiteral = false
+        var escaped = false
+        var hasElement = false
+        for scalar in body.unicodeScalars {
+            if inBasic {
+                current.unicodeScalars.append(scalar)
+                if escaped { escaped = false }
+                else if scalar == "\\" { escaped = true }
+                else if scalar == "\"" { inBasic = false }
+                continue
+            }
+            if inLiteral {
+                current.unicodeScalars.append(scalar)
+                if scalar == "'" { inLiteral = false }
+                continue
+            }
+            switch scalar {
+            case "\"":
+                inBasic = true
+                hasElement = true
+                current.unicodeScalars.append(scalar)
+            case "'":
+                inLiteral = true
+                hasElement = true
+                current.unicodeScalars.append(scalar)
+            case ",":
+                elements.append(current)
+                current = ""
+                hasElement = false
+            default:
+                if !scalar.properties.isWhitespace { hasElement = true }
+                current.unicodeScalars.append(scalar)
+            }
+        }
+        elements.append(current)
+
+        let trimmedElements = elements
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        // 空数组 `[]` → 空列表；有内容时元素必须整体是字符串（其余形态本 App 不写入）。
+        guard !hasElement || trimmedElements.allSatisfy({ isQuotedString($0) }) else { return nil }
+        return trimmedElements.map { Self.unquoteBare($0) }
+    }
+
+    /// 值是否为完整引号字符串（数组元素校验用）。
+    private func isQuotedString(_ text: String) -> Bool {
+        guard text.count >= 2 else { return false }
+        if text.hasPrefix("\""), text.hasSuffix("\"") { return true }
+        if text.hasPrefix("'"), text.hasSuffix("'") { return true }
+        return false
+    }
+
     /// 基本字符串转义（写入用）。
     static func escape(_ text: String) -> String {
         var out = "\""
@@ -292,30 +356,17 @@ struct TOMLFile: Equatable {
 
     /// 设置键值（写入转义后的基本字符串）。目标键已存在 → 原地替换（保留行尾注释）；否则追加到所在段末尾。
     mutating func setValue(_ value: String, key: String, table: [String]?) {
-        let escaped = Self.escape(value)
-        if let entryIndex = validEntryIndex(key: key, table: table) {
-            let entry = entries[entryIndex]
-            lines[entry.lineIndex] = entry.prefix + escaped + entry.suffix
-            entries[entryIndex].value = escaped
-            return
-        }
-        let insertionLine = insertionPosition(for: table)
-        let entry = Entry(
-            tablePath: table,
-            key: key,
-            prefix: "\(key) = ",
-            value: escaped,
-            suffix: "",
-            lineIndex: insertionLine
-        )
-        lines.insert(entry.prefix + entry.value, at: insertionLine)
-        entries.append(entry)
-        rebuildEntriesFromLines()
+        setRawValue(Self.escape(value), key: key, table: table)
     }
 
-    /// 设置布尔字面量（写入裸值 true / false，无引号）。目标键已存在 → 原地替换（保留行尾注释）；否则追加到所在段末尾。
-    mutating func setBooleanValue(_ value: Bool, key: String, table: [String]?) {
-        let literal = value ? "true" : "false"
+    /// 设置字符串数组（写入单行 `["a", "b"]`）。替换/追加语义同 `setValue(_:key:table:)`。
+    mutating func setValue(_ values: [String], key: String, table: [String]?) {
+        let literal = "[" + values.map { Self.escape($0) }.joined(separator: ", ") + "]"
+        setRawValue(literal, key: key, table: table)
+    }
+
+    /// 按字面量原文写入：目标键已存在 → 原地替换（保留行尾注释）；否则追加到所在段末尾。
+    private mutating func setRawValue(_ literal: String, key: String, table: [String]?) {
         if let entryIndex = validEntryIndex(key: key, table: table) {
             let entry = entries[entryIndex]
             lines[entry.lineIndex] = entry.prefix + literal + entry.suffix
@@ -334,6 +385,11 @@ struct TOMLFile: Equatable {
         lines.insert(entry.prefix + entry.value, at: insertionLine)
         entries.append(entry)
         rebuildEntriesFromLines()
+    }
+
+    /// 设置布尔字面量（写入裸值 true / false，无引号）。目标键已存在 → 原地替换（保留行尾注释）；否则追加到所在段末尾。
+    mutating func setBooleanValue(_ value: Bool, key: String, table: [String]?) {
+        setRawValue(value ? "true" : "false", key: key, table: table)
     }
 
     /// 确保表存在（缺失时在文档末尾追加表头）。

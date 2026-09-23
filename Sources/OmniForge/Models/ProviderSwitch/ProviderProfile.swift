@@ -9,10 +9,14 @@ struct ProviderProfile: Identifiable, Codable, Equatable {
     var tool: ProviderTool
     var baseURL: String
     var token: String
-    /// 默认兜底模型（`ANTHROPIC_MODEL`）；Codex 侧即单模型覆盖。
+    /// 默认兜底模型（`ANTHROPIC_MODEL`，Claude Code 侧）。
+    /// Codex 侧请用 `codexModels`；此字段仅为旧档案兼容而保留（读取时回退为单元素列表）。
     var modelOverride: String?
     /// 思考强度（Reasoning Effort，Codex 专属，如 "none", "low", "medium", "high", "xhigh", "max"）。
     var reasoningEffort: String?
+    /// Codex 模型列表：第一项为默认模型（`config.toml` 顶层 `model`），全部项写入模型目录。
+    /// Claude Code 侧为 nil（默认模型在 `modelOverride`，角色映射在 `modelMapping`）。
+    var codexModels: [String]?
     /// Claude Code 角色模型映射（对齐 ccswitch）；Codex 为 nil。
     var modelMapping: ProviderModelMapping?
     /// 额外 env（如 `CLAUDE_CODE_EFFORT_LEVEL=max`），随 profile 原样写入。
@@ -28,6 +32,7 @@ struct ProviderProfile: Identifiable, Codable, Equatable {
         token: String,
         modelOverride: String? = nil,
         reasoningEffort: String? = nil,
+        codexModels: [String]? = nil,
         modelMapping: ProviderModelMapping? = nil,
         extraEnv: [String: String] = [:],
         managedBy: String? = nil
@@ -39,6 +44,7 @@ struct ProviderProfile: Identifiable, Codable, Equatable {
         self.token = token
         self.modelOverride = modelOverride
         self.reasoningEffort = reasoningEffort
+        self.codexModels = codexModels
         self.modelMapping = modelMapping
         self.extraEnv = extraEnv
         self.managedBy = managedBy
@@ -81,5 +87,21 @@ struct ProviderProfile: Identifiable, Codable, Equatable {
     /// 缺失连接参数（外部文件无法解析出 base URL / 凭证时）— 不可直接激活。
     var hasCompleteConnection: Bool {
         !baseURL.isEmpty && !token.isEmpty
+    }
+
+    // MARK: - Codex 模型列表
+
+    /// 规范化的 Codex 模型列表：去首尾空白、丢空项、按序去重。
+    /// 旧档案（及旧构造路径）只设了 `modelOverride` 时回退为单元素列表；
+    /// `codexModels` 为空数组（用户删空）不回退，表示「不指定模型」。
+    var codexModelList: [String] {
+        let fallback = modelOverride.map { [$0] } ?? []
+        var seen = Set<String>()
+        return (codexModels ?? fallback).compactMap { raw in
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !seen.contains(trimmed) else { return nil }
+            seen.insert(trimmed)
+            return trimmed
+        }
     }
 }

@@ -116,6 +116,12 @@ final class ProfileEditorViewTests: XCTestCase {
         XCTAssertFalse(zh.providerModelFallbackLabel.isEmpty)
         XCTAssertFalse(zh.providerModelMappingRoleHint.isEmpty)
         XCTAssertFalse(zh.providerModelCustomDisplayNames.isEmpty)
+        XCTAssertFalse(zh.providerCodexModelsSectionTitle.isEmpty)
+        XCTAssertFalse(zh.providerCodexModelsHint.isEmpty)
+        XCTAssertFalse(zh.providerCodexModelsAdd.isEmpty)
+        XCTAssertFalse(zh.providerCodexModelsDelete.isEmpty)
+        XCTAssertFalse(zh.providerCodexModelsFirstPlaceholder.isEmpty)
+        XCTAssertFalse(zh.providerCodexModelsPlaceholder.isEmpty)
 
         let en = Strings.en
         XCTAssertFalse(en.providerPresetSectionTitle.isEmpty)
@@ -125,6 +131,12 @@ final class ProfileEditorViewTests: XCTestCase {
         XCTAssertFalse(en.providerModelFallbackLabel.isEmpty)
         XCTAssertFalse(en.providerModelMappingRoleHint.isEmpty)
         XCTAssertFalse(en.providerModelCustomDisplayNames.isEmpty)
+        XCTAssertFalse(en.providerCodexModelsSectionTitle.isEmpty)
+        XCTAssertFalse(en.providerCodexModelsHint.isEmpty)
+        XCTAssertFalse(en.providerCodexModelsAdd.isEmpty)
+        XCTAssertFalse(en.providerCodexModelsDelete.isEmpty)
+        XCTAssertFalse(en.providerCodexModelsFirstPlaceholder.isEmpty)
+        XCTAssertFalse(en.providerCodexModelsPlaceholder.isEmpty)
     }
 
     @MainActor

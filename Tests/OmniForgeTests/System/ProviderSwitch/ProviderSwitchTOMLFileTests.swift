@@ -319,4 +319,89 @@ final class ProviderSwitchTOMLFileTests: XCTestCase {
         XCTAssertEqual(document.booleanValue(key: "is_disabled", table: ["model_providers", "custom"]), false)
         XCTAssertTrue(document.serialize().contains("is_disabled = false"))
     }
+
+    // MARK: - 字符串数组
+
+    func test_stringArrayValue_readsAndRoundTrips() throws {
+        var document = try XCTUnwrap(TOMLFile.parse("""
+        models = ["glm-5.3", "glm-4.7-air"]
+        model_provider = "glm"
+        """))
+        XCTAssertEqual(document.stringArrayValue(key: "models", table: nil), ["glm-5.3", "glm-4.7-air"])
+
+        document.setValue(["gpt-5.6", "gpt-5.6-mini"], key: "models", table: nil)
+        XCTAssertEqual(
+            document.serialize(),
+            """
+            models = ["gpt-5.6", "gpt-5.6-mini"]
+            model_provider = "glm"
+
+            """
+        )
+        XCTAssertEqual(document.stringArrayValue(key: "models", table: nil), ["gpt-5.6", "gpt-5.6-mini"])
+    }
+
+    func test_stringArrayValue_emptyArray() throws {
+        var document = try XCTUnwrap(TOMLFile.parse("models = [\"a\"]\n"))
+        document.setValue([], key: "models", table: nil)
+        XCTAssertEqual(document.stringArrayValue(key: "models", table: nil), [])
+        XCTAssertTrue(document.serialize().contains("models = []"))
+    }
+
+    func test_stringArrayValue_updatesExistingKeepingComment() throws {
+        var document = try XCTUnwrap(TOMLFile.parse("models = [\"a\"] # 模型\n"))
+        document.setValue(["b", "c"], key: "models", table: nil)
+        XCTAssertTrue(document.serialize().contains("models = [\"b\", \"c\"] # 模型"))
+        XCTAssertEqual(document.stringArrayValue(key: "models", table: nil), ["b", "c"])
+    }
+
+    func test_stringArrayValue_escapesAndKeepsCommasInsideElements() throws {
+        var document = TOMLFile()
+        let tricky = "mo\"del, \\ #1"
+        document.setValue([tricky, "plain"], key: "models", table: nil)
+        let reparsed = try XCTUnwrap(TOMLFile.parse(document.serialize()))
+        XCTAssertEqual(reparsed.stringArrayValue(key: "models", table: nil), [tricky, "plain"])
+    }
+
+    func test_stringArrayValue_appendsToTableAfterExistingEntries() throws {
+        var document = try XCTUnwrap(TOMLFile.parse("""
+        [model_providers.glm]
+        name = "GLM"
+        """))
+        document.setValue(["a", "b"], key: "models", table: ["model_providers", "glm"])
+        XCTAssertEqual(document.stringArrayValue(key: "models", table: ["model_providers", "glm"]), ["a", "b"])
+        XCTAssertTrue(document.serialize().hasSuffix("""
+        [model_providers.glm]
+        name = "GLM"
+        models = ["a", "b"]
+
+        """))
+    }
+
+    func test_stringArrayValue_rejectsNonArrayAndMissingKey() throws {
+        let document = try XCTUnwrap(TOMLFile.parse("""
+        model = "gpt-5"
+        flag = true
+        models = "glm-5.3"
+        numbers = [1, 2]
+        """))
+        XCTAssertNil(document.stringArrayValue(key: "model", table: nil))
+        XCTAssertNil(document.stringArrayValue(key: "flag", table: nil))
+        XCTAssertNil(document.stringArrayValue(key: "models", table: nil), "字符串不是数组")
+        XCTAssertNil(document.stringArrayValue(key: "numbers", table: nil), "非字符串元素不在支持范围")
+        XCTAssertNil(document.stringArrayValue(key: "missing", table: nil))
+    }
+
+    func test_remove_deletesArrayLine() throws {
+        var document = try XCTUnwrap(TOMLFile.parse("""
+        models = ["a", "b"]
+        model_provider = "glm"
+        """))
+        document.remove(key: "models", table: nil)
+        XCTAssertNil(document.stringArrayValue(key: "models", table: nil))
+        XCTAssertEqual(document.serialize(), """
+        model_provider = "glm"
+
+        """)
+    }
 }

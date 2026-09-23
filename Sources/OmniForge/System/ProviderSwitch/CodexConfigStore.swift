@@ -44,8 +44,8 @@ final class CodexConfigStore: CodexConfigStoring {
         var document = (try loadDocument()) ?? TOMLFile()
         document.setValue(profile.profileKey, key: "model_provider", table: nil)
 
-        // 顶层 model 与模型目录投影
-        if let model = profile.modelOverride, !model.isEmpty {
+        // 顶层 model 与模型目录投影：默认模型取列表首位，目录覆盖全部条目
+        if let model = profile.codexModelList.first {
             document.setValue(model, key: "model", table: nil)
             try? catalogStore.writeCatalog(for: profile)
             document.setValue(ProviderSwitchPaths.codexModelCatalogFileName, key: "model_catalog_json", table: nil)

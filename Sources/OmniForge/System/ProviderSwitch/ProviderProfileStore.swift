@@ -226,8 +226,9 @@ enum ProviderProfileFileCodec {
             document.setValue(profile.tool.rawValue, key: "tool", table: nil)
             document.setValue(profile.baseURL, key: "base_url", table: nil)
             document.setValue(profile.token, key: "token", table: nil)
-            if let model = profile.modelOverride, !model.isEmpty {
-                document.setValue(model, key: "model_override", table: nil)
+            let models = profile.codexModelList
+            if !models.isEmpty {
+                document.setValue(models, key: "models", table: nil)
             }
             if let effort = profile.reasoningEffort, !effort.isEmpty {
                 document.setValue(effort, key: "reasoning_effort", table: nil)
@@ -325,14 +326,21 @@ enum ProviderProfileFileCodec {
             ?? document.stringValue(key: "experimental_bearer_token", table: nil)
             ?? ""
         let name = document.stringValue(key: "name", table: nil) ?? fallbackID
+        // 模型列表：新键 `models` 数组优先；旧键 `model_override`（单模型）迁移为列表首位。
+        var models = document.stringArrayValue(key: "models", table: nil) ?? []
+        if let legacy = document.stringValue(key: "model_override", table: nil),
+           !legacy.isEmpty, !models.contains(legacy) {
+            models.insert(legacy, at: 0)
+        }
         return ProviderProfile(
             id: fallbackID,
             name: name,
             tool: .codex,
             baseURL: baseURL,
             token: token,
-            modelOverride: document.stringValue(key: "model_override", table: nil),
+            modelOverride: nil,
             reasoningEffort: document.stringValue(key: "reasoning_effort", table: nil),
+            codexModels: models.isEmpty ? nil : models,
             modelMapping: nil,
             extraEnv: [:],
             managedBy: document.stringValue(key: managedByKey, table: nil)

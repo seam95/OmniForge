@@ -283,4 +283,44 @@ final class ProviderSwitchModelsTests: XCTestCase {
     func test_presetCatalog_noKimi256K() {
         XCTAssertFalse(ProviderPresetCatalog.builtins.contains { $0.id.contains("256k") || $0.displayName.contains("256K") })
     }
+
+    // MARK: - Codex 模型列表
+
+    private func makeCodexProfile(
+        modelOverride: String? = nil,
+        codexModels: [String]? = nil
+    ) -> ProviderProfile {
+        ProviderProfile(
+            id: "glm",
+            name: "GLM",
+            tool: .codex,
+            baseURL: "https://open.bigmodel.cn/api/paas/v4",
+            token: "sk-x",
+            modelOverride: modelOverride,
+            codexModels: codexModels,
+            modelMapping: nil,
+            extraEnv: [:],
+            managedBy: ProviderProfile.managedByMarker
+        )
+    }
+
+    func test_codexModelList_normalizesTrimsAndDeduplicates() {
+        let profile = makeCodexProfile(codexModels: ["  glm-5.3 ", "", "glm-4.7-air", "glm-5.3"])
+        XCTAssertEqual(profile.codexModelList, ["glm-5.3", "glm-4.7-air"])
+    }
+
+    func test_codexModelList_fallsBackToLegacyModelOverride() {
+        let profile = makeCodexProfile(modelOverride: "glm-5.3")
+        XCTAssertEqual(profile.codexModelList, ["glm-5.3"])
+    }
+
+    func test_codexModelList_emptyArrayDoesNotFallBack() {
+        let profile = makeCodexProfile(modelOverride: "glm-5.3", codexModels: [])
+        XCTAssertEqual(profile.codexModelList, [], "显式删空列表即「不指定模型」，不回退旧字段")
+    }
+
+    func test_codexModelList_nilAndBlankAreEmpty() {
+        XCTAssertEqual(makeCodexProfile().codexModelList, [])
+        XCTAssertEqual(makeCodexProfile(codexModels: ["", "   "]).codexModelList, [])
+    }
 }

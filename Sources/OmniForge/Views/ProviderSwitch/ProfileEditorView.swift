@@ -52,6 +52,8 @@ struct ProfileEditorView: View {
     @State private var baseURL = ""
     @State private var token = ""
     @State private var model = ""
+    /// Codex 模型列表编辑态：第一行为默认模型，其余条目进入模型目录。
+    @State private var codexModelRows: [String] = []
     @State private var reasoningEffort = ""
     @State private var sonnet = ""
     @State private var sonnetName = ""
@@ -365,14 +367,56 @@ struct ProfileEditorView: View {
                     .padding(.top, 6)
                 }
             } else {
-                // Codex
-                Text(strings.providerModelLabel)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color.primary)
+                // Codex：模型列表 — 第一行为默认模型，全部条目写入模型目录
+                HStack {
+                    Text(strings.providerCodexModelsSectionTitle)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color.primary)
 
-                mappingRow(label: strings.providerModelLabel, text: $model, placeholder: "")
+                    Spacer()
 
-                Text(strings.providerModelHint)
+                    Button {
+                        codexModelRows.append("")
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color(red: 0x8E / 255.0, green: 0x8E / 255.0, blue: 0x93 / 255.0))
+                    }
+                    .buttonStyle(.plain)
+                    .help(strings.providerCodexModelsAdd)
+                }
+
+                ForEach(codexModelRows.indices, id: \.self) { index in
+                    HStack(spacing: 8) {
+                        TextField(
+                            index == 0
+                                ? strings.providerCodexModelsFirstPlaceholder
+                                : strings.providerCodexModelsPlaceholder,
+                            text: $codexModelRows[index]
+                        )
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .padding(.horizontal, 10)
+                        .frame(height: 32)
+                        .background(mappingInputBackground)
+                        .overlay(mappingInputBorder)
+
+                        // 保留一行：删空后仍能改回「不指定模型」
+                        if codexModelRows.count > 1 {
+                            Button {
+                                codexModelRows.remove(at: index)
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Color(red: 0x8E / 255.0, green: 0x8E / 255.0, blue: 0x93 / 255.0))
+                            }
+                            .buttonStyle(.plain)
+                            .help(strings.providerCodexModelsDelete)
+                        }
+                    }
+                }
+
+                Text(strings.providerCodexModelsHint)
                     .font(.system(size: 12))
                     .foregroundStyle(Color(red: 0x8E / 255.0, green: 0x8E / 255.0, blue: 0x93 / 255.0))
 
@@ -562,7 +606,8 @@ struct ProfileEditorView: View {
         name = profile.name
         baseURL = profile.baseURL
         token = profile.token
-        model = profile.modelOverride ?? ""
+        model = tool == .codex ? "" : (profile.modelOverride ?? "")
+        codexModelRows = profile.codexModelList
         reasoningEffort = profile.reasoningEffort ?? ""
         sonnet = profile.modelMapping?.sonnet ?? ""
         sonnetName = profile.modelMapping?.sonnetName ?? ""
@@ -604,7 +649,7 @@ struct ProfileEditorView: View {
             if let connection = preset.codex {
                 name = preset.displayName
                 baseURL = connection.baseURL
-                model = connection.defaultModel
+                codexModelRows = [connection.defaultModel]
                 reasoningEffort = ""
             }
         }
@@ -618,8 +663,9 @@ struct ProfileEditorView: View {
             tool: tool,
             baseURL: trimmed(baseURL),
             token: trimmed(token),
-            modelOverride: emptyToNil(trimmed(model)),
+            modelOverride: tool == .codex ? nil : emptyToNil(trimmed(model)),
             reasoningEffort: tool == .codex ? emptyToNil(trimmed(reasoningEffort)) : nil,
+            codexModels: codexModelsForSave,
             modelMapping: tool == .claudeCode ? makeMapping() : nil,
             extraEnv: tool == .claudeCode ? extraEnv : [:],
             // 收编外部文件时保留原来源标记；本 App 新建一律打 omniforge
@@ -633,6 +679,15 @@ struct ProfileEditorView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// Codex 待保存模型列表：丢空白行与空行，全空 → nil（不指定模型）。
+    private var codexModelsForSave: [String]? {
+        guard tool == .codex else { return nil }
+        let models = codexModelRows
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return models.isEmpty ? nil : models
     }
 
     /// 汇总角色映射；全部为空 → nil（不写映射字段）。

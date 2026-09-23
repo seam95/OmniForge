@@ -200,6 +200,29 @@ final class ProviderSwitchCodexConfigStoreTests: XCTestCase {
         """ + "\n")
     }
 
+    /// 多模型：首位写 config.toml 顶层 model（默认模型），全部条目进入模型目录。
+    func test_applyProfile_multipleModels_writesFirstAsDefaultAndFullCatalog() throws {
+        let profile = ProviderProfile(
+            id: "glm",
+            name: "GLM",
+            tool: .codex,
+            baseURL: "https://open.bigmodel.cn/api/paas/v4",
+            token: "sk-glm",
+            codexModels: ["glm-5.3", "glm-4.7-air"],
+            managedBy: ProviderProfile.managedByMarker
+        )
+        try makeStore().applyProfile(profile)
+
+        let text = try String(contentsOf: configURL)
+        XCTAssertTrue(text.contains("model = \"glm-5.3\""), "首位为默认模型")
+        XCTAssertTrue(text.contains("model_catalog_json = \"omniforge-model-catalog.json\""))
+
+        let catalogData = try Data(contentsOf: catalogURL)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: catalogData) as? [String: Any])
+        let models = try XCTUnwrap(json["models"] as? [[String: Any]])
+        XCTAssertEqual(models.compactMap { $0["slug"] as? String }, ["glm-5.3", "glm-4.7-air"])
+    }
+
     func test_applyProfile_tokenEscapingRoundTrip() throws {
         let trickyToken = "sk-a\"b\\c\n中#文"
         try makeStore().applyProfile(makeProfile(token: trickyToken))
