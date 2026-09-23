@@ -190,7 +190,7 @@ final class FeatureCatalogTests: XCTestCase {
         XCTAssertEqual(FeatureGroup.features(in: .input), [.inputLock])
         XCTAssertEqual(FeatureGroup.features(in: .clipboard), [.clipboardHistory, .quickPhrase])
         XCTAssertEqual(FeatureGroup.features(in: .monitor), [.systemMonitor, .tokenUsage])
-        XCTAssertEqual(FeatureGroup.features(in: .mouse), [.mouse])
+        XCTAssertEqual(FeatureGroup.features(in: .mouse), [.mouse, .rightClickEnhancement])
         XCTAssertEqual(FeatureGroup.features(in: .energy), [.keepAwake])
     }
 
@@ -342,16 +342,16 @@ final class FeatureCatalogTests: XCTestCase {
         XCTAssertEqual(FeatureGroup.features(in: .ai), [.promptOptimizer, .providerSwitch])
     }
 
-    /// 全部 19 项都必须有明确的使用形态归属（穷尽 switch 的语义保障）。
+    /// 全部 20 项都必须有明确的使用形态归属（穷尽 switch 的语义保障）。
     func test_everyFeatureHasUsageForm() {
-        XCTAssertEqual(AppFeature.allCases.count, 19)
+        XCTAssertEqual(AppFeature.allCases.count, 20)
         XCTAssertEqual(
             AppFeature.allCases.filter { $0.usageForm == .hotkey }.count, 5,
             "热键直达型：剪贴板历史/快捷短语/暂存架/截图/提示词优化"
         )
         XCTAssertEqual(
-            AppFeature.allCases.filter { $0.usageForm == .configuration }.count, 2,
-            "参数配置型：输入法锁定/鼠标增强"
+            AppFeature.allCases.filter { $0.usageForm == .configuration }.count, 3,
+            "参数配置型：输入法锁定/鼠标增强/访达右键增强"
         )
         XCTAssertEqual(
             AppFeature.allCases.filter { $0.usageForm == .panel }.count, 3,
@@ -361,6 +361,15 @@ final class FeatureCatalogTests: XCTestCase {
             AppFeature.allCases.filter { $0.usageForm == .tool }.count, 9,
             "动作工具型：网诊/DSH/清理/卸载/取色/唤醒/便签/清洁模式/桌宠"
         )
+    }
+
+    func test_rightClickEnhancement_catalogContract() {
+        XCTAssertEqual(AppFeature.rightClickEnhancement.group, .mouse)
+        XCTAssertEqual(AppFeature.rightClickEnhancement.usageForm, .configuration)
+        XCTAssertEqual(AppFeature.rightClickEnhancement.symbolName, "cursorarrow.click.2")
+        XCTAssertTrue(AppFeature.rightClickEnhancement.enabledKeys.isEmpty)
+        XCTAssertTrue(AppFeature.rightClickEnhancement.possiblePermissions.isEmpty)
+        XCTAssertNil(AppFeature.rightClickEnhancement.permissionUsage(for: .accessibility))
     }
 
     func test_providerSwitch_catalogContract() {

@@ -23,6 +23,7 @@ enum AppFeature: String, CaseIterable {
     case stickyNotes
     case cleaningMode
     case desktopPet
+    case rightClickEnhancement
 }
 
 /// 使用形态（信息架构四象）：决定功能目录页与设置侧栏的分组先后。
@@ -94,7 +95,7 @@ extension AppFeature {
             return .maintenance
         // 桌面常驻：留在桌面上陪伴或随手使用的窗口类功能。
         case .stickyNotes, .desktopPet: return .desktop
-        case .mouse: return .mouse
+        case .mouse, .rightClickEnhancement: return .mouse
         case .keepAwake: return .energy
         case .screenshot: return .capture
         case .providerSwitch, .promptOptimizer: return .ai
@@ -107,7 +108,7 @@ extension AppFeature {
         switch self {
         case .clipboardHistory, .quickPhrase, .shelf, .screenshot, .promptOptimizer:
             return .hotkey
-        case .inputLock, .mouse:
+        case .inputLock, .mouse, .rightClickEnhancement:
             return .configuration
         case .systemMonitor, .tokenUsage, .providerSwitch:
             return .panel
@@ -148,6 +149,7 @@ extension AppFeature {
         case .stickyNotes: return []
         case .cleaningMode: return []
         case .desktopPet: return [UserDefaultsKeys.petEnabled]
+        case .rightClickEnhancement: return []
         }
     }
 
@@ -171,6 +173,7 @@ extension AppFeature {
         case .stickyNotes: return [.notifications]
         case .cleaningMode: return [.accessibility]
         case .desktopPet: return []
+        case .rightClickEnhancement: return []
         }
     }
 
@@ -219,6 +222,8 @@ extension AppFeature {
         case .desktopPet:
             // 纯桌宠不监听全局输入、不读窗口标题，零系统权限。
             return nil
+        case .rightClickEnhancement:
+            return nil
         }
     }
 
@@ -249,6 +254,7 @@ extension AppFeature {
         case .stickyNotes: return "note.text"
         case .cleaningMode: return "bubbles.and.sparkles"
         case .desktopPet: return "pawprint"
+        case .rightClickEnhancement: return "cursorarrow.click.2"
         }
     }
 
@@ -274,6 +280,7 @@ extension AppFeature {
         case .stickyNotes: return strings.featureHubNameStickyNotes
         case .cleaningMode: return strings.featureHubNameCleaningMode
         case .desktopPet: return strings.featureHubNameDesktopPet
+        case .rightClickEnhancement: return strings.featureHubNameRightClickEnhancement
         }
     }
 
@@ -299,6 +306,7 @@ extension AppFeature {
         case .stickyNotes: return strings.featureHubDescStickyNotes
         case .cleaningMode: return strings.featureHubDescCleaningMode
         case .desktopPet: return strings.featureHubDescDesktopPet
+        case .rightClickEnhancement: return strings.featureHubDescRightClickEnhancement
         }
     }
 

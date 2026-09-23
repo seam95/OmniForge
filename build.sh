@@ -129,13 +129,25 @@ else
     echo "⚠ 未找到 Sparkle.framework（请先 swift build 拉取 SPM 产物），将不含自动更新" >&2
 fi
 
+# Step 4d: 组装 FinderSync 扩展（OmniForgeFinderSync.appex）
+FINDER_EXT_NAME="OmniForgeFinderSync"
+FINDER_EXT_EXECUTABLE="$BUILD_DIR/$FINDER_EXT_NAME"
+FINDER_EXT_STAGE="$STAGE/Contents/PlugIns/$FINDER_EXT_NAME.appex"
+FINDER_ENTITLEMENTS="Sources/OmniForgeFinderSync/Resources/OmniForgeFinderSync.entitlements"
+if [[ -f "$FINDER_EXT_EXECUTABLE" ]]; then
+    echo "▸ Embedding Finder Sync Extension ($FINDER_EXT_NAME.appex)…"
+    mkdir -p "$FINDER_EXT_STAGE/Contents/MacOS" "$FINDER_EXT_STAGE/Contents/Resources"
+    cp "$FINDER_EXT_EXECUTABLE" "$FINDER_EXT_STAGE/Contents/MacOS/$FINDER_EXT_NAME"
+    cp Sources/OmniForgeFinderSync/Resources/Info.plist "$FINDER_EXT_STAGE/Contents/Info.plist"
+    printf 'BNDL????' > "$FINDER_EXT_STAGE/Contents/PkgInfo"
+fi
+
 # Step 5: 清除扩展属性（xattr 会导致 codesign 失败）
 xattr -c -r "$STAGE" 2>/dev/null || true
 
 # Step 6: 签名（优先 Developer ID，其次 Apple Development；仅 stage 可 ad-hoc）
-# 嵌入 Sparkle 后必须先按顺序重签其嵌套代码再签外层 .app：Hardened Runtime 的
-# Library Validation 要求嵌套代码与宿主 Team ID 一致，Sparkle 发行件为 ad-hoc 签名，
-# 不重签会被拒绝加载。顺序由内向外，切勿用 --deep（会破坏嵌套签名）。
+# 嵌入 Sparkle 与 FinderSync 扩展后必须先按顺序重签其嵌套代码再签外层 .app：Hardened Runtime 的
+# Library Validation 要求嵌套代码与宿主 Team ID 一致。顺序由内向外，切勿用 --deep（会破坏嵌套签名）。
 SPARKLE_EMBEDDED="$STAGE/Contents/Frameworks/Sparkle.framework"
 if [[ -n "$SIGNING_IDENTITY" ]]; then
     echo "▸ Signing with stable identity (hardened runtime): $SIGNING_IDENTITY"
@@ -153,10 +165,18 @@ if [[ -n "$SIGNING_IDENTITY" ]]; then
         codesign --force --options runtime --timestamp \
             --sign "$SIGNING_IDENTITY" "$SPARKLE_EMBEDDED"
     fi
+    if [[ -d "$FINDER_EXT_STAGE" ]]; then
+        codesign --force --options runtime --timestamp \
+            --entitlements "$FINDER_ENTITLEMENTS" --sign "$SIGNING_IDENTITY" "$FINDER_EXT_STAGE"
+    fi
     codesign --force --strip-disallowed-xattrs --options runtime --timestamp \
         --entitlements "$ENTITLEMENTS" --sign "$SIGNING_IDENTITY" "$STAGE"
 else
     echo "⚠ 未找到稳定签名身份，仅为 stage 执行 ad-hoc 签名；重新签名后系统权限可能失效" >&2
+    if [[ -d "$FINDER_EXT_STAGE" ]]; then
+        codesign --force --strip-disallowed-xattrs \
+            --entitlements "$FINDER_ENTITLEMENTS" --sign - "$FINDER_EXT_STAGE"
+    fi
     codesign --force --strip-disallowed-xattrs \
         --entitlements "$ENTITLEMENTS" --sign - "$STAGE"
 fi
@@ -178,6 +198,8 @@ if (( INSTALL )); then
     rm -rf "/Applications/$APP_NAME.app"
     ditto --noextattr --noqtn "$STAGE" "/Applications/$APP_NAME.app"
     echo "✓ Installed: /Applications/$APP_NAME.app"
+    # 注册或更新 FinderSync 插件
+    pluginkit -e use -i app.omniforge.FinderSync 2>/dev/null || true
 fi
 
 # Step 9: 打包 .dmg（用于分发；含拖拽安装布局；包未公证，用户首次打开需 xattr -dr）

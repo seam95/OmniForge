@@ -9,6 +9,7 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
     case shelf
     case screenshot
     case mouse
+    case rightClick
     case performance
     case tokenUsage
     case keepAwake
@@ -29,6 +30,8 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
                 return isAvailable(.screenshot)
             case .mouse:
                 return isAvailable(.mouse)
+            case .rightClick:
+                return isAvailable(.rightClickEnhancement)
             case .performance:
                 return isAvailable(.systemMonitor)
             case .tokenUsage:
@@ -73,7 +76,7 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
             return .productivity
         case .screenshot:
             return .capture
-        case .mouse:
+        case .mouse, .rightClick:
             return .mouse
         case .performance, .tokenUsage:
             return .monitor
@@ -92,6 +95,7 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
         case .shelf: return "tray.full"
         case .screenshot: return "camera.viewfinder"
         case .mouse: return "computermouse"
+        case .rightClick: return "cursorarrow.click.2"
         case .performance: return "gauge.with.dots.needle.33percent"
         case .tokenUsage: return "chart.line.uptrend.xyaxis"
         case .keepAwake: return "moon.zzz.fill"
@@ -110,6 +114,7 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
         case .shelf: return .orange
         case .screenshot: return .teal
         case .mouse: return .indigo
+        case .rightClick: return .blue
         case .performance: return .green
         case .tokenUsage: return .orange
         case .keepAwake: return .purple
@@ -125,6 +130,7 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
         case .shelf: return strings.settingsTabShelf
         case .screenshot: return strings.settingsTabScreenshot
         case .mouse: return strings.settingsTabMouse
+        case .rightClick: return strings.rightClickSettingsTitle
         case .performance: return strings.settingsTabPerformance
         case .tokenUsage: return strings.settingsTabTokenUsage
         case .keepAwake: return strings.featureHubNameKeepAwake

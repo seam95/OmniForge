@@ -31,6 +31,11 @@ enum UserDefaultsKeys {
     static let mouseNavigationEnabled = "mouseNavigationEnabled" // 侧键触发 Back/Forward
     static let dockClickMinimize = "dockClickMinimize"    // 点击前台 App 的 Dock 图标最小化其窗口
     static let dockClickCycleWindows = "dockClickCycleWindows" // 点击前台 App 的 Dock 图标循环其窗口
+    // 访达右键增强
+    static let rightClickFileExtensions = "rightClick_fileExtensions"
+    static let rightClickIsSubmenuCollapsed = "rightClick_isSubmenuCollapsed"
+    static let rightClickPromotedActionKeys = "rightClick_promotedActionKeys"
+    static let rightClickFavoriteDirectories = "rightClick_favoriteDirectories"
     // 控制中心实用工具
     static let lastUtilityTool = "lastUtilityTool"
     // 控制中心顶层页签

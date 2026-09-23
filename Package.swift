@@ -6,6 +6,7 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .executable(name: "OmniForge", targets: ["OmniForge"]),
+        .executable(name: "OmniForgeFinderSync", targets: ["OmniForgeFinderSync"]),
     ],
     dependencies: [
         .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", from: "1.10.0"),
@@ -19,6 +20,15 @@ let package = Package(
         .target(
             name: "OmniForgeSMC",
             path: "Sources/OmniForgeSMC",
+            swiftSettings: [
+                .swiftLanguageMode(.v5),
+            ]
+        ),
+        .executableTarget(
+            name: "OmniForgeFinderSync",
+            dependencies: [],
+            path: "Sources/OmniForgeFinderSync",
+            exclude: ["Resources"],
             swiftSettings: [
                 .swiftLanguageMode(.v5),
             ]

@@ -105,6 +105,9 @@ struct SettingsView: View {
         case .mouse:
             MouseSettingsView(state: state)
                 .navigationTitle(tab.title(in: state.l10n.s))
+        case .rightClick:
+            RightClickSettingsView(state: state)
+                .navigationTitle(tab.title(in: state.l10n.s))
         case .performance:
             PerformanceSettingsView(state: state)
                 .navigationTitle(tab.title(in: state.l10n.s))

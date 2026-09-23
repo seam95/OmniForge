@@ -368,6 +368,13 @@ final class FeatureRuntime: ObservableObject {
                 manager?.teardown()
             }
         },
+        .rightClickEnhancement: {
+            if shared.isAvailable(.rightClickEnhancement) {
+                RightClickService.shared.start()
+            } else {
+                RightClickService.shared.stop()
+            }
+        },
     ]
 
     // MARK: - 测试支持
