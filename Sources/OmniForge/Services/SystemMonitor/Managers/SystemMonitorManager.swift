@@ -199,12 +199,15 @@ final class SystemMonitorManager: ObservableObject {
             .store(in: &cancellables)
     }
 
-    /// 面板打开后 ~0.5s 的追加采样：delta 类指标（网速/磁盘速率）首轮只建基线，
-    /// 短间隔补一轮即可出速率，无需等完整 refreshInterval；关闭面板即作废。
+    /// 面板打开后或菜单栏网速待建基线时 ~0.5s 的追加采样：delta 类指标（网速/磁盘速率）首轮只建基线，
+    /// 短间隔补一轮即可出速率，无需等完整 refreshInterval；关闭面板或无网速需求即作废。
     private func scheduleRapidFollowUp() {
         rapidFollowUp?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            guard let self, self.isSampling, self.demand != .none else { return }
+            guard let self, self.isSampling else { return }
+            let needsFollowUp = self.demand != .none
+                || (self.menuBarMetrics.contains(.network) && self.snapshot.netDownBytesPerSec == nil)
+            guard needsFollowUp else { return }
             self.sampleAll(appendsHistory: false)
         }
         rapidFollowUp = work
@@ -292,7 +295,10 @@ final class SystemMonitorManager: ObservableObject {
 
             for metric in needed {
                 let shouldSample: Bool
-                if isForeground {
+                // 启动首轮（tick 1）或指标尚无读数时无视后台 stride 强制采样：后台
+                // stride 会让 GPU/磁盘等第 5 个 tick、温度与电池第 8 个 tick（10~16s）
+                // 才首次采样，期间菜单栏只能显示占位符。读数就绪后由下方 stride 恢复降频。
+                if isForeground || self.tickCount == 1 || self.isMetricMissingInitialReading(metric, in: previousSnapshot) {
                     shouldSample = true
                 } else {
                     let stride = self.policy.backgroundTickStride(for: metric)
@@ -410,6 +416,32 @@ final class SystemMonitorManager: ObservableObject {
                 // 展开态下随 sampleAll 刷新进程列表（4s 节流，仅前台面板）
                 self.refreshProcessUsageIfNeeded(isForeground: isForeground)
             }
+        }
+    }
+
+    /// 判定指标在上一轮快照中是否尚无有效读数且无错误（新启用或启动初值缺失）
+    private func isMetricMissingInitialReading(_ metric: MonitorMetric, in snapshot: SystemSnapshot) -> Bool {
+        switch metric {
+        case .cpu:
+            return snapshot.cpuUsage == nil && snapshot.issues[.cpu] == nil
+        case .gpu:
+            return snapshot.gpuUsage == nil && snapshot.issues[.gpu] == nil
+        case .memory:
+            return snapshot.memoryUsed == nil && snapshot.issues[.memory] == nil
+        case .network:
+            return snapshot.netDownBytesPerSec == nil && snapshot.issues[.network] == nil
+        case .disk:
+            return snapshot.disk == nil && snapshot.issues[.disk] == nil
+        case .power:
+            return snapshot.power == nil && snapshot.issues[.power] == nil
+        case .cpuTemperature:
+            return snapshot.cpuTemperature == nil && snapshot.issues[.cpuTemperature] == nil
+        case .gpuTemperature:
+            return snapshot.gpuTemperature == nil && snapshot.issues[.gpuTemperature] == nil
+        case .batteryTemperature:
+            return snapshot.batteryTemperature == nil && snapshot.issues[.batteryTemperature] == nil
+        case .peripheralBattery:
+            return snapshot.sampledAt == nil && snapshot.issues[.peripheralBattery] == nil
         }
     }
 

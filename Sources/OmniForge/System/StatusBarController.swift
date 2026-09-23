@@ -143,6 +143,8 @@ final class StatusBarController: NSObject, NSWindowDelegate {
     var lockBadgeView: NSView? { blueDotView }
     /// 测试观察：主状态项按钮当前图标（nil = 图钉被隐藏）。
     var mainButtonImageForTesting: NSImage? { statusItem.button?.image }
+    /// 测试观察：主状态项是否处于可见状态（isVisible=false 时整个 item 从菜单栏收起）。
+    var mainItemIsVisibleForTesting: Bool { statusItem.isVisible }
     private var metricCoordinator: StatusBarMetricCoordinator?
     /// 必须强引用：coordinator 内部只 weak 持有 sink，局部创建会立刻释放，导致 apply 空跑。
     private var metricSink: StatusBarMetricSink?
@@ -386,6 +388,9 @@ final class StatusBarController: NSObject, NSWindowDelegate {
                 }
             }
             // 图标总开关关闭且无文字可显示：整个主 item 收起（连同圆点）。
+            // 注意：菜单栏指标已配置时不会走到这里——renderer 对每个指标恒产出
+            // 占位块（"--"），composed 非空，item 在首批读数到达前就保持可见；
+            // 只有确实无内容可显示（未配置指标 / separate 模式由独立项承载）才收起。
             if !menuBarIconEnabled {
                 statusItem.isVisible = false
             }

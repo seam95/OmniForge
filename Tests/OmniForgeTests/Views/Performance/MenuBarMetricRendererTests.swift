@@ -539,6 +539,18 @@ final class MenuBarMetricRendererTests: XCTestCase {
         XCTAssertEqual(blocks[2].secondaryValue, "↑--")
     }
 
+    /// 启动期不变式：快照全空（首个读数尚未到达）时，只要配置了指标，合并 title
+    /// 就必须非空。占位块让状态栏 item 在启动瞬间就保持可见，不会在首批读数前
+    /// 被"无内容可显示"的收起路径整只藏掉（表现为启动后菜单栏好几秒不出现）。
+    func test_emptySnapshotStillRendersNonEmptyTitle() {
+        let title = MenuBarMetricRenderer.attributedTitle(
+            for: SystemSnapshot(),
+            metrics: [.cpu, .gpu, .cpuTemperature],
+            configuration: MonitorConfiguration()
+        )
+        XCTAssertGreaterThan(title.length, 0, "全空快照也必须产出占位 title")
+    }
+
     /// 预览位图必须按指定 backing scale 光栅化，且点尺寸与像素严格对应，
     /// 否则设置页预览会被缩放采样放大导致文字发糊
     func test_rasterize_pixelDensityMatchesBackingScale() throws {

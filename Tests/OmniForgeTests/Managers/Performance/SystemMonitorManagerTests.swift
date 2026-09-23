@@ -609,6 +609,87 @@ final class SystemMonitorManagerTests: XCTestCase {
         try await Task.sleep(nanoseconds: 800_000_000)
         XCTAssertLessThanOrEqual(samplers.gpu.callCount, gpuBefore + 1, "follow-up 不应在面板关闭后触发")
     }
+
+    // MARK: - 启动首轮采样（修复：后台 stride 跳过首采，菜单栏指标十几秒才出数）
+
+    func test_backgroundFirstTickSamplesAllMenuBarMetrics() async throws {
+        // 启动时面板未打开（isForeground=false），后台 stride 会让 GPU/磁盘等
+        // 第 5 个 tick、温度与电池第 8 个 tick（10~16s）才首次采样。首轮必须
+        // 无视 stride 全采一遍，否则菜单栏长时间显示 "--"。
+        let scheduler = FakeRepeatingScheduler()
+        let samplers = FakeSamplerSet()
+        let manager = makeManager(scheduler: scheduler, samplers: samplers)
+
+        manager.setMenuBarMetrics([
+            .cpu, .gpu, .memory,
+            .cpuTemperature, .gpuTemperature, .batteryTemperature,
+            .battery,
+        ])
+
+        // 不推进任何定时 tick：只靠 startSampling 的即时首轮就要出数
+        try await waitForSnapshot(manager) { snapshot in
+            snapshot.cpuUsage != nil && snapshot.gpuUsage != nil
+                && snapshot.memoryUsed != nil && snapshot.power != nil
+                && snapshot.cpuTemperature != nil && snapshot.gpuTemperature != nil
+                && snapshot.batteryTemperature != nil
+        }
+        XCTAssertGreaterThanOrEqual(samplers.gpu.callCount, 1)
+        XCTAssertGreaterThanOrEqual(samplers.temperature.callCount, 3, "三种温度都应首轮采集")
+        XCTAssertGreaterThanOrEqual(samplers.power.callCount, 1)
+        XCTAssertEqual(scheduler.activeScheduleCount, 1, "首轮即时采样不应额外占用调度")
+    }
+
+    func test_backgroundStrideResumesAfterFirstReading() async throws {
+        // 首轮建好读数后必须回到 stride 降频：GPU 后台 stride=5，
+        // 第 2~4 个 tick 不得重复采样（否则降频设计失效）。
+        let scheduler = FakeRepeatingScheduler()
+        let samplers = FakeSamplerSet()
+        let manager = makeManager(scheduler: scheduler, samplers: samplers)
+
+        manager.setMenuBarMetrics([.cpu, .gpu])
+        try await waitForSnapshot(manager) { $0.gpuUsage != nil }
+        XCTAssertEqual(samplers.gpu.callCount, 1, "首轮只应采一次 GPU")
+
+        for _ in 0..<3 { scheduler.fire() }
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(samplers.gpu.callCount, 1, "GPU 后台 stride=5，第 2~4 tick 不应重复采样")
+        XCTAssertGreaterThanOrEqual(samplers.cpu.callCount, 4, "CPU stride=1 仍每 tick 采样")
+    }
+
+    func test_menuBarNetworkGetsRapidFollowUpWithoutPanelDemand() async throws {
+        // 网速是 delta 指标：首轮只建基线、速率必为 nil。启动时面板未打开，
+        // 0.5s 补采必须放行，否则要干等 2s 后的下一个定时 tick 才出速率。
+        let network = BaselineThenRateNetworkSampler()
+        let manager = SystemMonitorManager(
+            scheduler: FakeRepeatingScheduler(),
+            cpuSampler: FakeCPUSampler(),
+            gpuSampler: FakeGPUSampler(),
+            memorySampler: FakeMemorySampler(),
+            temperatureSampler: FakeTemperatureSampler(),
+            networkSampler: network,
+            diskSampler: FakeDiskSampler(),
+            powerSampler: FakePowerSampler(),
+            peripheralBatterySampler: FakePeripheralBatterySampler(),
+            processSampler: FakeProcessUsageSampler()
+        )
+
+        manager.setMenuBarMetrics([.network])
+        // 不推进定时 tick：速率应由 0.5s 后的补采产出
+        try await waitForSnapshot(manager, timeout: 2.0) { $0.netDownBytesPerSec != nil }
+        XCTAssertGreaterThanOrEqual(network.callCount, 2)
+        XCTAssertEqual(try XCTUnwrap(manager.snapshot.netDownBytesPerSec), 1024, accuracy: 0.001)
+    }
+
+    func test_rapidFollowUpSkippedWithoutNetworkDemand() async throws {
+        // 无面板需求且菜单栏无网速指标时，0.5s 补采不得触发（后台零开销设计）
+        let samplers = FakeSamplerSet()
+        let manager = makeManager(samplers: samplers)
+
+        manager.setMenuBarMetrics([.cpu])
+        try await waitForSnapshot(manager) { $0.cpuUsage != nil }
+        try await Task.sleep(nanoseconds: 800_000_000)
+        XCTAssertEqual(samplers.cpu.callCount, 1, "无网速需求时不应触发补采")
+    }
 }
 
 // MARK: - Test Helpers
@@ -684,6 +765,18 @@ final class FakeNetworkSampler: NetworkSampling {
     func sample(now: TimeInterval) throws -> NetworkReading {
         callCount += 1
         return .init(downBytesPerSec: 0, upBytesPerSec: 0, totalDown: 0, totalUp: 0)
+    }
+}
+
+/// 模拟真实 NetworkSampler 的 delta 行为：首采仅建基线（速率 nil），此后给出真实速率。
+final class BaselineThenRateNetworkSampler: NetworkSampling {
+    private(set) var callCount = 0
+    func sample(now: TimeInterval) throws -> NetworkReading {
+        callCount += 1
+        guard callCount >= 2 else {
+            return .init(downBytesPerSec: nil, upBytesPerSec: nil, totalDown: 0, totalUp: 0)
+        }
+        return .init(downBytesPerSec: 1024, upBytesPerSec: 512, totalDown: 2048, totalUp: 1024)
     }
 }
 

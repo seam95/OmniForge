@@ -141,6 +141,33 @@ final class StatusBarControllerTests: XCTestCase {
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         XCTAssertNil(controller.mainButtonImageForTesting)
     }
+
+    func test_menuBarIconDisabled_keepsMainItemVisibleWhileMetricsConfigured() {
+        // 启动期回归锁：图标总开关关闭 + 菜单栏指标已配置时，主 item 必须立即可见。
+        // renderer 对每个指标恒产出占位块（"--"），composed 非空；若它在首批读数
+        // 到达前把整个 item 收起，用户就会看到"启动后菜单栏好几秒不出现"。
+        let state = makeStatusBarState()
+        state.monitorPreferences?.update {
+            $0.isEnabled = true
+            $0.enabledMenuBarMetrics = [.cpu, .cpuTemperature]
+        }
+        FeatureRuntime.shared.setAvailable(.systemMonitor, true)
+        defer { FeatureRuntime.shared.setAvailable(.systemMonitor, false) }
+
+        let windowController = ClipboardWindowController(state: state)
+        let controller = StatusBarController(state: state, clipboardWindowController: windowController)
+
+        UserDefaults.standard.set(false, forKey: UserDefaultsKeys.menuBarIconVisible)
+        defer { UserDefaults.standard.removeObject(forKey: UserDefaultsKeys.menuBarIconVisible) }
+
+        // 首个 snapshot 尚未产生任何读数（甚至 monitor 快照还是初始空快照）时就要可见
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertNil(controller.mainButtonImageForTesting)
+        XCTAssertTrue(
+            controller.mainItemIsVisibleForTesting,
+            "指标已配置时主 item 不得在首批读数到达前收起"
+        )
+    }
 }
 
 @MainActor
