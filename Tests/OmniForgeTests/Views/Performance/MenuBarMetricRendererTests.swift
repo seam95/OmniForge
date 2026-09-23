@@ -241,6 +241,30 @@ final class MenuBarMetricRendererTests: XCTestCase {
         XCTAssertEqual(blocks[1].value, "35°")
     }
 
+    func test_combineTemperatures_appendsTempWhenUsageOrPowerIsNil() {
+        var snapshot = SystemSnapshot()
+        snapshot.cpuUsage = nil
+        snapshot.gpuUsage = nil
+        snapshot.power = nil
+        snapshot.cpuTemperature = 55
+        snapshot.gpuTemperature = 48
+        snapshot.batteryTemperature = 35
+
+        var config = MonitorConfiguration()
+        config.combineTemperatures = true
+
+        let blocks = MenuBarMetricRenderer.blocks(
+            for: snapshot,
+            metrics: [.cpu, .cpuTemperature, .gpu, .gpuTemperature, .battery, .batteryTemperature],
+            configuration: config
+        )
+
+        XCTAssertEqual(blocks.map(\.label), ["CPU", "GPU", "BAT"])
+        XCTAssertEqual(blocks[0].value, "-- 55°")
+        XCTAssertEqual(blocks[1].value, "-- 48°")
+        XCTAssertEqual(blocks[2].value, "-- 35°")
+    }
+
     func test_layoutSpacingConstants_matchExpected() {
         XCTAssertEqual(MenuBarMetricLayout.compactSpacing, 2)
         XCTAssertEqual(MenuBarMetricLayout.standardSpacing, 2)

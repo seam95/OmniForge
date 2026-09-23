@@ -2,15 +2,26 @@ import Foundation
 import OmniForgeSMC
 
 final class TemperatureSampler: TemperatureSampling {
-    private let smc: SMCReading
+    private let smc: SMCReading?
+    private let hidReader: HIDTemperatureReading?
     private let platform: CPUTemperaturePlatform
 
-    init(smc: SMCReading, platform: CPUTemperaturePlatform = TemperatureSensorSelector.currentPlatform()) {
+    init(
+        smc: SMCReading? = nil,
+        hidReader: HIDTemperatureReading? = nil,
+        platform: CPUTemperaturePlatform = TemperatureSensorSelector.currentPlatform()
+    ) {
         self.smc = smc
+        self.hidReader = hidReader
         self.platform = platform
     }
 
     func sampleCPU() throws -> Double? {
+        if let hidReader, let value = hidReader.sampleCPU() {
+            return value
+        }
+        guard smc != nil else { return nil }
+
         // Prefer platform core keys, then fall back to remaining known CPU keys.
         let preferred = TemperatureSensorSelector.knownCPUKeys.filter {
             TemperatureSensorSelector.isCPUCoreKey($0, platform: platform)
@@ -27,15 +38,24 @@ final class TemperatureSampler: TemperatureSampling {
     }
 
     func sampleGPU() throws -> Double? {
-        TemperatureSensorSelector.gpuTemperature(from: smc)
+        if let hidReader, let value = hidReader.sampleGPU() {
+            return value
+        }
+        guard let smc else { return nil }
+        return TemperatureSensorSelector.gpuTemperature(from: smc)
     }
 
     func sampleBattery() throws -> Double? {
-        TemperatureSensorSelector.batteryTemperature(from: smc)
+        if let hidReader, let value = hidReader.sampleBattery() {
+            return value
+        }
+        guard let smc else { return nil }
+        return TemperatureSensorSelector.batteryTemperature(from: smc)
     }
 
     private func collectReadings(keys: [String]) -> [(key: String, value: Double)] {
-        keys.compactMap { key -> (key: String, value: Double)? in
+        guard let smc else { return [] }
+        return keys.compactMap { key -> (key: String, value: Double)? in
             guard let value = smc.value(forKey: key) else { return nil }
             return (key, value)
         }

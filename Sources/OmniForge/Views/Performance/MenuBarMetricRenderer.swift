@@ -101,19 +101,19 @@ enum MenuBarMetricRenderer {
             if snapshot.issues[.cpu] != nil {
                 return MetricBlock(label: "CPU", value: "--", minimumValue: "100%")
             }
-            if let usage = snapshot.cpuUsage {
-                let pct = MetricFormat.percent(usage.total) ?? "--"
-                // 仅当用户勾选了 CPU 温度时才拼入；合并开关本身不隐式启用温度
-                if configuration.combineTemperatures,
-                   enabledMetrics.contains(.cpuTemperature),
-                   let temp = snapshot.cpuTemperature,
-                   let tempStr = MetricFormat.temperature(temp, unit: configuration.temperatureUnit) {
-                    return MetricBlock(
-                        label: "CPU",
-                        value: "\(pct) \(tempStr)",
-                        minimumValue: Self.percentTempMinimum(unit: configuration.temperatureUnit)
-                    )
-                }
+            let pct = snapshot.cpuUsage.flatMap { MetricFormat.percent($0.total) } ?? "--"
+            // 仅当用户勾选了 CPU 温度时才拼入；合并开关本身不隐式启用温度
+            if configuration.combineTemperatures,
+               enabledMetrics.contains(.cpuTemperature),
+               let temp = snapshot.cpuTemperature,
+               let tempStr = MetricFormat.temperature(temp, unit: configuration.temperatureUnit) {
+                return MetricBlock(
+                    label: "CPU",
+                    value: "\(pct) \(tempStr)",
+                    minimumValue: Self.percentTempMinimum(unit: configuration.temperatureUnit)
+                )
+            }
+            if snapshot.cpuUsage != nil {
                 return MetricBlock(label: "CPU", value: pct, minimumValue: "100%")
             }
             return MetricBlock(label: "CPU", value: "--", minimumValue: "100%")
@@ -122,18 +122,18 @@ enum MenuBarMetricRenderer {
             if snapshot.issues[.gpu] != nil {
                 return MetricBlock(label: "GPU", value: "--", minimumValue: "100%")
             }
-            if let usage = snapshot.gpuUsage {
-                let pct = MetricFormat.percent(usage) ?? "--"
-                if configuration.combineTemperatures,
-                   enabledMetrics.contains(.gpuTemperature),
-                   let temp = snapshot.gpuTemperature,
-                   let tempStr = MetricFormat.temperature(temp, unit: configuration.temperatureUnit) {
-                    return MetricBlock(
-                        label: "GPU",
-                        value: "\(pct) \(tempStr)",
-                        minimumValue: Self.percentTempMinimum(unit: configuration.temperatureUnit)
-                    )
-                }
+            let pct = snapshot.gpuUsage.flatMap { MetricFormat.percent($0) } ?? "--"
+            if configuration.combineTemperatures,
+               enabledMetrics.contains(.gpuTemperature),
+               let temp = snapshot.gpuTemperature,
+               let tempStr = MetricFormat.temperature(temp, unit: configuration.temperatureUnit) {
+                return MetricBlock(
+                    label: "GPU",
+                    value: "\(pct) \(tempStr)",
+                    minimumValue: Self.percentTempMinimum(unit: configuration.temperatureUnit)
+                )
+            }
+            if snapshot.gpuUsage != nil {
                 return MetricBlock(label: "GPU", value: pct, minimumValue: "100%")
             }
             return MetricBlock(label: "GPU", value: "--", minimumValue: "100%")
@@ -173,10 +173,7 @@ enum MenuBarMetricRenderer {
             return MetricBlock(label: "BT", value: value, minimumValue: "100%")
 
         case .battery:
-            guard let power = snapshot.power else {
-                return MetricBlock(label: "BAT", value: "--", minimumValue: "100%")
-            }
-            let level = MetricFormat.batteryLevel(power.batteryLevel) ?? "--"
+            let level = snapshot.power.flatMap { MetricFormat.batteryLevel($0.batteryLevel) } ?? "--"
             // 与 CPU/GPU 同构：仅当用户勾选了电池温度且合并开启时拼入电量行
             if configuration.combineTemperatures,
                enabledMetrics.contains(.batteryTemperature),
@@ -187,6 +184,9 @@ enum MenuBarMetricRenderer {
                     value: "\(level) \(tempStr)",
                     minimumValue: Self.percentTempMinimum(unit: configuration.temperatureUnit)
                 )
+            }
+            guard snapshot.power != nil else {
+                return MetricBlock(label: "BAT", value: "--", minimumValue: "100%")
             }
             return MetricBlock(label: "BAT", value: level, minimumValue: "100%")
         }

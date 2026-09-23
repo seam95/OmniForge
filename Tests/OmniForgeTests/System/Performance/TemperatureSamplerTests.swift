@@ -58,4 +58,46 @@ final class TemperatureSamplerTests: XCTestCase {
         XCTAssertNil(try sampler.sampleGPU())
         XCTAssertNil(try sampler.sampleBattery())
     }
+
+    func test_samplePrefersHIDOverSMCWhenAvailable() throws {
+        let hid = MockHIDTemperatureReader(cpu: 68.5, gpu: 52.0, battery: 36.0)
+        let smc = MockSMCReading([
+            "Tp09": 50,
+            "TG0P": 40,
+            "TB0T": 30
+        ])
+        let sampler = TemperatureSampler(smc: smc, hidReader: hid, platform: .appleM1Family)
+        XCTAssertEqual(try sampler.sampleCPU(), 68.5)
+        XCTAssertEqual(try sampler.sampleGPU(), 52.0)
+        XCTAssertEqual(try sampler.sampleBattery(), 36.0)
+    }
+
+    func test_sampleFallsBackToSMCWhenHIDReturnsNil() throws {
+        let hid = MockHIDTemperatureReader(cpu: nil, gpu: nil, battery: nil)
+        let smc = MockSMCReading([
+            "Tp09": 50,
+            "TG0P": 40,
+            "TB0T": 30
+        ])
+        let sampler = TemperatureSampler(smc: smc, hidReader: hid, platform: .appleM1Family)
+        XCTAssertEqual(try sampler.sampleCPU(), 50)
+        XCTAssertEqual(try sampler.sampleGPU(), 40)
+        XCTAssertEqual(try sampler.sampleBattery(), 30)
+    }
+}
+
+private final class MockHIDTemperatureReader: HIDTemperatureReading {
+    var cpu: Double?
+    var gpu: Double?
+    var battery: Double?
+
+    init(cpu: Double? = nil, gpu: Double? = nil, battery: Double? = nil) {
+        self.cpu = cpu
+        self.gpu = gpu
+        self.battery = battery
+    }
+
+    func sampleCPU() -> Double? { cpu }
+    func sampleGPU() -> Double? { gpu }
+    func sampleBattery() -> Double? { battery }
 }

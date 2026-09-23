@@ -359,6 +359,12 @@ struct FeatureFactory {
                 )
                 runtime.register(.desktopPet, manager: manager)
             }
+        case .rightClickEnhancement:
+            if runtime.manager(for: .rightClickEnhancement, as: RightClickService.self) == nil {
+                let service = RightClickService.shared
+                runtime.register(.rightClickEnhancement, manager: service)
+                service.start()
+            }
         }
     }
 
@@ -425,6 +431,8 @@ struct FeatureFactory {
         case .desktopPet:
             // 窗口立即消失 + 行为循环停止（可插拔停用契约）。
             runtime.manager(for: .desktopPet, as: DesktopPetManager.self)?.teardown()
+        case .rightClickEnhancement:
+            runtime.manager(for: .rightClickEnhancement, as: RightClickService.self)?.stop()
         }
         runtime.unregisterAll(for: feature)
     }
@@ -436,7 +444,10 @@ struct FeatureFactory {
             cpuSampler: CPUUsageSampler(),
             gpuSampler: GPUUsageSampler(),
             memorySampler: MemorySampler(),
-            temperatureSampler: TemperatureSampler(smc: SMCClient()),
+            temperatureSampler: TemperatureSampler(
+                smc: SMCClient(),
+                hidReader: HIDTemperatureReader.shared
+            ),
             networkSampler: NetworkSampler(),
             diskSampler: DiskSampler(),
             powerSampler: PowerSampler(smc: SMCClient()),
