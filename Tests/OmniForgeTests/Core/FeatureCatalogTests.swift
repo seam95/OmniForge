@@ -18,7 +18,8 @@ final class FeatureCatalogTests: XCTestCase {
         let suiteName = "FeatureCatalogTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        let store = UserDefaultsFeatureAvailabilityStore(defaults: defaults)
+        // mirroredDefaults 传 nil：避免测试写入真实 app group
+        let store = UserDefaultsFeatureAvailabilityStore(defaults: defaults, mirroredDefaults: nil)
         let feature = AppFeature.inputLock
 
         // 未写入时默认 true（与 Runtime store 语义一致）。

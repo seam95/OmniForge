@@ -11,8 +11,6 @@ public final class RightClickConfiguration {
         public static let isSubmenuCollapsed = "rightClick_isSubmenuCollapsed"
         public static let promotedActionKeys = "rightClick_promotedActionKeys"
         public static let favoriteDirectories = "rightClick_favoriteDirectories"
-        public static let enabledTerminalBundleIds = "rightClick_enabledTerminalBundleIds"
-        public static let enabledEditorBundleIds = "rightClick_enabledEditorBundleIds"
     }
 
     public static let defaultFileExtensions: [String] = ["txt", "md", "json", "sh", "swift", "py"]

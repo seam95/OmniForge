@@ -30,9 +30,11 @@ class FinderSync: FIFinderSync {
     // MARK: - 菜单动态生成入口
 
     override func menu(for menuKind: FIMenuKind) -> NSMenu? {
-        // 读取总开关（若用户关闭了该特性，则不注入任何菜单项）
+        // 读取总开关（若用户关闭了该特性，则不注入任何菜单项）。
+        // 键名须与宿主 FeatureCatalog.availabilityKey（"featureAvailable.\(rawValue)"）一致；
+        // 扩展处于沙盒内，只能读 app group，宿主已把 availability 镜像到该域。
         let defaults = UserDefaults(suiteName: "group.app.omniforge") ?? .standard
-        let isEnabled = defaults.object(forKey: "featureAvailable_rightClickEnhancement") as? Bool ?? true
+        let isEnabled = defaults.object(forKey: "featureAvailable.rightClickEnhancement") as? Bool ?? true
         guard isEnabled else {
             return nil
         }

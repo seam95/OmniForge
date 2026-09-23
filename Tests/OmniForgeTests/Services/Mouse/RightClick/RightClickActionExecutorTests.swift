@@ -120,4 +120,89 @@ final class RightClickActionExecutorTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: fileA.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: moved.first!.path))
     }
+
+    // MARK: - 5. 隐藏文件可见性测试
+
+    func test_toggleHiddenFiles_flipsFalseToTrueAndRelaunchesFinder() {
+        let preferences = StubFinderPreferenceStore()
+        let relauncher = StubFinderRelauncher()
+        let executor = RightClickActionExecutor(preferences: preferences, relauncher: relauncher)
+
+        // 未写入时按隐藏处理
+        XCTAssertNil(preferences.stored[RightClickActionExecutor.showAllFilesPreferenceKey])
+
+        let nowVisible = executor.toggleHiddenFiles()
+
+        XCTAssertTrue(nowVisible)
+        XCTAssertEqual(preferences.stored["AppleShowAllFiles"], true)
+        XCTAssertEqual(relauncher.relaunchCount, 1)
+    }
+
+    func test_toggleHiddenFiles_flipsTrueToFalse() {
+        let preferences = StubFinderPreferenceStore()
+        preferences.stored["AppleShowAllFiles"] = true
+        let relauncher = StubFinderRelauncher()
+        let executor = RightClickActionExecutor(preferences: preferences, relauncher: relauncher)
+
+        let nowVisible = executor.toggleHiddenFiles()
+
+        XCTAssertFalse(nowVisible)
+        XCTAssertEqual(preferences.stored["AppleShowAllFiles"], false)
+        XCTAssertEqual(relauncher.relaunchCount, 1)
+    }
+
+    func test_toggleHiddenFiles_writesFinderDomainWithAppleShowAllFilesKey() {
+        let preferences = StubFinderPreferenceStore()
+        let executor = RightClickActionExecutor(preferences: preferences, relauncher: StubFinderRelauncher())
+
+        _ = executor.toggleHiddenFiles()
+
+        XCTAssertEqual(preferences.recordedWrites.count, 1)
+        let write = preferences.recordedWrites[0]
+        XCTAssertEqual(write.key, "AppleShowAllFiles")
+        XCTAssertEqual(write.domain, "com.apple.finder")
+        XCTAssertEqual(write.value, true)
+    }
+
+    func test_toggleHiddenFiles_doesNotRelaunchWhenWriteFails() {
+        let preferences = StubFinderPreferenceStore()
+        preferences.stored["AppleShowAllFiles"] = false
+        preferences.writeSucceeds = false
+        let relauncher = StubFinderRelauncher()
+        let executor = RightClickActionExecutor(preferences: preferences, relauncher: relauncher)
+
+        let nowVisible = executor.toggleHiddenFiles()
+
+        // 写失败时保持原值，且不重启访达
+        XCTAssertFalse(nowVisible)
+        XCTAssertEqual(relauncher.relaunchCount, 0)
+    }
+}
+
+// MARK: - 测试替身
+
+private final class StubFinderPreferenceStore: FinderPreferenceStore {
+    var stored: [String: Bool] = [:]
+    var writeSucceeds = true
+    private(set) var recordedWrites: [(key: String, domain: String, value: Bool)] = []
+
+    func bool(forKey key: String, inApplicationDomain domain: String) -> Bool? {
+        stored[key]
+    }
+
+    @discardableResult
+    func set(_ value: Bool, forKey key: String, inApplicationDomain domain: String) -> Bool {
+        recordedWrites.append((key, domain, value))
+        guard writeSucceeds else { return false }
+        stored[key] = value
+        return true
+    }
+}
+
+private final class StubFinderRelauncher: FinderRelauncher {
+    private(set) var relaunchCount = 0
+
+    func relaunchFinder() {
+        relaunchCount += 1
+    }
 }

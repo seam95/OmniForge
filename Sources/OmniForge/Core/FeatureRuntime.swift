@@ -381,19 +381,21 @@ final class FeatureRuntime: ObservableObject {
 
     func setDefaultsForTesting(_ defaults: UserDefaults) {
         self.defaults = defaults
-        self.availabilityStore = UserDefaultsFeatureAvailabilityStore(defaults: defaults)
+        // mirroredDefaults 传 nil：避免测试写入真实 app group
+        self.availabilityStore = UserDefaultsFeatureAvailabilityStore(defaults: defaults, mirroredDefaults: nil)
     }
 
     func resetDefaultsForTesting() {
         self.defaults = .standard
-        self.availabilityStore = UserDefaultsFeatureAvailabilityStore(defaults: .standard)
+        // 与 setDefaultsForTesting 同理：测试不得写入真实 app group
+        self.availabilityStore = UserDefaultsFeatureAvailabilityStore(defaults: .standard, mirroredDefaults: nil)
     }
 
     func resetForTesting() {
         managerRegistry.removeAll()
         testingBindingsOverride = nil
         defaults = .standard
-        availabilityStore = UserDefaultsFeatureAvailabilityStore(defaults: .standard)
+        availabilityStore = UserDefaultsFeatureAvailabilityStore(defaults: .standard, mirroredDefaults: nil)
         factory = nil
         revision = 0
         inFlight.removeAll()

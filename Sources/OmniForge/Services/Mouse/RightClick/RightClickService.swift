@@ -106,7 +106,9 @@ public final class RightClickService: ObservableObject {
                 NSWorkspace.shared.open(jumpURL)
 
             case "toggleHiddenFiles":
-                executor.toggleHiddenFiles()
+                // 切换后访达会被重启以重新枚举窗口，返回值即切换后的可见性
+                let nowVisible = executor.toggleHiddenFiles()
+                NSLog("[OmniForge RightClick] 隐藏文件可见性切换为 %@", nowVisible ? "显示" : "隐藏")
 
             default:
                 break

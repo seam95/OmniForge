@@ -24,17 +24,69 @@ public enum RightClickError: LocalizedError, Equatable {
     }
 }
 
+/// 访达偏好读写。以协议隔离 CoreFoundation，便于测试替身。
+public protocol FinderPreferenceStore {
+    func bool(forKey key: String, inApplicationDomain domain: String) -> Bool?
+    /// 返回是否同步成功
+    @discardableResult
+    func set(_ value: Bool, forKey key: String, inApplicationDomain domain: String) -> Bool
+}
+
+/// 访达重启器。隔离子进程派发，便于测试替身。
+public protocol FinderRelauncher {
+    func relaunchFinder()
+}
+
+/// 基于 CFPreferences 的访达偏好读写：与 `defaults` 命令同一路径，但不派生子进程。
+public struct CFPreferencesFinderPreferenceStore: FinderPreferenceStore {
+    public init() {}
+
+    public func bool(forKey key: String, inApplicationDomain domain: String) -> Bool? {
+        CFPreferencesCopyAppValue(key as CFString, domain as CFString) as? Bool
+    }
+
+    public func set(_ value: Bool, forKey key: String, inApplicationDomain domain: String) -> Bool {
+        CFPreferencesSetAppValue(key as CFString, value as CFPropertyList, domain as CFString)
+        return CFPreferencesAppSynchronize(domain as CFString)
+    }
+}
+
+/// 通过 killall 重启访达，使其重新枚举已打开的窗口。
+/// 只启动子进程而不等待退出，避免阻塞调用方（可能是主线程）。
+public struct ProcessFinderRelauncher: FinderRelauncher {
+    private let killallPath: String
+
+    public init(killallPath: String = "/usr/bin/killall") {
+        self.killallPath = killallPath
+    }
+
+    public func relaunchFinder() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: killallPath)
+        process.arguments = ["Finder"]
+        try? process.run()
+    }
+}
+
 /// 访达右键操作执行器
 public final class RightClickActionExecutor {
+    /// Finder 偏好域与「显示隐藏文件」键名
+    public static let finderPreferenceDomain = "com.apple.finder"
+    public static let showAllFilesPreferenceKey = "AppleShowAllFiles"
+
     private let fileManager: FileManager
     private let pasteboard: NSPasteboard
     private let workspace: NSWorkspace
+    private let preferences: FinderPreferenceStore
+    private let relauncher: FinderRelauncher
     private let fileRevealer: ([URL]) -> Void
 
     public init(
         fileManager: FileManager = .default,
         pasteboard: NSPasteboard = .general,
         workspace: NSWorkspace = .shared,
+        preferences: FinderPreferenceStore = CFPreferencesFinderPreferenceStore(),
+        relauncher: FinderRelauncher = ProcessFinderRelauncher(),
         fileRevealer: @escaping ([URL]) -> Void = { urls in
             DispatchQueue.main.async {
                 NSWorkspace.shared.activateFileViewerSelecting(urls)
@@ -44,6 +96,8 @@ public final class RightClickActionExecutor {
         self.fileManager = fileManager
         self.pasteboard = pasteboard
         self.workspace = workspace
+        self.preferences = preferences
+        self.relauncher = relauncher
         self.fileRevealer = fileRevealer
     }
 
@@ -236,35 +290,23 @@ public final class RightClickActionExecutor {
     // MARK: - 5. 切换隐藏文件可见性
 
     /// 切换 macOS Finder 中隐藏文件的可见性
+    ///
+    /// Finder 只在重新枚举文件夹时读取 `AppleShowAllFiles`，已经打开的窗口不会自动重读，
+    /// 因此写入偏好后必须重启访达（访达被 relaunchd 拉起时会自动恢复原有窗口）。
+    /// 返回切换后的可见性；写入失败时返回原值且不重启访达。
     @discardableResult
     public func toggleHiddenFiles() -> Bool {
-        let defaultsDomain = "com.apple.finder"
-        let key = "AppleShowAllFiles"
-        let current = UserDefaults.standard.persistentDomain(forName: defaultsDomain)?[key] as? Bool ?? false
+        let domain = Self.finderPreferenceDomain
+        let key = Self.showAllFilesPreferenceKey
+
+        let current = preferences.bool(forKey: key, inApplicationDomain: domain) ?? false
         let nextValue = !current
 
-        // 写入当前用户 defaults
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
-        process.arguments = ["write", defaultsDomain, key, "-bool", nextValue ? "true" : "false"]
-        try? process.run()
-        process.waitUntilExit()
-
-        // 刷新 Finder 视图（通过 AppleScript 发送重绘指令，无须重启 Finder 即可平滑生效）
-        let scriptSource = """
-        tell application "Finder"
-            set allWindows to every Finder window
-            repeat with aWindow in allWindows
-                set currentView to current view of aWindow
-                set current view of aWindow to currentView
-            end repeat
-        end tell
-        """
-        if let script = NSAppleScript(source: scriptSource) {
-            var errorInfo: NSDictionary?
-            script.executeAndReturnError(&errorInfo)
+        guard preferences.set(nextValue, forKey: key, inApplicationDomain: domain) else {
+            return current
         }
 
+        relauncher.relaunchFinder()
         return nextValue
     }
 }
