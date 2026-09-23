@@ -143,6 +143,8 @@ struct TokenUsageProvidersSettingsView: View {
     /// 钥匙串凭证状态缓存：渲染期不直接读 keychain，onAppear 与凭证保存/清除后刷新一次。
     @State private var opencodeHasKey = false
     @State private var arkHasCredentials = false
+    /// StepFun Oasis-Token 状态（凭证存在性即配置态）。
+    @State private var stepfunHasToken = false
     /// DeepSeek 凭证状态（余额管理器 @Published 值缓存，渲染期不依赖 ObservableObject 链）。
     @State private var deepSeekHasKey = false
     /// trae-cn JWT 状态（无 limits fetcher，凭证存在性即配置态）。
@@ -150,7 +152,7 @@ struct TokenUsageProvidersSettingsView: View {
 
     /// 展开为凭证配置卡的提供商（其余展开仅显示「如何配置」提示文字）。
     private var credentialProviders: Set<TokenUsageProvider> {
-        [.deepSeek, .traeCN, .opencode, .arkCodingPlan]
+        [.deepSeek, .traeCN, .opencode, .arkCodingPlan, .stepfun]
     }
 
     var body: some View {
@@ -172,6 +174,7 @@ struct TokenUsageProvidersSettingsView: View {
         let credentialProviders = TokenUsageCredentialStateReader.configuredProviders()
         opencodeHasKey = credentialProviders.contains(.opencode)
         arkHasCredentials = credentialProviders.contains(.arkCodingPlan)
+        stepfunHasToken = credentialProviders.contains(.stepfun)
         let traeCnStore = TraeCnKeychainStore()
         traeCnHasJWT = ((try? traeCnStore.readJWT())?.isEmpty == false)
     }
@@ -208,6 +211,17 @@ struct TokenUsageProvidersSettingsView: View {
                 TokenUsageProviderStatusBuilder.credentialStatusText(
                     provider: provider,
                     hasCredentials: arkHasCredentials,
+                    limits: limits,
+                    strings: strings
+                ),
+                true
+            )
+        } else if provider == .stepfun {
+            let limits = manager.limits[provider]
+            return (
+                TokenUsageProviderStatusBuilder.credentialStatusText(
+                    provider: provider,
+                    hasCredentials: stepfunHasToken,
                     limits: limits,
                     strings: strings
                 ),
@@ -323,6 +337,13 @@ struct TokenUsageProvidersSettingsView: View {
             )
         case .arkCodingPlan:
             ArkCodingPlanSettingsCard(
+                preferences: preferences,
+                manager: manager,
+                onCredentialsChanged: reloadCredentialStates,
+                strings: strings
+            )
+        case .stepfun:
+            StepfunSettingsCard(
                 preferences: preferences,
                 manager: manager,
                 onCredentialsChanged: reloadCredentialStates,
@@ -883,6 +904,70 @@ struct ArkCodingPlanSettingsCard: View {
         saveFailed = false
         saveSuccess = false
         hasStoredCredentials = false
+        manager?.refreshNow()
+        onCredentialsChanged()
+    }
+}
+
+/// StepFun Step Plan 配置卡（提供商行内展开）：Oasis-Token（钥匙串存储）/ 保存 / 清除。
+struct StepfunSettingsCard: View {
+    @ObservedObject var preferences: TokenUsagePreferences
+    var manager: TokenUsageManager? = nil
+    /// 凭证变更（保存/清除）后通知父级刷新行状态缓存。
+    var onCredentialsChanged: () -> Void = {}
+    let strings: Strings
+
+    @State private var tokenInput = ""
+    @State private var saveFailed = false
+    /// 钥匙串凭证状态缓存（onAppear 与保存/清除后刷新，渲染期不直接读 keychain）。
+    @State private var hasStoredToken = false
+
+    private let keychain = StepfunKeychainStore()
+
+    var body: some View {
+        TokenCredentialRow(
+            title: strings.stepfunSettingsTokenTitle,
+            placeholder: strings.stepfunSettingsTokenPlaceholder,
+            text: $tokenInput,
+            hasStoredValue: hasStoredToken,
+            caption: strings.stepfunSettingsTokenCaption,
+            canSave: !tokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            feedback: saveFailed ? .error(strings.tokenErrorTransient) : .none,
+            onSave: save,
+            onClear: clearToken,
+            strings: strings
+        )
+        .onChange(of: tokenInput) { _, _ in
+            saveFailed = false
+        }
+        .onAppear { reloadKeychainState() }
+    }
+
+    private func reloadKeychainState() {
+        let stored = (try? keychain.readToken()) ?? ""
+        hasStoredToken = !stored.isEmpty
+    }
+
+    private func save() {
+        let cleaned = tokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return }
+        do {
+            try keychain.writeToken(cleaned)
+            tokenInput = ""
+            saveFailed = false
+            hasStoredToken = true
+            manager?.refreshNow()
+            onCredentialsChanged()
+        } catch {
+            saveFailed = true
+        }
+    }
+
+    private func clearToken() {
+        try? keychain.deleteToken()
+        tokenInput = ""
+        saveFailed = false
+        hasStoredToken = false
         manager?.refreshNow()
         onCredentialsChanged()
     }

@@ -5,7 +5,7 @@ import Foundation
 /// 限额快照表示“已拿到可展示限额”；凭证状态表示“用户已配置但可能无有效套餐/配额”。
 /// 两者合并后再按用户排序和显隐偏好过滤，避免凭证类 provider 从 UI 中消失。
 enum TokenUsageProviderDisplayPolicy {
-    static let credentialDrivenProviders: Set<TokenUsageProvider> = [.opencode, .arkCodingPlan]
+    static let credentialDrivenProviders: Set<TokenUsageProvider> = [.opencode, .arkCodingPlan, .stepfun]
 
     static func providers(
         providerOrder: [TokenUsageProvider],
@@ -43,6 +43,7 @@ enum TokenUsageCredentialStateReader {
     static func configuredProviders(
         opencodeStore: OpencodeAPIKeyStoring? = OpencodeKeychainAPIKeyStore(),
         arkStore: ArkCredentialsStoring? = ArkKeychainStore(),
+        stepfunStore: StepfunTokenStoring? = StepfunKeychainStore(),
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> Set<TokenUsageProvider> {
         var providers: Set<TokenUsageProvider> = []
@@ -67,6 +68,14 @@ enum TokenUsageCredentialStateReader {
         if storedArkCredentials?.isValid == true
             || (normalizedArkAccessKey?.isEmpty == false && normalizedArkSecretKey?.isEmpty == false) {
             providers.insert(.arkCodingPlan)
+        }
+
+        let stepfunToken = stepfunStore
+            .flatMap { try? $0.readToken() }?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let stepfunEnvToken = environment["STEPFUN_TOKEN"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if stepfunToken?.isEmpty == false || stepfunEnvToken?.isEmpty == false {
+            providers.insert(.stepfun)
         }
 
         return providers

@@ -18,6 +18,7 @@ enum TokenUsageProvider: String, Codable, CaseIterable, Identifiable {
     case qoder
     case dsh
     case arkCodingPlan = "ark-coding-plan"
+    case stepfun
 
     var id: String { rawValue }
 
@@ -39,6 +40,7 @@ enum TokenUsageProvider: String, Codable, CaseIterable, Identifiable {
         case .qoder: return "Qoder"
         case .dsh: return "DSH"
         case .arkCodingPlan: return "方舟 Coding Plan"
+        case .stepfun: return "StepFun"
         }
     }
 }

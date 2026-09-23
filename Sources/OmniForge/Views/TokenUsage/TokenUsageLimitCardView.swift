@@ -92,7 +92,7 @@ struct TokenUsageLimitCardView: View {
 
     private var unavailableCaption: String {
         switch limits.provider {
-        case .arkCodingPlan:
+        case .arkCodingPlan, .stepfun:
             return strings.tokenSettingsNoSubscription
         case .opencode:
             return strings.tokenSettingsNoQuotaAvailable

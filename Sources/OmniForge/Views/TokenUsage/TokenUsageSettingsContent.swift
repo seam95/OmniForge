@@ -56,7 +56,7 @@ enum TokenUsageProviderStatusBuilder {
             return signedIn
         }
         switch provider {
-        case .arkCodingPlan:
+        case .arkCodingPlan, .stepfun:
             return String(
                 format: strings.tokenSettingsProviderStatusFormat,
                 strings.tokenSettingsNoSubscription,
@@ -99,6 +99,9 @@ enum TokenUsageProviderStatusBuilder {
         if provider == .traeCN {
             return strings.tokenSettingsConfigureHintTraeCn
         }
+        if provider == .stepfun {
+            return strings.stepfunSettingsTokenCaption
+        }
         return String(
             format: strings.tokenSettingsConfigureHintFormat,
             provider.setupCLICommand
@@ -109,7 +112,7 @@ enum TokenUsageProviderStatusBuilder {
 // MARK: - Provider 设置引导
 
 extension TokenUsageProvider {
-    /// 「如何配置」引导涉及的 CLI 命令名（Cursor / Antigravity / DeepSeek / opencode / trae-cn 无对应 CLI，返回空）。
+    /// 「如何配置」引导涉及的 CLI 命令名（Cursor / Antigravity / DeepSeek / opencode / trae-cn / stepfun 无对应 CLI，返回空）。
     var setupCLICommand: String {
         switch self {
         case .claude: return "claude"
@@ -127,6 +130,7 @@ extension TokenUsageProvider {
         case .qoder: return "qoder"
         case .dsh: return "dsh"
         case .arkCodingPlan: return "arkcli"
+        case .stepfun: return ""
         }
     }
 }

@@ -1268,6 +1268,9 @@ struct Strings: Equatable {
     let arkSettingsAkPlaceholder: String
     let arkSettingsSkPlaceholder: String
     let arkSettingsCaption: String
+    let stepfunSettingsTokenTitle: String
+    let stepfunSettingsTokenPlaceholder: String
+    let stepfunSettingsTokenCaption: String
     let deepSeekSettingsApiKeyPlaceholder: String
     /// 凭证行小标题（如「API Key」），OpenCode / DeepSeek 等共用。
     let tokenSettingsApiKeyTitle: String
@@ -1368,6 +1371,13 @@ struct Strings: Equatable {
     /// 模型覆盖（可选）。
     let providerModelLabel: String
     let providerModelHint: String
+    /// Codex 模型列表（多模型，首位为默认模型）。
+    let providerCodexModelsSectionTitle: String
+    let providerCodexModelsHint: String
+    let providerCodexModelsAdd: String
+    let providerCodexModelsDelete: String
+    let providerCodexModelsFirstPlaceholder: String
+    let providerCodexModelsPlaceholder: String
     /// 思考强度（Codex）。
     let providerReasoningEffortLabel: String
     let providerReasoningEffortDefault: String

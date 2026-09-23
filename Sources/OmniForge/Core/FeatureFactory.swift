@@ -505,6 +505,8 @@ struct FeatureFactory {
         let grokLimits = LimitsCachingFetcher(inner: GrokLimitsFetcher(), cache: cache)
         let zcodeLimits = LimitsCachingFetcher(inner: ZcodeLimitsFetcher(), cache: cache)
         let qoderLimits = LimitsCachingFetcher(inner: QoderLimitsFetcher(), cache: cache)
+        // StepFun Step Plan：Oasis-Token 直连平台限额端点，双模套餐（滑动窗口 / Credit 池）自适应。
+        let stepfunLimits = LimitsCachingFetcher(inner: StepfunLimitsFetcher(), cache: cache)
         return TokenUsageManager(
             preferences: preferences,
             fetchers: [
@@ -518,6 +520,7 @@ struct FeatureFactory {
                 .grok: grokLimits,
                 .zcode: zcodeLimits,
                 .qoder: qoderLimits,
+                .stepfun: stepfunLimits,
             ],
             scheduler: TimerRepeatingScheduler(),
             usageStore: usageStore,
