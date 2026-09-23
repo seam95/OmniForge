@@ -45,11 +45,11 @@ final class ProviderSwitchModelsTests: XCTestCase {
     func test_codexOwnedKeys() {
         XCTAssertEqual(
             ProviderTool.codexOwnedTopLevelKeys,
-            ["model_provider", "model"]
+            ["model_provider", "model", "model_reasoning_effort", "model_catalog_json"]
         )
         XCTAssertEqual(
             ProviderTool.codexOwnedProviderKeys,
-            ["name", "base_url", "wire_api", "experimental_bearer_token"]
+            ["name", "base_url", "wire_api", "requires_openai_auth", "experimental_bearer_token"]
         )
     }
 
@@ -67,12 +67,14 @@ final class ProviderSwitchModelsTests: XCTestCase {
     }
 
     func test_slugify_cjkFoldsAndCollapses() {
-        XCTAssertEqual(ProviderProfile.slugify("GLM 智谱"), "glm")
-        XCTAssertEqual(ProviderProfile.slugify("我的供应商"), "profile", "全 CJK → 回退占位 slug")
+        XCTAssertEqual(ProviderProfile.slugify("GLM 智谱"), "glm-zhi-pu")
+        XCTAssertEqual(ProviderProfile.slugify("我的供应商"), "wo-de-gong-ying-shang")
+        XCTAssertEqual(ProviderProfile.slugify("测试使用"), "ce-shi-shi-yong")
     }
 
     func test_slugify_emptyFallsBack() {
         XCTAssertEqual(ProviderProfile.slugify(""), "profile")
+        XCTAssertTrue(ProviderProfile.slugify("🎉🚀").hasPrefix("profile-"))
     }
 
     // MARK: - ProviderProfile

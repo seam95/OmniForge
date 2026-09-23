@@ -6,11 +6,16 @@ final class ProviderSwitchCodexConfigStoreTests: XCTestCase {
     private var tmpDir: URL!
     private var configURL: URL!
 
+    private var catalogURL: URL!
+    private var catalogStore: CodexModelCatalogStore!
+
     override func setUpWithError() throws {
         tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("CodexConfigStoreTests_\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
         configURL = tmpDir.appendingPathComponent("config.toml")
+        catalogURL = tmpDir.appendingPathComponent("omniforge-model-catalog.json")
+        catalogStore = CodexModelCatalogStore(catalogURL: catalogURL)
     }
 
     override func tearDownWithError() throws {
@@ -18,7 +23,7 @@ final class ProviderSwitchCodexConfigStoreTests: XCTestCase {
     }
 
     private func makeStore() -> CodexConfigStore {
-        CodexConfigStore(configURL: configURL)
+        CodexConfigStore(configURL: configURL, catalogStore: catalogStore)
     }
 
     private func makeProfile(
@@ -26,7 +31,8 @@ final class ProviderSwitchCodexConfigStoreTests: XCTestCase {
         key: String = "glm",
         baseURL: String = "https://open.bigmodel.cn/api/paas/v4",
         token: String = "sk-glm",
-        model: String? = "glm-4-7"
+        model: String? = "glm-4-7",
+        reasoningEffort: String? = nil
     ) -> ProviderProfile {
         ProviderProfile(
             id: key,
@@ -35,6 +41,7 @@ final class ProviderSwitchCodexConfigStoreTests: XCTestCase {
             baseURL: baseURL,
             token: token,
             modelOverride: model,
+            reasoningEffort: reasoningEffort,
             modelMapping: nil,
             extraEnv: [:],
             managedBy: ProviderProfile.managedByMarker
@@ -53,13 +60,40 @@ final class ProviderSwitchCodexConfigStoreTests: XCTestCase {
         XCTAssertEqual(text, """
         model_provider = "glm"
         model = "glm-4-7"
+        model_catalog_json = "omniforge-model-catalog.json"
 
         [model_providers.glm]
         name = "GLM"
         base_url = "https://open.bigmodel.cn/api/paas/v4"
-        wire_api = "chat"
+        wire_api = "responses"
+        requires_openai_auth = true
         experimental_bearer_token = "sk-glm"
         """ + "\n")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: catalogURL.path))
+    }
+
+    func test_applyProfile_withReasoningEffort() throws {
+        try makeStore().applyProfile(makeProfile(reasoningEffort: "medium"))
+        let text = try String(contentsOf: configURL)
+        XCTAssertEqual(text, """
+        model_provider = "glm"
+        model = "glm-4-7"
+        model_catalog_json = "omniforge-model-catalog.json"
+        model_reasoning_effort = "medium"
+
+        [model_providers.glm]
+        name = "GLM"
+        base_url = "https://open.bigmodel.cn/api/paas/v4"
+        wire_api = "responses"
+        requires_openai_auth = true
+        experimental_bearer_token = "sk-glm"
+        """ + "\n")
+
+        // 验证 catalog json 中的默认思考等级为 medium
+        let catalogData = try Data(contentsOf: catalogURL)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: catalogData) as? [String: Any])
+        let models = try XCTUnwrap(json["models"] as? [[String: Any]])
+        XCTAssertEqual(models.first?["default_reasoning_level"] as? String, "medium")
     }
 
     /// 回归（R01）：无空格合法 TOML 上完整 applyProfile 链（插入 provider → 更新 model）
@@ -74,11 +108,13 @@ final class ProviderSwitchCodexConfigStoreTests: XCTestCase {
         model="glm-4-7"
         notify=["iTerm2"]
         model_provider = "glm"
+        model_catalog_json = "omniforge-model-catalog.json"
 
         [model_providers.glm]
         name = "GLM"
         base_url = "https://open.bigmodel.cn/api/paas/v4"
-        wire_api = "chat"
+        wire_api = "responses"
+        requires_openai_auth = true
         experimental_bearer_token = "sk-glm"
         """ + "\n")
 
@@ -93,7 +129,6 @@ final class ProviderSwitchCodexConfigStoreTests: XCTestCase {
         try writeConfig("""
         # OpenAI API key configuration
         model = "gpt-5"
-        model_reasoning_effort = "medium" # 推理强度
         temperature = 0.7
 
         [model_providers.openai]
@@ -106,9 +141,9 @@ final class ProviderSwitchCodexConfigStoreTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: configURL), """
         # OpenAI API key configuration
         model = "glm-4-7"
-        model_reasoning_effort = "medium" # 推理强度
         temperature = 0.7
         model_provider = "glm"
+        model_catalog_json = "omniforge-model-catalog.json"
 
         [model_providers.openai]
         name = "OpenAI"
@@ -119,7 +154,8 @@ final class ProviderSwitchCodexConfigStoreTests: XCTestCase {
         [model_providers.glm]
         name = "GLM"
         base_url = "https://open.bigmodel.cn/api/paas/v4"
-        wire_api = "chat"
+        wire_api = "responses"
+        requires_openai_auth = true
         experimental_bearer_token = "sk-glm"
         """ + "\n")
     }
@@ -132,16 +168,18 @@ final class ProviderSwitchCodexConfigStoreTests: XCTestCase {
         env_key = "GLM_API_KEY"
         extra_flag = true
         """ )
-        try makeStore().applyProfile(makeProfile(name: "GLM 新"))
+        try makeStore().applyProfile(makeProfile(name: "GLM"))
         XCTAssertEqual(try String(contentsOf: configURL), """
         model_provider = "glm"
         model = "glm-4-7"
+        model_catalog_json = "omniforge-model-catalog.json"
         [model_providers.glm]
-        name = "GLM 新"
+        name = "GLM"
         base_url = "https://open.bigmodel.cn/api/paas/v4"
         env_key = "GLM_API_KEY"
         extra_flag = true
-        wire_api = "chat"
+        wire_api = "responses"
+        requires_openai_auth = true
         experimental_bearer_token = "sk-glm"
         """ + "\n", "env_key 等非拥有键保留，拥有键原地更新/追加")
     }
@@ -156,7 +194,8 @@ final class ProviderSwitchCodexConfigStoreTests: XCTestCase {
         [model_providers.glm]
         name = "GLM"
         base_url = "https://open.bigmodel.cn/api/paas/v4"
-        wire_api = "chat"
+        wire_api = "responses"
+        requires_openai_auth = true
         experimental_bearer_token = "sk-glm"
         """ + "\n")
     }
@@ -204,6 +243,8 @@ final class ProviderSwitchCodexConfigStoreTests: XCTestCase {
         try writeConfig("""
         model_provider = "glm"
         model = "glm-4-7"
+        model_catalog_json = "omniforge-model-catalog.json"
+        model_reasoning_effort = "high"
 
         [model_providers.glm]
         name = "GLM"
@@ -213,11 +254,15 @@ final class ProviderSwitchCodexConfigStoreTests: XCTestCase {
         [model_providers.kimi]
         name = "Kimi"
         """)
+        try Data("{}".utf8).write(to: catalogURL)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: catalogURL.path))
+
         try makeStore().clearOverrides()
         XCTAssertEqual(try String(contentsOf: configURL), """
         [model_providers.kimi]
         name = "Kimi"
         """ + "\n", "非激活的 kimi 表保留")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: catalogURL.path), "模型目录文件被清理")
     }
 
     func test_clearOverrides_keepsBuiltInTable() throws {

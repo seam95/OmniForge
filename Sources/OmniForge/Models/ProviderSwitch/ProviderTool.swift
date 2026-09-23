@@ -48,6 +48,8 @@ extension ProviderTool {
     static let codexOwnedTopLevelKeys: Set<String> = [
         "model_provider",
         "model",
+        "model_reasoning_effort",
+        "model_catalog_json",
     ]
 
     /// Codex `[model_providers.<key>]` 表内拥有的键 — 凭证直写 experimental_bearer_token，不走 env。
@@ -55,6 +57,7 @@ extension ProviderTool {
         "name",
         "base_url",
         "wire_api",
+        "requires_openai_auth",
         "experimental_bearer_token",
     ]
 

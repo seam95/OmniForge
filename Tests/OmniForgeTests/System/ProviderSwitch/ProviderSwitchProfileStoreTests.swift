@@ -263,7 +263,7 @@ final class ProviderSwitchProfileStoreTests: XCTestCase {
             token: "sk-manual",
             modelOverride: nil
         )
-        XCTAssertEqual(profile.profileKey, "profile")
+        XCTAssertEqual(profile.profileKey, "shou-gai-gong-ying-shang")
         let listed = store.list(for: .claudeCode)
         XCTAssertEqual(listed.count, 1)
         XCTAssertEqual(listed[0].baseURL, "https://manual.example")

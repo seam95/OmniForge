@@ -220,6 +220,14 @@ struct TOMLFile: Equatable {
         return value
     }
 
+    /// 读取布尔值：若为 "true" 返回 true，若为 "false" 返回 false，否则 nil。
+    func booleanValue(key: String, table: [String]? = nil) -> Bool? {
+        guard let raw = stringValue(key: key, table: table) else { return nil }
+        if raw == "true" { return true }
+        if raw == "false" { return false }
+        return nil
+    }
+
     /// 基本字符串转义（写入用）。
     static func escape(_ text: String) -> String {
         var out = "\""
@@ -297,6 +305,29 @@ struct TOMLFile: Equatable {
             key: key,
             prefix: "\(key) = ",
             value: escaped,
+            suffix: "",
+            lineIndex: insertionLine
+        )
+        lines.insert(entry.prefix + entry.value, at: insertionLine)
+        entries.append(entry)
+        rebuildEntriesFromLines()
+    }
+
+    /// 设置布尔字面量（写入裸值 true / false，无引号）。目标键已存在 → 原地替换（保留行尾注释）；否则追加到所在段末尾。
+    mutating func setBooleanValue(_ value: Bool, key: String, table: [String]?) {
+        let literal = value ? "true" : "false"
+        if let entryIndex = validEntryIndex(key: key, table: table) {
+            let entry = entries[entryIndex]
+            lines[entry.lineIndex] = entry.prefix + literal + entry.suffix
+            entries[entryIndex].value = literal
+            return
+        }
+        let insertionLine = insertionPosition(for: table)
+        let entry = Entry(
+            tablePath: table,
+            key: key,
+            prefix: "\(key) = ",
+            value: literal,
             suffix: "",
             lineIndex: insertionLine
         )

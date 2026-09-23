@@ -229,6 +229,9 @@ enum ProviderProfileFileCodec {
             if let model = profile.modelOverride, !model.isEmpty {
                 document.setValue(model, key: "model_override", table: nil)
             }
+            if let effort = profile.reasoningEffort, !effort.isEmpty {
+                document.setValue(effort, key: "reasoning_effort", table: nil)
+            }
             document.setValue(ProviderProfile.managedByMarker, key: managedByKey, table: nil)
             return document.serialize().data(using: .utf8)
         }
@@ -329,6 +332,7 @@ enum ProviderProfileFileCodec {
             baseURL: baseURL,
             token: token,
             modelOverride: document.stringValue(key: "model_override", table: nil),
+            reasoningEffort: document.stringValue(key: "reasoning_effort", table: nil),
             modelMapping: nil,
             extraEnv: [:],
             managedBy: document.stringValue(key: managedByKey, table: nil)

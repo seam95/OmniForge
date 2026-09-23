@@ -16,12 +16,18 @@ protocol CodexConfigStoring: AnyObject {
 final class CodexConfigStore: CodexConfigStoring {
     let configURL: URL
     let fileManager: FileManager
+    let catalogStore: CodexModelCatalogStoring
 
-    /// 第三方 provider 统一走 chat 风格 wire API（OpenAI 兼容端点）。
-    static let wireAPIForThirdParty = "chat"
+    /// 第三方 provider 统一走 responses wire API（Codex 0.149+ 唯一支持的 wire API）。
+    static let wireAPIForThirdParty = "responses"
 
-    init(configURL: URL, fileManager: FileManager = .default) {
+    init(
+        configURL: URL,
+        catalogStore: CodexModelCatalogStoring = CodexModelCatalogStore(),
+        fileManager: FileManager = .default
+    ) {
         self.configURL = configURL
+        self.catalogStore = catalogStore
         self.fileManager = fileManager
     }
 
@@ -37,14 +43,32 @@ final class CodexConfigStore: CodexConfigStoring {
     func applyProfile(_ profile: ProviderProfile) throws {
         var document = (try loadDocument()) ?? TOMLFile()
         document.setValue(profile.profileKey, key: "model_provider", table: nil)
+
+        // 顶层 model 与模型目录投影
         if let model = profile.modelOverride, !model.isEmpty {
             document.setValue(model, key: "model", table: nil)
+            try? catalogStore.writeCatalog(for: profile)
+            document.setValue(ProviderSwitchPaths.codexModelCatalogFileName, key: "model_catalog_json", table: nil)
+        } else {
+            if document.stringValue(key: "model_catalog_json", table: nil) == ProviderSwitchPaths.codexModelCatalogFileName {
+                document.remove(key: "model_catalog_json", table: nil)
+                try? catalogStore.removeCatalog()
+            }
         }
+
+        // 思考强度（Reasoning Effort）
+        if let effort = profile.reasoningEffort, !effort.isEmpty {
+            document.setValue(effort, key: "model_reasoning_effort", table: nil)
+        } else {
+            document.remove(key: "model_reasoning_effort", table: nil)
+        }
+
         let table = ["model_providers", profile.profileKey]
         document.ensureTable(path: table)
         document.setValue(profile.name, key: "name", table: table)
         document.setValue(profile.baseURL, key: "base_url", table: table)
         document.setValue(Self.wireAPIForThirdParty, key: "wire_api", table: table)
+        document.setBooleanValue(true, key: "requires_openai_auth", table: table)
         document.setValue(profile.token, key: "experimental_bearer_token", table: table)
         try write(document)
     }
@@ -55,6 +79,13 @@ final class CodexConfigStore: CodexConfigStoring {
         let activeKey = document.stringValue(key: "model_provider", table: nil)
         document.remove(key: "model_provider", table: nil)
         document.remove(key: "model", table: nil)
+        document.remove(key: "model_reasoning_effort", table: nil)
+
+        if document.stringValue(key: "model_catalog_json", table: nil) == ProviderSwitchPaths.codexModelCatalogFileName {
+            document.remove(key: "model_catalog_json", table: nil)
+            try? catalogStore.removeCatalog()
+        }
+
         if let activeKey, !ProviderTool.codexBuiltInProviderKeys.contains(activeKey) {
             document.removeTable(path: ["model_providers", activeKey])
         }

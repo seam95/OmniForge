@@ -1368,6 +1368,16 @@ struct Strings: Equatable {
     /// 模型覆盖（可选）。
     let providerModelLabel: String
     let providerModelHint: String
+    /// 思考强度（Codex）。
+    let providerReasoningEffortLabel: String
+    let providerReasoningEffortDefault: String
+    let providerReasoningEffortNone: String
+    let providerReasoningEffortMinimal: String
+    let providerReasoningEffortLow: String
+    let providerReasoningEffortMedium: String
+    let providerReasoningEffortHigh: String
+    let providerReasoningEffortXHigh: String
+    let providerReasoningEffortMax: String
     /// 角色模型映射分组标题（Claude Code）。
     let providerModelMappingLabel: String
     let providerModelMappingSectionTitle: String
@@ -1593,4 +1603,29 @@ struct Strings: Equatable {
     let desktopPetBubbleClipboard2: String
     let desktopPetBubbleLocked1: String
     let desktopPetBubbleLocked2: String
+    // MARK: - Right-Click Enhancement（访达右键增强）
+    let featureHubNameRightClickEnhancement: String
+    let featureHubDescRightClickEnhancement: String
+    let rightClickSettingsTitle: String
+    let rightClickSettingsEnable: String
+    let rightClickMenuHierarchySection: String
+    let rightClickSubmenuCollapsedToggle: String
+    let rightClickSubmenuCollapsedHint: String
+    let rightClickPromotedItemsSection: String
+    let rightClickPromoteNewFile: String
+    let rightClickPromoteTerminal: String
+    let rightClickPromoteEditor: String
+    let rightClickPromoteCopyPath: String
+    let rightClickFileExtensionsSection: String
+    let rightClickFileExtensionsHint: String
+    let rightClickAddExtensionButton: String
+    let rightClickAddExtensionPlaceholder: String
+    let rightClickResetExtensionsButton: String
+    let rightClickFavoriteDirectoriesSection: String
+    let rightClickFavoriteDirectoriesHint: String
+    let rightClickAddDirectoryButton: String
+    let rightClickExtensionStatusSection: String
+    let rightClickExtensionStatusEnabled: String
+    let rightClickExtensionStatusDisabled: String
+    let rightClickExtensionOpenSettingsButton: String
 }

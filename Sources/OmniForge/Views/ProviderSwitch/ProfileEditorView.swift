@@ -52,6 +52,7 @@ struct ProfileEditorView: View {
     @State private var baseURL = ""
     @State private var token = ""
     @State private var model = ""
+    @State private var reasoningEffort = ""
     @State private var sonnet = ""
     @State private var sonnetName = ""
     @State private var opus = ""
@@ -374,7 +375,75 @@ struct ProfileEditorView: View {
                 Text(strings.providerModelHint)
                     .font(.system(size: 12))
                     .foregroundStyle(Color(red: 0x8E / 255.0, green: 0x8E / 255.0, blue: 0x93 / 255.0))
+
+                codexReasoningEffortRow
             }
+        }
+    }
+
+    private var codexReasoningEffortRow: some View {
+        HStack(spacing: 12) {
+            Text(strings.providerReasoningEffortLabel)
+                .font(.system(size: 13))
+                .foregroundStyle(Color(red: 0x6E / 255.0, green: 0x6E / 255.0, blue: 0x73 / 255.0))
+                .lineLimit(1)
+                .frame(width: 74, alignment: .leading)
+
+            Menu {
+                Button(strings.providerReasoningEffortDefault) {
+                    reasoningEffort = ""
+                }
+                Divider()
+                Button(strings.providerReasoningEffortNone) {
+                    reasoningEffort = "none"
+                }
+                Button(strings.providerReasoningEffortMinimal) {
+                    reasoningEffort = "minimal"
+                }
+                Button(strings.providerReasoningEffortLow) {
+                    reasoningEffort = "low"
+                }
+                Button(strings.providerReasoningEffortMedium) {
+                    reasoningEffort = "medium"
+                }
+                Button(strings.providerReasoningEffortHigh) {
+                    reasoningEffort = "high"
+                }
+                Button(strings.providerReasoningEffortXHigh) {
+                    reasoningEffort = "xhigh"
+                }
+                Button(strings.providerReasoningEffortMax) {
+                    reasoningEffort = "max"
+                }
+            } label: {
+                HStack {
+                    Text(displayReasoningEffortText)
+                        .font(.system(size: 13))
+                        .foregroundStyle(reasoningEffort.isEmpty ? Color.secondary : Color.primary)
+                    Spacer()
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.secondary)
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 32)
+                .background(mappingInputBackground)
+                .overlay(mappingInputBorder)
+            }
+            .menuStyle(.borderlessButton)
+        }
+    }
+
+    private var displayReasoningEffortText: String {
+        switch reasoningEffort {
+        case "none": return strings.providerReasoningEffortNone
+        case "minimal": return strings.providerReasoningEffortMinimal
+        case "low": return strings.providerReasoningEffortLow
+        case "medium": return strings.providerReasoningEffortMedium
+        case "high": return strings.providerReasoningEffortHigh
+        case "xhigh": return strings.providerReasoningEffortXHigh
+        case "max": return strings.providerReasoningEffortMax
+        default: return strings.providerReasoningEffortDefault
         }
     }
 
@@ -494,6 +563,7 @@ struct ProfileEditorView: View {
         baseURL = profile.baseURL
         token = profile.token
         model = profile.modelOverride ?? ""
+        reasoningEffort = profile.reasoningEffort ?? ""
         sonnet = profile.modelMapping?.sonnet ?? ""
         sonnetName = profile.modelMapping?.sonnetName ?? ""
         opus = profile.modelMapping?.opus ?? ""
@@ -535,6 +605,7 @@ struct ProfileEditorView: View {
                 name = preset.displayName
                 baseURL = connection.baseURL
                 model = connection.defaultModel
+                reasoningEffort = ""
             }
         }
     }
@@ -548,6 +619,7 @@ struct ProfileEditorView: View {
             baseURL: trimmed(baseURL),
             token: trimmed(token),
             modelOverride: emptyToNil(trimmed(model)),
+            reasoningEffort: tool == .codex ? emptyToNil(trimmed(reasoningEffort)) : nil,
             modelMapping: tool == .claudeCode ? makeMapping() : nil,
             extraEnv: tool == .claudeCode ? extraEnv : [:],
             // 收编外部文件时保留原来源标记；本 App 新建一律打 omniforge

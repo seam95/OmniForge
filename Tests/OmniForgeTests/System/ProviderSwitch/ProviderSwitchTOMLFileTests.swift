@@ -298,4 +298,25 @@ final class ProviderSwitchTOMLFileTests: XCTestCase {
         XCTAssertEqual(document.stringValue(key: "key5", table: ["c"]), "5")
         XCTAssertEqual(document.stringValue(key: "key4", table: ["b"]), "4")
     }
+
+    func test_booleanValue_and_setBooleanValue() throws {
+        var document = try XCTUnwrap(TOMLFile.parse("""
+        model = "gpt-5"
+
+        [model_providers.custom]
+        name = "custom"
+        requires_openai_auth = false   # 旧值
+        """))
+        XCTAssertEqual(document.booleanValue(key: "requires_openai_auth", table: ["model_providers", "custom"]), false)
+
+        // 原地更新为 true，保留行尾注释
+        document.setBooleanValue(true, key: "requires_openai_auth", table: ["model_providers", "custom"])
+        XCTAssertEqual(document.booleanValue(key: "requires_openai_auth", table: ["model_providers", "custom"]), true)
+        XCTAssertTrue(document.serialize().contains("requires_openai_auth = true   # 旧值"))
+
+        // 追加新布尔键
+        document.setBooleanValue(false, key: "is_disabled", table: ["model_providers", "custom"])
+        XCTAssertEqual(document.booleanValue(key: "is_disabled", table: ["model_providers", "custom"]), false)
+        XCTAssertTrue(document.serialize().contains("is_disabled = false"))
+    }
 }

@@ -64,6 +64,18 @@ enum ProviderSwitchPaths {
         codexHome(homePath: homePath, environment: environment)
     }
 
+    /// Codex 桌面端自定义模型目录文件名。
+    static let codexModelCatalogFileName = "omniforge-model-catalog.json"
+
+    /// Codex 桌面端自定义模型目录路径：`~/.codex/omniforge-model-catalog.json`。
+    static func codexModelCatalogURL(
+        homePath: String = FileManager.default.homeDirectoryForCurrentUser.path,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL {
+        codexHome(homePath: homePath, environment: environment)
+            .appendingPathComponent(codexModelCatalogFileName, isDirectory: false)
+    }
+
     // MARK: - 统一入口
 
     /// 目标工具配置文件 URL。
