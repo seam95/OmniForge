@@ -8,9 +8,15 @@ final class PetLookOverlayTests: XCTestCase {
     private let radius: CGFloat = 100
 
     /// 顺时针角度 → 期望槽位（正上 0°=0、右 90°=4、下 180°=8、左 270°=12）。
+    /// 指针相对**视线枢轴**（眼位）放置：枢轴略高于几何中心，若仍按中心布点，
+    /// 边界角会被这 0.5pt 偏移推过取整边界而使半格归属断言失真。
     private func index(degrees: CGFloat) -> Int? {
         let radians = degrees * .pi / 180
-        let pointer = CGPoint(x: radius * sin(radians), y: radius * cos(radians))
+        let pivot = PetLookOverlay.pivot(in: rect)
+        let pointer = CGPoint(
+            x: pivot.x + radius * sin(radians),
+            y: pivot.y + radius * cos(radians)
+        )
         return PetLookOverlay.directionIndex(pointer: pointer, petRect: rect)
     }
 
@@ -67,10 +73,99 @@ final class PetLookOverlayTests: XCTestCase {
         XCTAssertNil(PetLookOverlay.directionIndex(pointer: CGPoint(x: 5, y: 5), petRect: rect), "右上角")
     }
 
-    func test_pointerJustOutsideBoundaryHasDirection() {
-        // 边界外一丝即有方向。
-        XCTAssertEqual(PetLookOverlay.directionIndex(pointer: CGPoint(x: 0, y: 5.001), petRect: rect), 0)
-        XCTAssertEqual(PetLookOverlay.directionIndex(pointer: CGPoint(x: 5.001, y: 0), petRect: rect), 4)
+    func test_pointerJustOutsideBoundaryIsInsideInnerDeadZone() {
+        // 边界外一丝仍在 35pt 内死区内：不产生看向（防窗缘横跳）。
+        XCTAssertNil(PetLookOverlay.directionIndex(pointer: CGPoint(x: 0, y: 5.001), petRect: rect), "刚出上边界")
+        XCTAssertNil(PetLookOverlay.directionIndex(pointer: CGPoint(x: 5.001, y: 0), petRect: rect), "刚出右边界")
+        XCTAssertNil(PetLookOverlay.directionIndex(pointer: CGPoint(x: -5.001, y: 0), petRect: rect), "刚出左边界")
+        XCTAssertNil(PetLookOverlay.directionIndex(pointer: CGPoint(x: 0, y: -5.001), petRect: rect), "刚出下边界")
+    }
+
+    func test_pointerBeyondInnerDeadZoneHasDirection() {
+        // 越过内死区后按真实方向给出槽位（枢轴略高于几何中心）。
+        let pivot = PetLookOverlay.pivot(in: rect)
+        XCTAssertEqual(pivot.y, 0.5, accuracy: 1e-9, "枢轴应在高度 55% 处")
+        // 正上：指针在枢轴正上方 100pt。
+        XCTAssertEqual(
+            PetLookOverlay.directionIndex(pointer: CGPoint(x: pivot.x, y: pivot.y + 100), petRect: rect),
+            0, "内死区外正上"
+        )
+        // 正右：指针在枢轴正右方 100pt。
+        XCTAssertEqual(
+            PetLookOverlay.directionIndex(pointer: CGPoint(x: pivot.x + 100, y: pivot.y), petRect: rect),
+            4, "内死区外正右"
+        )
+    }
+
+    func test_innerDeadZoneBoundaryIsExclusive() {
+        let pivot = PetLookOverlay.pivot(in: rect)
+        // 距枢轴恰 35pt：不命中（要求 > 35）。取正上方避开矩形死区。
+        let atBoundary = CGPoint(x: pivot.x, y: pivot.y + PetLookOverlay.innerDeadZone)
+        XCTAssertNil(
+            PetLookOverlay.directionIndex(pointer: atBoundary, petRect: rect),
+            "距枢轴恰 35pt 不产生看向"
+        )
+        let justBeyond = CGPoint(x: pivot.x, y: pivot.y + PetLookOverlay.innerDeadZone + 0.001)
+        XCTAssertEqual(
+            PetLookOverlay.directionIndex(pointer: justBeyond, petRect: rect),
+            0, "距枢轴略超 35pt 产生看向"
+        )
+    }
+
+    func test_outerCutoffStopsFollowing() {
+        let pivot = PetLookOverlay.pivot(in: rect)
+        // 距枢轴恰 1100pt：不命中（要求 < 1100）。矩形高仅 10pt，远处必在窗外。
+        let atCutoff = CGPoint(x: pivot.x + PetLookOverlay.outerCutoff, y: pivot.y)
+        XCTAssertNil(
+            PetLookOverlay.directionIndex(pointer: atCutoff, petRect: rect),
+            "距枢轴恰 1100pt 停止跟随"
+        )
+        let justInside = CGPoint(x: pivot.x + PetLookOverlay.outerCutoff - 0.001, y: pivot.y)
+        XCTAssertEqual(
+            PetLookOverlay.directionIndex(pointer: justInside, petRect: rect),
+            4, "距枢轴略小于 1100pt 仍跟随"
+        )
+    }
+
+    func test_customPivotOverridesEyePosition() {
+        // 显式传入几何中心作枢轴时，正上方向不受枢轴偏移影响。
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        XCTAssertEqual(
+            PetLookOverlay.directionIndex(pointer: CGPoint(x: center.x, y: center.y + 100), petRect: rect, pivotOverride: center),
+            0
+        )
+        // 同一指针在默认眼位枢轴下仍是正上（dx 相同、dy 更大，atan2 不变）。
+        XCTAssertEqual(
+            PetLookOverlay.directionIndex(pointer: CGPoint(x: center.x, y: center.y + 100), petRect: rect),
+            0
+        )
+    }
+
+    func test_eyePivotChangesResultVersusGeometricCenter() {
+        // 枢轴偏移必须真实生效：同一指针在几何中心与眼位枢轴下落入不同槽位。
+        // 高矩形使 5% 偏移达到 10pt，足以跨过取整边界。
+        let tall = CGRect(x: -5, y: -100, width: 10, height: 200)
+        let center = CGPoint(x: tall.midX, y: tall.midY)
+        // 自中心看恰在 348.8°（槽 15/0 边界之上，归入 0）。
+        let pointer = CGPoint(x: center.x - 19.41, y: center.y + 98.08)
+        XCTAssertEqual(
+            PetLookOverlay.directionIndex(pointer: pointer, petRect: tall, pivotOverride: center),
+            0, "以几何中心为枢轴落在槽 0"
+        )
+        XCTAssertEqual(
+            PetLookOverlay.directionIndex(pointer: pointer, petRect: tall),
+            15, "以眼位为枢轴同一指针落入槽 15——枢轴偏移真实生效"
+        )
+    }
+
+    func test_isInsideMatchesRectContainmentIncludingBoundary() {
+        // 悬停触发域与看向解耦后，isInside 必须独立保持矩形包含语义。
+        XCTAssertTrue(PetLookOverlay.isInside(.zero, petRect: rect), "中心")
+        XCTAssertTrue(PetLookOverlay.isInside(CGPoint(x: 4, y: 4), petRect: rect), "内部")
+        XCTAssertTrue(PetLookOverlay.isInside(CGPoint(x: 0, y: 5), petRect: rect), "上边界")
+        XCTAssertTrue(PetLookOverlay.isInside(CGPoint(x: 5, y: 5), petRect: rect), "右上角")
+        XCTAssertFalse(PetLookOverlay.isInside(CGPoint(x: 0, y: 5.001), petRect: rect), "刚出上边界即窗外")
+        XCTAssertFalse(PetLookOverlay.isInside(CGPoint(x: -6, y: 0), petRect: rect), "左侧外")
     }
 
     // MARK: - 负坐标副屏

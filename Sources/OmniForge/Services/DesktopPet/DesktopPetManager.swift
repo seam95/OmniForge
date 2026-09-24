@@ -580,8 +580,9 @@ final class DesktopPetManager: ObservableObject {
         let pointer = pointerLocationProvider()
         lastPointerSample = pointer
         let petRect = panel.frame
-        // 含边界死区判定与看向方向同源（PetLookOverlay 的几何口径）。
-        let inside = PetLookOverlay.directionIndex(pointer: pointer, petRect: petRect) == nil
+        // 悬停触发域用矩形包含判定，与看向方向解耦：看向的 nil 还含「距枢轴过近 / 过远」语义，
+        // 若复用会把窗外 35pt 内的指针误判为窗内而导致悬停误触发。
+        let inside = PetLookOverlay.isInside(pointer, petRect: petRect)
 
         // 直接拖动期间：喂方向 / 速度采样器（指针位移即窗口位移，会话锚点固定）。
         if isDragging {
