@@ -686,8 +686,13 @@ extension CaptureOverlayController: SelectionViewDelegate {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let cgImage = try await client.captureRegion(captureRect, displayID: displayID, scaleFactor: screen.backingScaleFactor)
-                let image = NSImage(cgImage: cgImage, size: alignedRect.size)
+                let image = try await self.captureRegionFallback(
+                    client: client,
+                    rect: captureRect,
+                    displayID: displayID,
+                    screen: screen,
+                    size: alignedRect.size
+                )
                 await MainActor.run {
                     guard !self.isTornDown, self.snapshotGeneration == generation else {
                         Self.logger.info("selectionDidComplete async success ignored (tornDown/generation)")
@@ -761,12 +766,13 @@ extension CaptureOverlayController: SelectionViewDelegate {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let cgImage = try await client.captureRegion(
-                    captureRect,
+                let image = try await self.captureRegionFallback(
+                    client: client,
+                    rect: captureRect,
                     displayID: displayID,
-                    scaleFactor: screen.backingScaleFactor
+                    screen: screen,
+                    size: selectionViewRect.size
                 )
-                let image = NSImage(cgImage: cgImage, size: selectionViewRect.size)
                 await MainActor.run {
                     // Cancel / new session: drop captured callback — no late copy/pin side effects.
                     guard !self.isTornDown, self.snapshotGeneration == generation else {
@@ -955,6 +961,31 @@ extension CaptureOverlayController: SelectionViewDelegate {
             preSnapshot: preSnapshot,
             displayID: displayID
         )
+    }
+
+    /// 实时回退捕获（冻屏快照尚未就绪时的选区捕获），编辑器与 copy/pin 直出共用。
+    ///
+    /// 必须排除遮罩自身窗口：`SCContentFilter` 不排除时，0.45 暗罩与绿色选区描边会
+    /// 一起被烤进截图——冻屏路径一直排除，回退路径此前漏传，导致「手快」与「手慢」
+    /// 两条路径出图不一致（回退图边缘带绿框）。
+    ///
+    /// 底层 `ScreenCaptureKitClient` 在 TTL 内复用会话内枚举结果：本机
+    /// `SCShareableContent.current` 实测 ~1.05s（3222 窗），实际捕获仅 ~60ms，
+    /// 复用后回退不再重付这一秒，标注工具栏可以立刻出。
+    private func captureRegionFallback(
+        client: ScreenCaptureClient,
+        rect: CGRect,
+        displayID: CGDirectDisplayID,
+        screen: NSScreen,
+        size: NSSize
+    ) async throws -> NSImage {
+        let cgImage = try await client.captureRegion(
+            rect,
+            displayID: displayID,
+            scaleFactor: screen.backingScaleFactor,
+            excludingWindowIDs: overlayWindowIDs
+        )
+        return NSImage(cgImage: cgImage, size: size)
     }
 }
 
