@@ -31,7 +31,6 @@ enum MenuPanel: String, CaseIterable, Identifiable {
             || isAvailable(.dshWeb)
             || isAvailable(.cleaningMode)
             || isAvailable(.stickyNotes)
-            || isAvailable(.desktopPet)
             || isAvailable(.keepAwake) {
             result.append(.utilities)
         }

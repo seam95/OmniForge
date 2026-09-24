@@ -85,15 +85,11 @@ final class NavigationRoutesTests: XCTestCase {
         )
     }
 
-    /// 回归：仅便签或仅桌宠可用时，实用工具 tab 必须可见（此前判断遗漏这两项，
-    /// 导致只启用便签/桌宠的用户整个工具 tab 消失）。详见 SPEC §5.2。
-    func test_menuPanels_showUtilitiesForStickyNotesAndDesktopPet() {
+    /// 回归：仅便签可用时，实用工具 tab 必须可见（此前判断遗漏这一项，
+    /// 导致只启用便签的用户整个工具 tab 消失）。详见 SPEC §5.2。
+    func test_menuPanels_showUtilitiesForStickyNotes() {
         XCTAssertEqual(
             MenuPanel.visibleCases(isAvailable: { $0 == .stickyNotes }),
-            [.utilities]
-        )
-        XCTAssertEqual(
-            MenuPanel.visibleCases(isAvailable: { $0 == .desktopPet }),
             [.utilities]
         )
     }
@@ -249,15 +245,11 @@ final class NavigationRoutesTests: XCTestCase {
     func test_utilityTools_followFeatureAvailabilityAndStableOrder() {
         XCTAssertEqual(
             UtilityTool.visibleCases(isAvailable: { _ in true }),
-            [.stickyNotes, .dshWeb, .networkDiagnostics, .colorPicker, .uninstaller, .cleaner, .cleaningMode, .desktopPet, .keepAwake]
+            [.stickyNotes, .dshWeb, .networkDiagnostics, .colorPicker, .uninstaller, .cleaner, .cleaningMode, .keepAwake]
         )
         XCTAssertEqual(
             UtilityTool.visibleCases(isAvailable: { $0 == .cleaningMode }),
             [.cleaningMode]
-        )
-        XCTAssertEqual(
-            UtilityTool.visibleCases(isAvailable: { $0 == .desktopPet }),
-            [.desktopPet]
         )
         XCTAssertEqual(
             UtilityTool.visibleCases(isAvailable: { $0 == .cleaner }),

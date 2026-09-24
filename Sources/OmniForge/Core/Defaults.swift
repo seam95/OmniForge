@@ -26,7 +26,6 @@ enum Defaults {
             .merging(networkDiagnosticsDefaults, uniquingKeysWith: { _, new in new })
             .merging(dshWebDefaults, uniquingKeysWith: { _, new in new })
             .merging(promptOptimizerDefaults, uniquingKeysWith: { _, new in new })
-            .merging(desktopPetDefaults, uniquingKeysWith: { _, new in new })
     }
 
     /// Onboarding 相关默认值
@@ -155,18 +154,6 @@ enum Defaults {
     }
 
     /// 桌面宠物默认值：默认关闭，避免升级用户桌面突然多一只宠物。
-    private static var desktopPetDefaults: [String: Any] {
-        [
-            UserDefaultsKeys.petEnabled: false,
-            UserDefaultsKeys.petSize: DesktopPetSize.medium.rawValue,
-            UserDefaultsKeys.petPositionX: 0.0,
-            UserDefaultsKeys.petPositionY: 0.0,
-            UserDefaultsKeys.petPositionScreen: "",
-            UserDefaultsKeys.petSelectedSlug: PetAssetLocator.builtInPetID,
-            UserDefaultsKeys.petActivityLevel: "balanced",
-            UserDefaultsKeys.petReactionsEnabled: true,
-        ]
-    }
 
     /// Trims, drops empties, and de-duplicates bundle identifiers while preserving order.
     static func sanitizedBundleIdentifierList(_ bundleIDs: [String]) -> [String] {

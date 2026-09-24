@@ -296,7 +296,7 @@ final class FeatureCatalogTests: XCTestCase {
         // 桌面常驻：留在桌面上的陪伴型窗口。
         XCTAssertEqual(
             FeatureGroup.features(in: .desktop),
-            [.stickyNotes, .desktopPet]
+            [.stickyNotes]
         )
 
         // 每组不超过 6 项（回归保护：新增特性时若把巨组重新撑大，此断言会失败）。
@@ -345,7 +345,7 @@ final class FeatureCatalogTests: XCTestCase {
 
     /// 全部 20 项都必须有明确的使用形态归属（穷尽 switch 的语义保障）。
     func test_everyFeatureHasUsageForm() {
-        XCTAssertEqual(AppFeature.allCases.count, 20)
+        XCTAssertEqual(AppFeature.allCases.count, 19)
         XCTAssertEqual(
             AppFeature.allCases.filter { $0.usageForm == .hotkey }.count, 5,
             "热键直达型：剪贴板历史/快捷短语/暂存架/截图/提示词优化"
@@ -359,8 +359,8 @@ final class FeatureCatalogTests: XCTestCase {
             "面板浏览型：系统监控/Token 用量/供应商切换"
         )
         XCTAssertEqual(
-            AppFeature.allCases.filter { $0.usageForm == .tool }.count, 9,
-            "动作工具型：网诊/DSH/清理/卸载/取色/唤醒/便签/清洁模式/桌宠"
+            AppFeature.allCases.filter { $0.usageForm == .tool }.count, 8,
+            "动作工具型：网诊/DSH/清理/卸载/取色/唤醒/便签/清洁模式"
         )
     }
 

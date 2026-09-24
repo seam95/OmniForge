@@ -1572,52 +1572,6 @@ struct Strings: Equatable {
     let promptOptimizerTestNoKey: String
     let promptOptimizerTestFailed: String
     let promptOptimizerEndpointFormat: String
-    // MARK: - Desktop Pet（桌面宠物）
-    let featureHubNameDesktopPet: String
-    let featureHubDescDesktopPet: String
-    let utilityDesktopPetSubtitle: String
-    let desktopPetEnable: String
-    let desktopPetSizeSection: String
-    let desktopPetSizeSmall: String
-    let desktopPetSizeMedium: String
-    let desktopPetSizeLarge: String
-    let desktopPetResetPosition: String
-    let desktopPetHide: String
-    let desktopPetOpenSettings: String
-    let desktopPetShow: String
-    let desktopPetBuiltIn: String
-    let desktopPetAppearanceSection: String
-    let desktopPetImportButton: String
-    let desktopPetImportHint: String
-    let desktopPetImportSuccessFormat: String
-    let desktopPetImportFailedFormat: String
-    let desktopPetRemoveButton: String
-    let desktopPetCommunitySection: String
-    let desktopPetBrowseButton: String
-    let desktopPetInstallByNameHint: String
-    let desktopPetInstallNamePlaceholder: String
-    let desktopPetInstallButton: String
-    let desktopPetDownloading: String
-    let desktopPetCommunityDisclaimer: String
-    let desktopPetActivitySection: String
-    let desktopPetActivityQuiet: String
-    let desktopPetActivityBalanced: String
-    let desktopPetActivityLively: String
-    let desktopPetReactionsSection: String
-    let desktopPetReactionsToggle: String
-    // 桌宠对话气泡（每种反应两条候选，反应开始时随机定格一条）
-    let desktopPetBubbleResetFormat1: String
-    let desktopPetBubbleResetFormat2: String
-    let desktopPetBubbleUnlocked1: String
-    let desktopPetBubbleUnlocked2: String
-    let desktopPetBubbleLowFormat1: String
-    let desktopPetBubbleLowFormat2: String
-    let desktopPetBubbleHeat1: String
-    let desktopPetBubbleHeat2: String
-    let desktopPetBubbleClipboard1: String
-    let desktopPetBubbleClipboard2: String
-    let desktopPetBubbleLocked1: String
-    let desktopPetBubbleLocked2: String
     // MARK: - Right-Click Enhancement（访达右键增强）
     let featureHubNameRightClickEnhancement: String
     let featureHubDescRightClickEnhancement: String

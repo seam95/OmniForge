@@ -22,7 +22,6 @@ enum AppFeature: String, CaseIterable {
     case promptOptimizer
     case stickyNotes
     case cleaningMode
-    case desktopPet
     case rightClickEnhancement
 }
 
@@ -94,7 +93,7 @@ extension AppFeature {
         case .cleaner, .uninstaller, .colorPicker, .networkDiagnostics, .dshWeb, .cleaningMode:
             return .maintenance
         // 桌面常驻：留在桌面上陪伴或随手使用的窗口类功能。
-        case .stickyNotes, .desktopPet: return .desktop
+        case .stickyNotes: return .desktop
         case .mouse, .rightClickEnhancement: return .mouse
         case .keepAwake: return .energy
         case .screenshot: return .capture
@@ -113,7 +112,7 @@ extension AppFeature {
         case .systemMonitor, .tokenUsage, .providerSwitch:
             return .panel
         case .networkDiagnostics, .dshWeb, .cleaner, .uninstaller, .colorPicker,
-             .keepAwake, .stickyNotes, .cleaningMode, .desktopPet:
+             .keepAwake, .stickyNotes, .cleaningMode:
             return .tool
         }
     }
@@ -148,7 +147,6 @@ extension AppFeature {
         case .promptOptimizer: return []
         case .stickyNotes: return []
         case .cleaningMode: return []
-        case .desktopPet: return [UserDefaultsKeys.petEnabled]
         case .rightClickEnhancement: return []
         }
     }
@@ -172,7 +170,6 @@ extension AppFeature {
         case .promptOptimizer: return [.accessibility]
         case .stickyNotes: return [.notifications]
         case .cleaningMode: return [.accessibility]
-        case .desktopPet: return []
         case .rightClickEnhancement: return []
         }
     }
@@ -219,9 +216,6 @@ extension AppFeature {
             return permission == .accessibility ? .required : nil
         case .clipboardHistory, .quickPhrase, .shelf:
             return nil
-        case .desktopPet:
-            // 纯桌宠不监听全局输入、不读窗口标题，零系统权限。
-            return nil
         case .rightClickEnhancement:
             return nil
         }
@@ -253,7 +247,6 @@ extension AppFeature {
         case .promptOptimizer: return "wand.and.stars"
         case .stickyNotes: return "note.text"
         case .cleaningMode: return "bubbles.and.sparkles"
-        case .desktopPet: return "pawprint"
         case .rightClickEnhancement: return "cursorarrow.click.2"
         }
     }
@@ -279,7 +272,6 @@ extension AppFeature {
         case .promptOptimizer: return strings.featureHubNamePromptOptimizer
         case .stickyNotes: return strings.featureHubNameStickyNotes
         case .cleaningMode: return strings.featureHubNameCleaningMode
-        case .desktopPet: return strings.featureHubNameDesktopPet
         case .rightClickEnhancement: return strings.featureHubNameRightClickEnhancement
         }
     }
@@ -305,7 +297,6 @@ extension AppFeature {
         case .promptOptimizer: return strings.featureHubDescPromptOptimizer
         case .stickyNotes: return strings.featureHubDescStickyNotes
         case .cleaningMode: return strings.featureHubDescCleaningMode
-        case .desktopPet: return strings.featureHubDescDesktopPet
         case .rightClickEnhancement: return strings.featureHubDescRightClickEnhancement
         }
     }

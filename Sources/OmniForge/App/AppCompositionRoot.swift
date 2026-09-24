@@ -88,8 +88,6 @@ final class AppCompositionRoot {
         DSHWebManager.shared.shutdown()
         // 便签：失效全部唤起定时器并撤销通知请求（窗口随 teardown 关闭）。
         FeatureRuntime.shared.manager(for: .stickyNotes, as: StickyNoteManager.self)?.teardown()
-        // 桌面宠物：窗口消失 + 行为循环停止。
-        FeatureRuntime.shared.manager(for: .desktopPet, as: DesktopPetManager.self)?.teardown()
         if let manager = FeatureRuntime.shared.manager(for: .keepAwake, as: KeepAwakeManager.self) {
             await manager.shutdown(reason: .applicationTermination)
             if case .cleanupRequired = manager.state {
@@ -212,16 +210,7 @@ final class AppCompositionRoot {
         wireKeepAwakeAutoStart()
         wireScreenshotHotkeys()
         wireStickyNotesHotkey()
-        wireDesktopPetSettings()
         observeRuntimeRevision()
-    }
-
-    /// 宠物右键菜单「打开设置」→ 控制中心实用工具页宠物详情。
-    private func wireDesktopPetSettings() {
-        FeatureRuntime.shared.manager(for: .desktopPet, as: DesktopPetManager.self)?
-            .openSettingsHandler = { [weak self] in
-                self?.statusBarController.showDesktopPetSettings()
-            }
     }
 
     private func observeRuntimeRevision() {
@@ -235,9 +224,6 @@ final class AppCompositionRoot {
                 self?.wireKeepAwakeHotkey()
                 self?.wireScreenshotHotkeys()
                 self?.wireStickyNotesHotkey()
-                // 桌宠运行期卸载后重装会新建 manager，openSettingsHandler
-                // 必须随 revision 重接，否则右键「打开设置」静默失效。
-                self?.wireDesktopPetSettings()
             }
             .store(in: &sinks)
     }

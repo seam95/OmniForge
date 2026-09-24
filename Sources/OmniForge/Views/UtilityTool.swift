@@ -9,7 +9,6 @@ enum UtilityTool: String, CaseIterable, Identifiable {
     case uninstaller
     case cleaner
     case cleaningMode
-    case desktopPet
     case keepAwake
 
     var id: String { rawValue }
@@ -31,8 +30,6 @@ enum UtilityTool: String, CaseIterable, Identifiable {
                 return isAvailable(.cleaner)
             case .cleaningMode:
                 return isAvailable(.cleaningMode)
-            case .desktopPet:
-                return isAvailable(.desktopPet)
             case .keepAwake:
                 return isAvailable(.keepAwake)
             }
@@ -64,8 +61,6 @@ enum UtilityTool: String, CaseIterable, Identifiable {
             return strings.utilityCleaner
         case .cleaningMode:
             return strings.featureHubNameCleaningMode
-        case .desktopPet:
-            return strings.featureHubNameDesktopPet
         case .keepAwake:
             return strings.featureHubNameKeepAwake
         }
@@ -88,8 +83,6 @@ enum UtilityTool: String, CaseIterable, Identifiable {
             return .cleaner
         case .cleaningMode:
             return .cleaningMode
-        case .desktopPet:
-            return .desktopPet
         case .keepAwake:
             return .keepAwake
         }
@@ -112,8 +105,6 @@ enum UtilityTool: String, CaseIterable, Identifiable {
             return "trash"
         case .cleaningMode:
             return "bubbles.and.sparkles"
-        case .desktopPet:
-            return "pawprint"
         case .keepAwake:
             return "moon.zzz.fill"
         }
@@ -136,8 +127,6 @@ enum UtilityTool: String, CaseIterable, Identifiable {
             return .blue
         case .cleaningMode:
             return .mint
-        case .desktopPet:
-            return .brown
         case .keepAwake:
             return .purple
         }
@@ -163,8 +152,6 @@ enum UtilityTool: String, CaseIterable, Identifiable {
             return strings.utilityCleanerSubtitle
         case .cleaningMode:
             return strings.utilityCleaningModeSubtitle
-        case .desktopPet:
-            return strings.utilityDesktopPetSubtitle
         case .keepAwake:
             return strings.utilityKeepAwakeSubtitle
         }

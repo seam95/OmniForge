@@ -110,11 +110,6 @@ if [[ -d Resources/zh-Hans.lproj ]]; then
     cp -R Resources/zh-Hans.lproj "$STAGE/Contents/Resources/"
 fi
 
-# Step 4b: 复制桌面宠物内置资产（Pets/<id>/pet.json + 图集）
-if [[ -d Resources/Pets ]]; then
-    cp -R Resources/Pets "$STAGE/Contents/Resources/"
-fi
-
 # Step 4c: 嵌入 Sparkle.framework（自动更新）。
 # SPM 对可执行文件只注入 @loader_path 一个 rpath；.app 内 framework 位于
 # Contents/Frameworks，必须额外补 @loader_path/../Frameworks，否则 dyld 找不到。

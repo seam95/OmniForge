@@ -110,13 +110,4 @@ enum UserDefaultsKeys {
     static let promptOptimizerAutoReplace = "promptOptimizer.autoReplace"
     static let promptOptimizerHotkeyKeyCode = "promptOptimizer.hotkey.keyCode"
     static let promptOptimizerHotkeyModifiers = "promptOptimizer.hotkey.modifiers"
-    // Desktop Pet — 桌面宠物（持久化字符串必须稳定，不得重命名）
-    static let petEnabled = "desktopPet.enabled"
-    static let petSize = "desktopPet.size"
-    static let petPositionX = "desktopPet.position.x"
-    static let petPositionY = "desktopPet.position.y"
-    static let petPositionScreen = "desktopPet.position.screen"
-    static let petSelectedSlug = "desktopPet.selectedSlug"
-    static let petActivityLevel = "desktopPet.activityLevel"
-    static let petReactionsEnabled = "desktopPet.reactionsEnabled"
 }

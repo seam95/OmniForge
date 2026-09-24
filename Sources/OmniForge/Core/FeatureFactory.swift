@@ -344,21 +344,6 @@ struct FeatureFactory {
                 )
                 runtime.register(.cleaningMode, manager: manager)
             }
-        case .desktopPet:
-            // 重接线 feature（对齐便签）：install 时按 petEnabled 建窗并恢复位置。
-            // 社区宠物库目录注册进资产搜索根，使 petdex 资产可被定位与加载。
-            if runtime.manager(for: .desktopPet, as: DesktopPetManager.self) == nil {
-                let petRoot = PetAssetStore.defaultRootDirectory()
-                if !PetAssetLocator.additionalSearchRoots.contains(petRoot) {
-                    PetAssetLocator.additionalSearchRoots.append(petRoot)
-                }
-                let manager = DesktopPetManager(
-                    userDefaults: userDefaults,
-                    assetStore: PetAssetStore(rootDirectory: petRoot),
-                    stringsProvider: { L10n(userDefaults: userDefaults).s }
-                )
-                runtime.register(.desktopPet, manager: manager)
-            }
         case .rightClickEnhancement:
             if runtime.manager(for: .rightClickEnhancement, as: RightClickService.self) == nil {
                 let service = RightClickService(
@@ -430,9 +415,6 @@ struct FeatureFactory {
         case .cleaningMode:
             // 卸载时若清洁进行中，先撤遮罩、恢复输入，再卸注册。
             runtime.manager(for: .cleaningMode, as: CleaningModeManager.self)?.stop()
-        case .desktopPet:
-            // 窗口立即消失 + 行为循环停止（可插拔停用契约）。
-            runtime.manager(for: .desktopPet, as: DesktopPetManager.self)?.teardown()
         case .rightClickEnhancement:
             runtime.manager(for: .rightClickEnhancement, as: RightClickService.self)?.stop()
         }

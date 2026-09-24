@@ -358,16 +358,6 @@ final class FeatureRuntime: ObservableObject {
                 shared.manager(for: .cleaningMode, as: CleaningModeManager.self)?.stop()
             }
         },
-        .desktopPet: {
-            // 重接线 feature：可用 + 开关开启才建窗；否则窗口消失、循环停止。
-            let manager = shared.manager(for: .desktopPet, as: DesktopPetManager.self)
-            let enabled = shared.defaults.bool(forKey: UserDefaultsKeys.petEnabled)
-            if shared.isAvailable(.desktopPet), enabled {
-                manager?.start()
-            } else {
-                manager?.teardown()
-            }
-        },
         .rightClickEnhancement: {
             if shared.isAvailable(.rightClickEnhancement) {
                 RightClickService.shared.start()
