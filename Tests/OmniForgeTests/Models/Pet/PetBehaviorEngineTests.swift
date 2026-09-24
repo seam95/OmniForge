@@ -387,8 +387,10 @@ final class PetBehaviorEngineTests: XCTestCase {
             id: "bare", displayName: "Bare", atlasFileName: "x.png",
             grid: .init(columns: 8, rows: 9, cellWidth: 32, cellHeight: 32),
             animations: [
-                PetSpriteAsset.Animation(id: "idle", frames: [0], fps: 1, loops: true, mirrorX: false),
-                PetSpriteAsset.Animation(id: "walk", frames: [8], fps: 8, loops: true, mirrorX: true),
+                PetSpriteAsset.Animation(id: "idle", frames: [0], fps: 1, loops: true, mirrorX: false,
+                frameDurations: nil),
+                PetSpriteAsset.Animation(id: "walk", frames: [8], fps: 8, loops: true, mirrorX: true,
+                frameDurations: nil),
             ]
         )
         XCTAssertEqual(DesktopPetManager.availableAutonomyKinds(for: bare), [.idle, .walkLeft, .walkRight])

@@ -1028,7 +1028,7 @@ final class DesktopPetManager: ObservableObject {
     private func oneShotDuration(ids: [String], fallback: TimeInterval) -> TimeInterval {
         for id in ids {
             if let animation = asset?.animation(id: id) {
-                return animation.frameDuration * Double(animation.frames.count)
+                return animation.totalDuration
             }
         }
         return fallback

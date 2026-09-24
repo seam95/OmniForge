@@ -814,8 +814,10 @@ final class DesktopPetManagerTests: XCTestCase {
             atlasFileName: "atlas.png",
             grid: PetSpriteAsset.Grid(columns: 8, rows: 9, cellWidth: 32, cellHeight: 32),
             animations: [
-                PetSpriteAsset.Animation(id: PetAnimationID.idle, frames: [0, 1, 2, 3], fps: 4, loops: true, mirrorX: false),
-                PetSpriteAsset.Animation(id: PetAnimationID.drag, frames: [32, 33], fps: 8, loops: true, mirrorX: false),
+                PetSpriteAsset.Animation(id: PetAnimationID.idle, frames: [0, 1, 2, 3], fps: 4, loops: true, mirrorX: false,
+                frameDurations: nil),
+                PetSpriteAsset.Animation(id: PetAnimationID.drag, frames: [32, 33], fps: 8, loops: true, mirrorX: false,
+                frameDurations: nil),
             ]
         )
         asset.lookFrames = lookFrames

@@ -23,8 +23,7 @@ struct PetHoverPlayback: Equatable {
 
     /// 是否已播完（elapsed ≥ 动画总时长即结束，由 Manager 在每 tick 检查并移除覆盖）。
     func isFinished(at now: Date) -> Bool {
-        let total = animation.frameDuration * Double(animation.frames.count)
-        return now.timeIntervalSince(startedAt) >= total
+        now.timeIntervalSince(startedAt) >= animation.totalDuration
     }
 }
 
@@ -38,7 +37,10 @@ extension PetSpriteAsset {
 extension PetSpriteAsset.Animation {
     /// 以本动画参数构造一次性播放副本（悬停覆盖用）。
     func oneShot() -> PetSpriteAsset.Animation {
-        PetSpriteAsset.Animation(id: id, frames: frames, fps: fps, loops: false, mirrorX: mirrorX)
+        PetSpriteAsset.Animation(
+            id: id, frames: frames, fps: fps, loops: false, mirrorX: mirrorX,
+            frameDurations: frameDurations
+        )
     }
 }
 

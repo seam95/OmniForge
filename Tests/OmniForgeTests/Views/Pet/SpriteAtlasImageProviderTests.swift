@@ -106,7 +106,8 @@ final class SpriteAtlasImageProviderTests: XCTestCase {
                     frames: Array(0..<columns),
                     fps: 4,
                     loops: true,
-                    mirrorX: false
+                    mirrorX: false,
+                frameDurations: nil
                 )
             ]
         )
@@ -140,7 +141,8 @@ final class SpriteAtlasImageProviderTests: XCTestCase {
                     frames: Array(0..<8),
                     fps: 4,
                     loops: true,
-                    mirrorX: false
+                    mirrorX: false,
+                frameDurations: nil
                 )
             ]
         )

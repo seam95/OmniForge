@@ -61,7 +61,25 @@ enum PetdexAssetAdapter {
     /// 看向行起始行号（v2 图集第 9/10 行，帧号 9×columns 起连续 16 格）。
     static let lookRowStart = 9
 
-    /// 各动画的默认播放帧率（petdex 不提供 fps，按语义给默认值）。
+    /// 参考实现的逐帧时长模板（毫秒），取自 Codex 桌面宠物的动画表。
+    /// petdex 资产不提供帧时长，按语义行取参考值以对齐其节奏。
+    ///
+    /// 这些值是**非均匀**的：idle 为「首帧 280ms 慢起 + 中段 110–140ms 快呼吸 +
+    /// 尾帧 320ms 慢收」。改用均匀 fps 会抹掉呼吸感，且 idle 总时长从 1100ms
+    /// 涨到 1750ms（+59%），表现为动画节奏明显偏慢。
+    private static let durationTemplates: [String: [Double]] = [
+        PetAnimationID.idle: [280, 110, 110, 140, 140, 320],
+        PetAnimationID.walkRight: [120, 120, 120, 120, 120, 120, 120, 220],
+        PetAnimationID.walkLeft: [120, 120, 120, 120, 120, 120, 120, 220],
+        PetAnimationID.petted: [140, 140, 140, 280],
+        PetAnimationID.drag: [140, 140, 140, 140, 280],
+        PetAnimationID.failed: [140, 140, 140, 140, 140, 140, 140, 240],
+        PetAnimationID.waiting: [150, 150, 150, 150, 150, 260],
+        PetAnimationID.review: [150, 150, 150, 150, 150, 280],
+    ]
+
+    /// 各动画的兜底帧率（petdex 不提供 fps）。
+    /// 仅在动画无逐帧模板时使用；`frameDurations(for:frameCount:)` 返回 nil 时由它推导均匀播放。
     static func defaultFPS(for animationID: String) -> Double {
         switch animationID {
         case PetAnimationID.idle: return 4
@@ -69,6 +87,44 @@ enum PetdexAssetAdapter {
         case PetAnimationID.petted: return 6
         default: return 6
         }
+    }
+
+    /// 按实际帧数给出逐帧时长（秒）。
+    /// - 帧数与模板相同：逐字采用。
+    /// - 帧数更多：在中段插入缺的帧（首尾的慢起 / 慢收帧不复制），再按帧数等比缩放总时长。
+    /// - 帧数更少：从中段移除多余的帧（保留首尾），再等比缩放。
+    /// - 无模板的动画（如 `walk` 单朝向行）返回 nil，由调用方回落 `defaultFPS`。
+    ///
+    /// 等比缩放保证「慢起-快呼吸-慢收」的轮廓在任何帧数下都成立；
+    /// 例：哆啦A梦 idle 行有 7 帧而模板为 6 帧，总时长取 1100 × 7/6 ≈ 1283ms。
+    static func frameDurations(for animationID: String, frameCount: Int) -> [TimeInterval]? {
+        guard frameCount > 0, let template = durationTemplates[animationID] else { return nil }
+        guard frameCount != template.count else { return template.map { $0 / 1000 } }
+
+        // 中段（去掉首尾慢帧）的中位数作为插入帧的时长基准。
+        let middle = template.count >= 3 ? Array(template[1..<(template.count - 1)]) : template
+        let fill = middle.sorted()[middle.count / 2]
+
+        var adjusted = template
+        if frameCount > template.count {
+            let insertAt = 1 + middle.count / 2
+            adjusted.insert(
+                contentsOf: Array(repeating: fill, count: frameCount - template.count),
+                at: min(insertAt, adjusted.count - 1)
+            )
+        } else {
+            var remaining = template.count - frameCount
+            while remaining > 0, adjusted.count > frameCount + 1 {
+                adjusted.remove(at: 1)
+                remaining -= 1
+            }
+            // 帧数缺口仍大于 1 时（极端畸形输入），直接从中段裁齐。
+            if adjusted.count > frameCount { adjusted.removeLast(adjusted.count - frameCount) }
+        }
+
+        let targetTotal = template.reduce(0, +) * Double(frameCount) / Double(template.count)
+        let scale = adjusted.reduce(0, +) > 0 ? targetTotal / adjusted.reduce(0, +) : 1
+        return adjusted.map { $0 * scale / 1000 }
     }
 
     /// 从宠物目录加载并适配。
@@ -128,7 +184,8 @@ enum PetdexAssetAdapter {
                     frames: frames,
                     fps: defaultFPS(for: animationID),
                     loops: animationID != PetAnimationID.petted,
-                    mirrorX: false
+                    mirrorX: false,
+                    frameDurations: frameDurations(for: animationID, frameCount: frames.count)
                 )
             )
         }
@@ -154,7 +211,8 @@ enum PetdexAssetAdapter {
                     frames: firstRowFrames,
                     fps: defaultFPS(for: PetAnimationID.idle),
                     loops: true,
-                    mirrorX: false
+                    mirrorX: false,
+                    frameDurations: frameDurations(for: PetAnimationID.idle, frameCount: firstRowFrames.count)
                 ),
                 at: 0
             )

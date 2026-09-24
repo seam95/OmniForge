@@ -179,6 +179,91 @@ final class PetdexAssetAdapterTests: XCTestCase {
         XCTAssertEqual(asset.animation(id: PetAnimationID.idle)?.frames, [8, 9, 10, 11])
     }
 
+    // MARK: - 逐帧时长（对齐参考实现的非均匀节奏）
+
+    /// 逐帧时长按 4 位小数取整后比较（XCTest 的 accuracy: 重载不覆盖数组）。
+    private func assertDurations(
+        _ actual: [TimeInterval]?,
+        _ expected: [TimeInterval],
+        _ message: String = "",
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard let actual else {
+            XCTFail("frameDurations 为 nil", file: file, line: line)
+            return
+        }
+        XCTAssertEqual(
+            actual.map { ($0 * 10_000).rounded() },
+            expected.map { ($0 * 10_000).rounded() },
+            message,
+            file: file,
+            line: line
+        )
+    }
+
+    func test_frameDurationsMatchReferenceWhenFrameCountAgrees() throws {
+        // 帧数与参考模板一致时逐字采用：idle 6 帧、walk 8 帧。
+        let directory = try makePet(
+            slug: "timing",
+            framesByRow: [0: 6, 1: 8, 3: 4]
+        )
+
+        let asset = try PetdexAssetAdapter.load(from: directory)
+
+        assertDurations(
+            asset.animation(id: PetAnimationID.idle)?.frameDurations,
+            [0.280, 0.110, 0.110, 0.140, 0.140, 0.320],
+            "idle 应为参考实现的慢起-快呼吸-慢收节奏"
+        )
+        assertDurations(
+            asset.animation(id: PetAnimationID.walkRight)?.frameDurations,
+            [0.120, 0.120, 0.120, 0.120, 0.120, 0.120, 0.120, 0.220]
+        )
+        assertDurations(
+            asset.animation(id: PetAnimationID.petted)?.frameDurations,
+            [0.140, 0.140, 0.140, 0.280]
+        )
+        // 总时长必须与模板一致（1100ms），而非均匀 fps 推导出的 1500ms。
+        XCTAssertEqual(asset.animation(id: PetAnimationID.idle)?.totalDuration ?? 0, 1.1, accuracy: 0.0001)
+    }
+
+    func test_idleFrameDurationsScaleToActualFrameCount() throws {
+        // 哆啦A梦 idle 行有 7 帧而参考模板为 6 帧：总时长按 1100 × 7/6 折算，
+        // 且保留「首帧慢起、尾帧慢收」的轮廓。
+        let directory = try makePet(slug: "seven", framesByRow: [0: 7])
+
+        let asset = try PetdexAssetAdapter.load(from: directory)
+        let durations = try XCTUnwrap(asset.animation(id: PetAnimationID.idle)?.frameDurations)
+
+        XCTAssertEqual(durations.count, 7)
+        XCTAssertEqual(durations.reduce(0, +), 1100.0 * 7.0 / 6.0 / 1000.0, accuracy: 0.0001,
+                       "总时长应按帧数等比缩放")
+        // 轮廓：尾帧最慢、首帧次慢，中段显著快于首尾。
+        XCTAssertEqual(durations.last ?? 0, durations.max() ?? 0, accuracy: 0.0001, "尾帧应收得最慢")
+        let middle = durations[1..<(durations.count - 1)]
+        XCTAssertGreaterThan(durations[0], middle.max() ?? 0, "首帧应慢于中段")
+        XCTAssertGreaterThan((durations.last ?? 0) * 2, middle.max() ?? 0, "尾帧应明显慢于中段")
+    }
+
+    func test_effectiveFrameDurationsAlwaysMatchesFrameCount() throws {
+        // 有模板时取模板；长度不符或 nil 时回落均匀 fps，长度恒等于 frames.count。
+        let directory = try makePet(slug: "notemplate", framesByRow: [0: 6])
+
+        let asset = try PetdexAssetAdapter.load(from: directory)
+
+        let idle = try XCTUnwrap(asset.animation(id: PetAnimationID.idle))
+        XCTAssertNotNil(idle.frameDurations)
+        XCTAssertEqual(idle.effectiveFrameDurations.count, idle.frames.count)
+        // 显式构造长度不符的畸形值：必须回落均匀表而非越界。
+        let malformed = PetSpriteAsset.Animation(
+            id: "x", frames: [0, 1, 2], fps: 4, loops: true, mirrorX: false,
+            frameDurations: [0.1, 0.2]
+        )
+        assertDurations(malformed.effectiveFrameDurations, [0.25, 0.25, 0.25], "长度不符应回落均匀 fps")
+        XCTAssertEqual(malformed.totalDuration, 0.75, accuracy: 0.0001)
+    }
+
     func test_loadKeepsAgentStateRowsForPhaseTwo() throws {
         // row5/6/8 语义行保留，供二期接 Agent 状态反应。
         let directory = try makePet(slug: "agent", framesByRow: [0: 2, 5: 2, 6: 2, 8: 3])

@@ -13,27 +13,33 @@ final class PetDisplayResolverTests: XCTestCase {
         lookFrames: [Int?]? = nil
     ) -> PetSpriteAsset {
         var animations = [
-            PetSpriteAsset.Animation(id: PetAnimationID.idle, frames: [0, 1, 2, 3], fps: 4, loops: true, mirrorX: false),
-            PetSpriteAsset.Animation(id: PetAnimationID.walk, frames: [8, 9, 10, 11], fps: 8, loops: true, mirrorX: true),
+            PetSpriteAsset.Animation(id: PetAnimationID.idle, frames: [0, 1, 2, 3], fps: 4, loops: true, mirrorX: false,
+                frameDurations: nil),
+            PetSpriteAsset.Animation(id: PetAnimationID.walk, frames: [8, 9, 10, 11], fps: 8, loops: true, mirrorX: true,
+                frameDurations: nil),
         ]
         if includeDrag {
             animations.append(
-                PetSpriteAsset.Animation(id: PetAnimationID.drag, frames: [32, 33], fps: 8, loops: true, mirrorX: false)
+                PetSpriteAsset.Animation(id: PetAnimationID.drag, frames: [32, 33], fps: 8, loops: true, mirrorX: false,
+                frameDurations: nil)
             )
         }
         if includeFall {
             animations.append(
-                PetSpriteAsset.Animation(id: PetAnimationID.fall, frames: [16], fps: 1, loops: true, mirrorX: false)
+                PetSpriteAsset.Animation(id: PetAnimationID.fall, frames: [16], fps: 1, loops: true, mirrorX: false,
+                frameDurations: nil)
             )
         }
         if walkLeft {
             animations.append(
-                PetSpriteAsset.Animation(id: PetAnimationID.walkLeft, frames: [16, 17], fps: 8, loops: true, mirrorX: false)
+                PetSpriteAsset.Animation(id: PetAnimationID.walkLeft, frames: [16, 17], fps: 8, loops: true, mirrorX: false,
+                frameDurations: nil)
             )
         }
         if walkRight {
             animations.append(
-                PetSpriteAsset.Animation(id: PetAnimationID.walkRight, frames: [24, 25], fps: 8, loops: true, mirrorX: false)
+                PetSpriteAsset.Animation(id: PetAnimationID.walkRight, frames: [24, 25], fps: 8, loops: true, mirrorX: false,
+                frameDurations: nil)
             )
         }
         var asset = PetSpriteAsset(

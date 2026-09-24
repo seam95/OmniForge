@@ -40,15 +40,35 @@ struct PetSpriteAsset: Equatable {
         let id: String
         /// 帧序列（图集单元格序号，行优先）。
         let frames: [Int]
-        /// 每秒帧数。
+        /// 每秒帧数。仅当 `frameDurations` 为 nil（均匀播放）时参与推导。
         let fps: Double
         /// 是否循环播放。
         let loops: Bool
         /// 该动画水平方向播放时是否镜像（行走素材只画一个朝向）。
         let mirrorX: Bool
+        /// 逐帧时长（秒），与 `frames` 等长；nil = 所有帧等长（由 `fps` 推导）。
+        ///
+        /// 用于表达 Codex 图集的非均匀节奏：参考实现的 idle 为
+        /// `280,110,110,140,140,320` ms——首帧慢起、中段快呼吸、尾帧慢收。
+        /// 用均匀 fps 无法表达这种呼吸感，且总时长会显著偏长。
+        ///
+        /// 自有格式资产（`pet.json` 不声明逐帧时长）传 nil，保持均匀播放，行为与本字段引入前一致。
+        let frameDurations: [TimeInterval]?
 
-        /// 单帧时长（秒）。
+        /// 单帧时长（秒）。仅均匀播放时有意义；非均匀播放请用 `effectiveFrameDurations`。
         var frameDuration: TimeInterval { fps > 0 ? 1.0 / fps : 0.25 }
+
+        /// 生效的逐帧时长表：显式表优先，否则按 `fps` 均匀展开。
+        /// 显式表与 `frames` 长度不一致时回退均匀表——防御畸形资产，避免索引越界。
+        var effectiveFrameDurations: [TimeInterval] {
+            guard let frameDurations, frameDurations.count == frames.count else {
+                return Array(repeating: frameDuration, count: frames.count)
+            }
+            return frameDurations
+        }
+
+        /// 动画总时长（秒）。
+        var totalDuration: TimeInterval { effectiveFrameDurations.reduce(0, +) }
     }
 
     /// 按标识取动画。
@@ -225,7 +245,9 @@ extension PetSpriteAsset {
                 frames: indices,
                 fps: animation.fps ?? 8,
                 loops: animation.loop ?? true,
-                mirrorX: animation.mirrorX ?? false
+                mirrorX: animation.mirrorX ?? false,
+                // 自有格式 pet.json 不声明逐帧时长，保持均匀播放（与本字段引入前一致）。
+                frameDurations: nil
             )
         }
 
