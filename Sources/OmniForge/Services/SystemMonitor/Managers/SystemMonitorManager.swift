@@ -35,6 +35,8 @@ final class SystemMonitorManager: ObservableObject {
     var activeRefreshInterval: TimeInterval { refreshInterval }
     private var policy = MonitorSamplingPolicy(baseTick: 2)
     private var tickCount = 0
+    /// 指标连续强制采样（无视后台 stride）的次数；拿到读数即清零，启停采样时整体清空。
+    private var forcedSampleAttempts: [MonitorMetric: Int] = [:]
     /// 进程 Top 列表节流：对齐 Vorssaint，展开后最短 4s 刷新一次
     private var lastProcessSampleAt: Date?
     /// 仅用于成功 GPU 读数的平滑基线；失败不沿用旧值
@@ -49,6 +51,9 @@ final class SystemMonitorManager: ObservableObject {
     /// delta 类指标首开补采间隔：首采仅建基线，1s 后补采即可算出真实速率
     private static let processFollowUpDelay: TimeInterval = 1.0
     private static let processFollowUpMaxAttempts = 4
+    /// 缺读数指标连续强制采样的上限（约 3 个基础 tick 的宽容期）：封顶后交回 stride，
+    /// 防止「采样器长期无数据」把后台降频永久击穿为每 tick 全采。
+    private static let maxForcedInitialSamples = 3
     private static let processRefreshInterval: TimeInterval = 4.0
     private static let processDisplayLimit = ProcessRankingDisplay.limit
 
@@ -190,6 +195,7 @@ final class SystemMonitorManager: ObservableObject {
     private func startSampling() {
         isSampling = true
         tickCount = 0
+        forcedSampleAttempts = [:]
         // 进入面板时先立即采样，避免等一个完整 refreshInterval 才看到指标
         sampleAll()
         // 异步预热 GPU/网络 delta 基线，使首次展开排行直接出数据而非先返回空。
@@ -241,6 +247,7 @@ final class SystemMonitorManager: ObservableObject {
         // SPEC §9.1.4：普通停止/页面切换保留最近 snapshot 与 history（下次打开
         // 立即有内容可显示，新采样到达后覆盖）；功能卸载时随 manager 释放。
         tickCount = 0
+        forcedSampleAttempts = [:]
     }
 
     /// 当前需要采集的全部指标（面板 + 菜单栏 + 告警）
@@ -286,6 +293,9 @@ final class SystemMonitorManager: ObservableObject {
         let now = Date()
         // 捕获当次 generation：停止采样（generation 变化）后，在途结果回写被丢弃。
         let capturedGeneration = generation
+        // 强制采样集合在主线程判定（只读上一轮快照 + 会话内计数），采样队列只消费结果，
+        // 避免把 @MainActor 状态丢进后台队列读写。
+        let forced = forcedMetrics(in: needed, previous: previousSnapshot, isFirstTick: tickCount == 1)
 
         queue.async { [weak self] in
             guard let self else { return }
@@ -294,16 +304,10 @@ final class SystemMonitorManager: ObservableObject {
             newSnapshot.issues = [:] // 清空上一轮问题记录
 
             for metric in needed {
-                let shouldSample: Bool
-                // 启动首轮（tick 1）或指标尚无读数时无视后台 stride 强制采样：后台
-                // stride 会让 GPU/磁盘等第 5 个 tick、温度与电池第 8 个 tick（10~16s）
-                // 才首次采样，期间菜单栏只能显示占位符。读数就绪后由下方 stride 恢复降频。
-                if isForeground || self.tickCount == 1 || self.isMetricMissingInitialReading(metric, in: previousSnapshot) {
-                    shouldSample = true
-                } else {
-                    let stride = self.policy.backgroundTickStride(for: metric)
-                    shouldSample = self.tickCount % stride == 0
-                }
+                let stride = self.policy.backgroundTickStride(for: metric)
+                // 前台面板每 tick 全采；后台由 forced（启动首轮/缺读数，已封顶）与
+                // stride 共同决定。
+                let shouldSample = isForeground || forced.contains(metric) || self.tickCount % stride == 0
                 guard shouldSample else { continue }
 
                 switch metric {
@@ -419,8 +423,49 @@ final class SystemMonitorManager: ObservableObject {
         }
     }
 
-    /// 判定指标在上一轮快照中是否尚无有效读数且无错误（新启用或启动初值缺失）
-    private func isMetricMissingInitialReading(_ metric: MonitorMetric, in snapshot: SystemSnapshot) -> Bool {
+    /// 本轮应无视后台 stride 强制采样的指标。
+    ///
+    /// 两种来源：
+    /// - 首轮（`isFirstTick`）：停止采样会保留上一份 snapshot，重启时读数可能全部
+    ///   存在，但仍要立即刷新一遍，否则要等 stride 对齐（GPU 10s / 温度 16s）。
+    /// - 指标尚无读数：会话中途新启用的指标（用户在设置里勾选 GPU/温度）下一个 tick
+    ///   就要出数，不能干等 stride。
+    ///
+    /// 后者按指标封顶（`maxForcedInitialSamples`）：采样器可能长期返回「无数据」而不
+    /// 抛错（无温度 HID 通道、无 GPU 利用率、无外设电量），无限强制采样会把后台降频
+    /// 永久改成每 tick 全采——那正是降频要避免的开销。
+    private func forcedMetrics(
+        in needed: Set<MonitorMetric>,
+        previous: SystemSnapshot,
+        isFirstTick: Bool
+    ) -> Set<MonitorMetric> {
+        if isFirstTick { return needed }
+
+        // 只保留当前需要指标的预算：指标被停用后重新启用应重新获得宽容期
+        // （否则重新勾选一个"无数据"指标时要干等一整个 stride）。
+        forcedSampleAttempts = forcedSampleAttempts.filter { needed.contains($0.key) }
+
+        var forced: Set<MonitorMetric> = []
+        for metric in needed {
+            if !Self.isMetricMissingInitialReading(metric, in: previous) {
+                // 有读数即重置预算：读数丢失（如网速重建基线）时重新获得宽容期。
+                forcedSampleAttempts[metric] = 0
+                continue
+            }
+            let attempts = forcedSampleAttempts[metric] ?? 0
+            guard attempts < Self.maxForcedInitialSamples else { continue }
+            forcedSampleAttempts[metric] = attempts + 1
+            forced.insert(metric)
+        }
+        return forced
+    }
+
+    /// 判定指标在上一轮快照中是否尚无有效读数且无错误（新启用或启动初值缺失）。
+    /// 纯函数：只在主线程调用，供 `forcedMetrics` 判定。
+    private static func isMetricMissingInitialReading(
+        _ metric: MonitorMetric,
+        in snapshot: SystemSnapshot
+    ) -> Bool {
         switch metric {
         case .cpu:
             return snapshot.cpuUsage == nil && snapshot.issues[.cpu] == nil
@@ -441,7 +486,9 @@ final class SystemMonitorManager: ObservableObject {
         case .batteryTemperature:
             return snapshot.batteryTemperature == nil && snapshot.issues[.batteryTemperature] == nil
         case .peripheralBattery:
-            return snapshot.sampledAt == nil && snapshot.issues[.peripheralBattery] == nil
+            // 空数组即「无读数」：本机没有外设电池时该指标永远采不到设备，
+            // 与温度返回 nil 同理，交给封顶逻辑兜底，不做特殊豁免。
+            return snapshot.peripheralBatteries.isEmpty && snapshot.issues[.peripheralBattery] == nil
         }
     }
 

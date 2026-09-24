@@ -690,6 +690,114 @@ final class SystemMonitorManagerTests: XCTestCase {
         try await Task.sleep(nanoseconds: 800_000_000)
         XCTAssertEqual(samplers.cpu.callCount, 1, "无网速需求时不应触发补采")
     }
+
+    func test_backgroundStrideResumesWhenSamplerNeverReturnsReading() async throws {
+        // 回归锁：采样器长期返回「无数据」且不抛错时（无 GPU 利用率 / 无温度 HID 通道 /
+        // 无外设电池），强制采样必须封顶。否则该指标会被永久改成每 tick 采样，
+        // 击穿后台降频——温度每轮还会多做一次 HID 服务枚举。
+        let scheduler = FakeRepeatingScheduler()
+        let gpu = NilGPUSampler()
+        let manager = SystemMonitorManager(
+            scheduler: scheduler,
+            cpuSampler: FakeCPUSampler(),
+            gpuSampler: gpu,
+            memorySampler: FakeMemorySampler(),
+            temperatureSampler: FakeTemperatureSampler(),
+            networkSampler: FakeNetworkSampler(),
+            diskSampler: FakeDiskSampler(),
+            powerSampler: FakePowerSampler(),
+            peripheralBatterySampler: FakePeripheralBatterySampler(),
+            processSampler: FakeProcessUsageSampler()
+        )
+
+        manager.setMenuBarMetrics([.gpu])
+        try await waitForSnapshot(manager) { $0.sampledAt != nil }
+        XCTAssertEqual(gpu.callCount, 1, "首轮必须采样一次")
+        XCTAssertNil(manager.snapshot.gpuUsage)
+
+        // 缺读数宽容期：首轮之外的连续 3 个 tick 继续强制补采
+        for _ in 0..<3 {
+            scheduler.fire()
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        XCTAssertEqual(gpu.callCount, 4, "缺读数时按上限连续强制采样")
+
+        // 封顶后交回 stride=5：tick 5 踩中 stride 采一次，tick 6~9 都不采
+        scheduler.fire()
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(gpu.callCount, 5, "tick 5 踩中 stride 采样一次")
+        for _ in 0..<4 {
+            scheduler.fire()
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        XCTAssertEqual(gpu.callCount, 5, "封顶后必须回到 stride 降频，不得每 tick 都采")
+    }
+
+    func test_forcedSampleBudgetResetsWhenMetricReenabled() async throws {
+        // 指标被停用后重新勾选应重新获得强制采样预算：否则一个"无数据"指标
+        // 重新启用时要干等一整个 stride（GPU 10s / 温度 16s）。
+        let scheduler = FakeRepeatingScheduler()
+        let gpu = NilGPUSampler()
+        let manager = SystemMonitorManager(
+            scheduler: scheduler,
+            cpuSampler: FakeCPUSampler(),
+            gpuSampler: gpu,
+            memorySampler: FakeMemorySampler(),
+            temperatureSampler: FakeTemperatureSampler(),
+            networkSampler: FakeNetworkSampler(),
+            diskSampler: FakeDiskSampler(),
+            powerSampler: FakePowerSampler(),
+            peripheralBatterySampler: FakePeripheralBatterySampler(),
+            processSampler: FakeProcessUsageSampler()
+        )
+
+        manager.setMenuBarMetrics([.gpu])
+        try await waitForSnapshot(manager) { $0.sampledAt != nil }
+        // 用尽预算：首轮 + 连续 3 次强制
+        for _ in 0..<3 {
+            scheduler.fire()
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        XCTAssertEqual(gpu.callCount, 4)
+
+        // 停用 GPU 并推进一个 tick（预算随停用一起清掉），再重新启用
+        manager.setMenuBarMetrics([.cpu])
+        scheduler.fire()
+        try await Task.sleep(nanoseconds: 100_000_000)
+        manager.setMenuBarMetrics([.cpu, .gpu])
+
+        // tick 6 恰好踩中 GPU stride=5（无论如何都会采），取作基线；
+        // tick 7 是非 stride 点，只有"重新获得强制采样预算"才会采。
+        scheduler.fire()
+        try await Task.sleep(nanoseconds: 100_000_000)
+        let afterStrideAlignedTick = gpu.callCount
+        scheduler.fire()
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertGreaterThan(
+            gpu.callCount, afterStrideAlignedTick,
+            "重新启用的指标应重新获得强制采样预算，而非干等一整个 stride"
+        )
+    }
+
+    func test_newlyEnabledMenuBarMetricIsSampledOnNextTick() async throws {
+        // 会话中途新启用指标（用户在设置里勾选 GPU / 温度）不得干等 stride：
+        // 该指标尚无读数，下一个 tick 即强制采样。
+        let scheduler = FakeRepeatingScheduler()
+        let samplers = FakeSamplerSet()
+        let manager = makeManager(scheduler: scheduler, samplers: samplers)
+
+        manager.setMenuBarMetrics([.cpu])
+        try await waitForSnapshot(manager) { $0.cpuUsage != nil }
+        XCTAssertEqual(samplers.gpu.callCount, 0)
+        XCTAssertEqual(samplers.temperature.callCount, 0)
+
+        manager.setMenuBarMetrics([.cpu, .gpu, .cpuTemperature])
+        // 只推进一个 tick：GPU（stride=5）与温度（stride=8）都应已出数
+        scheduler.fire()
+        try await waitForSnapshot(manager) { $0.gpuUsage != nil && $0.cpuTemperature != nil }
+        XCTAssertGreaterThanOrEqual(samplers.gpu.callCount, 1)
+        XCTAssertGreaterThanOrEqual(samplers.temperature.callCount, 1)
+    }
 }
 
 // MARK: - Test Helpers
@@ -745,6 +853,12 @@ final class FailingTemperatureSampler: TemperatureSampling {
 final class FakeGPUSampler: GPUUsageSampling {
     var callCount = 0
     func sample() throws -> Double? { callCount += 1; return 0.3 }
+}
+
+/// 模拟「成功但无读数」的采样器（如无 GPU 利用率的机器）：不抛错，恒返回 nil。
+final class NilGPUSampler: GPUUsageSampling {
+    private(set) var callCount = 0
+    func sample() throws -> Double? { callCount += 1; return nil }
 }
 
 final class ScriptedGPUSampler: GPUUsageSampling {
