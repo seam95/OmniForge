@@ -30,6 +30,8 @@
 		<string>com.apple.FinderSync</string>
 		<key>NSExtensionPrincipalClass</key>
 		<string>OmniForgeFinderSync.FinderSync</string>
+		<key>NSExtensionAttributes</key>
+		<dict/>
 	</dict>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>

@@ -1,17 +1,26 @@
 import Cocoa
 
-final class FinderSyncMenuActionTarget: NSObject {
-    static let shared = FinderSyncMenuActionTarget()
+/// 菜单动作载荷。经 NSMenuItem.tag 在扩展进程内传递。
+struct MenuAction {
+    let type: String
+    let parameter: String?
+}
 
-    @objc func onMenuItemClicked(_ sender: NSMenuItem) {
-        guard let info = sender.representedObject as? [String: Any],
-              let actionType = info["actionType"] as? String else {
-            return
-        }
-        let param = info["parameter"] as? String
-        let urls = info["targetURLs"] as? [URL] ?? []
+/// 动作快照：`menu(for:)` 构建菜单时按插入顺序记录，点击时用 `sender.tag` 取回。
+/// representedObject 无法跨 appex→访达的 XPC 桥存活（ownCloud、newfile 源码注释均有记载），
+/// 因此 tag 是唯一可靠的载体。
+final class MenuActionSnapshot {
+    private(set) var actions: [MenuAction] = []
 
-        FinderSyncIPC.shared.postAction(type: actionType, parameter: param, targetURLs: urls)
+    @discardableResult
+    func append(_ action: MenuAction) -> Int {
+        actions.append(action)
+        return actions.count - 1
+    }
+
+    func action(forTag tag: Int) -> MenuAction? {
+        guard tag >= 0, tag < actions.count else { return nil }
+        return actions[tag]
     }
 }
 
@@ -19,11 +28,13 @@ final class FinderSyncMenuBuilder {
     private let targetURLs: [URL]
     private let isContainer: Bool
     private let defaults: UserDefaults
+    private let snapshot: MenuActionSnapshot
 
-    init(targetURLs: [URL], isContainer: Bool) {
+    init(targetURLs: [URL], isContainer: Bool, snapshot: MenuActionSnapshot) {
         self.targetURLs = targetURLs
         self.isContainer = isContainer
         self.defaults = UserDefaults(suiteName: "group.app.omniforge") ?? .standard
+        self.snapshot = snapshot
     }
 
     func buildMenu() -> NSMenu {
@@ -68,9 +79,7 @@ final class FinderSyncMenuBuilder {
         // 如果开启了二级收敛，且 subMenu 中有未被提升的菜单项，则把 subMenu 作为一级项挂到 rootMenu
         if isCollapsed && !subMenu.items.isEmpty {
             let mainFolderItem = NSMenuItem(title: "OmniForge", action: nil, keyEquivalent: "")
-            if let icon = NSImage(named: NSImage.Name("NSActionTemplate")) {
-                mainFolderItem.image = icon
-            }
+            mainFolderItem.image = Self.brandMenuIcon()
             mainFolderItem.submenu = subMenu
             rootMenu.addItem(mainFolderItem)
         }
@@ -93,6 +102,38 @@ final class FinderSyncMenuBuilder {
         }
     }
 
+    /// 构造一个可点击的动作菜单项。
+    /// action 由扩展主体（FIFinderSync 子类）提供——访达会忽略 item.target，
+    /// 直接把动作派发给扩展主体对象；载荷用 tag 索引快照，不用 representedObject。
+    private func makeActionItem(title: String, actionType: String, parameter: String?) -> NSMenuItem {
+        let item = NSMenuItem(
+            title: title,
+            action: #selector(FinderSync.handleMenuItemClick(_:)),
+            keyEquivalent: ""
+        )
+        item.tag = snapshot.append(MenuAction(type: actionType, parameter: parameter))
+        return item
+    }
+
+    /// OmniForge App 图标（菜单用）。
+    /// 宿主与扩展不共享 bundle，appex 需自带该资源——由 build.sh 从
+    /// Resources/Assets.xcassets/AppIcon.appiconset 拷贝为 appicon_menu.png。
+    /// 源图 64px，显式缩到 14×14pt：菜单行高约 20pt，超过 16pt 就会顶满整行糊成一团。
+    /// 彩色图标不做 isTemplate——模板渲染会把它压成纯黑剪影。
+    /// 资源缺失时退回该功能在应用内使用的 SF Symbol。
+    static func brandMenuIcon() -> NSImage? {
+        if let url = Bundle.main.url(forResource: "appicon_menu", withExtension: "png"),
+           let image = NSImage(contentsOf: url) {
+            image.size = NSSize(width: 14, height: 14)
+            return image
+        }
+        if let fallback = NSImage(systemSymbolName: "cursorarrow.click.2", accessibilityDescription: nil) {
+            fallback.isTemplate = true
+            return fallback
+        }
+        return nil
+    }
+
     // MARK: - 构建具体子菜单
 
     private func makeNewFileMenuItem() -> NSMenuItem {
@@ -102,14 +143,7 @@ final class FinderSyncMenuBuilder {
         let extensions = defaults.stringArray(forKey: "rightClick_fileExtensions") ?? ["txt", "md", "json", "sh", "swift", "py"]
         for ext in extensions {
             let clean = ext.trimmingCharacters(in: CharacterSet(charactersIn: "."))
-            let item = NSMenuItem(title: "\(clean.uppercased()) 文件 (.\(clean))", action: #selector(FinderSyncMenuActionTarget.onMenuItemClicked(_:)), keyEquivalent: "")
-            item.target = FinderSyncMenuActionTarget.shared
-            item.representedObject = [
-                "actionType": "newFile",
-                "parameter": clean,
-                "targetURLs": targetURLs
-            ]
-            sub.addItem(item)
+            sub.addItem(makeActionItem(title: "\(clean.uppercased()) 文件 (.\(clean))", actionType: "newFile", parameter: clean))
         }
         parentItem.submenu = sub
         return parentItem
@@ -128,26 +162,12 @@ final class FinderSyncMenuBuilder {
 
         for (name, bundleId) in terminals {
             if NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) != nil {
-                let item = NSMenuItem(title: name, action: #selector(FinderSyncMenuActionTarget.onMenuItemClicked(_:)), keyEquivalent: "")
-                item.target = FinderSyncMenuActionTarget.shared
-                item.representedObject = [
-                    "actionType": "openTerminal",
-                    "parameter": bundleId,
-                    "targetURLs": targetURLs
-                ]
-                sub.addItem(item)
+                sub.addItem(makeActionItem(title: name, actionType: "openTerminal", parameter: bundleId))
             }
         }
 
         if sub.items.isEmpty {
-            let defaultItem = NSMenuItem(title: "终端 (Terminal)", action: #selector(FinderSyncMenuActionTarget.onMenuItemClicked(_:)), keyEquivalent: "")
-            defaultItem.target = FinderSyncMenuActionTarget.shared
-            defaultItem.representedObject = [
-                "actionType": "openTerminal",
-                "parameter": "com.apple.Terminal",
-                "targetURLs": targetURLs
-            ]
-            sub.addItem(defaultItem)
+            sub.addItem(makeActionItem(title: "终端 (Terminal)", actionType: "openTerminal", parameter: "com.apple.Terminal"))
         }
 
         parentItem.submenu = sub
@@ -168,14 +188,7 @@ final class FinderSyncMenuBuilder {
 
         for (name, bundleId) in editors {
             if NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) != nil {
-                let item = NSMenuItem(title: name, action: #selector(FinderSyncMenuActionTarget.onMenuItemClicked(_:)), keyEquivalent: "")
-                item.target = FinderSyncMenuActionTarget.shared
-                item.representedObject = [
-                    "actionType": "openEditor",
-                    "parameter": bundleId,
-                    "targetURLs": targetURLs
-                ]
-                sub.addItem(item)
+                sub.addItem(makeActionItem(title: name, actionType: "openEditor", parameter: bundleId))
             }
         }
 
@@ -195,14 +208,7 @@ final class FinderSyncMenuBuilder {
         ]
 
         for (title, format) in formats {
-            let item = NSMenuItem(title: title, action: #selector(FinderSyncMenuActionTarget.onMenuItemClicked(_:)), keyEquivalent: "")
-            item.target = FinderSyncMenuActionTarget.shared
-            item.representedObject = [
-                "actionType": "copyPath",
-                "parameter": format,
-                "targetURLs": targetURLs
-            ]
-            sub.addItem(item)
+            sub.addItem(makeActionItem(title: title, actionType: "copyPath", parameter: format))
         }
 
         parentItem.submenu = sub
@@ -215,14 +221,7 @@ final class FinderSyncMenuBuilder {
 
         let directories = getDirectories()
         for dir in directories {
-            let item = NSMenuItem(title: dir.0, action: #selector(FinderSyncMenuActionTarget.onMenuItemClicked(_:)), keyEquivalent: "")
-            item.target = FinderSyncMenuActionTarget.shared
-            item.representedObject = [
-                "actionType": "moveTo",
-                "parameter": dir.1,
-                "targetURLs": targetURLs
-            ]
-            sub.addItem(item)
+            sub.addItem(makeActionItem(title: dir.0, actionType: "moveTo", parameter: dir.1))
         }
 
         parentItem.submenu = sub
@@ -235,14 +234,7 @@ final class FinderSyncMenuBuilder {
 
         let directories = getDirectories()
         for dir in directories {
-            let item = NSMenuItem(title: dir.0, action: #selector(FinderSyncMenuActionTarget.onMenuItemClicked(_:)), keyEquivalent: "")
-            item.target = FinderSyncMenuActionTarget.shared
-            item.representedObject = [
-                "actionType": "copyTo",
-                "parameter": dir.1,
-                "targetURLs": targetURLs
-            ]
-            sub.addItem(item)
+            sub.addItem(makeActionItem(title: dir.0, actionType: "copyTo", parameter: dir.1))
         }
 
         parentItem.submenu = sub
@@ -255,14 +247,7 @@ final class FinderSyncMenuBuilder {
 
         let directories = getDirectories()
         for dir in directories {
-            let item = NSMenuItem(title: dir.0, action: #selector(FinderSyncMenuActionTarget.onMenuItemClicked(_:)), keyEquivalent: "")
-            item.target = FinderSyncMenuActionTarget.shared
-            item.representedObject = [
-                "actionType": "quickJump",
-                "parameter": dir.1,
-                "targetURLs": targetURLs
-            ]
-            sub.addItem(item)
+            sub.addItem(makeActionItem(title: dir.0, actionType: "quickJump", parameter: dir.1))
         }
 
         parentItem.submenu = sub
@@ -270,13 +255,7 @@ final class FinderSyncMenuBuilder {
     }
 
     private func makeToggleHiddenFilesMenuItem() -> NSMenuItem {
-        let item = NSMenuItem(title: "切换显示隐藏文件", action: #selector(FinderSyncMenuActionTarget.onMenuItemClicked(_:)), keyEquivalent: "")
-        item.target = FinderSyncMenuActionTarget.shared
-        item.representedObject = [
-            "actionType": "toggleHiddenFiles",
-            "targetURLs": targetURLs
-        ]
-        return item
+        return makeActionItem(title: "切换显示隐藏文件", actionType: "toggleHiddenFiles", parameter: nil)
     }
 
     private func getDirectories() -> [(String, String)] {

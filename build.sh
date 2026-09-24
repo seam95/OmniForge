@@ -140,6 +140,16 @@ if [[ -f "$FINDER_EXT_EXECUTABLE" ]]; then
     cp "$FINDER_EXT_EXECUTABLE" "$FINDER_EXT_STAGE/Contents/MacOS/$FINDER_EXT_NAME"
     cp Sources/OmniForgeFinderSync/Resources/Info.plist "$FINDER_EXT_STAGE/Contents/Info.plist"
     printf 'BNDL????' > "$FINDER_EXT_STAGE/Contents/PkgInfo"
+
+    # appex 与宿主不共享 bundle，需自带 App 图标，否则右键菜单只能用系统通用图标。
+    # 取 64px 源（@1x 4.5 倍/@3x 1.5 倍余量，各密度都清晰），拷为 appicon_menu.png；
+    # 只拷这一个文件，不复制整个 xcassets，避免资产重复维护。
+    APPICON_SRC="Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-64.png"
+    if [[ -f "$APPICON_SRC" ]]; then
+        cp "$APPICON_SRC" "$FINDER_EXT_STAGE/Contents/Resources/appicon_menu.png"
+    else
+        echo "⚠ 未找到 AppIcon 资源，扩展菜单将退回 SF Symbol 图标" >&2
+    fi
 fi
 
 # Step 5: 清除扩展属性（xattr 会导致 codesign 失败）

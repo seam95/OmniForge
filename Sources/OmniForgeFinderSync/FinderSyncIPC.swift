@@ -1,4 +1,7 @@
 import Cocoa
+import OSLog
+
+private let ipcLogger = Logger(subsystem: "app.omniforge.FinderSync", category: "ipc")
 
 /// 扩展端 IPC 发送器：将右键操作事件发送给 OmniForge 宿主应用
 final class FinderSyncIPC {
@@ -17,6 +20,7 @@ final class FinderSyncIPC {
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: payload, options: []),
               let jsonString = String(data: jsonData, encoding: .utf8) else {
+            ipcLogger.error("failed to encode payload for \(type, privacy: .public)")
             return
         }
 
@@ -29,5 +33,6 @@ final class FinderSyncIPC {
             userInfo: nil,
             deliverImmediately: true
         )
+        ipcLogger.info("posted action \(type, privacy: .public) (\(jsonString.count) bytes via object)")
     }
 }
