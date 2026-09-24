@@ -33,7 +33,7 @@ final class FinderSyncMenuBuilder {
     init(targetURLs: [URL], isContainer: Bool, snapshot: MenuActionSnapshot) {
         self.targetURLs = targetURLs
         self.isContainer = isContainer
-        self.defaults = UserDefaults(suiteName: "group.app.omniforge") ?? .standard
+        self.defaults = UserDefaults(suiteName: FinderSyncAppGroup.identifier) ?? .standard
         self.snapshot = snapshot
     }
 
@@ -137,21 +137,21 @@ final class FinderSyncMenuBuilder {
     // MARK: - 构建具体子菜单
 
     private func makeNewFileMenuItem() -> NSMenuItem {
-        let parentItem = NSMenuItem(title: "新建文件", action: nil, keyEquivalent: "")
-        let sub = NSMenu(title: "新建文件")
+        let parentItem = NSMenuItem(title: FinderSyncStrings.newFile, action: nil, keyEquivalent: "")
+        let sub = NSMenu(title: FinderSyncStrings.newFile)
 
         let extensions = defaults.stringArray(forKey: "rightClick_fileExtensions") ?? ["txt", "md", "json", "sh", "swift", "py"]
         for ext in extensions {
             let clean = ext.trimmingCharacters(in: CharacterSet(charactersIn: "."))
-            sub.addItem(makeActionItem(title: "\(clean.uppercased()) 文件 (.\(clean))", actionType: "newFile", parameter: clean))
+            sub.addItem(makeActionItem(title: FinderSyncStrings.newFileItem(clean.uppercased()), actionType: "newFile", parameter: clean))
         }
         parentItem.submenu = sub
         return parentItem
     }
 
     private func makeOpenTerminalMenuItem() -> NSMenuItem {
-        let parentItem = NSMenuItem(title: "在此处打开终端", action: nil, keyEquivalent: "")
-        let sub = NSMenu(title: "在此处打开终端")
+        let parentItem = NSMenuItem(title: FinderSyncStrings.openTerminal, action: nil, keyEquivalent: "")
+        let sub = NSMenu(title: FinderSyncStrings.openTerminal)
 
         let terminals = [
             ("系统终端", "com.apple.Terminal"),
@@ -167,7 +167,7 @@ final class FinderSyncMenuBuilder {
         }
 
         if sub.items.isEmpty {
-            sub.addItem(makeActionItem(title: "终端 (Terminal)", actionType: "openTerminal", parameter: "com.apple.Terminal"))
+            sub.addItem(makeActionItem(title: FinderSyncStrings.terminalFallback, actionType: "openTerminal", parameter: "com.apple.Terminal"))
         }
 
         parentItem.submenu = sub
@@ -175,8 +175,8 @@ final class FinderSyncMenuBuilder {
     }
 
     private func makeOpenEditorMenuItem() -> NSMenuItem {
-        let parentItem = NSMenuItem(title: "在此处打开编辑器", action: nil, keyEquivalent: "")
-        let sub = NSMenu(title: "在此处打开编辑器")
+        let parentItem = NSMenuItem(title: FinderSyncStrings.openEditor, action: nil, keyEquivalent: "")
+        let sub = NSMenu(title: FinderSyncStrings.openEditor)
 
         let editors = [
             ("VS Code", "com.microsoft.VSCode"),
@@ -197,14 +197,14 @@ final class FinderSyncMenuBuilder {
     }
 
     private func makeCopyPathMenuItem() -> NSMenuItem {
-        let parentItem = NSMenuItem(title: "复制路径", action: nil, keyEquivalent: "")
-        let sub = NSMenu(title: "复制路径")
+        let parentItem = NSMenuItem(title: FinderSyncStrings.copyPath, action: nil, keyEquivalent: "")
+        let sub = NSMenu(title: FinderSyncStrings.copyPath)
 
         let formats: [(String, String)] = [
-            ("绝对路径 (POSIX)", "posix"),
-            ("Shell 转义路径", "shellEscaped"),
-            ("文件 URL", "url"),
-            ("仅文件名", "fileName")
+            (FinderSyncStrings.pathPOSIX, "posix"),
+            (FinderSyncStrings.pathShellEscaped, "shellEscaped"),
+            (FinderSyncStrings.pathURL, "url"),
+            (FinderSyncStrings.pathFileName, "fileName")
         ]
 
         for (title, format) in formats {
@@ -216,8 +216,8 @@ final class FinderSyncMenuBuilder {
     }
 
     private func makeMoveToMenuItem() -> NSMenuItem {
-        let parentItem = NSMenuItem(title: "移动到...", action: nil, keyEquivalent: "")
-        let sub = NSMenu(title: "移动到...")
+        let parentItem = NSMenuItem(title: FinderSyncStrings.moveTo, action: nil, keyEquivalent: "")
+        let sub = NSMenu(title: FinderSyncStrings.moveTo)
 
         let directories = getDirectories()
         for dir in directories {
@@ -229,8 +229,8 @@ final class FinderSyncMenuBuilder {
     }
 
     private func makeCopyToMenuItem() -> NSMenuItem {
-        let parentItem = NSMenuItem(title: "复制到...", action: nil, keyEquivalent: "")
-        let sub = NSMenu(title: "复制到...")
+        let parentItem = NSMenuItem(title: FinderSyncStrings.copyTo, action: nil, keyEquivalent: "")
+        let sub = NSMenu(title: FinderSyncStrings.copyTo)
 
         let directories = getDirectories()
         for dir in directories {
@@ -242,8 +242,8 @@ final class FinderSyncMenuBuilder {
     }
 
     private func makeQuickJumpMenuItem() -> NSMenuItem {
-        let parentItem = NSMenuItem(title: "常用目录直达", action: nil, keyEquivalent: "")
-        let sub = NSMenu(title: "常用目录直达")
+        let parentItem = NSMenuItem(title: FinderSyncStrings.quickJump, action: nil, keyEquivalent: "")
+        let sub = NSMenu(title: FinderSyncStrings.quickJump)
 
         let directories = getDirectories()
         for dir in directories {
@@ -255,20 +255,20 @@ final class FinderSyncMenuBuilder {
     }
 
     private func makeToggleHiddenFilesMenuItem() -> NSMenuItem {
-        return makeActionItem(title: "切换显示隐藏文件", actionType: "toggleHiddenFiles", parameter: nil)
+        return makeActionItem(title: FinderSyncStrings.toggleHiddenFiles, actionType: "toggleHiddenFiles", parameter: nil)
     }
 
     private func getDirectories() -> [(String, String)] {
         let fm = FileManager.default
         var list: [(String, String)] = []
         if let desktop = fm.urls(for: .desktopDirectory, in: .userDomainMask).first {
-            list.append(("桌面", desktop.path))
+            list.append((FinderSyncStrings.dirDesktop, desktop.path))
         }
         if let downloads = fm.urls(for: .downloadsDirectory, in: .userDomainMask).first {
-            list.append(("下载", downloads.path))
+            list.append((FinderSyncStrings.dirDownloads, downloads.path))
         }
         if let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first {
-            list.append(("文稿", docs.path))
+            list.append((FinderSyncStrings.dirDocuments, docs.path))
         }
 
         // 自定义目录数据反序列化

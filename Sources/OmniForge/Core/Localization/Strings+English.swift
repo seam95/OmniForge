@@ -1489,5 +1489,6 @@ extension Strings {
         rightClickExtensionStatusEnabled: "Finder extension is enabled",
         rightClickExtensionStatusDisabled: "Finder extension is not enabled in System Settings. Context menu items won't appear.",
         rightClickExtensionOpenSettingsButton: "Open System Settings to Enable Extension…",
+        rightClickNewFileBaseName: "untitled",
     )
 }

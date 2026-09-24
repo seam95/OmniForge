@@ -1644,4 +1644,6 @@ struct Strings: Equatable {
     let rightClickExtensionStatusEnabled: String
     let rightClickExtensionStatusDisabled: String
     let rightClickExtensionOpenSettingsButton: String
+    /// 「新建文件」生成的空白文件基名（访达原生为「未命名文件」）
+    let rightClickNewFileBaseName: String
 }

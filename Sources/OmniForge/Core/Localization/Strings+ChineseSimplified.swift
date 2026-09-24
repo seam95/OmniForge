@@ -1489,5 +1489,6 @@ extension Strings {
         rightClickExtensionStatusEnabled: "访达扩展已启用",
         rightClickExtensionStatusDisabled: "访达扩展未在系统设置中开启，右键菜单暂无法显示",
         rightClickExtensionOpenSettingsButton: "打开系统设置开启扩展…",
+        rightClickNewFileBaseName: "未命名",
     )
 }

@@ -4,7 +4,11 @@ import Foundation
 public final class RightClickConfiguration {
     public static let shared = RightClickConfiguration()
 
-    public static let appGroupIdentifier = "group.app.omniforge"
+    /// 宿主与沙盒化的 FinderSync 扩展共享配置所用的 app group。
+    /// 必须带 Team ID 前缀——不带前缀的 group.* 标识会被 containermanagerd 用 TCC
+    /// 拦起来，扩展侧 UserDefaults(suiteName:) 会 detaching from cfprefsd 读不到任何值。
+    /// 宿主也必须声明 com.apple.security.application-groups，否则两端读写的是不同文件。
+    public static let appGroupIdentifier = "P684VHKUAZ.group.app.omniforge"
 
     public struct Keys {
         public static let fileExtensions = "rightClick_fileExtensions"

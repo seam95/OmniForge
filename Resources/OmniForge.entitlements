@@ -2,5 +2,17 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!--
+		FinderSync 扩展与宿主通过 app group 共享配置与 availability。宿主虽未启用沙盒，
+		但仍须声明 application-groups：否则 UserDefaults(suiteName:) 会写到
+		~/Library/Preferences/<group>.plist，而沙盒内的扩展读的是 Group Container 下
+		的另一份文件，两边永远看不到彼此（设置项全部静默走默认值）。
+		注意 app group 必须带 Team ID 前缀（P684VHKUAZ.group.app.omniforge）——
+		不带前缀的 iOS 风格 group.* 标识会被 containermanagerd 用 TCC 拦起来。
+	-->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>P684VHKUAZ.group.app.omniforge</string>
+	</array>
 </dict>
 </plist>

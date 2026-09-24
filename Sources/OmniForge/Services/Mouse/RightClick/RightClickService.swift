@@ -3,21 +3,26 @@ import Foundation
 
 /// 访达右键增强宿主服务
 @MainActor
-public final class RightClickService: ObservableObject {
-    public static let shared = RightClickService()
+// 与 DesktopPetManager 一致保持 internal：stringsProvider 依赖 internal 的 Strings/L10n，
+// 且本类型没有模块外使用者。
+final class RightClickService: ObservableObject {
+    static let shared = RightClickService()
 
-    @Published public private(set) var isRunning = false
+    @Published private(set) var isRunning = false
 
     private let executor: RightClickActionExecutor
     private let configuration: RightClickConfiguration
+    private let stringsProvider: () -> Strings
     private var observerToken: NSObjectProtocol?
 
-    public init(
+    init(
         executor: RightClickActionExecutor = RightClickActionExecutor(),
-        configuration: RightClickConfiguration = .shared
+        configuration: RightClickConfiguration = .shared,
+        stringsProvider: @escaping () -> Strings = { L10n(userDefaults: .standard).s }
     ) {
         self.executor = executor
         self.configuration = configuration
+        self.stringsProvider = stringsProvider
     }
 
     public func start() {
@@ -68,54 +73,70 @@ public final class RightClickService: ObservableObject {
 
         let targetURLs = message.targetURLs.compactMap { URL(string: $0) }
 
-        do {
-            switch message.actionType {
-            case "newFile":
-                let ext = message.parameter ?? "txt"
-                if let targetDir = targetURLs.first {
-                    try executor.createUniqueEmptyFile(in: targetDir, fileExtension: ext)
-                }
-
-            case "openTerminal":
-                let bundleId = message.parameter
-                if let target = targetURLs.first {
-                    try executor.openTerminal(at: target, bundleId: bundleId)
-                }
-
-            case "openEditor":
-                guard let bundleId = message.parameter else { return }
-                try executor.open(urls: targetURLs, withAppBundleIdentifier: bundleId)
-
-            case "copyPath":
-                let rawFormat = message.parameter ?? "posix"
-                let format = RightClickPathFormat(rawValue: rawFormat) ?? .posix
-                executor.copyPathsToPasteboard(targetURLs, format: format)
-
-            case "moveTo":
-                guard let destPath = message.parameter else { return }
+        // moveTo / copyTo 可能拷大量数据，放在主线程会把界面卡住；其余动作都很快，
+        // 留在主线程（NSPasteboard 与 NSWorkspace 的调用需要在主线程）。
+        switch message.actionType {
+        case "moveTo", "copyTo":
+            let destPath = message.parameter ?? ""
+            Task.detached(priority: .userInitiated) { [executor] in
                 let destURL = URL(fileURLWithPath: destPath)
-                try executor.moveFiles(targetURLs, to: destURL)
-
-            case "copyTo":
-                guard let destPath = message.parameter else { return }
-                let destURL = URL(fileURLWithPath: destPath)
-                try executor.copyFiles(targetURLs, to: destURL)
-
-            case "quickJump":
-                guard let jumpPath = message.parameter else { return }
-                let jumpURL = URL(fileURLWithPath: jumpPath)
-                NSWorkspace.shared.open(jumpURL)
-
-            case "toggleHiddenFiles":
-                // 切换后访达会被重启以重新枚举窗口，返回值即切换后的可见性
-                let nowVisible = executor.toggleHiddenFiles()
-                NSLog("[OmniForge RightClick] 隐藏文件可见性切换为 %@", nowVisible ? "显示" : "隐藏")
-
-            default:
-                break
+                do {
+                    if message.actionType == "moveTo" {
+                        try executor.moveFiles(targetURLs, to: destURL)
+                    } else {
+                        try executor.copyFiles(targetURLs, to: destURL)
+                    }
+                } catch {
+                    await MainActor.run {
+                        NSLog("[OmniForge RightClick] 执行操作 [%@] 失败: %@", message.actionType, error.localizedDescription)
+                    }
+                }
             }
-        } catch {
-            NSLog("[OmniForge RightClick] 执行操作 [%@] 失败: %@", message.actionType, error.localizedDescription)
+
+        default:
+            do {
+                switch message.actionType {
+                case "newFile":
+                    let ext = message.parameter ?? "txt"
+                    if let targetDir = targetURLs.first {
+                        try executor.createUniqueEmptyFile(
+                            in: targetDir,
+                            fileExtension: ext,
+                            baseName: stringsProvider().rightClickNewFileBaseName
+                        )
+                    }
+
+                case "openTerminal":
+                    let bundleId = message.parameter
+                    if let target = targetURLs.first {
+                        try executor.openTerminal(at: target, bundleId: bundleId)
+                    }
+
+                case "openEditor":
+                    guard let bundleId = message.parameter else { return }
+                    try executor.open(urls: targetURLs, withAppBundleIdentifier: bundleId)
+
+                case "copyPath":
+                    let rawFormat = message.parameter ?? "posix"
+                    let format = RightClickPathFormat(rawValue: rawFormat) ?? .posix
+                    executor.copyPathsToPasteboard(targetURLs, format: format)
+
+                case "quickJump":
+                    guard let jumpPath = message.parameter else { return }
+                    let jumpURL = URL(fileURLWithPath: jumpPath)
+                    NSWorkspace.shared.open(jumpURL)
+
+                case "toggleHiddenFiles":
+                    // 切换后访达会被重启以重新枚举窗口，返回值即切换后的可见性
+                    let nowVisible = executor.toggleHiddenFiles()
+                    NSLog("[OmniForge RightClick] 隐藏文件可见性切换为 %@", nowVisible ? "显示" : "隐藏")
+
+                default:
+                    break
+                }
+            } catch {
+                NSLog("[OmniForge RightClick] 执行操作 [%@] 失败: %@", message.actionType, error.localizedDescription)
+            }
         }
     }
 }

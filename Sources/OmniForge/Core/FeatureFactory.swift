@@ -361,7 +361,9 @@ struct FeatureFactory {
             }
         case .rightClickEnhancement:
             if runtime.manager(for: .rightClickEnhancement, as: RightClickService.self) == nil {
-                let service = RightClickService.shared
+                let service = RightClickService(
+                    stringsProvider: { L10n(userDefaults: userDefaults).s }
+                )
                 runtime.register(.rightClickEnhancement, manager: service)
                 service.start()
             }
