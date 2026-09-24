@@ -175,7 +175,7 @@ enum StepfunPlanParsing {
 
 // MARK: - 取数器
 
-/// StepFun Step Plan 取数器：token 解析（钥匙串 → 环境变量 → 凭证登录）→ 主动续期 →
+/// StepFun Step Plan 取数器：token 解析（钥匙串缓存 → 凭证登录）→ 主动续期 →
 /// 查询（401 时续期重试、续期失败再凭证重登兜底）→ 双模套餐解析。
 ///
 /// Token 为 `access...refresh` 两段 JWT：会话段 ~30 分钟过期、设备段 ~30 天。
@@ -188,18 +188,15 @@ final class StepfunLimitsFetcher: LimitsFetching {
 
     private let keyStore: StepfunTokenStoring?
     private let client: StepfunWebAPIFetching
-    private let environment: [String: String]
     private let now: () -> Date
 
     init(
         keyStore: StepfunTokenStoring? = StepfunKeychainStore(),
         client: StepfunWebAPIFetching = StepfunWebAPIClient(),
-        environment: [String: String] = ProcessInfo.processInfo.environment,
         now: @escaping () -> Date = { Date() }
     ) {
         self.keyStore = keyStore
         self.client = client
-        self.environment = environment
         self.now = now
     }
 
@@ -238,15 +235,11 @@ final class StepfunLimitsFetcher: LimitsFetching {
 
     // MARK: - 私有
 
-    /// token 解析：钥匙串优先，其次环境变量 STEPFUN_TOKEN。
+    /// token 解析：仅取钥匙串中缓存的上次登录 token；无则返回 nil（调用方转凭证登录）。
     private func resolveInitialToken() throws -> String? {
         let keychainToken = (try? keyStore?.readToken())?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let keychainToken, !keychainToken.isEmpty {
             return keychainToken
-        }
-        let envToken = environment["STEPFUN_TOKEN"]?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let envToken, !envToken.isEmpty {
-            return envToken
         }
         return nil
     }

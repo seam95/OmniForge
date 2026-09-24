@@ -187,12 +187,11 @@ final class StepfunLimitsFetcherTests: XCTestCase {
 
     private func makeFetcher(
         _ store: FakeStepfunTokenStore,
-        environment: [String: String] = [:],
         now: @escaping () -> Date = { Date() }
     ) -> StepfunLimitsFetcher {
         let stub = URLProtocolStub.makeSession()
         let client = StepfunWebAPIClient(session: stub, authSession: stub, now: now)
-        return StepfunLimitsFetcher(keyStore: store, client: client, environment: environment, now: now)
+        return StepfunLimitsFetcher(keyStore: store, client: client, now: now)
     }
 
     private func stubBothEndpoints(rateLimit: String, status: String? = nil) {
@@ -209,37 +208,28 @@ final class StepfunLimitsFetcherTests: XCTestCase {
     }
 
     func test_fetch_noToken_returnsNilWithoutRequest() async throws {
-        let fetcher = makeFetcher(tokenStore, environment: [:])
+        let fetcher = makeFetcher(tokenStore)
         let result = try await fetcher.fetchLimits(force: false)
-        XCTAssertNil(result, "无钥匙串凭证且无环境变量 → 未配置")
+        XCTAssertNil(result, "无缓存 token 且无凭证 → 未配置")
         XCTAssertTrue(URLProtocolStub.recordedRequests.isEmpty, "未配置时零网络请求")
     }
 
-    func test_fetch_environmentToken_parsesWindows() async throws {
-        stubBothEndpoints(rateLimit: rollingWindowJSON())
-        let fetcher = makeFetcher(tokenStore, environment: ["STEPFUN_TOKEN": "env-token"])
-        let result = try await fetcher.fetchLimits(force: false)
-        XCTAssertEqual(result?.windows[.session]?.usedPercent ?? -1, 40, accuracy: 0.001)
-    }
-
-    func test_fetch_keychainToken_takesPriorityOverEnvironment() async throws {
+    func test_fetch_usesCachedToken_sendsExpectedHeaders() async throws {
         stubBothEndpoints(rateLimit: rollingWindowJSON())
         tokenStore.storedToken = "keychain-token"
-        let fetcher = makeFetcher(tokenStore, environment: ["STEPFUN_TOKEN": "env-token"])
+        let fetcher = makeFetcher(tokenStore)
         _ = try await fetcher.fetchLimits(force: false)
 
-        let cookie = URLProtocolStub.recordedRequests.first?.value(forHTTPHeaderField: "Cookie")
-        XCTAssertTrue(cookie?.contains("Oasis-Token=keychain-token") == true, "钥匙串凭证优先于环境变量")
-        XCTAssertTrue(cookie?.contains("env-token") == false)
-        // 请求头须带 oasis-appid / oasis-platform。
-        XCTAssertEqual(URLProtocolStub.recordedRequests.first?.value(forHTTPHeaderField: "oasis-appid"), "10300")
-        XCTAssertEqual(URLProtocolStub.recordedRequests.first?.value(forHTTPHeaderField: "oasis-platform"), "web")
+        let request = URLProtocolStub.recordedRequests.first
+        XCTAssertTrue(request?.value(forHTTPHeaderField: "Cookie")?.contains("Oasis-Token=keychain-token") == true, "用钥匙串缓存的 token")
+        XCTAssertEqual(request?.value(forHTTPHeaderField: "oasis-appid"), "10300")
+        XCTAssertEqual(request?.value(forHTTPHeaderField: "oasis-platform"), "web")
     }
 
     func test_fetch_webid_matchesTokenDeviceID() async throws {
         stubBothEndpoints(rateLimit: rollingWindowJSON())
         tokenStore.storedToken = makeJWT(deviceID: "device-xyz")
-        let fetcher = makeFetcher(tokenStore, environment: [:])
+        let fetcher = makeFetcher(tokenStore)
         _ = try await fetcher.fetchLimits(force: false)
 
         let request = URLProtocolStub.recordedRequests.first
@@ -250,7 +240,7 @@ final class StepfunLimitsFetcherTests: XCTestCase {
     func test_fetch_unauthorized_throwsReauth() async {
         tokenStore.storedToken = "stale-token"
         URLProtocolStub.stub = .init(statusCode: 401)
-        let fetcher = makeFetcher(tokenStore, environment: [:])
+        let fetcher = makeFetcher(tokenStore)
 
         do {
             _ = try await fetcher.fetchLimits(force: false)
@@ -276,7 +266,7 @@ final class StepfunLimitsFetcherTests: XCTestCase {
             }
         }
         tokenStore.storedToken = "tok"
-        let fetcher = makeFetcher(tokenStore, environment: [:])
+        let fetcher = makeFetcher(tokenStore)
         let result = try await fetcher.fetchLimits(force: false)
         XCTAssertNotNil(result)
         XCTAssertEqual(result?.windows[.session]?.usedPercent ?? -1, 40, accuracy: 0.001)
@@ -440,7 +430,7 @@ final class StepfunLimitsFetcherTests: XCTestCase {
             }
             return .init(statusCode: 200, data: Data("{}".utf8))
         }
-        let fetcher = makeFetcher(tokenStore, environment: [:])
+        let fetcher = makeFetcher(tokenStore)
         let result = try await fetcher.fetchLimits(force: false)
         XCTAssertNotNil(result)
         XCTAssertEqual(tokenStore.storedToken, "A2...R2", "无 token 时凭证登录并落库")

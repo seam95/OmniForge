@@ -100,7 +100,7 @@ enum TokenUsageProviderStatusBuilder {
             return strings.tokenSettingsConfigureHintTraeCn
         }
         if provider == .stepfun {
-            return strings.stepfunSettingsTokenCaption
+            return strings.stepfunSettingsConfigureHint
         }
         return String(
             format: strings.tokenSettingsConfigureHintFormat,

@@ -909,83 +909,64 @@ struct ArkCodingPlanSettingsCard: View {
     }
 }
 
-/// StepFun Step Plan 配置卡（提供商行内展开）：
-/// ① 手动粘贴 Oasis-Token；② 账号密码登录（自动拿 token 并存凭证，免去浏览器复制，30 天免重申）。
+/// StepFun Step Plan 配置卡（提供商行内展开）：账号密码登录（自动拿 token 并存凭证，免去浏览器复制，约 30 天免重申）。
 struct StepfunSettingsCard: View {
     @ObservedObject var preferences: TokenUsagePreferences
     var manager: TokenUsageManager? = nil
-    /// 凭证变更（保存/清除/登录）后通知父级刷新行状态缓存。
+    /// 凭证变更（登录/登出）后通知父级刷新行状态缓存。
     var onCredentialsChanged: () -> Void = {}
     let strings: Strings
 
-    @State private var tokenInput = ""
     @State private var usernameInput = ""
     @State private var passwordInput = ""
-    @State private var saveFailed = false
     @State private var loginFailed = false
     @State private var isLoggingIn = false
-    /// 钥匙串凭证状态缓存（onAppear 与保存/清除后刷新，渲染期不直接读 keychain）。
-    @State private var hasStoredToken = false
+    /// 钥匙串凭证状态缓存（onAppear 与登录/登出后刷新，渲染期不直接读 keychain）。
     @State private var hasStoredCredentials = false
 
     private let keychain = StepfunKeychainStore()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            TokenCredentialRow(
-                title: strings.stepfunSettingsTokenTitle,
-                placeholder: strings.stepfunSettingsTokenPlaceholder,
-                text: $tokenInput,
-                hasStoredValue: hasStoredToken,
-                caption: strings.stepfunSettingsTokenCaption,
-                canSave: !tokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                feedback: saveFailed ? .error(strings.tokenErrorTransient) : .none,
-                onSave: save,
-                onClear: clearAll,
-                strings: strings
-            )
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text(strings.stepfunSettingsLoginSection)
+        VStack(alignment: .leading, spacing: 6) {
+            Text(strings.stepfunSettingsLoginSection)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            TextField(strings.stepfunSettingsUsernamePlaceholder, text: $usernameInput)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: usernameInput) { _, _ in loginFailed = false }
+            SecureField(strings.stepfunSettingsPasswordPlaceholder, text: $passwordInput)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: passwordInput) { _, _ in loginFailed = false }
+            HStack(spacing: 8) {
+                Button(strings.stepfunSettingsLoginButton) { login() }
+                    .disabled(
+                        usernameInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || passwordInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || isLoggingIn
+                    )
+                if isLoggingIn {
+                    ProgressView().scaleEffect(0.6)
+                }
+                Spacer()
+                if hasStoredCredentials {
+                    Button(strings.stepfunSettingsClearAccount, role: .destructive) { clearAll() }
+                }
+            }
+            if loginFailed {
+                Text(strings.stepfunSettingsLoginFailed)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+            if hasStoredCredentials {
+                Text(strings.stepfunSettingsCredentialsSaved)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                TextField(strings.stepfunSettingsUsernamePlaceholder, text: $usernameInput)
-                    .textFieldStyle(.roundedBorder)
-                    .onChange(of: usernameInput) { _, _ in loginFailed = false }
-                SecureField(strings.stepfunSettingsPasswordPlaceholder, text: $passwordInput)
-                    .textFieldStyle(.roundedBorder)
-                    .onChange(of: passwordInput) { _, _ in loginFailed = false }
-                HStack(spacing: 8) {
-                    Button(strings.stepfunSettingsLoginButton) { login() }
-                        .disabled(
-                            usernameInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                || passwordInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                || isLoggingIn
-                        )
-                    if isLoggingIn {
-                        ProgressView().scaleEffect(0.6)
-                    }
-                }
-                if loginFailed {
-                    Text(strings.stepfunSettingsLoginFailed)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                }
-                if hasStoredCredentials {
-                    Text(strings.stepfunSettingsCredentialsSaved)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
             }
         }
         .onAppear { reloadKeychainState() }
     }
 
     private func reloadKeychainState() {
-        let stored = (try? keychain.readToken()) ?? ""
-        hasStoredToken = !stored.isEmpty
         if let creds = try? keychain.readCredentials() {
             hasStoredCredentials = creds.isValid
             usernameInput = creds.username
@@ -994,31 +975,13 @@ struct StepfunSettingsCard: View {
         }
     }
 
-    private func save() {
-        let cleaned = tokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleaned.isEmpty else { return }
-        do {
-            try keychain.writeToken(cleaned)
-            tokenInput = ""
-            saveFailed = false
-            hasStoredToken = true
-            manager?.refreshNow()
-            onCredentialsChanged()
-        } catch {
-            saveFailed = true
-        }
-    }
-
-    /// 清除 = 完全登出：删 token 与账号凭证。
+    /// 登出：删缓存 token 与账号凭证。
     private func clearAll() {
         try? keychain.deleteToken()
         try? keychain.deleteCredentials()
-        tokenInput = ""
         usernameInput = ""
         passwordInput = ""
-        saveFailed = false
         loginFailed = false
-        hasStoredToken = false
         hasStoredCredentials = false
         manager?.refreshNow()
         onCredentialsChanged()
@@ -1036,7 +999,6 @@ struct StepfunSettingsCard: View {
             switch result {
             case .success:
                 passwordInput = ""
-                hasStoredToken = true
                 hasStoredCredentials = true
                 manager?.refreshNow()
                 onCredentialsChanged()

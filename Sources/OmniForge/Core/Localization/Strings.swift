@@ -1268,15 +1268,14 @@ struct Strings: Equatable {
     let arkSettingsAkPlaceholder: String
     let arkSettingsSkPlaceholder: String
     let arkSettingsCaption: String
-    let stepfunSettingsTokenTitle: String
-    let stepfunSettingsTokenPlaceholder: String
-    let stepfunSettingsTokenCaption: String
+    let stepfunSettingsConfigureHint: String
     let stepfunSettingsLoginSection: String
     let stepfunSettingsUsernamePlaceholder: String
     let stepfunSettingsPasswordPlaceholder: String
     let stepfunSettingsLoginButton: String
     let stepfunSettingsLoginFailed: String
     let stepfunSettingsCredentialsSaved: String
+    let stepfunSettingsClearAccount: String
     let deepSeekSettingsApiKeyPlaceholder: String
     /// 凭证行小标题（如「API Key」），OpenCode / DeepSeek 等共用。
     let tokenSettingsApiKeyTitle: String

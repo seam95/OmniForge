@@ -73,8 +73,8 @@ enum TokenUsageCredentialStateReader {
         let stepfunToken = stepfunStore
             .flatMap { try? $0.readToken() }?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let stepfunEnvToken = environment["STEPFUN_TOKEN"]?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if stepfunToken?.isEmpty == false || stepfunEnvToken?.isEmpty == false {
+        let stepfunHasCredentials = stepfunStore.flatMap { try? $0.readCredentials() }?.isValid == true
+        if stepfunToken?.isEmpty == false || stepfunHasCredentials {
             providers.insert(.stepfun)
         }
 
