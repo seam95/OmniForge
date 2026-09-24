@@ -161,11 +161,6 @@ final class SVGPathShapeTests: XCTestCase {
     func test_allProvidersHaveParseableBrandLogo() {
         for provider in TokenUsageProvider.allCases {
             let layers = provider.brandLogo
-            if provider == .dsh {
-                // DSH 为本地自有工具，无公开品牌 logo，保持字母占位。
-                XCTAssertNil(layers, "\(provider) 不应有品牌 logo")
-                continue
-            }
             guard let layers, !layers.isEmpty else {
                 return XCTFail("\(provider) 缺少品牌 logo")
             }
@@ -196,7 +191,7 @@ final class SVGPathShapeTests: XCTestCase {
     }
 
     func test_brandColorAvailableForEveryProvider() {
-        // 每个 provider 都有品牌色（DSH 沿用占位青）。
+        // 每个 provider 都有品牌色。
         for provider in TokenUsageProvider.allCases {
             _ = provider.brandColor
         }
@@ -244,17 +239,10 @@ extension SVGPathShapeTests {
             let opaque = pixels.filter { $0.a > 200 }.count
             XCTAssertGreaterThan(opaque, pixels.count / 2, "\(provider) 底板未填满")
 
-            if provider == .dsh {
-                // 字母占位：存在与底板色不同的前景像素即可。
-                let bg = pixels.first { $0.a > 200 }?.rgb ?? (0, 0, 0)
-                let fg = pixels.filter { $0.a > 200 && differs($0.rgb, bg, threshold: 60) }.count
-                XCTAssertGreaterThan(fg, 10, "\(provider) 前景字母不可见")
-            } else {
-                // 真实 logo：白/彩色字形应与品牌色底板显著不同。
-                let bg = pixels.first { $0.a > 200 }?.rgb ?? (0, 0, 0)
-                let fg = pixels.filter { $0.a > 200 && differs($0.rgb, bg, threshold: 60) }.count
-                XCTAssertGreaterThan(fg, 20, "\(provider) logo 字形不可见")
-            }
+            // 真实 logo：白/彩色字形应与品牌色底板显著不同。
+            let bg = pixels.first { $0.a > 200 }?.rgb ?? (0, 0, 0)
+            let fg = pixels.filter { $0.a > 200 && differs($0.rgb, bg, threshold: 60) }.count
+            XCTAssertGreaterThan(fg, 20, "\(provider) logo 字形不可见")
         }
     }
 

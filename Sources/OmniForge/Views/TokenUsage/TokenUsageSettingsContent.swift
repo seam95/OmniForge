@@ -123,12 +123,10 @@ extension TokenUsageProvider {
         case .deepSeek: return ""
         case .opencode: return ""
         case .codebuddy: return "codebuddy"
-        case .workbuddy: return "workbuddy"
         case .grok: return "grok"
         case .zcode: return "zcode"
         case .traeCN: return ""
         case .qoder: return "qoder"
-        case .dsh: return "dsh"
         case .arkCodingPlan: return "arkcli"
         case .stepfun: return ""
         }

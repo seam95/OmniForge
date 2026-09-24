@@ -39,12 +39,7 @@ struct TokenUsageProviderIconView: View {
 
     @ViewBuilder
     private var iconContent: some View {
-        if provider == .dsh {
-            // DSH 为本地自有工具，无公开品牌，沿用字母占位。
-            Text("D")
-                .font(.system(size: 9.5, weight: .heavy, design: .rounded))
-                .foregroundColor(.white)
-        } else if let logo = provider.brandLogo {
+        if let logo = provider.brandLogo {
             if provider == .antigravity {
                 // Antigravity 官方图标为「g」字形 + Google 四色环形渐变（左上黄/右上红/右下蓝/左下绿）。
                 ProviderLogoGlyphView(layers: logo, fill: AnyShapeStyle(googleStarGradient))
@@ -109,12 +104,10 @@ extension TokenUsageProvider {
         case .deepSeek: return Color(red: 0x4D / 255.0, green: 0x6B / 255.0, blue: 0xF5 / 255.0)
         case .opencode: return Color(red: 0x10 / 255.0, green: 0x10 / 255.0, blue: 0x10 / 255.0)
         case .codebuddy: return Color(red: 0x6C / 255.0, green: 0x4D / 255.0, blue: 0xFF / 255.0)
-        case .workbuddy: return Color(red: 0x0E / 255.0, green: 0xA5 / 255.0, blue: 0xE9 / 255.0)
         case .grok: return Color(red: 0x11 / 255.0, green: 0x18 / 255.0, blue: 0x27 / 255.0)
         case .zcode: return Color(red: 0x67 / 255.0, green: 0x50 / 255.0, blue: 0xF8 / 255.0)
         case .traeCN: return Color(red: 0x10 / 255.0, green: 0x10 / 255.0, blue: 0x10 / 255.0)
         case .qoder: return Color(red: 0x8B / 255.0, green: 0x5C / 255.0, blue: 0xF6 / 255.0)
-        case .dsh: return Color(red: 0x14 / 255.0, green: 0xB8 / 255.0, blue: 0xA6 / 255.0)
         case .arkCodingPlan: return Color(red: 0x3C / 255.0, green: 0x8C / 255.0, blue: 0xFF / 255.0)
         case .stepfun: return Color(red: 0x00 / 255.0, green: 0x57 / 255.0, blue: 0xFF / 255.0)
         }

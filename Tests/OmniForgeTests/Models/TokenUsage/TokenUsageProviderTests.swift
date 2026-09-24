@@ -8,19 +8,17 @@ final class TokenUsageProviderTests: XCTestCase {
     func test_newProviderRawValuesAlignWithSourceNames() {
         XCTAssertEqual(TokenUsageProvider.opencode.rawValue, "opencode")
         XCTAssertEqual(TokenUsageProvider.codebuddy.rawValue, "codebuddy")
-        XCTAssertEqual(TokenUsageProvider.workbuddy.rawValue, "workbuddy")
         XCTAssertEqual(TokenUsageProvider.grok.rawValue, "grok")
         XCTAssertEqual(TokenUsageProvider.zcode.rawValue, "zcode")
         XCTAssertEqual(TokenUsageProvider.traeCN.rawValue, "trae-cn")
         XCTAssertEqual(TokenUsageProvider.qoder.rawValue, "qoder")
-        XCTAssertEqual(TokenUsageProvider.dsh.rawValue, "dsh")
         XCTAssertEqual(TokenUsageProvider.arkCodingPlan.rawValue, "ark-coding-plan")
     }
 
     func test_newProvidersAppearInAllCases() {
         for provider in [
-            TokenUsageProvider.opencode, .codebuddy, .workbuddy, .grok, .zcode,
-            .traeCN, .qoder, .dsh, .arkCodingPlan,
+            TokenUsageProvider.opencode, .codebuddy, .grok, .zcode,
+            .traeCN, .qoder, .arkCodingPlan,
         ] {
             XCTAssertTrue(TokenUsageProvider.allCases.contains(provider))
         }
@@ -29,12 +27,10 @@ final class TokenUsageProviderTests: XCTestCase {
     func test_newProviderDisplayNames() {
         XCTAssertEqual(TokenUsageProvider.opencode.displayName, "opencode")
         XCTAssertEqual(TokenUsageProvider.codebuddy.displayName, "CodeBuddy")
-        XCTAssertEqual(TokenUsageProvider.workbuddy.displayName, "WorkBuddy")
         XCTAssertEqual(TokenUsageProvider.grok.displayName, "Grok")
         XCTAssertEqual(TokenUsageProvider.zcode.displayName, "ZCode")
         XCTAssertEqual(TokenUsageProvider.traeCN.displayName, "Trae CN")
         XCTAssertEqual(TokenUsageProvider.qoder.displayName, "Qoder")
-        XCTAssertEqual(TokenUsageProvider.dsh.displayName, "DSH")
         XCTAssertEqual(TokenUsageProvider.arkCodingPlan.displayName, "方舟 Coding Plan")
     }
 
@@ -42,14 +38,12 @@ final class TokenUsageProviderTests: XCTestCase {
         let colors: [Color] = [
             TokenUsageProvider.opencode.accentColor,
             TokenUsageProvider.codebuddy.accentColor,
-            TokenUsageProvider.workbuddy.accentColor,
             TokenUsageProvider.grok.accentColor,
             TokenUsageProvider.zcode.accentColor,
             TokenUsageProvider.traeCN.accentColor,
             TokenUsageProvider.qoder.accentColor,
-            TokenUsageProvider.dsh.accentColor,
             TokenUsageProvider.arkCodingPlan.accentColor,
         ]
-        XCTAssertEqual(colors.count, 9)
+        XCTAssertEqual(colors.count, 7)
     }
 }

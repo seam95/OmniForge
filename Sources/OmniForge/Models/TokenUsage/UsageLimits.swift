@@ -11,12 +11,10 @@ enum TokenUsageProvider: String, Codable, CaseIterable, Identifiable {
     // 多供应商接入（2026-08-24）：9 家新 provider。
     case opencode
     case codebuddy
-    case workbuddy
     case grok
     case zcode
     case traeCN = "trae-cn"
     case qoder
-    case dsh
     case arkCodingPlan = "ark-coding-plan"
     case stepfun
 
@@ -33,12 +31,10 @@ enum TokenUsageProvider: String, Codable, CaseIterable, Identifiable {
         case .deepSeek: return "DeepSeek"
         case .opencode: return "opencode"
         case .codebuddy: return "CodeBuddy"
-        case .workbuddy: return "WorkBuddy"
         case .grok: return "Grok"
         case .zcode: return "ZCode"
         case .traeCN: return "Trae CN"
         case .qoder: return "Qoder"
-        case .dsh: return "DSH"
         case .arkCodingPlan: return "方舟 Coding Plan"
         case .stepfun: return "StepFun"
         }

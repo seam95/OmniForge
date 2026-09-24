@@ -1,8 +1,8 @@
 import Foundation
 
-// MARK: - Claude-fork transcript 行（codebuddy / workbuddy 同格式；隐私红线：正文不声明）
+// MARK: - Claude-fork transcript 行（codebuddy；隐私红线：正文不声明）
 
-/// CodeBuddy / WorkBuddy 共享的 transcript JSONL 单行 — 只声明身份/用量字段。
+/// CodeBuddy 的 transcript JSONL 单行 — 只声明身份/用量字段。
 ///
 /// 用量挂在**任意**记录的 `providerData.rawUsage` 上（assistant 消息与 function_call
 /// 记录均携带一次 LLM 往返用量）；`providerData.messageId` 为响应级 id，同往返的
@@ -66,7 +66,7 @@ struct ClaudeForkTranscriptEntry: Decodable, Equatable {
 
 // MARK: - 解析纯函数
 
-/// Claude-fork transcript 解析归一化 — codebuddy / workbuddy 共享（PLAN 期 2）。
+/// Claude-fork transcript 解析归一化 — codebuddy（PLAN 期 2）。
 ///
 /// 减法语义：
 /// - `prompt_tokens` 为完整 prompt（含缓存）→ 减 cacheRead 与 cacheCreation；
@@ -80,12 +80,9 @@ enum ClaudeForkUsageProcessing {
     struct Options: Equatable {
         /// codebuddy 缓存写多一路 `prompt_cache_write_tokens` 镜像。
         var includeCacheWriteMirror: Bool
-        /// workbuddy 模型链多一路 `providerData.requestModelId`。
-        var includeRequestModelId: Bool
     }
 
-    static let codebuddy = Options(includeCacheWriteMirror: true, includeRequestModelId: false)
-    static let workbuddy = Options(includeCacheWriteMirror: false, includeRequestModelId: true)
+    static let codebuddy = Options(includeCacheWriteMirror: true)
 
     // MARK: 六列归一化
 
@@ -123,7 +120,7 @@ enum ClaudeForkUsageProcessing {
 
     // MARK: 模型链
 
-    /// 模型链：`providerData.model` →（workbuddy 可选 `requestModelId`）→ 行级 `model` → 回退。
+    /// 模型链：`providerData.model` → 行级 `model` → 回退。
     static func modelName(
         provider: ClaudeForkTranscriptEntry.ProviderData?,
         entryModel: String?,
@@ -132,11 +129,6 @@ enum ClaudeForkUsageProcessing {
     ) -> String {
         if let model = provider?.model, !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return model
-        }
-        if options.includeRequestModelId,
-           let request = provider?.requestModelId,
-           !request.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return request
         }
         if let model = entryModel, !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return model

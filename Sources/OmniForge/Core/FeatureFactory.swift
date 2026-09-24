@@ -462,14 +462,10 @@ struct FeatureFactory {
         let kimiCollector = KimiUsageCollector(store: usageStore)
         // #09：Cursor 云端账单 CSV 定时轮询（非实时；无本地日志，无监听/游标）。
         let cursorCollector = CursorUsageCollector(store: usageStore)
-        // 多供应商接入（2026-08-24，期 1）：A 类 JSONL 两家 — dsh（seq 水位幂等）、
-        // grok（turn_completed 增量 + signals 兜底）。
-        let dshCollector = DshUsageCollector(store: usageStore)
+        // 多供应商接入（2026-08-24，期 1）：A 类 JSONL — grok（turn_completed 增量 + signals 兜底）。
         let grokCollector = GrokUsageCollector(store: usageStore)
-        // 期 2：Claude-fork transcript 两家 — codebuddy（rawUsage 减法）、
-        // workbuddy（同格式 + trace 无损兜底）。
+        // 期 2：Claude-fork transcript — codebuddy（rawUsage 减法）。
         let codebuddyCollector = CodebuddyUsageCollector(store: usageStore)
-        let workbuddyCollector = WorkbuddyUsageCollector(store: usageStore)
         // 期 3：B 类 SQLite 三家 — opencode（累积值差分 + fork 指纹）、
         // zcode（同 schema + providerID 黑名单）、qoder（整行减旧加新）。
         let opencodeCollector = OpencodeUsageCollector(store: usageStore)
@@ -508,10 +504,8 @@ struct FeatureFactory {
                 .codex: codexCollector,
                 .kimi: kimiCollector,
                 .cursor: cursorCollector,
-                .dsh: dshCollector,
                 .grok: grokCollector,
                 .codebuddy: codebuddyCollector,
-                .workbuddy: workbuddyCollector,
                 .opencode: opencodeCollector,
                 .zcode: zcodeCollector,
                 .qoder: qoderCollector,

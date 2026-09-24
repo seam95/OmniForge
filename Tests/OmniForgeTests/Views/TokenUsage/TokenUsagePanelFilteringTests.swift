@@ -26,7 +26,7 @@ final class TokenUsagePanelFilteringTests: XCTestCase {
     func test_balanceCard_neverAttachedToNonDeepSeekProviders() {
         // 余额卡只归属 DeepSeek：其余 provider 出示限额快照也不引入余额卡。
         let displayable = TokenUsageProviderDisplayPolicy.displayableCardProviders(
-            from: [.opencode, .codebuddy, .workbuddy, .grok, .zcode, .traeCN, .qoder, .dsh, .arkCodingPlan],
+            from: [.opencode, .codebuddy, .grok, .zcode, .traeCN, .qoder, .arkCodingPlan],
             limits: [:],
             credentialConfiguredProviders: [],
             showingDeepSeekBalance: true
@@ -66,8 +66,8 @@ final class TokenUsagePanelFilteringTests: XCTestCase {
         // 面板胶囊由 `configuredProviders`（allCases 过滤）驱动，无需结构改动；
         // 任一新 provider 配置后自动出现。
         let newProviders: [TokenUsageProvider] = [
-            .opencode, .codebuddy, .workbuddy, .grok, .zcode,
-            .traeCN, .qoder, .dsh, .arkCodingPlan,
+            .opencode, .codebuddy, .grok, .zcode,
+            .traeCN, .qoder, .arkCodingPlan,
         ]
         for provider in newProviders {
             let configured: Set<TokenUsageProvider> = [provider]
@@ -236,6 +236,7 @@ final class TokenUsagePanelFilteringTests: XCTestCase {
         let providers = TokenUsageCredentialStateReader.configuredProviders(
             opencodeStore: opencodeStore,
             arkStore: arkStore,
+            stepfunStore: PanelFilteringStepfunStore(),
             environment: [
                 "ARK_AK": "ark-ak",
                 "ARK_SK": "ark-sk",
@@ -268,5 +269,15 @@ private final class PanelFilteringArkStore: ArkCredentialsStoring {
     func readCredentials() throws -> ArkCredentials? { credentials }
     func writeCredentials(_ credentials: ArkCredentials) throws { self.credentials = credentials }
     func deleteCredentials() throws { credentials = nil }
+}
+
+/// 空 StepFun 存储：让凭证探测测试确定化，不读真实钥匙串（本机可能已登录 StepFun）。
+private final class PanelFilteringStepfunStore: StepfunTokenStoring {
+    func readToken() throws -> String? { nil }
+    func writeToken(_ token: String) throws {}
+    func deleteToken() throws {}
+    func readCredentials() throws -> StepfunCredentials? { nil }
+    func writeCredentials(_ credentials: StepfunCredentials) throws {}
+    func deleteCredentials() throws {}
 }
 

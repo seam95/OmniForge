@@ -54,7 +54,7 @@ final class TokenUsageTopDimensionTests: XCTestCase {
         let entries = [
             UsageTopModelEntry(name: "Codex", tokens: 512_300, percent: 58.2, provider: .codex),
             UsageTopModelEntry(name: "ZCode", tokens: 301_800, percent: 34.3, provider: .zcode),
-            UsageTopModelEntry(name: "WorkBuddy", tokens: 65_200, percent: 7.4, provider: .workbuddy),
+            UsageTopModelEntry(name: "CodeBuddy", tokens: 65_200, percent: 7.4, provider: .codebuddy),
         ]
         try assertRendersNonEmpty(entries: entries, dimension: .app)
     }

@@ -4,7 +4,7 @@ import Foundation
 /// A 类（本地 JSONL）用量采集器骨架 — 目录监听 + 串行队列 + 信号合并 + 增量游标 + 聚合写桶。
 ///
 /// 从 `ClaudeUsageCollector` 抽取公共骨架（2026-08-24 多供应商接入，期 1），供
-/// Claude / Kimi / grok / dsh / codebuddy / workbuddy 等本地 JSONL 采集器复用。
+/// Claude / Kimi / grok / codebuddy 等本地 JSONL 采集器复用。
 ///
 /// 子类注入点（PLAN §1.2）：
 /// - `enumerateFiles()`：目录发现规则（返回本次要扫描的文件 URL）；
@@ -53,7 +53,7 @@ class JSONLUsageCollectorBase: UsageCollecting {
     /// 本次要扫描的文件 URL（目录发现规则）。
     func enumerateFiles() -> [URL] { [] }
 
-    /// 每文件扫描状态；默认承载模型归属（Kimi 语义）与 sessionId（dsh/grok 去重）。
+    /// 每文件扫描状态；默认承载模型归属（Kimi 语义）与 sessionId（grok 去重）。
     struct FileScanState {
         var model: String?
         var sessionId: String?
