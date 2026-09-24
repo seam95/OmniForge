@@ -231,14 +231,18 @@ enum TokenUsageFormat {
         MetricBar.clamp(window.usedPercent / 100)
     }
 
-    /// 窗口行数值展示文案：额度窗固定「剩 $x」口径；其余按设置切换已用 / 剩余百分比。
+    /// 窗口行数值展示文案：货币型额度窗固定「剩 $x」口径；计数型额度窗与其余窗口按设置切换已用 / 剩余百分比。
+    ///
+    /// 计数型单位（StepFun "Credit"、Codex/Qoder/Zcode "credits"）的剩余量动辄六七位以上，
+    /// 而数值列只有 34pt 固定宽（`TokenUsageLimitCardView.limitRow`），金额形态会被
+    /// `lineLimit(1)` 截得只剩一个「剩」字。这类窗口因此退回百分比口径，与进度条同源。
     static func limitValueText(
         kind: LimitWindowKind,
         window: UsageWindow,
         displayMode: TokenUsageLimitsDisplay,
         strings: Strings
     ) -> String {
-        if kind == .credits, let remaining = window.remaining {
+        if kind == .credits, let remaining = window.remaining, !isCreditCountUnit(window.unit) {
             return String(
                 format: strings.tokenCreditsRemainingFormat,
                 currencyPrefix(for: window.unit) + String(format: "%.2f", remaining)
@@ -246,6 +250,15 @@ enum TokenUsageFormat {
         }
         let shown = displayMode == .used ? window.usedPercent : max(0, 100 - window.usedPercent)
         return percent(shown)
+    }
+
+    /// 计数型额度单位（credits / points / tokens / quota 等非货币计数，大小写与空格不敏感）。
+    /// nil / 空单位沿用货币口径（缺省 "$"）：按量付费余额（Claude）缺币种时仍显示「剩 $x」。
+    static func isCreditCountUnit(_ unit: String?) -> Bool {
+        guard let unit else { return false }
+        let normalized = unit.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return false }
+        return ["credit", "point", "token", "quota"].contains { normalized.contains($0) }
     }
 
     /// 额度货币前缀：USD → "$"，其他按代码 + 空格。

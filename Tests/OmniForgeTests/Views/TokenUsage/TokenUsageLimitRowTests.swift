@@ -4,7 +4,8 @@ import SwiftUI
 
 /// 限额卡行内纯逻辑测试（#11 视觉修复）：
 /// - 进度条进度固定按 usedPercent 并在 [0, 1] 钳制；
-/// - 行内数值按 displayMode 切换已用 / 剩余，额度窗固定显示剩余货币；
+/// - 行内数值按 displayMode 切换已用 / 剩余；货币型额度窗固定显示剩余货币，
+///   计数型额度窗（credits 等）因数值列仅 34pt 退回百分比口径；
 /// - MetricBar 状态色按 usedPercent 染色（remaining 模式下消耗进度与颜色同向自洽）。
 final class TokenUsageLimitRowTests: XCTestCase {
     private let strings = Strings.zhHans
@@ -98,6 +99,48 @@ final class TokenUsageLimitRowTests: XCTestCase {
             TokenUsageFormat.limitValueText(kind: .credits, window: cnyWindow, displayMode: .used, strings: strings),
             "剩 CNY 50.00"
         )
+
+        let unitlessWindow = makeWindow(usedPercent: 50.0, remaining: 12.3456, unit: nil)
+        XCTAssertEqual(
+            TokenUsageFormat.limitValueText(kind: .credits, window: unitlessWindow, displayMode: .used, strings: strings),
+            "剩 $12.35",
+            "单位缺失时缺省按美元货币口径"
+        )
+    }
+
+    func test_limitValueText_creditCountUnit_displaysPercent() {
+        // StepFun Token Plan：unit "Credit"，剩余量动辄七位以上，34pt 数值列放不下金额形态。
+        let stepfunWindow = makeWindow(usedPercent: 12.5, remaining: 400_000_000, unit: "Credit")
+        XCTAssertEqual(
+            TokenUsageFormat.limitValueText(kind: .credits, window: stepfunWindow, displayMode: .used, strings: strings),
+            "13%",
+            "计数型额度窗在 used 模式下显示已用百分比"
+        )
+        XCTAssertEqual(
+            TokenUsageFormat.limitValueText(kind: .credits, window: stepfunWindow, displayMode: .remaining, strings: strings),
+            "88%",
+            "计数型额度窗在 remaining 模式下显示剩余百分比（满额度即 100%）"
+        )
+
+        for unit in ["credits", "Credits", "POINTS", "token", " quota "] {
+            let window = makeWindow(usedPercent: 0, remaining: 1_234, unit: unit)
+            XCTAssertEqual(
+                TokenUsageFormat.limitValueText(kind: .credits, window: window, displayMode: .remaining, strings: strings),
+                "100%",
+                "计数型单位 \(unit) 不落金额口径"
+            )
+        }
+    }
+
+    func test_isCreditCountUnit() {
+        XCTAssertTrue(TokenUsageFormat.isCreditCountUnit("Credit"))
+        XCTAssertTrue(TokenUsageFormat.isCreditCountUnit("credits"))
+        XCTAssertTrue(TokenUsageFormat.isCreditCountUnit("  Points "))
+        XCTAssertTrue(TokenUsageFormat.isCreditCountUnit("tokens"))
+        XCTAssertFalse(TokenUsageFormat.isCreditCountUnit("USD"))
+        XCTAssertFalse(TokenUsageFormat.isCreditCountUnit("CNY"))
+        XCTAssertFalse(TokenUsageFormat.isCreditCountUnit(""), "空串等同单位缺失，走货币口径")
+        XCTAssertFalse(TokenUsageFormat.isCreditCountUnit(nil))
     }
 
     func test_currencyPrefix() {
