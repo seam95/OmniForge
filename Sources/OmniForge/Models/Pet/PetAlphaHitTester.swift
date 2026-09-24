@@ -9,7 +9,10 @@ import Foundation
 @MainActor
 final class PetAlphaHitTester {
     /// alpha 阈值：> 该值视为实体像素。
-    static let alphaThreshold: UInt8 = 8
+    /// 取值对齐 Codex 桌面宠物参考实现（其判定为 `alpha > 30`）：抗锯齿边缘像素集中在
+    /// 9–29 区间，阈值过低会把可见轮廓外的半透明边缘也算成可交互区域，导致空白处点击
+    /// 无法穿透到下层应用。
+    static let alphaThreshold: UInt8 = 30
     /// 容差（显示 pt）：高度 ≤72pt 用 8，其余 6。
     static let smallTolerance: CGFloat = 8
     static let defaultTolerance: CGFloat = 6

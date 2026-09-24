@@ -37,7 +37,7 @@ final class PetAlphaHitTesterTests: XCTestCase {
         }
     }
 
-    /// 构造 alpha = 8（阈值边界，不命中：要求 > 8）与 alpha = 9（命中）的帧。
+    /// 构造指定 alpha 的整帧位图，用于阈值边界判定。
     private func thresholdFrame(alpha: CGFloat) -> CGImage {
         frame(width: 32, height: 32) { context in
             context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: alpha))
@@ -136,19 +136,31 @@ final class PetAlphaHitTesterTests: XCTestCase {
 
     // MARK: - alpha 阈值
 
-    func test_alphaThresholdIsExclusiveAboveEight() {
+    func test_alphaThresholdIsExclusiveAboveThirty() {
         let snapshot = snapshot()
-        // alpha 恰 8：不命中（要求 > 8）。
+        // alpha 恰 30：不命中（要求 > 30）。抗锯齿边缘（9–29）全部落在阈值以下，故不算实体。
         XCTAssertFalse(
-            tester.contains(CGPoint(x: 48, y: 48), snapshot: snapshot, frameImage: thresholdFrame(alpha: 8.0 / 255.0)),
-            "alpha == 8 不算实体"
+            tester.contains(CGPoint(x: 48, y: 48), snapshot: snapshot, frameImage: thresholdFrame(alpha: 30.0 / 255.0)),
+            "alpha == 30 不算实体"
         )
-        // 同帧号的另一帧位图（alpha 9）：缓存键相同，先清缓存再验（真实场景位图随资产替换整体失效）。
+        // 同帧号的另一帧位图（alpha 31）：缓存键相同，先清缓存再验（真实场景位图随资产替换整体失效）。
         tester.clearCache()
         XCTAssertTrue(
-            tester.contains(CGPoint(x: 48, y: 48), snapshot: snapshot, frameImage: thresholdFrame(alpha: 9.0 / 255.0)),
-            "alpha == 9 算实体"
+            tester.contains(CGPoint(x: 48, y: 48), snapshot: snapshot, frameImage: thresholdFrame(alpha: 31.0 / 255.0)),
+            "alpha == 31 算实体"
         )
+    }
+
+    func test_antiAliasedEdgePixelsDoNotCountAsSolid() {
+        // 回归：旧阈值为 8 时，alpha 9–29 的抗锯齿边缘被判为实体，宠物可点区域大于可见轮廓。
+        let snapshot = snapshot()
+        for alpha in [9, 15, 22, 29] {
+            tester.clearCache()
+            XCTAssertFalse(
+                tester.contains(CGPoint(x: 48, y: 48), snapshot: snapshot, frameImage: thresholdFrame(alpha: CGFloat(alpha) / 255.0)),
+                "alpha == \(alpha) 的抗锯齿边缘不应算实体"
+            )
+        }
     }
 
     // MARK: - 非正方形与窗口外
