@@ -78,4 +78,42 @@ final class PetHostingViewDragTests: XCTestCase {
         host.onWindowDragEnd?()
         XCTAssertEqual(manager.behaviorState, .idle)
     }
+
+    func test_panelHostingViewCarriesLongPressCallbackAfterStart() throws {
+        let suiteName = "PetHostingViewDragTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let assetRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pet-hold-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: assetRoot, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: assetRoot)
+        }
+
+        let manager = DesktopPetManager(
+            userDefaults: defaults,
+            windowController: PetWindowController(petSize: CGSize(width: 96, height: 96)),
+            assetStore: PetAssetStore(rootDirectory: assetRoot),
+            stringsProvider: { Strings.zhHans },
+            visibleScreensProvider: { [PetScreenGeometry(
+                visibleFrame: CGRect(x: 0, y: 25, width: 1440, height: 800),
+                identifier: "display-1"
+            )] },
+            tickInterval: 3600,
+            frameClock: ManualFrameClock()
+        )
+        manager.start()
+        defer { manager.teardown() }
+
+        let host = try XCTUnwrap(manager.windowController.panel?.contentView as? Host)
+        XCTAssertNotNil(host.onLongPressHop, "长按蹦跳回调必须接线")
+
+        // 回调应驱动状态迁移：idle → hop。
+        host.onLongPressHop?()
+        XCTAssertEqual(manager.behaviorState, .hop)
+    }
+
+    func test_holdDurationMatchesReference() {
+        XCTAssertEqual(Host.holdDuration, 0.55, accuracy: 0.0001, "长按识别时长对齐参考实现的 550ms")
+    }
 }

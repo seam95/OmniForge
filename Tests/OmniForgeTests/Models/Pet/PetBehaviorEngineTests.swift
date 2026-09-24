@@ -199,6 +199,69 @@ final class PetBehaviorEngineTests: XCTestCase {
         XCTAssertEqual(engine.state, .idle)
     }
 
+    // MARK: - 长按蹦跳（人为触发 hop）
+
+    func test_hopFromIdleEntersHopState() {
+        let engine = makeEngine(rolls: [0.1])
+
+        XCTAssertTrue(engine.hop())
+        XCTAssertEqual(engine.state, .hop)
+    }
+
+    func test_hopFromWalkEntersHopState() {
+        let engine = makeEngine(rolls: [0.1])
+        engine.apply(PetBehaviorDecision(state: .walk(direction: .right), horizontalDelta: 0, duration: 2))
+
+        XCTAssertTrue(engine.hop())
+        XCTAssertEqual(engine.state, .hop)
+    }
+
+    func test_hopDoesNotReenterWhileHopping() {
+        let engine = makeEngine(rolls: [0.1])
+        engine.hop()
+
+        XCTAssertFalse(engine.hop(), "已在蹦跳中不得重入")
+        XCTAssertEqual(engine.state, .hop)
+    }
+
+    func test_hopDroppedWhileDragging() {
+        let engine = makeEngine(rolls: [0.1])
+        // 拖动态由 Manager 置位，此处直接以该态验证接纳裁决。
+        engine.apply(PetBehaviorDecision(state: .drag, horizontalDelta: 0, duration: 0))
+
+        XCTAssertFalse(engine.hop(), "拖拽进行中应丢弃蹦跳请求")
+        XCTAssertEqual(engine.state, .drag)
+    }
+
+    func test_hopDroppedWhilePetted() {
+        let engine = makeEngine(rolls: [0.1])
+        engine.pet()
+
+        XCTAssertFalse(engine.hop(), "抚摸进行中应丢弃蹦跳请求")
+        XCTAssertEqual(engine.state, .petted(resumeState: .idle))
+    }
+
+    func test_hopDoesNotPreemptReaction() {
+        let engine = makeEngine(rolls: [0.1])
+        engine.react(to: .heat)
+
+        XCTAssertFalse(engine.hop(), "反应是更高优先级展示，蹦跳不得抢占")
+        XCTAssertEqual(engine.currentReaction, .heat)
+    }
+
+    func test_hopReturnsToMatrixAfterFinishing() {
+        // hop 播完由 Manager 重新掷骰，不记录恢复目标（与矩阵随机触发路径一致）。
+        let engine = makeEngine(rolls: [0.1])
+        engine.apply(PetBehaviorDecision(state: .walk(direction: .right), horizontalDelta: 0, duration: 2))
+        engine.hop()
+        XCTAssertEqual(engine.state, .hop)
+
+        // 模拟 Manager 的自主分支：hop 到期后取下一个矩阵决策。
+        let decision = engine.nextAutonomousDecision()
+        engine.apply(decision)
+        XCTAssertNotEqual(engine.state, .hop)
+    }
+
     // MARK: - 外部事件入口（形状锁定）
 
     func test_submitUnmappedEventsEnqueueWithoutChangingBehavior() {

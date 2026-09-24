@@ -17,14 +17,21 @@ final class PetHostingView<Content: View>: NSHostingView<Content> {
     /// 窗口必须持续接收事件——alpha 穿透不得在会话中途打开（拖出透明区也不中断拖动）。
     var onInteractionLockStart: (() -> Void)?
     var onInteractionLockEnd: (() -> Void)?
+    /// 长按蹦跳回调：按下持续 `holdDuration` 未越拖动阈值时触发；仅桌宠窗口接线。
+    var onLongPressHop: (() -> Void)?
 
     /// 进入拖动会话的位移识别阈值（pt）。
     static var dragThreshold: CGFloat { 8 }
+
+    /// 长按蹦跳的识别时长（秒）。与参考实现一致：按住 550ms 未移动即跳一下。
+    static var holdDuration: TimeInterval { 0.55 }
 
     /// 按下时的屏幕坐标（判定阈值与是否已启动会话用）。
     private var mouseDownScreenLocation: NSPoint?
     /// 本次按下是否已启动原生拖动会话（松手不再透传给 super，防误触发一次抚摸）。
     private var didStartDragSession = false
+    /// 长按定时器；nil = 无挂起的长按（已取消 / 已触发 / 未按下）。
+    private var holdTimer: Timer?
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
@@ -33,6 +40,7 @@ final class PetHostingView<Content: View>: NSHostingView<Content> {
         didStartDragSession = false
         // 按下即锁：覆盖未达 DragGesture 阈值的按下阶段，帧动画 / 拖出矩形不得中途打开穿透。
         onInteractionLockStart?()
+        scheduleHoldTimer()
         super.mouseDown(with: event)
     }
 
@@ -47,6 +55,8 @@ final class PetHostingView<Content: View>: NSHostingView<Content> {
         }
         mouseDownScreenLocation = nil
         didStartDragSession = true
+        // 越阈即取消长按：本次按下已转为拖动，不得再补一次蹦跳。
+        cancelHoldTimer()
         begin()
         // 传当前事件：会话锚点 = 当前光标在窗口内的位置，阈值内累计的 ≤8pt 不被追溯，
         // 起拖瞬间不出现位置跳变。performDrag 为同步调用，松手时返回。
@@ -59,6 +69,7 @@ final class PetHostingView<Content: View>: NSHostingView<Content> {
         let wasDragging = didStartDragSession
         didStartDragSession = false
         mouseDownScreenLocation = nil
+        cancelHoldTimer()
         // 锁随抬起释放（拖动会话的残余抬起同样结束锁）。
         onInteractionLockEnd?()
         // 拖动结束的残余抬起不透传 super，避免 SwiftUI 点击手势补触发一次抚摸。
@@ -68,6 +79,7 @@ final class PetHostingView<Content: View>: NSHostingView<Content> {
 
     override func rightMouseDown(with event: NSEvent) {
         // 右键菜单是模态 tracking 会话：super 返回即菜单已关闭，锁覆盖整个会话。
+        cancelHoldTimer()
         onInteractionLockStart?()
         super.rightMouseDown(with: event)
         onInteractionLockEnd?()
@@ -78,6 +90,32 @@ final class PetHostingView<Content: View>: NSHostingView<Content> {
         let dx = current.x - start.x
         let dy = current.y - start.y
         return (dx * dx + dy * dy).squareRoot() >= dragThreshold
+    }
+
+    // MARK: - 长按蹦跳
+
+    /// 安排一次长按定时器（先取消挂起的旧定时器，避免重复按下叠加）。
+    private func scheduleHoldTimer() {
+        cancelHoldTimer()
+        holdTimer = Timer.scheduledTimer(
+            withTimeInterval: Self.holdDuration,
+            repeats: false
+        ) { [weak self] _ in
+            self?.handleHoldElapsed()
+        }
+    }
+
+    private func cancelHoldTimer() {
+        holdTimer?.invalidate()
+        holdTimer = nil
+    }
+
+    /// 定时器到点：仅当本次按下仍未越阈值、未进入拖动会话时触发蹦跳。
+    /// `mouseDownScreenLocation` 在起拖时被清空，故该判据同时覆盖两种取消路径。
+    private func handleHoldElapsed() {
+        holdTimer = nil
+        guard mouseDownScreenLocation != nil, !didStartDragSession else { return }
+        onLongPressHop?()
     }
 }
 
@@ -94,6 +132,8 @@ final class PetWindowController {
     /// 交互锁开始 / 结束回调（alpha 穿透的会话期闸门）。
     var onInteractionLockStart: (() -> Void)?
     var onInteractionLockEnd: (() -> Void)?
+    /// 长按蹦跳回调（由组合根接线，透传给新建的 hosting view）。
+    var onLongPressHop: (() -> Void)?
 
     /// 当前窗口尺寸（非正方形：按素材宽高比，高度为档位尺寸）。
     private(set) var petSize: CGSize
@@ -136,6 +176,7 @@ final class PetWindowController {
         hostingView.onWindowDragEnd = onWindowDragEnd
         hostingView.onInteractionLockStart = onInteractionLockStart
         hostingView.onInteractionLockEnd = onInteractionLockEnd
+        hostingView.onLongPressHop = onLongPressHop
         panel.contentView = hostingView
 
         self.panel = panel

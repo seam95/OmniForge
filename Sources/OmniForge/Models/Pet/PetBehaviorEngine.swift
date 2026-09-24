@@ -250,6 +250,29 @@ final class PetBehaviorEngine {
         }
     }
 
+    /// 长按手势：原地蹦跳一次。与自主矩阵随机触发的 `hop` 是同一状态，本方法只提供人为入口。
+    ///
+    /// 接纳裁决沿用 `PetInterruptLevel`，但比 `react(to:)` 更保守：
+    /// - 拖拽 / 抚摸进行中**丢弃**（用户正在主动交互，不与用户争抢）；
+    /// - 反应进行中**丢弃**——反应是外部事件的更高优先级展示，蹦跳不抢占，
+    ///   同级的「替换并刷新」仅限 reaction → reaction；
+    /// - 自主态（idle / walk / frolic）一律接纳；已在 `hop` 中不重入。
+    ///
+    /// 蹦跳播完由 Manager 的自主分支重新掷骰，不记录恢复目标（与矩阵触发的 hop 一致）。
+    @discardableResult
+    func hop() -> Bool {
+        switch state.interruptLevel {
+        case .drag, .petted, .reaction:
+            return false
+        case .autonomous:
+            guard case .hop = state else {
+                state = .hop
+                return true
+            }
+            return false
+        }
+    }
+
     /// 反应播完，回到被打断前的状态。
     func finishReaction() {
         guard case .reaction(_, let resume) = state else { return }

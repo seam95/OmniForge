@@ -193,6 +193,24 @@ final class DesktopPetManager: ObservableObject {
             // 会话结束立即重算命中（不等下一 tick）。
             self?.refreshPointerState()
         }
+        // 长按蹦跳：由承载视图的 550ms 定时器触发，此处只做状态迁移与时长采样。
+        self.windowController.onLongPressHop = { [weak self] in
+            self?.performHop()
+        }
+    }
+
+    /// 长按蹦跳：进入一次性 hop 态并采样播放时长。
+    /// 引擎侧已按 `PetInterruptLevel` 丢弃拖拽 / 抚摸 / 反应中的请求，此处对返回值不做二次判断。
+    private func performHop() {
+        guard engine.hop() else { return }
+        behaviorState = engine.state
+        decisionRemaining = oneShotDuration(
+            ids: [PetAnimationID.drag, PetAnimationID.fall],
+            fallback: 0.8
+        )
+        // 蹦跳是被用户手势打断的自主行为：归还被打断的剩余时长无意义（hop 本就来自自主态），
+        // 与矩阵随机触发 hop 的路径保持一致，播完直接重新掷骰。
+        interruptedRemaining = nil
     }
 
     // MARK: - 生命周期
