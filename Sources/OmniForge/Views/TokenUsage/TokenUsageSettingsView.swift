@@ -909,36 +909,76 @@ struct ArkCodingPlanSettingsCard: View {
     }
 }
 
-/// StepFun Step Plan 配置卡（提供商行内展开）：Oasis-Token（钥匙串存储）/ 保存 / 清除。
+/// StepFun Step Plan 配置卡（提供商行内展开）：
+/// ① 手动粘贴 Oasis-Token；② 账号密码登录（自动拿 token 并存凭证，免去浏览器复制，30 天免重申）。
 struct StepfunSettingsCard: View {
     @ObservedObject var preferences: TokenUsagePreferences
     var manager: TokenUsageManager? = nil
-    /// 凭证变更（保存/清除）后通知父级刷新行状态缓存。
+    /// 凭证变更（保存/清除/登录）后通知父级刷新行状态缓存。
     var onCredentialsChanged: () -> Void = {}
     let strings: Strings
 
     @State private var tokenInput = ""
+    @State private var usernameInput = ""
+    @State private var passwordInput = ""
     @State private var saveFailed = false
+    @State private var loginFailed = false
+    @State private var isLoggingIn = false
     /// 钥匙串凭证状态缓存（onAppear 与保存/清除后刷新，渲染期不直接读 keychain）。
     @State private var hasStoredToken = false
+    @State private var hasStoredCredentials = false
 
     private let keychain = StepfunKeychainStore()
 
     var body: some View {
-        TokenCredentialRow(
-            title: strings.stepfunSettingsTokenTitle,
-            placeholder: strings.stepfunSettingsTokenPlaceholder,
-            text: $tokenInput,
-            hasStoredValue: hasStoredToken,
-            caption: strings.stepfunSettingsTokenCaption,
-            canSave: !tokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-            feedback: saveFailed ? .error(strings.tokenErrorTransient) : .none,
-            onSave: save,
-            onClear: clearToken,
-            strings: strings
-        )
-        .onChange(of: tokenInput) { _, _ in
-            saveFailed = false
+        VStack(alignment: .leading, spacing: 12) {
+            TokenCredentialRow(
+                title: strings.stepfunSettingsTokenTitle,
+                placeholder: strings.stepfunSettingsTokenPlaceholder,
+                text: $tokenInput,
+                hasStoredValue: hasStoredToken,
+                caption: strings.stepfunSettingsTokenCaption,
+                canSave: !tokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                feedback: saveFailed ? .error(strings.tokenErrorTransient) : .none,
+                onSave: save,
+                onClear: clearAll,
+                strings: strings
+            )
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(strings.stepfunSettingsLoginSection)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextField(strings.stepfunSettingsUsernamePlaceholder, text: $usernameInput)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: usernameInput) { _, _ in loginFailed = false }
+                SecureField(strings.stepfunSettingsPasswordPlaceholder, text: $passwordInput)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: passwordInput) { _, _ in loginFailed = false }
+                HStack(spacing: 8) {
+                    Button(strings.stepfunSettingsLoginButton) { login() }
+                        .disabled(
+                            usernameInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                || passwordInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                || isLoggingIn
+                        )
+                    if isLoggingIn {
+                        ProgressView().scaleEffect(0.6)
+                    }
+                }
+                if loginFailed {
+                    Text(strings.stepfunSettingsLoginFailed)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+                if hasStoredCredentials {
+                    Text(strings.stepfunSettingsCredentialsSaved)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
         .onAppear { reloadKeychainState() }
     }
@@ -946,6 +986,12 @@ struct StepfunSettingsCard: View {
     private func reloadKeychainState() {
         let stored = (try? keychain.readToken()) ?? ""
         hasStoredToken = !stored.isEmpty
+        if let creds = try? keychain.readCredentials() {
+            hasStoredCredentials = creds.isValid
+            usernameInput = creds.username
+        } else {
+            hasStoredCredentials = false
+        }
     }
 
     private func save() {
@@ -963,13 +1009,52 @@ struct StepfunSettingsCard: View {
         }
     }
 
-    private func clearToken() {
+    /// 清除 = 完全登出：删 token 与账号凭证。
+    private func clearAll() {
         try? keychain.deleteToken()
+        try? keychain.deleteCredentials()
         tokenInput = ""
+        usernameInput = ""
+        passwordInput = ""
         saveFailed = false
+        loginFailed = false
         hasStoredToken = false
+        hasStoredCredentials = false
         manager?.refreshNow()
         onCredentialsChanged()
+    }
+
+    private func login() {
+        let user = usernameInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pass = passwordInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !user.isEmpty, !pass.isEmpty else { return }
+        isLoggingIn = true
+        loginFailed = false
+        Task {
+            let result = await performLogin(username: user, password: pass)
+            isLoggingIn = false
+            switch result {
+            case .success:
+                passwordInput = ""
+                hasStoredToken = true
+                hasStoredCredentials = true
+                manager?.refreshNow()
+                onCredentialsChanged()
+            case .failure:
+                loginFailed = true
+            }
+        }
+    }
+
+    private func performLogin(username: String, password: String) async -> Result<Void, Error> {
+        do {
+            let token = try await StepfunWebAPIClient().login(username: username, password: password)
+            try keychain.writeToken(token)
+            try keychain.writeCredentials(StepfunCredentials(username: username, password: password))
+            return .success(())
+        } catch {
+            return .failure(error)
+        }
     }
 }
 

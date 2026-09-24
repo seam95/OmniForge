@@ -6,8 +6,10 @@ import XCTest
 /// 钥匙串 + 环境变量凭证解析、401→reauth 映射。
 private final class FakeStepfunTokenStore: StepfunTokenStoring {
     var storedToken: String?
+    var storedCredentials: StepfunCredentials?
     var readError: Error?
     private(set) var readCount = 0
+    private(set) var writeCount = 0
 
     func readToken() throws -> String? {
         readCount += 1
@@ -15,8 +17,15 @@ private final class FakeStepfunTokenStore: StepfunTokenStoring {
         return storedToken
     }
 
-    func writeToken(_ token: String) throws { storedToken = token }
+    func writeToken(_ token: String) throws {
+        writeCount += 1
+        storedToken = token
+    }
     func deleteToken() throws { storedToken = nil }
+
+    func readCredentials() throws -> StepfunCredentials? { storedCredentials }
+    func writeCredentials(_ credentials: StepfunCredentials) throws { storedCredentials = credentials }
+    func deleteCredentials() throws { storedCredentials = nil }
 }
 
 final class StepfunLimitsFetcherTests: XCTestCase {
@@ -28,6 +37,8 @@ final class StepfunLimitsFetcherTests: XCTestCase {
 
     override func tearDownWithError() throws {
         URLProtocolStub.reset()
+        // 清理共享 Cookie 存储，避免 INGRESSCOOKIE 跨用例残留影响「缺少 ingress」用例。
+        HTTPCookieStorage.shared.cookies?.forEach { HTTPCookieStorage.shared.deleteCookie($0) }
     }
 
     // MARK: - JSON 夹具
@@ -55,7 +66,7 @@ final class StepfunLimitsFetcherTests: XCTestCase {
     // MARK: - 滑动窗口解析
 
     func test_rollingWindow_parsesSessionAndWeekly() {
-        let payload = try! JSONSerialization.jsonObject(with: Data(rollingWindowJSON().utf8)) as! [String: Any]
+        let payload = try! JSONSerialization.jsonObject(with: Data(self.rollingWindowJSON().utf8)) as! [String: Any]
         let result = StepfunPlanParsing.parseLimits(rateLimitPayload: payload, capturedAt: Date())
 
         XCTAssertNotNil(result)
@@ -85,7 +96,7 @@ final class StepfunLimitsFetcherTests: XCTestCase {
     }
 
     func test_planLabel_extractedFromStatus() {
-        let payload = try! JSONSerialization.jsonObject(with: Data(rollingWindowJSON().utf8)) as! [String: Any]
+        let payload = try! JSONSerialization.jsonObject(with: Data(self.rollingWindowJSON().utf8)) as! [String: Any]
         let status = try! JSONSerialization.jsonObject(
             with: Data(#"{"subscription":{"name":" Plus "}}"#.utf8)
         ) as! [String: Any]
@@ -141,7 +152,11 @@ final class StepfunLimitsFetcherTests: XCTestCase {
     private func makeJWT(deviceID: String?) -> String {
         var payload: [String: Any] = [:]
         if let deviceID { payload["device_id"] = deviceID }
-        let data = try! JSONSerialization.data(withJSONObject: payload)
+        return makeJWT(claims: payload)
+    }
+
+    private func makeJWT(claims: [String: Any]) -> String {
+        let data = try! JSONSerialization.data(withJSONObject: claims)
         let b64 = data.base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
@@ -172,10 +187,12 @@ final class StepfunLimitsFetcherTests: XCTestCase {
 
     private func makeFetcher(
         _ store: FakeStepfunTokenStore,
-        environment: [String: String]
+        environment: [String: String] = [:],
+        now: @escaping () -> Date = { Date() }
     ) -> StepfunLimitsFetcher {
-        let client = StepfunWebAPIClient(session: URLProtocolStub.makeSession())
-        return StepfunLimitsFetcher(keyStore: store, client: client, environment: environment)
+        let stub = URLProtocolStub.makeSession()
+        let client = StepfunWebAPIClient(session: stub, authSession: stub, now: now)
+        return StepfunLimitsFetcher(keyStore: store, client: client, environment: environment, now: now)
     }
 
     private func stubBothEndpoints(rateLimit: String, status: String? = nil) {
@@ -264,5 +281,176 @@ final class StepfunLimitsFetcherTests: XCTestCase {
         XCTAssertNotNil(result)
         XCTAssertEqual(result?.windows[.session]?.usedPercent ?? -1, 40, accuracy: 0.001)
         XCTAssertNil(result?.planLabel)
+    }
+
+    // MARK: - access 段过期提取
+
+    func test_accessTokenExpiry_readsExpFromFirstJWT() {
+        let exp: TimeInterval = 1_800_000_000
+        let token = makeJWT(claims: ["exp": exp]) + "..." + makeJWT(claims: ["device_id": "d"])
+        XCTAssertEqual(StepfunWebIDExtractor.accessTokenExpiry(token), Date(timeIntervalSince1970: exp))
+    }
+
+    func test_accessTokenExpiry_nilForNonJWT() {
+        XCTAssertNil(StepfunWebIDExtractor.accessTokenExpiry("not-a-jwt"))
+        XCTAssertNil(StepfunWebIDExtractor.accessTokenExpiry(""))
+    }
+
+    // MARK: - 登录三步（ingress → register → signin）
+
+    func test_login_threeStep_returnsCombinedToken() async throws {
+        URLProtocolStub.handler = { request in
+            let url = request.url?.absoluteString ?? ""
+            if url.contains("RegisterDevice") {
+                return .init(statusCode: 200, data: Data(#"{"accessToken":{"raw":"AT"},"refreshToken":{"raw":"RT"}}"#.utf8))
+            } else if url.contains("SignInByPassword") {
+                // 校验登录请求体与 Cookie 组装
+                let body = String(data: URLProtocolStub.requestBody(request), encoding: .utf8) ?? ""
+                XCTAssertTrue(body.contains("\"username\":\"user\""))
+                XCTAssertTrue((request.value(forHTTPHeaderField: "Cookie") ?? "").contains("INGRESSCOOKIE=ing-xyz"))
+                return .init(statusCode: 200, data: Data(#"{"accessToken":{"raw":"AT2"},"refreshToken":{"raw":"RT2"}}"#.utf8))
+            } else {
+                return .init(statusCode: 200, headers: ["Set-Cookie": "INGRESSCOOKIE=ing-xyz; Path=/"], data: Data())
+            }
+        }
+        let stub = URLProtocolStub.makeSession()
+        let client = StepfunWebAPIClient(session: stub, authSession: stub)
+        let token = try await client.login(username: "user", password: "pass")
+        XCTAssertEqual(token, "AT2...RT2")
+
+        let urls = URLProtocolStub.recordedRequests.map { $0.url?.absoluteString ?? "" }
+        XCTAssertTrue(urls.contains("https://platform.stepfun.com"), "① 首页拿 INGRESSCOOKIE")
+        XCTAssertTrue(urls.contains(where: { $0.contains("RegisterDevice") }), "② 设备注册")
+        XCTAssertTrue(urls.contains(where: { $0.contains("SignInByPassword") }), "③ 账密登录")
+    }
+
+    func test_login_missingIngressCookie_throws() async {
+        URLProtocolStub.handler = { _ in .init(statusCode: 200, data: Data()) }
+        let stub = URLProtocolStub.makeSession()
+        let client = StepfunWebAPIClient(session: stub, authSession: stub)
+        do {
+            _ = try await client.login(username: "u", password: "p")
+            XCTFail("拿不到 INGRESSCOOKIE 应抛错")
+        } catch {
+            // expected
+        }
+    }
+
+    func test_refreshToken_returnsCombinedToken() async throws {
+        URLProtocolStub.handler = { request in
+            XCTAssertTrue((request.url?.absoluteString ?? "").contains("RefreshToken"))
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Oasis-Token"), "old...pair")
+            return .init(statusCode: 200, data: Data(#"{"accessToken":{"raw":"NEWAT"},"refreshToken":{"raw":"NEWRT"}}"#.utf8))
+        }
+        let stub = URLProtocolStub.makeSession()
+        let client = StepfunWebAPIClient(session: stub, authSession: stub)
+        let token = try await client.refreshToken(token: "old...pair")
+        XCTAssertEqual(token, "NEWAT...NEWRT")
+    }
+
+    // MARK: - 续期编排
+
+    func test_fetch_proactiveRefresh_whenAccessNearExpiry() async throws {
+        let now = Date()
+        tokenStore.storedToken = makeJWT(claims: ["exp": Int(now.timeIntervalSince1970) + 100]) // < 300s 窗口
+        URLProtocolStub.handler = { request in
+            let url = request.url?.absoluteString ?? ""
+            if url.contains("RefreshToken") {
+                return .init(statusCode: 200, data: Data(#"{"accessToken":{"raw":"FRESH"},"refreshToken":{"raw":"FRESHRT"}}"#.utf8))
+            } else if url.contains("QueryStepPlanRateLimit") {
+                return .init(statusCode: 200, data: Data(self.rollingWindowJSON().utf8))
+            }
+            return .init(statusCode: 200, data: Data("{}".utf8))
+        }
+        let fetcher = makeFetcher(tokenStore, now: { now })
+        let result = try await fetcher.fetchLimits(force: false)
+        XCTAssertNotNil(result)
+        XCTAssertTrue(URLProtocolStub.recordedRequests.contains { ($0.url?.absoluteString ?? "").contains("RefreshToken") }, "临近过期先刷新")
+        XCTAssertEqual(tokenStore.storedToken, "FRESH...FRESHRT", "新 token 落库")
+        XCTAssertTrue(URLProtocolStub.recordedRequests.contains { ($0.value(forHTTPHeaderField: "Cookie") ?? "").contains("Oasis-Token=FRESH") }, "用新 token 查询")
+    }
+
+    func test_fetch_on401_refreshesAndRetries() async throws {
+        let now = Date()
+        tokenStore.storedToken = makeJWT(claims: ["exp": Int(now.timeIntervalSince1970) + 100_000]) // 远离过期，不主动刷新
+        final class Counter { var rate = 0 }
+        let counter = Counter()
+        URLProtocolStub.handler = { request in
+            let url = request.url?.absoluteString ?? ""
+            if url.contains("RefreshToken") {
+                return .init(statusCode: 200, data: Data(#"{"accessToken":{"raw":"R2"},"refreshToken":{"raw":"R2RT"}}"#.utf8))
+            } else if url.contains("QueryStepPlanRateLimit") {
+                counter.rate += 1
+                if counter.rate == 1 { return .init(statusCode: 401) }
+                return .init(statusCode: 200, data: Data(self.rollingWindowJSON().utf8))
+            }
+            return .init(statusCode: 200, data: Data("{}".utf8))
+        }
+        let fetcher = makeFetcher(tokenStore, now: { now })
+        let result = try await fetcher.fetchLimits(force: false)
+        XCTAssertNotNil(result)
+        XCTAssertEqual(counter.rate, 2, "401 后刷新并重试一次")
+        XCTAssertEqual(tokenStore.storedToken, "R2...R2RT", "刷新后的新 token 落库")
+    }
+
+    func test_fetch_refreshFails_reloginWithCredentials() async throws {
+        let now = Date()
+        tokenStore.storedToken = makeJWT(claims: ["exp": Int(now.timeIntervalSince1970) + 100_000])
+        tokenStore.storedCredentials = StepfunCredentials(username: "u", password: "p")
+        final class Flags { var loggedIn = false }
+        let flags = Flags()
+        URLProtocolStub.handler = { request in
+            let url = request.url?.absoluteString ?? ""
+            if url == "https://platform.stepfun.com" {
+                return .init(statusCode: 200, headers: ["Set-Cookie": "INGRESSCOOKIE=ing; Path=/"], data: Data())
+            } else if url.contains("RegisterDevice") {
+                return .init(statusCode: 200, data: Data(#"{"accessToken":{"raw":"ANON"},"refreshToken":{"raw":"ANONRT"}}"#.utf8))
+            } else if url.contains("SignInByPassword") {
+                flags.loggedIn = true
+                return .init(statusCode: 200, data: Data(#"{"accessToken":{"raw":"LIVE"},"refreshToken":{"raw":"LIVERT"}}"#.utf8))
+            } else if url.contains("RefreshToken") {
+                return .init(statusCode: 401) // 续期失败（设备段失效）
+            } else if url.contains("QueryStepPlanRateLimit") {
+                return flags.loggedIn
+                    ? .init(statusCode: 200, data: Data(self.rollingWindowJSON().utf8))
+                    : .init(statusCode: 401)
+            }
+            return .init(statusCode: 200, data: Data("{}".utf8))
+        }
+        let fetcher = makeFetcher(tokenStore, now: { now })
+        let result = try await fetcher.fetchLimits(force: false)
+        XCTAssertNotNil(result)
+        XCTAssertTrue(flags.loggedIn, "续期失败 → 凭证重登")
+        XCTAssertEqual(tokenStore.storedToken, "LIVE...LIVERT")
+    }
+
+    func test_fetch_credentialsLogin_whenNoToken() async throws {
+        tokenStore.storedToken = nil
+        tokenStore.storedCredentials = StepfunCredentials(username: "u", password: "p")
+        URLProtocolStub.handler = { request in
+            let url = request.url?.absoluteString ?? ""
+            if url == "https://platform.stepfun.com" {
+                return .init(statusCode: 200, headers: ["Set-Cookie": "INGRESSCOOKIE=ing; Path=/"], data: Data())
+            } else if url.contains("RegisterDevice") {
+                return .init(statusCode: 200, data: Data(#"{"accessToken":{"raw":"A"},"refreshToken":{"raw":"R"}}"#.utf8))
+            } else if url.contains("SignInByPassword") {
+                return .init(statusCode: 200, data: Data(#"{"accessToken":{"raw":"A2"},"refreshToken":{"raw":"R2"}}"#.utf8))
+            } else if url.contains("QueryStepPlanRateLimit") {
+                return .init(statusCode: 200, data: Data(self.rollingWindowJSON().utf8))
+            }
+            return .init(statusCode: 200, data: Data("{}".utf8))
+        }
+        let fetcher = makeFetcher(tokenStore, environment: [:])
+        let result = try await fetcher.fetchLimits(force: false)
+        XCTAssertNotNil(result)
+        XCTAssertEqual(tokenStore.storedToken, "A2...R2", "无 token 时凭证登录并落库")
+    }
+
+    func test_fakeStore_credentialRoundTrip() throws {
+        XCTAssertNil(try tokenStore.readCredentials())
+        try tokenStore.writeCredentials(StepfunCredentials(username: "u", password: "p"))
+        XCTAssertEqual(try tokenStore.readCredentials(), StepfunCredentials(username: "u", password: "p"))
+        try tokenStore.deleteCredentials()
+        XCTAssertNil(try tokenStore.readCredentials())
     }
 }

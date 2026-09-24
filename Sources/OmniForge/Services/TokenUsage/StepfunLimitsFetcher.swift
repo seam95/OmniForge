@@ -175,8 +175,16 @@ enum StepfunPlanParsing {
 
 // MARK: - 取数器
 
+/// StepFun Step Plan 取数器：token 解析（钥匙串 → 环境变量 → 凭证登录）→ 主动续期 →
+/// 查询（401 时续期重试、续期失败再凭证重登兜底）→ 双模套餐解析。
+///
+/// Token 为 `access...refresh` 两段 JWT：会话段 ~30 分钟过期、设备段 ~30 天。
+/// 主动续期 + 401 刷新重试保证会话段常新；设备段失效才回退凭证重登。
 final class StepfunLimitsFetcher: LimitsFetching {
     let provider: TokenUsageProvider = .stepfun
+
+    /// 主动续期窗口：access 段距过期少于此秒数时先刷新（对齐 stepfun-cli 的「过期前 5 分钟」）。
+    static let proactiveRefreshWindow: TimeInterval = 300
 
     private let keyStore: StepfunTokenStoring?
     private let client: StepfunWebAPIFetching
@@ -196,21 +204,77 @@ final class StepfunLimitsFetcher: LimitsFetching {
     }
 
     func fetchLimits(force: Bool) async throws -> ProviderUsageLimits? {
+        var token = try resolveInitialToken()
+
+        // 无任何 token：尝试用已存凭证登录（首次或设备段失效后）
+        if token == nil, let creds = storedCredentials(), creds.isValid {
+            token = try? await loginAndPersist(creds)
+        }
+
+        guard var token else { return nil }
+
+        // 主动续期：会话段临近过期先刷新，避免查询撞 401
+        if needsRefresh(token, now: now()) {
+            if let refreshed = try? await client.refreshToken(token: token) {
+                token = persist(refreshed)
+            }
+        }
+
+        // 查询 + 401 刷新重试 + 凭证重登兜底
+        do {
+            return try await fetchWith(token: token)
+        } catch LimitError.reauthRequired {
+            if let refreshed = try? await client.refreshToken(token: token) {
+                token = persist(refreshed)
+                return try await fetchWith(token: token)
+            }
+            if let creds = storedCredentials(), creds.isValid,
+               let fresh = try? await loginAndPersist(creds) {
+                return try await fetchWith(token: fresh)
+            }
+            throw LimitError.reauthRequired
+        }
+    }
+
+    // MARK: - 私有
+
+    /// token 解析：钥匙串优先，其次环境变量 STEPFUN_TOKEN。
+    private func resolveInitialToken() throws -> String? {
         let keychainToken = (try? keyStore?.readToken())?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let effectiveToken: String?
         if let keychainToken, !keychainToken.isEmpty {
-            effectiveToken = keychainToken
-        } else {
-            effectiveToken = environment["STEPFUN_TOKEN"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return keychainToken
         }
-
-        guard let token = effectiveToken, !token.isEmpty else {
-            return nil
+        let envToken = environment["STEPFUN_TOKEN"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let envToken, !envToken.isEmpty {
+            return envToken
         }
+        return nil
+    }
 
+    private func storedCredentials() -> StepfunCredentials? {
+        try? keyStore?.readCredentials()
+    }
+
+    @discardableResult
+    private func loginAndPersist(_ creds: StepfunCredentials) async throws -> String {
+        let token = try await client.login(username: creds.username, password: creds.password)
+        return persist(token)
+    }
+
+    @discardableResult
+    private func persist(_ token: String) -> String {
+        try? keyStore?.writeToken(token)
+        return token
+    }
+
+    private func needsRefresh(_ token: String, now: Date) -> Bool {
+        guard let expiry = StepfunWebIDExtractor.accessTokenExpiry(token) else { return false }
+        return expiry.timeIntervalSince(now) < Self.proactiveRefreshWindow
+    }
+
+    private func fetchWith(token: String) async throws -> ProviderUsageLimits? {
         let rateLimitPayload = try await client.queryRateLimit(token: token)
         let planStatusPayload = try? await client.getPlanStatus(token: token)
-
         return StepfunPlanParsing.parseLimits(
             rateLimitPayload: rateLimitPayload,
             planStatusPayload: planStatusPayload,
