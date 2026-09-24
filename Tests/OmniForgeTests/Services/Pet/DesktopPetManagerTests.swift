@@ -1230,6 +1230,43 @@ final class DesktopPetManagerTests: XCTestCase {
         )
     }
 
+    func test_renderDedupKeepsPointerDrivenHitRouting() throws {
+        // left-half 资产的 idle 只有 1 帧 → 快照跨 tick 恒定，去重路径必然命中。
+        // 此用例锁死去重的安全前提：快照未变时，指针移动仍必须驱动命中路由，
+        // 否则去重会把「帧切换才刷命中」的优化误变成「指针移动也不刷」。
+        let (manager, pointer) = try makeLeftHalfPetManager()
+        manager.start()
+        let frame = try XCTUnwrap(manager.windowController.panel?.frame)
+
+        pointer.location = CGPoint(x: frame.minX + 20, y: frame.midY)
+        manager.tick(delta: 1.0 / 30.0)
+        let firstSnapshot = manager.displaySnapshot
+        XCTAssertNotNil(firstSnapshot, "实体半区内应有显示快照")
+
+        // 连续 tick 不改变任何输入：快照必须逐字节相同（去重前提成立）。
+        manager.tick(delta: 1.0 / 30.0)
+        manager.tick(delta: 1.0 / 30.0)
+        XCTAssertEqual(manager.displaySnapshot, firstSnapshot, "单帧动画的快照应跨 tick 不变")
+        XCTAssertTrue(manager.windowController.receivesMouseEvents, "实体半区保持接收")
+
+        // 快照未变，指针移入透明半区：仍须穿透（去重不得吃掉指针驱动的路径）。
+        pointer.location = CGPoint(x: frame.minX + 70, y: frame.midY)
+        manager.tick(delta: 1.0 / 30.0)
+        XCTAssertEqual(manager.displaySnapshot, firstSnapshot, "指针移动不改变快照")
+        XCTAssertFalse(
+            manager.windowController.receivesMouseEvents,
+            "快照未变时指针移入透明区仍须穿透"
+        )
+
+        // 再移回实体半区：仍须接收。
+        pointer.location = CGPoint(x: frame.minX + 20, y: frame.midY)
+        manager.tick(delta: 1.0 / 30.0)
+        XCTAssertTrue(
+            manager.windowController.receivesMouseEvents,
+            "快照未变时指针移入实体区仍须接收"
+        )
+    }
+
     func test_interactionLockOverridesAlphaRouting() throws {
         let (manager, pointer) = try makeLeftHalfPetManager()
         manager.start()

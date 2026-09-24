@@ -715,12 +715,21 @@ final class DesktopPetManager: ObservableObject {
             displaySnapshot = nil
             return
         }
-        displaySnapshot = PetDisplaySnapshot(
+        let snapshot = PetDisplaySnapshot(
             asset: asset,
             frameIndex: resolution.frameIndex,
             mirrored: resolution.mirrored,
             size: petSize
         )
+        // 渲染去重：快照未变则连命中路由一并跳过。参考实现用 renderKey 序列化比对做同一件事。
+        // 安全性依赖两条不变量：
+        // 1. 指针移动的命中重算由 refreshPointerState() 直接调 updateHitRouting 覆盖，
+        //    不经本函数——故「指针变了」这条路径不受去重影响；
+        // 2. tick 内 refreshPointerState() 先于本函数执行，同一 tick 内指针与帧都变时
+        //    前者用旧帧刷一次、此处检测到帧变再刷一次，不会漏。
+        // 因此本函数的命中刷新只需服务于「静止指针下动画换帧」，快照相同即无需重算。
+        guard snapshot != displaySnapshot else { return }
+        displaySnapshot = snapshot
         // 帧切换同步更新命中判定（静止指针下动画换帧不得沿用旧命中区）。
         if let pointer = lastPointerSample, let panel = windowController.panel {
             updateHitRouting(pointer: pointer, panel: panel)
