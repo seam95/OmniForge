@@ -20,11 +20,13 @@ final class FinderSyncIPC {
             return
         }
 
-        let userInfo = ["payload": jsonString]
+        // 载荷必须放在 object 上、userInfo 传 nil：App Sandbox 会拦截携带 userInfo 字典的
+        // 分布式通知，投递被静默丢弃（"attempt to post distributed notification ...
+        // thwarted by sandboxing"），宿主一个动作都收不到。object 可正常送达。
         DistributedNotificationCenter.default().postNotificationName(
             notificationName,
-            object: nil,
-            userInfo: userInfo,
+            object: jsonString,
+            userInfo: nil,
             deliverImmediately: true
         )
     }

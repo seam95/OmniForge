@@ -35,7 +35,9 @@ public struct RightClickDirectoryItem: Identifiable, Codable, Equatable {
     }
 }
 
-/// IPC 消息载荷（用于在 DistributedNotificationCenter 中传递）
+/// IPC 消息载荷（用于在 DistributedNotificationCenter 中传递）。
+/// 载荷经通知的 `object` 传递而非 `userInfo`：沙盒化的 FinderSync 扩展发送带
+/// `userInfo` 的分布式通知会被系统拦截丢弃。
 public struct RightClickIPCMessage: Codable {
     public var actionType: String
     public var parameter: String?
@@ -48,5 +50,4 @@ public struct RightClickIPCMessage: Codable {
     }
 
     public static let notificationName = "app.omniforge.rightclick.action"
-    public static let payloadUserInfoKey = "payload"
 }

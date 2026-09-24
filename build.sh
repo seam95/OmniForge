@@ -193,13 +193,21 @@ echo "✓ Bundle ready: build/stage/$APP_NAME.app"
 # Step 8: 安装到 /Applications
 if (( INSTALL )); then
     echo "▸ Installing to /Applications…"
+    # 必须连 FinderSync 扩展一起杀：appex 进程名是 OmniForgeFinderSync，pkill -x "$EXECUTABLE"
+    # 精确匹配杀不到它。旧 appex 会带着内存里的旧代码继续活着，而磁盘上的二进制已被替换，
+    # 访达（若未重启）仍连着旧进程 —— 表现为「改了代码却不生效」。
     pkill -x "$EXECUTABLE" 2>/dev/null || true
+    pkill -x "$FINDER_EXT_NAME" 2>/dev/null || true
+    # 扩展宿主 pkd 也缓存已加载扩展，一并重启以确保重新加载新签名的 appex
+    pkill -x pkd 2>/dev/null || true
     sleep 1
     rm -rf "/Applications/$APP_NAME.app"
     ditto --noextattr --noqtn "$STAGE" "/Applications/$APP_NAME.app"
     echo "✓ Installed: /Applications/$APP_NAME.app"
     # 注册或更新 FinderSync 插件
     pluginkit -e use -i app.omniforge.FinderSync 2>/dev/null || true
+    # 访达进程内缓存已加载的扩展；替换/重签名 appex 后必须重启访达才会重新加载
+    killall Finder 2>/dev/null || true
 fi
 
 # Step 9: 打包 .dmg（用于分发；含拖拽安装布局；包未公证，用户首次打开需 xattr -dr）

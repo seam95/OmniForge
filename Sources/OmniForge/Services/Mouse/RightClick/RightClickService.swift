@@ -58,8 +58,9 @@ public final class RightClickService: ObservableObject {
     }
 
     private func handleNotification(_ notification: Notification) {
-        guard let userInfo = notification.userInfo,
-              let jsonString = userInfo[RightClickIPCMessage.payloadUserInfoKey] as? String,
+        // 载荷取自 notification.object：沙盒化的 FinderSync 扩展发不出带 userInfo 的分布式
+        // 通知（会被沙盒拦截丢弃），只能走 object。参见 FinderSyncIPC.postAction。
+        guard let jsonString = notification.object as? String,
               let jsonData = jsonString.data(using: .utf8),
               let message = try? JSONDecoder().decode(RightClickIPCMessage.self, from: jsonData) else {
             return
