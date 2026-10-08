@@ -165,7 +165,7 @@ struct PeggedPhotoView: View {
             .overlay(GrabArea(item: item, manager: manager, menuProvider: menuProvider))
             .overlay(alignment: .bottom) {
                 if copied {
-                    Label(manager.copiedLabel, systemImage: "checkmark")
+                    Label(manager.copiedLabelProvider(), systemImage: "checkmark")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.primary)
                         .padding(.horizontal, 10)

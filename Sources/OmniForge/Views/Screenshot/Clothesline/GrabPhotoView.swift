@@ -1,6 +1,20 @@
 import AppKit
 import SwiftUI
 
+/// 闭包菜单项：动作经闭包注入（与 GrabPhotoView 的 onClick 等闭包同族），
+/// 免去右键菜单 target/action 与 representedObject 装箱。
+final class ClosureMenuItem: NSMenuItem {
+    var handler: () -> Void = {}
+
+    convenience init(title: String, handler: @escaping () -> Void) {
+        self.init(title: title, action: #selector(performHandler), keyEquivalent: "")
+        self.handler = handler
+        target = self
+    }
+
+    @objc private func performHandler() { handler() }
+}
+
 /// 桥接 AppKit 拖放：拖到应用 = 副本（留绳）；文件夹 = 移动（离绳）；
 /// 废纸篓 = 删除；无效处 = 飞回。点 = 复制；双击 = 打开；长按 = Markup。
 struct GrabArea: NSViewRepresentable {

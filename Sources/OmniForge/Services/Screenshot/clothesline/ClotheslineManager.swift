@@ -55,8 +55,9 @@ final class ClotheslineManager: ObservableObject {
     @Published var copiedID: UUID?
     @Published var draggingID: UUID?
     @Published var pressedID: UUID?
-    /// 复制完成角标文案；装配层写入 l10n 值（Task 12），默认用系统词。
-    var copiedLabel: String = "Copied"
+    /// 复制完成角标文案提供者；装配层注入 l10n 值，默认用系统词。
+    /// provider 而非静态值：语言切换后角标即时跟随。
+    var copiedLabelProvider: () -> String = { "Copied" }
     /// 绳子是否滑入视野（视图层据此做位移动画）。
     @Published var revealed = false
 

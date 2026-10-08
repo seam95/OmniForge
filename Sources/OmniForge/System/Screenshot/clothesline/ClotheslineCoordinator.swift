@@ -26,6 +26,7 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
     private let inbox: ScreenshotInboxSettings
     private let outputConfiguration: ScreenshotOutputConfiguration
     private let animator: CaptureFlightAnimating
+    private let stringsProvider: () -> Strings
     private let userDefaults: UserDefaults
     private var panel: ClotheslinePanel?
     private var cancellables = Set<AnyCancellable>()
@@ -49,13 +50,15 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
          watcher: ScreenshotFolderWatcher,
          inbox: ScreenshotInboxSettings,
          outputConfiguration: ScreenshotOutputConfiguration,
-         animator: CaptureFlightAnimating) {
+         animator: CaptureFlightAnimating,
+         stringsProvider: @escaping () -> Strings = { .en }) {
         self.userDefaults = userDefaults
         self.manager = manager
         self.watcher = watcher
         self.inbox = inbox
         self.outputConfiguration = outputConfiguration
         self.animator = animator
+        self.stringsProvider = stringsProvider
         super.init()
     }
 
@@ -66,7 +69,13 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
         // signalSources 累积（DispatchSource 对同一信号重复监听语义未定义）。
         guard !isStarted else { return }
         isStarted = true
-        let host = NSHostingView(rootView: ClotheslineView(manager: manager))
+        // 空提示与右键菜单文案在 start 时定格：面板内容只建一次，语言切换随重启生效。
+        let strings = stringsProvider()
+        let host = NSHostingView(rootView: ClotheslineView(
+            manager: manager,
+            emptyHint: strings.clotheslineEmptyHint,
+            menuProvider: { [weak self] item in self?.menu(for: item) ?? NSMenu() }
+        ))
         host.sizingOptions = []
         panel = ClotheslinePanel(content: host)
         panel?.placeOnScreen(nil)
@@ -170,6 +179,33 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
             inbox.restore()
         }
         startWatchers()
+    }
+
+    /// 管线写盘路径转发进排除集：watcher 对自家写入只挂绳一次。
+    func noteOwnWrite(_ path: String) {
+        manager.noteOwnWrite(path)
+    }
+
+    // MARK: 右键菜单（SPEC §3：复制/打开/标注/Finder/(Inbox)存桌面/取下/移废纸篓）
+
+    func menu(for photo: PeggedPhoto) -> NSMenu {
+        let strings = stringsProvider()
+        let id = photo.id
+        let menu = NSMenu()
+        menu.addItem(ClosureMenuItem(title: strings.clotheslineMenuCopy) { [weak manager] in manager?.copy(id) })
+        menu.addItem(ClosureMenuItem(title: strings.clotheslineMenuOpen) { [weak manager] in manager?.openInDefaultApp(id) })
+        menu.addItem(ClosureMenuItem(title: strings.clotheslineMenuMarkup) { [weak manager] in manager?.markup(id) })
+        menu.addItem(ClosureMenuItem(title: strings.clotheslineMenuReveal) { [weak manager] in manager?.revealInFinder(id) })
+        // 存到桌面仅 Inbox 文件有意义（文件在接管目录内才需要移出）。
+        if manager.isInInbox(id) {
+            menu.addItem(ClosureMenuItem(title: strings.clotheslineMenuSaveToDesktop) { [weak manager] in
+                manager?.saveToDesktop(id)
+            })
+        }
+        menu.addItem(.separator())
+        menu.addItem(ClosureMenuItem(title: strings.clotheslineMenuTakeDown) { [weak manager] in manager?.drop(id) })
+        menu.addItem(ClosureMenuItem(title: strings.clotheslineMenuTrash) { [weak manager] in manager?.trash(id) })
+        return menu
     }
 
     private func reapplyInboxIfNeeded() {
@@ -435,7 +471,7 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
             }
             self.animator.fly(image: cg, from: from, to: to,
                               tilt: CGFloat(manager.items.first { $0.id == id }?.tilt ?? 0),
-                              on: screen) { [weak self] in self?.manager.land(id) }
+                              on: screen) { [manager] in manager.land(id) }
         }
     }
 
@@ -448,8 +484,9 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
             manager.land(id)
             return
         }
-        animator.fly(image: cg, from: from, to: to, tilt: CGFloat(item.tilt), on: screen) { [weak self] in
-            self?.manager.land(id)
+        // 完成回调捕获 manager 而非 self：协调者先释放也要保证落地（land 必达）。
+        animator.fly(image: cg, from: from, to: to, tilt: CGFloat(item.tilt), on: screen) { [manager] in
+            manager.land(id)
         }
     }
 
@@ -497,5 +534,24 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
         mouseMonitors.removeAll()
         if let keyObserver { NotificationCenter.default.removeObserver(keyObserver) }
         keyObserver = nil
+    }
+}
+
+/// 管线钩子桥：weak 持协调器。断环不变量（T5 裁定）：
+/// `pipeline.clotheslineHooks` 为 strong（防桥被释放），桥内必须 weak 协调器，
+/// 否则 pipeline → 桥 → coordinator → … → pipeline 成环，teardown 永不释放。
+final class ClotheslinePipelineHooksBridge: ClotheslinePipelineHooks {
+    private weak var coordinator: ClotheslineCoordinator?
+
+    init(coordinator: ClotheslineCoordinator) {
+        self.coordinator = coordinator
+    }
+
+    func noteOwnWrite(path: String) {
+        MainActor.assumeIsolated { coordinator?.noteOwnWrite(path) }
+    }
+
+    func hangFromPipeline(path: String, origin: NSPoint?) {
+        MainActor.assumeIsolated { coordinator?.hangFromPipeline(path: path, origin: origin) }
     }
 }

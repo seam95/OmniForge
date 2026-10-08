@@ -843,6 +843,27 @@ struct Strings: Equatable {
     let screenshotHotkeyPin: String
     let screenshotHotkeyFullscreen: String
     let screenshotHotkeyRecord: String
+    // Clothesline（晾衣绳）：热键 / 设置分区 / 菜单
+    let clotheslineToggleHotkey: String
+    let clotheslineHangHotkey: String
+    let clotheslineSectionTitle: String
+    let clotheslineEnabled: String
+    let clotheslineEnabledCaption: String
+    let clotheslineSound: String
+    let clotheslineSoundCaption: String
+    let clotheslineInbox: String
+    let clotheslineInboxCaption: String
+    let clotheslineInboxDesktopConflict: String
+    let clotheslineEmptyHint: String
+    let clotheslineCopied: String
+    let clotheslineMenuCopy: String
+    let clotheslineMenuOpen: String
+    let clotheslineMenuMarkup: String
+    let clotheslineMenuReveal: String
+    let clotheslineMenuSaveToDesktop: String
+    let clotheslineMenuTakeDown: String
+    let clotheslineMenuTrash: String
+    let clotheslineMenuDiscard: String
     let screenshotOutputSection: String
     let screenshotSaveDirectory: String
     let screenshotChooseDirectory: String

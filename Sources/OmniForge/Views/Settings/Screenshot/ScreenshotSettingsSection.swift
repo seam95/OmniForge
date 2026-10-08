@@ -19,6 +19,9 @@ struct ScreenshotSettingsSection: View {
         RecordingOutputConfiguration.defaultSavePreference.rawValue
     @AppStorage(UserDefaultsKeys.screenshotScrollMaxHeight) private var scrollMaxHeight = 30_000
     @AppStorage(UserDefaultsKeys.screenshotScrollFrozenDetection) private var scrollFrozenDetection = true
+    @AppStorage(UserDefaultsKeys.screenshotClotheslineEnabled) private var clotheslineEnabled = true
+    @AppStorage(UserDefaultsKeys.screenshotClotheslineInboxEnabled) private var clotheslineInboxEnabled = false
+    @AppStorage(UserDefaultsKeys.screenshotClotheslineSoundOn) private var clotheslineSoundOn = false
 
     private var strings: Strings { state.l10n.s }
 
@@ -52,6 +55,8 @@ struct ScreenshotSettingsSection: View {
             recordingSection
                 .disabled(!enabled)
             scrollCaptureSection
+                .disabled(!enabled)
+            clotheslineSection
                 .disabled(!enabled)
             if let lastError = manager.lastError, !lastError.isEmpty {
                 Section {
@@ -153,6 +158,50 @@ struct ScreenshotSettingsSection: View {
                     strings.screenshotScrollFrozenDetection,
                     hint: strings.screenshotScrollFrozenDetectionCaption
                 )
+            }
+        }
+    }
+
+    /// Inbox 仅在保存目录非桌面时有意义（接管桌面 = 原地不动）。
+    private var isClotheslineInboxAvailable: Bool {
+        let expanded = (saveDirectoryPath as NSString).expandingTildeInPath
+        return URL(fileURLWithPath: expanded, isDirectory: true).standardizedFileURL
+            != ScreenshotSaver.defaultDirectory.standardizedFileURL
+    }
+
+    /// 晾衣绳分区：总开关 / 音效 / Inbox 接管 / 两个热键。
+    private var clotheslineSection: some View {
+        Section(strings.clotheslineSectionTitle) {
+            Toggle(isOn: $clotheslineEnabled) {
+                InfoHintLabel(strings.clotheslineEnabled, hint: strings.clotheslineEnabledCaption)
+            }
+            .onChange(of: clotheslineEnabled) { _, _ in
+                manager?.clothesline?.syncWithPreferences()
+            }
+            Toggle(isOn: $clotheslineSoundOn) {
+                InfoHintLabel(strings.clotheslineSound, hint: strings.clotheslineSoundCaption)
+            }
+            Toggle(isOn: $clotheslineInboxEnabled) {
+                InfoHintLabel(strings.clotheslineInbox, hint: strings.clotheslineInboxCaption)
+            }
+            .onChange(of: clotheslineInboxEnabled) { _, on in
+                manager?.clothesline?.setInboxEnabled(on)
+            }
+            .disabled(!isClotheslineInboxAvailable)
+            if !isClotheslineInboxAvailable {
+                Text(strings.clotheslineInboxDesktopConflict)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            LabeledContent(strings.clotheslineToggleHotkey) {
+                KeyboardShortcuts.Recorder(for: .clotheslineToggle) { shortcut in
+                    manager?.handleClotheslineRecorderChange(.toggle, shortcut: shortcut)
+                }
+            }
+            LabeledContent(strings.clotheslineHangHotkey) {
+                KeyboardShortcuts.Recorder(for: .clotheslineHang) { shortcut in
+                    manager?.handleClotheslineRecorderChange(.hang, shortcut: shortcut)
+                }
             }
         }
     }

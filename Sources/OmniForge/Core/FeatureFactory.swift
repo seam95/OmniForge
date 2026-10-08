@@ -266,6 +266,33 @@ struct FeatureFactory {
                 pinRegistry.stringsProvider = { L10n(userDefaults: userDefaults).s }
                 let pinBridge = PinnedScreenshotPipelineBridge(registry: pinRegistry)
                 pipeline.pinService = pinBridge
+                // 晾衣绳子系统：状态机 + 扫描 + Inbox 接管 + 面板协调器。
+                let clotheslineManager = ClotheslineManager(
+                    userDefaults: userDefaults,
+                    inboxFolderProvider: { outputConfiguration.load().saveDirectory ?? ScreenshotSaver.defaultDirectory }
+                )
+                let clotheslineWatcher = ScreenshotFolderWatcher()
+                let clotheslineInbox = ScreenshotInboxSettings(userDefaults: userDefaults)
+                let clothesline = ClotheslineCoordinator(
+                    userDefaults: userDefaults,
+                    manager: clotheslineManager,
+                    watcher: clotheslineWatcher,
+                    inbox: clotheslineInbox,
+                    outputConfiguration: outputConfiguration,
+                    animator: CaptureFlightAnimator(),
+                    stringsProvider: { L10n(userDefaults: userDefaults).s }
+                )
+                // 管线钩子桥：pipeline 强持桥、桥弱持协调器（断环不变量见桥定义）。
+                pipeline.clotheslineHooks = ClotheslinePipelineHooksBridge(coordinator: clothesline)
+                // Markup 写回刷新缩略图；长按进标注。
+                MarkupEditingService.shared.onSaved = { url in
+                    clotheslineManager.reloadThumbnail(for: url)
+                }
+                clotheslineManager.markupEditor = { MarkupEditingService.shared.edit($0) }
+                clotheslineManager.copiedLabelProvider = { L10n(userDefaults: userDefaults).s.clotheslineCopied }
+                clothesline.start()
+                // 热键 toggle 与设置页动作经 manager 转发到协调器。
+                manager.clothesline = clothesline
                 // 编辑器 / 钉图菜单 / copy·pin 快捷键共用同一 pipeline 实例（pinService 已挂接）。
                 overlayController.setResultPipeline(pipeline)
                 manager.setResultPipeline(pipeline)

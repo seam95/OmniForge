@@ -11,14 +11,6 @@ final class CaptureFlightAnimator: CaptureFlightAnimating {
     static let fallDuration: CFTimeInterval = 0.55
     private static let arc: CGFloat = 30
 
-    private let window: NSPanel
-    private let container = CALayer()
-    private let glass = CALayer()
-    private let edge = CAGradientLayer()
-    private let edgeMask = CAShapeLayer()
-    private let photo = CALayer()
-    private let clip = CAGradientLayer()
-
     private let from: CGRect
     private let to: CGRect
     private let tilt: CGFloat
@@ -28,6 +20,22 @@ final class CaptureFlightAnimator: CaptureFlightAnimating {
     private var timer: Timer?
     private var completion: () -> Void = {}
     private static var current: [CaptureFlightAnimator] = []
+    /// 动画承载窗：仅 private init 创建的动画实例持有；分发实例（init()）为 nil。
+    private var window: NSPanel!
+    private let container = CALayer()
+    private let glass = CALayer()
+    private let edge = CAGradientLayer()
+    private let edgeMask = CAShapeLayer()
+    private let photo = CALayer()
+    private let clip = CAGradientLayer()
+
+    /// 分发用无参构造：协议要求注入实例调用；fly/fall 每次内部自建动画实例，
+    /// 本实例不持窗、不承载动画状态。
+    init() {
+        from = .zero
+        to = .zero
+        tilt = 0
+    }
 
     // 协议要求实例方法（Coordinator 经注入实例调用）；每次调用新建一次飞行动画实例。
     func fly(image: CGImage, from: CGRect, to: CGRect, tilt: CGFloat, on screen: NSScreen,

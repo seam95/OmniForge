@@ -115,6 +115,8 @@ final class ScreenshotFeatureManager: ObservableObject {
 
     var pinnedScreenshotRegistry: PinnedScreenshotRegistry?
     var pinPipelineBridge: PinnedScreenshotPipelineBridge?
+    /// 晾衣绳协调器（FeatureFactory 装配后写入）：热键 toggle / 设置页动作经此转发。
+    var clothesline: ClotheslineCoordinator?
 
     @Published private(set) var isListening = false
     @Published private(set) var lastOutcome: ScreenshotHotkeyOutcome?
@@ -188,6 +190,8 @@ final class ScreenshotFeatureManager: ObservableObject {
         for entry in ScreenshotHotkeyEntry.allCases {
             registerHandlerIfNeeded(for: entry)
         }
+        // 同名注册覆盖式，重复 startListening 安全。
+        registerClotheslineHandlers()
     }
 
     func stopListening() {
@@ -196,6 +200,8 @@ final class ScreenshotFeatureManager: ObservableObject {
     }
 
     func teardown() {
+        clothesline?.teardown()
+        clothesline = nil
         stopListening()
         if recordingCoordinator.isRecording {
             recordingCoordinator.cancel()
@@ -418,10 +424,16 @@ final class ScreenshotFeatureManager: ObservableObject {
         for entry in ScreenshotHotkeyEntry.allCases {
             applyHotkey(hotkey(for: entry), to: entry)
         }
+        for entry in ClotheslineHotkeyEntry.allCases {
+            applyClotheslineHotkey(entry)
+        }
     }
 
     private func clearAllKeyboardShortcuts() {
         for entry in ScreenshotHotkeyEntry.allCases {
+            keyboardShortcuts.setShortcut(nil, for: entry.keyboardShortcutsName)
+        }
+        for entry in ClotheslineHotkeyEntry.allCases {
             keyboardShortcuts.setShortcut(nil, for: entry.keyboardShortcutsName)
         }
     }
@@ -458,6 +470,50 @@ final class ScreenshotFeatureManager: ObservableObject {
             handleHotkey(mode: .fullScreen, intent: .copy)
         case .record:
             handleRecord()
+        }
+    }
+
+    // MARK: - Clothesline hotkeys
+
+    /// 晾衣绳热键定义：无用户值时回落默认（toggle ⌃⌥⌘T / hang 未绑定）。
+    func clotheslineHotkey(for entry: ClotheslineHotkeyEntry) -> HotkeyDefinition? {
+        if userDefaults.object(forKey: entry.keyCodeDefaultsKey) == nil {
+            return entry.defaultDefinition
+        }
+        return HotkeyDefinition(
+            keyCode: userDefaults.integer(forKey: entry.keyCodeDefaultsKey),
+            modifiers: HotkeyModifiers(rawValue: userDefaults.integer(forKey: entry.modifiersDefaultsKey)))
+    }
+
+    /// Recorder 回调：nil（清空）= 删除用户键，恢复默认绑定。
+    func handleClotheslineRecorderChange(_ entry: ClotheslineHotkeyEntry, shortcut: KeyboardShortcuts.Shortcut?) {
+        guard let definition = HotkeyDefinition(shortcut: shortcut) else {
+            userDefaults.removeObject(forKey: entry.keyCodeDefaultsKey)
+            userDefaults.removeObject(forKey: entry.modifiersDefaultsKey)
+            applyClotheslineHotkey(entry)
+            return
+        }
+        userDefaults.set(definition.keyCode, forKey: entry.keyCodeDefaultsKey)
+        userDefaults.set(definition.modifiers.rawValue, forKey: entry.modifiersDefaultsKey)
+        applyClotheslineHotkey(entry)
+    }
+
+    private func applyClotheslineHotkey(_ entry: ClotheslineHotkeyEntry) {
+        keyboardShortcuts.setShortcut(clotheslineHotkey(for: entry)?.keyboardShortcut,
+                                      for: entry.keyboardShortcutsName)
+    }
+
+    private func registerClotheslineHandlers() {
+        for entry in ClotheslineHotkeyEntry.allCases {
+            keyboardShortcuts.onKeyDown(for: entry.keyboardShortcutsName) { [weak self] in
+                Task { @MainActor in
+                    guard let self, self.isListening else { return }
+                    switch entry {
+                    case .toggle: self.clothesline?.toggleReveal()
+                    case .hang: self.handleHang()
+                    }
+                }
+            }
         }
     }
 

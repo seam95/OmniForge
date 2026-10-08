@@ -78,7 +78,7 @@ final class ScreenshotFeatureManagerTests: XCTestCase {
     }
 
     func test_startListening_registersFiveHotkeyEntries() {
-        // startListening 已在 setUp 调用；校验五个入口都被注册了 onKeyDown
+        // startListening 已在 setUp 调用；校验五个截图入口 + 两个晾衣绳入口都被注册了 onKeyDown
         XCTAssertEqual(ScreenshotHotkeyEntry.allCases.count, 5)
         XCTAssertEqual(
             ScreenshotHotkeyEntry.allCases.map(\.rawValue),
@@ -89,7 +89,9 @@ final class ScreenshotFeatureManagerTests: XCTestCase {
         XCTAssertNotNil(keyboardShortcuts.keyDownHandlers[KeyboardShortcuts.Name.screenshotPin.rawValue])
         XCTAssertNotNil(keyboardShortcuts.keyDownHandlers[KeyboardShortcuts.Name.screenshotFullscreen.rawValue])
         XCTAssertNotNil(keyboardShortcuts.keyDownHandlers[KeyboardShortcuts.Name.screenshotRecord.rawValue])
-        XCTAssertEqual(keyboardShortcuts.keyDownHandlers.count, 5)
+        XCTAssertNotNil(keyboardShortcuts.keyDownHandlers[KeyboardShortcuts.Name.clotheslineToggle.rawValue])
+        XCTAssertNotNil(keyboardShortcuts.keyDownHandlers[KeyboardShortcuts.Name.clotheslineHang.rawValue])
+        XCTAssertEqual(keyboardShortcuts.keyDownHandlers.count, 7)
     }
 
     func test_defaultHotkeys_copy2_pin3_fullscreen4_record5() {
@@ -116,9 +118,9 @@ final class ScreenshotFeatureManagerTests: XCTestCase {
     func test_stopListening_复位isListening并清空快捷键() {
         manager.stopListening()
         XCTAssertFalse(manager.isListening)
-        // clearAllKeyboardShortcuts 对五入口 setShortcut(nil)
+        // nil 调用 = apply 时 hang 默认未绑定的 1 次 + clearAll 对七入口各 1 次
         let nilCalls = keyboardShortcuts.setShortcutCalls.filter { !$0.hasShortcut }
-        XCTAssertEqual(nilCalls.count, 5)
+        XCTAssertEqual(nilCalls.count, 8)
     }
 
     // MARK: - preflight 三道闸（按 SPEC 顺序：listening → available → granted）
@@ -267,8 +269,9 @@ final class ScreenshotFeatureManagerTests: XCTestCase {
 
     func test_teardown_清空所有快捷键绑定() {
         manager.teardown()
+        // nil 调用 = apply 时 hang 默认未绑定的 1 次 + teardown 清空七入口各 1 次
         let nilCalls = keyboardShortcuts.setShortcutCalls.filter { !$0.hasShortcut }
-        XCTAssertEqual(nilCalls.count, 5, "teardown 应清空五入口快捷键")
+        XCTAssertEqual(nilCalls.count, 8, "teardown 应清空五截图入口与两晾衣绳入口快捷键")
     }
 
     // MARK: - lastError / lastOutcome 传播

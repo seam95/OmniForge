@@ -1,3 +1,4 @@
+import Carbon.HIToolbox
 import Foundation
 
 /// 集中注册 UserDefaults 默认值，应用启动时调用一次。
@@ -121,6 +122,15 @@ enum Defaults {
             UserDefaultsKeys.screenshotHotkeyFullscreenModifiers: HotkeyDefinition.defaultScreenshotFullscreen.modifiers.rawValue,
             UserDefaultsKeys.screenshotHotkeyRecordKeyCode: HotkeyDefinition.defaultScreenshotRecord.keyCode,
             UserDefaultsKeys.screenshotHotkeyRecordModifiers: HotkeyDefinition.defaultScreenshotRecord.modifiers.rawValue,
+            // 晾衣绳默认值（Task 12）：默认开、音效关、Inbox 不接管。
+            UserDefaultsKeys.screenshotClotheslineEnabled: true,
+            UserDefaultsKeys.screenshotClotheslineItems: [String](),
+            UserDefaultsKeys.screenshotClotheslineInboxEnabled: false,
+            UserDefaultsKeys.screenshotClotheslineInboxOffered: false,
+            UserDefaultsKeys.screenshotClotheslineSoundOn: false,
+            UserDefaultsKeys.screenshotClotheslineHotkeyToggleKeyCode: Int(kVK_ANSI_T),
+            UserDefaultsKeys.screenshotClotheslineHotkeyToggleModifiers: HotkeyModifiers([.control, .option, .command]).rawValue,
+            // hang 热键默认不绑定：两键缺省即未绑定（不出现在默认表）。
             UserDefaultsKeys.screenshotRecentEmojis: [String](),
             UserDefaultsKeys.recordingSaveDirectoryPath: RecordingOutputConfiguration.defaultDirectoryPath,
             UserDefaultsKeys.recordingSavePreference: RecordingOutputConfiguration.defaultSavePreference.rawValue,
