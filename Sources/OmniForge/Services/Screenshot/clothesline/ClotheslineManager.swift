@@ -55,6 +55,8 @@ final class ClotheslineManager: ObservableObject {
     @Published var copiedID: UUID?
     @Published var draggingID: UUID?
     @Published var pressedID: UUID?
+    /// 复制完成角标文案；装配层写入 l10n 值（Task 12），默认用系统词。
+    var copiedLabel: String = "Copied"
     /// 绳子是否滑入视野（视图层据此做位移动画）。
     @Published var revealed = false
 
@@ -176,6 +178,14 @@ final class ClotheslineManager: ObservableObject {
     func openInDefaultApp(_ id: UUID) {
         guard let item = items.first(where: { $0.id == id }) else { return }
         NSWorkspace.shared.open(item.url)
+    }
+
+    /// Markup 编辑服务钩子（Task 11 注入真身）。
+    var markupEditor: ((URL) -> Void)?
+
+    func markup(_ id: UUID) {
+        guard let item = items.first(where: { $0.id == id }) else { return }
+        markupEditor?(item.url)
     }
 
     func trash(_ id: UUID) {
