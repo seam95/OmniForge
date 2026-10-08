@@ -11,6 +11,21 @@ enum WhatsNewReleaseCatalog {
     /// 历次版本的更新内容，新版本在前
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            version: "3.14.0",
+            entries: [
+                WhatsNewEntry(type: .added, text: "新增访达鼠标右键增强：新建文件与终端、用编辑器打开、复制文件路径、管理常用目录并一键跳转"),
+                WhatsNewEntry(type: .added, text: "StepFun 支持账号密码自动登录与 Token 自动续期，并接入 Step Plan 订阅限额与用量监控"),
+                WhatsNewEntry(type: .added, text: "Codex 供应商支持配置多个模型，首位为默认模型且全部进入模型目录"),
+                WhatsNewEntry(type: .changed, text: "移除桌面宠物功能；完整实现保留在 feat/desktop-pet 分支，需要可从该分支检出恢复"),
+                WhatsNewEntry(type: .changed, text: "移除 DSH Web 服务功能，并清理 workbuddy、dsh 两个已失效的 Token 供应商"),
+                WhatsNewEntry(type: .fixed, text: "修复全能截图框选完成后底部标注工具栏要等一两秒才出现（重复枚举系统窗口所致）"),
+                WhatsNewEntry(type: .fixed, text: "修复启动后菜单栏性能指标需等十余秒才出数，改为启动首轮全量采样"),
+                WhatsNewEntry(type: .fixed, text: "修复访达右键切换显示隐藏文件不生效、扩展总开关失效，以及菜单动作点击无反应"),
+                WhatsNewEntry(type: .fixed, text: "修复 StepFun 计数型额度窗数值只显示一个「剩」字，改为按百分比展示"),
+                WhatsNewEntry(type: .fixed, text: "修复 Codex 模型目录缺少必需字段导致桌面端无法加载配置"),
+            ]
+        ),
+        WhatsNewRelease(
             version: "3.13.0",
             entries: [
                 WhatsNewEntry(type: .added, text: "Token 用量趋势图与热力图的悬浮数值改为跟随鼠标的气泡，读数不再遮挡图表"),
