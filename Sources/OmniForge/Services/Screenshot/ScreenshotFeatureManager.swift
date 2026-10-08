@@ -125,6 +125,7 @@ final class ScreenshotFeatureManager: ObservableObject {
 
     private var hotkeys: [ScreenshotHotkeyEntry: HotkeyDefinition] = [:]
     private var registeredEntries = Set<ScreenshotHotkeyEntry>()
+    private var registeredClotheslineEntries = Set<ClotheslineHotkeyEntry>()
     private var isSessionRunning = false
     /// Active capture session. Kept alive until completion so weak self closures remain valid.
     private var activeSession: ScreenshotCaptureSession?
@@ -190,7 +191,8 @@ final class ScreenshotFeatureManager: ObservableObject {
         for entry in ScreenshotHotkeyEntry.allCases {
             registerHandlerIfNeeded(for: entry)
         }
-        // 同名注册覆盖式，重复 startListening 安全。
+        // onKeyDown 为同名追加语义（不清旧 handler），两族入口均靠
+        // registered*Entries 守卫防止重复 startListening 造成热键双触发。
         registerClotheslineHandlers()
     }
 
@@ -505,6 +507,9 @@ final class ScreenshotFeatureManager: ObservableObject {
 
     private func registerClotheslineHandlers() {
         for entry in ClotheslineHotkeyEntry.allCases {
+            // onKeyDown 同名追加不覆盖（setShortcut(nil) 也不清 handler），
+            // 守卫防止关-开截图特性后 toggle/hang 双触发（偶数次抵消=热键失灵）。
+            guard !registeredClotheslineEntries.contains(entry) else { continue }
             keyboardShortcuts.onKeyDown(for: entry.keyboardShortcutsName) { [weak self] in
                 Task { @MainActor in
                     guard let self, self.isListening else { return }
@@ -514,6 +519,7 @@ final class ScreenshotFeatureManager: ObservableObject {
                     }
                 }
             }
+            registeredClotheslineEntries.insert(entry)
         }
     }
 

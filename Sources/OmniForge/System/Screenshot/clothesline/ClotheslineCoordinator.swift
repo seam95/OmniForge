@@ -103,6 +103,9 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
         isPresent = false
         isStarted = false   // 复位幂等守卫，允许 teardown 后重新 start
         manager.revealed = false
+        // MarkupEditingService 是单例，装配时 onSaved 闭包强持 ClotheslineManager；
+        // 不清理会跨装配存活到下次覆盖。恢复默认空闭包，让 manager 随协调器一同释放。
+        MarkupEditingService.shared.onSaved = { _ in }
     }
 
     /// 总开关 / 保存目录 / Inbox 变化后的统一重挂点。
