@@ -3,13 +3,14 @@ import XCTest
 
 final class SettingsToolbarTabTests: XCTestCase {
     func test_sidebarContainsStableTabs() {
-        // 终态 11 项：供应商切换设置页移除（唯一入口=菜单栏控制中心 tab）。
-        XCTAssertEqual(SettingsToolbarTab.allCases.count, 11)
+        // 终态 12 项：供应商切换设置页移除（唯一入口=菜单栏控制中心 tab），
+        // 访达右键增强接入后追加 rightClick。
+        XCTAssertEqual(SettingsToolbarTab.allCases.count, 12)
         XCTAssertEqual(
             SettingsToolbarTab.allCases,
             [
                 .general, .features, .inputMethod, .clipboard, .shelf, .screenshot, .mouse,
-                .performance, .tokenUsage, .keepAwake, .promptOptimizer
+                .rightClick, .performance, .tokenUsage, .keepAwake, .promptOptimizer
             ]
         )
     }
@@ -25,7 +26,7 @@ final class SettingsToolbarTabTests: XCTestCase {
                 SettingsSidebarSection(group: .productivity, tabs: [.shelf]),
                 SettingsSidebarSection(group: .capture, tabs: [.screenshot]),
                 SettingsSidebarSection(group: .input, tabs: [.inputMethod]),
-                SettingsSidebarSection(group: .mouse, tabs: [.mouse]),
+                SettingsSidebarSection(group: .mouse, tabs: [.mouse, .rightClick]),
                 SettingsSidebarSection(group: .monitor, tabs: [.performance, .tokenUsage]),
                 SettingsSidebarSection(group: .energy, tabs: [.keepAwake]),
             ]
