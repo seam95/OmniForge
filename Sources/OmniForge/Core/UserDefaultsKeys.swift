@@ -91,6 +91,17 @@ enum UserDefaultsKeys {
     // 长截图（滚动截图）
     static let screenshotScrollMaxHeight = "screenshot.scroll.maxHeight"
     static let screenshotScrollFrozenDetection = "screenshot.scroll.frozenDetection"
+    // 截图晾衣绳（clothesline）
+    static let screenshotClotheslineEnabled = "screenshot.clothesline.enabled"
+    static let screenshotClotheslineItems = "screenshot.clothesline.items"
+    static let screenshotClotheslineInboxEnabled = "screenshot.clothesline.inboxEnabled"
+    static let screenshotClotheslineInboxOffered = "screenshot.clothesline.inboxOffered"
+    static let screenshotClotheslineInboxSavedSettings = "screenshot.clothesline.inboxSavedSettings"
+    static let screenshotClotheslineSoundOn = "screenshot.clothesline.soundOn"
+    static let screenshotClotheslineHotkeyToggleKeyCode = "screenshot.clothesline.hotkey.toggle.keyCode"
+    static let screenshotClotheslineHotkeyToggleModifiers = "screenshot.clothesline.hotkey.toggle.modifiers"
+    static let screenshotClotheslineHotkeyHangKeyCode = "screenshot.clothesline.hotkey.hang.keyCode"
+    static let screenshotClotheslineHotkeyHangModifiers = "screenshot.clothesline.hotkey.hang.modifiers"
     // 网络诊断 — 持久化字符串必须稳定，不得重命名
     static let networkDiagnosticsSegment = "networkDiagnostics.segment"
     // Sticky Notes — 持久化字符串必须稳定，不得重命名
