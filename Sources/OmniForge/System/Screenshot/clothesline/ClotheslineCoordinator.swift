@@ -36,6 +36,7 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
     private var mouseMonitors: [Any] = []
     private var keyObserver: NSObjectProtocol?
     private var signalSources: [DispatchSourceSignal] = []
+    private var isStarted = false
     private var isPresent = false
     private var pinned = false
     private var peekUntil = Date.distantPast
@@ -65,6 +66,10 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
     // MARK: 生命周期
 
     func start() {
+        // 幂等守卫：重复 start 会造成 mouseMonitors 翻倍、keyObserver token 泄漏、
+        // signalSources 累积（DispatchSource 对同一信号重复监听语义未定义）。
+        guard !isStarted else { return }
+        isStarted = true
         let host = NSHostingView(rootView: ClotheslineView(manager: manager))
         host.sizingOptions = []
         panel = ClotheslinePanel(content: host)
@@ -91,6 +96,7 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
         cancellables.removeAll()
         wanted = false
         isPresent = false
+        isStarted = false   // 复位幂等守卫，允许 teardown 后重新 start
         manager.revealed = false
     }
 
@@ -292,15 +298,16 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
     // MARK: 鼠标驱动（monitor 版，无轮询）
 
     private func installMouseMonitors() {
-        let moved: (NSEvent?) -> Void = { [weak self] event in
-            MainActor.assumeIsolated { self?.tick(mouse: event?.locationInWindow ?? NSEvent.mouseLocation) }
-        }
-        // global monitor 无 locationInWindow 语义，统一取全局 mouseLocation。
-        let globalMoved: (NSEvent?) -> Void = { [weak self] _ in
+        // 坐标源必须统一：local monitor 的 event.locationInWindow 是投递目标窗口的
+        // 局部坐标系，本 app 存在前台窗口（如设置窗）时它不等于全局屏幕坐标，
+        // 直接喂给 tick() 会热区误判、穿透误切换、收绳计时错乱。
+        // 因此 local/global 两条 mouseMoved 路径统一读 NSEvent.mouseLocation（全局坐标），
+        // local handler 只透传原事件、不改写。
+        let moved: (NSEvent?) -> Void = { [weak self] _ in
             MainActor.assumeIsolated { self?.tick(mouse: NSEvent.mouseLocation) }
         }
         mouseMonitors.append(contentsOf: [
-            NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved], handler: globalMoved),
+            NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved], handler: moved),
             NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved], handler: { moved($0); return $0 }),
             NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
                 MainActor.assumeIsolated { self?.menuBarClicked() }
@@ -420,9 +427,16 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
         // 起点矩形：origin 为选区左下角，尺寸按缩略图纵横比近似。
         let pointSize = CGSize(width: thumb.size.width / 4, height: thumb.size.height / 4)
         let from = CGRect(origin: origin, size: pointSize)
-        Task { [weak self] in
+        Task { [weak self, manager] in
             try? await Task.sleep(nanoseconds: 30_000_000)
-            guard let self, let to = self.cardFrame(for: id) else { self?.manager.land(id); return }
+            // 落地兜底：manager 由外部注入，生命周期可长于本协调者。
+            // 若经 self?.manager.land 的可选链调用，self 已释放时 land 会被静默跳过，
+            // item 将永久停留在 flying 状态（卡在半空、无法掉落）。
+            // 故闭包直接捕获 manager，保证任何失败路径都执行落地。
+            guard let self, let to = self.cardFrame(for: id) else {
+                manager.land(id)
+                return
+            }
             self.animator.fly(image: cg, from: from, to: to,
                               tilt: CGFloat(manager.items.first { $0.id == id }?.tilt ?? 0),
                               on: screen) { [weak self] in self?.manager.land(id) }

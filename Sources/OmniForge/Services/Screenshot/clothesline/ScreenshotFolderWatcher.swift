@@ -76,7 +76,9 @@ final class ScreenshotFolderWatcher {
     private func scheduleScan(folder: URL, desktopOnlyTagged: Bool) {
         pending?.cancel()
         pending = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(self?.debounceInterval ?? 0.2) * 1_000_000_000)
+            // 先乘后转：若先 UInt64(0.2) 会截断为 0，再乘 1e9 防抖恒为 0ns；
+            // 必须先在浮点域换算成纳秒数，再转整型。
+            try? await Task.sleep(nanoseconds: UInt64((self?.debounceInterval ?? 0.2) * 1_000_000_000))
             guard let self, !Task.isCancelled else { return }
             self.scan(folder: folder, desktopOnlyTagged: desktopOnlyTagged)
         }
