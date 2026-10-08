@@ -85,7 +85,6 @@ final class AppCompositionRoot {
     /// App 退出：先终止 dsh web 子进程（独立无依赖），再优先 KeepAwakeManager.shutdown；
     /// 无 Manager 时走 Coordinator 恢复。
     func prepareForApplicationTermination() async -> Bool {
-        DSHWebManager.shared.shutdown()
         // 便签：失效全部唤起定时器并撤销通知请求（窗口随 teardown 关闭）。
         FeatureRuntime.shared.manager(for: .stickyNotes, as: StickyNoteManager.self)?.teardown()
         if let manager = FeatureRuntime.shared.manager(for: .keepAwake, as: KeepAwakeManager.self) {

@@ -326,7 +326,6 @@ final class FeatureRuntime: ObservableObject {
         // 以下工具型特性确认无 binding 职责：显式登记空闭包以满足完备性契约
         .colorPicker: {},
         .networkDiagnostics: {},
-        .dshWeb: {},
         .providerSwitch: {},
         .promptOptimizer: {
             // availability 即启用：快捷键跟随可用性注册 / 注销。

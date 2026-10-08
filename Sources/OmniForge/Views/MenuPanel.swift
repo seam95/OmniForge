@@ -28,7 +28,6 @@ enum MenuPanel: String, CaseIterable, Identifiable {
             || isAvailable(.uninstaller)
             || isAvailable(.colorPicker)
             || isAvailable(.networkDiagnostics)
-            || isAvailable(.dshWeb)
             || isAvailable(.cleaningMode)
             || isAvailable(.stickyNotes)
             || isAvailable(.keepAwake) {

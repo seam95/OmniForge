@@ -285,8 +285,6 @@ struct UtilityToolsView: View {
             ColorPickerContentView(strings: strings, layout: .compact)
         case .networkDiagnostics:
             NetworkDiagnosticsView(strings: strings)
-        case .dshWeb:
-            DSHWebView(strings: strings)
         case .stickyNotes:
             StickyNotesView(strings: strings)
         case .cleaningMode:
@@ -363,13 +361,6 @@ private struct UtilityToolRow: View {
 
                 Spacer(minLength: 8)
 
-                if tool == .dshWeb {
-                    UtilityDSHWebStatusBadge(strings: strings)
-                } else {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
-                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, UtilityToolRowMetrics.verticalPadding)
@@ -390,90 +381,3 @@ private struct UtilityToolRow: View {
     }
 }
 
-/// DSH Web 服务列表行状态徽章
-private struct UtilityDSHWebStatusBadge: View {
-    let strings: Strings
-    @ObservedObject private var manager = DSHWebManager.shared
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        switch manager.state {
-        case .running:
-            HStack(spacing: 4.5) {
-                Circle()
-                    .fill(Theme.Stats.statusNormal)
-                    .frame(width: 5.5, height: 5.5)
-                Text(strings.dshWebStateRunning)
-                    .font(Theme.Stats.font11Regular)
-                    .foregroundStyle(Theme.Stats.statusNormal)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3.5)
-            .background(
-                Capsule()
-                    .fill(Theme.Stats.statusNormal.opacity(0.12))
-            )
-        case .starting:
-            HStack(spacing: 4.5) {
-                ProgressView()
-                    .controlSize(.mini)
-                Text(strings.dshWebStateStarting)
-                    .font(Theme.Stats.font11Regular)
-                    .foregroundStyle(Theme.Stats.ram)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3.5)
-            .background(
-                Capsule()
-                    .fill(Theme.Stats.ram.opacity(0.12))
-            )
-        case .stopping:
-            HStack(spacing: 4.5) {
-                ProgressView()
-                    .controlSize(.mini)
-                Text(strings.dshWebStateStopping)
-                    .font(Theme.Stats.font11Regular)
-                    .foregroundStyle(Theme.Stats.ram)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3.5)
-            .background(
-                Capsule()
-                    .fill(Theme.Stats.ram.opacity(0.12))
-            )
-        case .failed:
-            HStack(spacing: 4.5) {
-                Circle()
-                    .fill(Theme.Stats.up)
-                    .frame(width: 5.5, height: 5.5)
-                Text(strings.dshWebStateFailedBadge)
-                    .font(Theme.Stats.font11Regular)
-                    .foregroundStyle(Theme.Stats.up)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3.5)
-            .background(
-                Capsule()
-                    .fill(Theme.Stats.up.opacity(0.12))
-            )
-        case .stopped:
-            HStack(spacing: 4.5) {
-                Circle()
-                    .fill(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
-                    .frame(width: 5.5, height: 5.5)
-                Text(strings.runStateStopped)
-                    .font(Theme.Stats.font11Regular)
-                    .foregroundStyle(colorScheme == .light ? Theme.Stats.text3 : Color.secondary)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3.5)
-            .background(
-                Capsule()
-                    .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04))
-            )
-        }
-    }
-}
-
-/// 详情页顶部返回栏已统一到共享组件 `FlatBackBar`（箭头+标题整体热区、
-/// hover 反馈与发丝线容器，与监控详情页一致）。

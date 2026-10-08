@@ -39,7 +39,6 @@ final class UtilityToolsPresentationTests: XCTestCase {
         XCTAssertEqual(UtilityTool.uninstaller.symbolName(), "trash")
         XCTAssertEqual(UtilityTool.colorPicker.symbolName(), "eyedropper")
         XCTAssertEqual(UtilityTool.networkDiagnostics.symbolName(), "globe")
-        XCTAssertEqual(UtilityTool.dshWeb.symbolName(), "server.rack")
         // 保持唤醒详情页（信息架构重构阶段②）：映射到 keepAwake 特性与唤醒图标。
         XCTAssertEqual(UtilityTool.keepAwake.feature, .keepAwake)
         XCTAssertEqual(UtilityTool.keepAwake.symbolName(), "moon.zzz.fill")

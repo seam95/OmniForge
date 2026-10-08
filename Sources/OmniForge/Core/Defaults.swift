@@ -24,7 +24,6 @@ enum Defaults {
             .merging(keepAwakeDefaults, uniquingKeysWith: { _, new in new })
             .merging(screenshotDefaults, uniquingKeysWith: { _, new in new })
             .merging(networkDiagnosticsDefaults, uniquingKeysWith: { _, new in new })
-            .merging(dshWebDefaults, uniquingKeysWith: { _, new in new })
             .merging(promptOptimizerDefaults, uniquingKeysWith: { _, new in new })
     }
 
@@ -138,9 +137,6 @@ enum Defaults {
         ]
     }
 
-    private static var dshWebDefaults: [String: Any] {
-        [UserDefaultsKeys.dshWebPort: DSHWebManager.defaultPort]
-    }
 
     /// 提示词优化偏好默认值（决策 D12：预填 DeepSeek，可一步清空换任何 OpenAI 兼容服务）。
     private static var promptOptimizerDefaults: [String: Any] {

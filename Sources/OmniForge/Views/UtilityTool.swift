@@ -3,7 +3,6 @@ import SwiftUI
 enum UtilityTool: String, CaseIterable, Identifiable {
     // case 声明顺序即实用工具列表的展示顺序。
     case stickyNotes
-    case dshWeb
     case networkDiagnostics
     case colorPicker
     case uninstaller
@@ -18,8 +17,6 @@ enum UtilityTool: String, CaseIterable, Identifiable {
             switch tool {
             case .stickyNotes:
                 return isAvailable(.stickyNotes)
-            case .dshWeb:
-                return isAvailable(.dshWeb)
             case .networkDiagnostics:
                 return isAvailable(.networkDiagnostics)
             case .colorPicker:
@@ -49,8 +46,6 @@ enum UtilityTool: String, CaseIterable, Identifiable {
         switch self {
         case .stickyNotes:
             return strings.featureHubNameStickyNotes
-        case .dshWeb:
-            return strings.featureHubNameDSHWeb
         case .networkDiagnostics:
             return strings.featureHubNameNetworkDiagnostics
         case .colorPicker:
@@ -71,8 +66,6 @@ enum UtilityTool: String, CaseIterable, Identifiable {
         switch self {
         case .stickyNotes:
             return .stickyNotes
-        case .dshWeb:
-            return .dshWeb
         case .networkDiagnostics:
             return .networkDiagnostics
         case .colorPicker:
@@ -93,8 +86,6 @@ enum UtilityTool: String, CaseIterable, Identifiable {
         switch self {
         case .stickyNotes:
             return "note.text"
-        case .dshWeb:
-            return "server.rack"
         case .networkDiagnostics:
             return "globe"
         case .colorPicker:
@@ -115,8 +106,6 @@ enum UtilityTool: String, CaseIterable, Identifiable {
         switch self {
         case .stickyNotes:
             return .yellow
-        case .dshWeb:
-            return .purple
         case .networkDiagnostics:
             return .green
         case .colorPicker:
@@ -140,8 +129,6 @@ enum UtilityTool: String, CaseIterable, Identifiable {
         switch self {
         case .stickyNotes:
             return strings.utilityStickyNotesSubtitle
-        case .dshWeb:
-            return strings.utilityDSHWebSubtitle
         case .networkDiagnostics:
             return strings.utilityNetworkDiagnosticsSubtitle
         case .colorPicker:

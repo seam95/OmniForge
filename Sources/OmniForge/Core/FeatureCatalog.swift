@@ -9,7 +9,6 @@ enum AppFeature: String, CaseIterable {
     case systemMonitor
     case tokenUsage
     case networkDiagnostics
-    case dshWeb
     case shelf
     case cleaner
     case uninstaller
@@ -90,7 +89,7 @@ extension AppFeature {
         case .systemMonitor, .tokenUsage: return .monitor
         case .shelf: return .productivity
         // 系统维护：对系统做一次性操作的诊断/清理/卸载类工具。
-        case .cleaner, .uninstaller, .colorPicker, .networkDiagnostics, .dshWeb, .cleaningMode:
+        case .cleaner, .uninstaller, .colorPicker, .networkDiagnostics, .cleaningMode:
             return .maintenance
         // 桌面常驻：留在桌面上陪伴或随手使用的窗口类功能。
         case .stickyNotes: return .desktop
@@ -111,7 +110,7 @@ extension AppFeature {
             return .configuration
         case .systemMonitor, .tokenUsage, .providerSwitch:
             return .panel
-        case .networkDiagnostics, .dshWeb, .cleaner, .uninstaller, .colorPicker,
+        case .networkDiagnostics, .cleaner, .uninstaller, .colorPicker,
              .keepAwake, .stickyNotes, .cleaningMode:
             return .tool
         }
@@ -132,7 +131,7 @@ extension AppFeature {
         case .quickPhrase: return []
         case .systemMonitor, .networkDiagnostics, .tokenUsage: return []
         case .shelf: return [UserDefaultsKeys.shelfEnabled]
-        case .cleaner, .uninstaller, .colorPicker, .dshWeb: return []
+        case .cleaner, .uninstaller, .colorPicker: return []
         case .mouse:
             return [
                 UserDefaultsKeys.scrollInverterEnabled,
@@ -159,7 +158,8 @@ extension AppFeature {
         case .quickPhrase: return []
         case .systemMonitor: return [.notifications]
         case .tokenUsage: return [.notifications]
-        case .networkDiagnostics, .dshWeb: return []
+        case .networkDiagnostics: return []
+
         case .shelf: return []
         case .cleaner, .uninstaller: return [.fullDiskAccess]
         case .colorPicker: return []
@@ -200,7 +200,7 @@ extension AppFeature {
             return permission == .notifications ? .optional : nil
         case .cleaner, .uninstaller:
             return permission == .fullDiskAccess ? .required : nil
-        case .colorPicker, .networkDiagnostics, .dshWeb:
+        case .colorPicker, .networkDiagnostics:
             return nil
         case .screenshot:
             return permission == .screenRecording ? .required : nil
@@ -239,7 +239,6 @@ extension AppFeature {
         case .cleaner: return "sparkles"
         case .uninstaller: return "trash"
         case .colorPicker: return "eyedropper"
-        case .dshWeb: return "globe"
         case .mouse: return "computermouse"
         case .keepAwake: return "moon.zzz.fill"
         case .screenshot: return "camera.viewfinder"
@@ -264,7 +263,6 @@ extension AppFeature {
         case .cleaner: return strings.cleanerName
         case .uninstaller: return strings.uninstallerName
         case .colorPicker: return strings.colorPickerName
-        case .dshWeb: return strings.featureHubNameDSHWeb
         case .mouse: return strings.featureHubNameMouse
         case .keepAwake: return strings.featureHubNameKeepAwake
         case .screenshot: return strings.featureHubNameScreenshot
@@ -289,7 +287,6 @@ extension AppFeature {
         case .cleaner: return strings.cleanerIntroCaption
         case .uninstaller: return strings.uninstallerEnableCaption
         case .colorPicker: return strings.colorPickerDescription
-        case .dshWeb: return strings.featureHubDescDSHWeb
         case .mouse: return strings.featureHubDescMouse
         case .keepAwake: return strings.featureHubDescKeepAwake
         case .screenshot: return strings.featureHubDescScreenshot

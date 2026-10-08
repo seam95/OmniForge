@@ -290,7 +290,7 @@ final class FeatureCatalogTests: XCTestCase {
         // 系统维护：对系统做一次性操作的诊断/清理/卸载类工具。
         XCTAssertEqual(
             FeatureGroup.features(in: .maintenance),
-            [.networkDiagnostics, .dshWeb, .cleaner, .uninstaller, .colorPicker, .cleaningMode]
+            [.networkDiagnostics, .cleaner, .uninstaller, .colorPicker, .cleaningMode]
         )
 
         // 桌面常驻：留在桌面上的陪伴型窗口。
@@ -343,9 +343,9 @@ final class FeatureCatalogTests: XCTestCase {
         XCTAssertEqual(FeatureGroup.features(in: .ai), [.promptOptimizer, .providerSwitch])
     }
 
-    /// 全部 20 项都必须有明确的使用形态归属（穷尽 switch 的语义保障）。
+    /// 全部特性都必须有明确的使用形态归属（穷尽 switch 的语义保障）。
     func test_everyFeatureHasUsageForm() {
-        XCTAssertEqual(AppFeature.allCases.count, 19)
+        XCTAssertEqual(AppFeature.allCases.count, 18)
         XCTAssertEqual(
             AppFeature.allCases.filter { $0.usageForm == .hotkey }.count, 5,
             "热键直达型：剪贴板历史/快捷短语/暂存架/截图/提示词优化"
@@ -359,8 +359,8 @@ final class FeatureCatalogTests: XCTestCase {
             "面板浏览型：系统监控/Token 用量/供应商切换"
         )
         XCTAssertEqual(
-            AppFeature.allCases.filter { $0.usageForm == .tool }.count, 8,
-            "动作工具型：网诊/DSH/清理/卸载/取色/唤醒/便签/清洁模式"
+            AppFeature.allCases.filter { $0.usageForm == .tool }.count, 7,
+            "动作工具型：网诊/清理/卸载/取色/唤醒/便签/清洁模式"
         )
     }
 

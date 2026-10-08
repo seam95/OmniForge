@@ -119,7 +119,6 @@ struct Strings: Equatable {
     let utilityUninstallerSubtitle: String
     let utilityColorPickerSubtitle: String
     let utilityNetworkDiagnosticsSubtitle: String
-    let utilityDSHWebSubtitle: String
     let toolRetryFailures: String
     let toolSucceeded: String
     let toolFailed: String
@@ -350,7 +349,6 @@ struct Strings: Equatable {
     let featureHubNameMouse: String
     let featureHubNameKeepAwake: String
     let featureHubNameScreenshot: String
-    let featureHubNameDSHWeb: String
     let featureHubDescInputLock: String
     let featureHubDescClipboardHistory: String
     let featureHubDescQuickPhrase: String
@@ -360,7 +358,6 @@ struct Strings: Equatable {
     let featureHubDescMouse: String
     let featureHubDescKeepAwake: String
     let featureHubDescScreenshot: String
-    let featureHubDescDSHWeb: String
     let featureHubGroupInput: String
     let featureHubGroupClipboard: String
     let featureHubGroupMonitor: String
@@ -619,35 +616,6 @@ struct Strings: Equatable {
     let networkDiagnosticsOtherInterfacesFormat: String
 
     // MARK: - DSH Web
-    let dshWebStart: String
-    let dshWebStop: String
-    let dshWebRestart: String
-    let dshWebOpenBrowser: String
-    let dshWebStateRunning: String
-    let dshWebStateStopped: String
-    let dshWebStateStarting: String
-    let dshWebStateStopping: String
-    let dshWebStateFailed: String     // + failed reason
-    /// 徽章用的无参失败短文案（dshWebStateFailed 带原因参数，不适合徽章）
-    let dshWebStateFailedBadge: String
-    let dshWebPortOccupied: String
-    let dshWebPortOccupiedFormat: String
-    let dshWebStartTimeout: String
-    let dshWebLaunchFailed: String
-    let dshWebLogTitle: String
-    let dshWebLogEmpty: String
-    let dshWebCopyLog: String
-    let dshWebClearLog: String
-    let dshWebPort: String
-    let dshWebRefresh: String
-    let dshWebServicesTitle: String
-    let dshWebExternalServicesTitle: String
-    let dshWebNoServices: String
-    let dshWebManagedService: String
-    let dshWebExternalService: String
-    let dshWebStopExternalTitle: String
-    let dshWebStopExternalMessageFormat: String
-    let dshWebCancel: String
     let networkDiagnosticsProcessPIDFormat: String
 
     // MARK: - Cleaner
