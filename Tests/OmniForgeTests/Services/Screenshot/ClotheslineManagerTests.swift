@@ -159,6 +159,18 @@ final class ClotheslineManagerTests: XCTestCase {
     }
 
     @MainActor
+    func testOwnWriteExclusionNormalizesFirmlinkPathForms() {
+        // /var（temporaryDirectory 宿主）与 /tmp 是 firmlink：登记侧与消费侧
+        // 可能拿到 /private 前缀与非前缀两种形态，必须归一后才能命中。
+        // 本机实测：真实存在的文件，两种形态经 resolvingSymlinksInPath 都归一
+        // 到非 /private 形态；不存在的路径不会被解析，故测试用真实文件。
+        let url = makeFile()
+        manager.noteOwnWrite("/private" + url.path)
+        XCTAssertTrue(manager.consumeOwnWrite(url))
+        XCTAssertFalse(manager.consumeOwnWrite(url))  // 消费一次即失效
+    }
+
+    @MainActor
     func testRestoreFromPersistedPathsSkipsMissing() {
         let existing = makeFile("keep.png")
         defaults.set([existing.path, "/nonexistent/x.png"],

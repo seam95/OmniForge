@@ -231,10 +231,18 @@ final class ClotheslineManager: ObservableObject {
 
     // MARK: 排除集
 
-    func noteOwnWrite(_ path: String) { ownWrites.insert(path) }
+    /// 归一路径形态：/tmp、/var 等 firmlink 让同一文件有两种路径写法
+    /// （登记侧来自管线 saver，消费侧来自 watcher 的真实目录列举），
+    /// 不归一则排除集永不命中。对真实存在的文件，resolvingSymlinksInPath
+    /// 会把 /private 前缀与非前缀形态归一到同一结果。
+    private static func normalizedPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+    }
+
+    func noteOwnWrite(_ path: String) { ownWrites.insert(Self.normalizedPath(path)) }
 
     @discardableResult
-    func consumeOwnWrite(_ url: URL) -> Bool { ownWrites.remove(url.path) != nil }
+    func consumeOwnWrite(_ url: URL) -> Bool { ownWrites.remove(Self.normalizedPath(url.path)) != nil }
 
     // MARK: 微风
 

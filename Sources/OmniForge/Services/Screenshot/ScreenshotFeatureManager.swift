@@ -471,10 +471,15 @@ final class ScreenshotFeatureManager: ObservableObject {
         startDirectCapture(intent: .pin)
     }
 
-    /// copy/pin 共用入口：preflight + busy 互斥后启动带 entryIntent 的全能选区会话。
+    /// 截图并挂绳：全能选区 → 确认一次 → pipeline.hang（静默写盘 + 挂绳），不进编辑器。
+    func handleHang() {
+        startDirectCapture(intent: .hang)
+    }
+
+    /// copy/pin/hang 共用入口：preflight + busy 互斥后启动带 entryIntent 的全能选区会话。
     /// 录屏进行中仅拒绝（不 stopAndSave）；与 `handleAllInOne` / `handleRecord` 语义不同。
     private func startDirectCapture(intent: ScreenshotEntryIntent) {
-        // copy/pin 不承担 stopAndSave：录屏中一律 busy。
+        // copy/pin/hang 不承担 stopAndSave：录屏中一律 busy。
         if recordingCoordinator.isRecording {
             Self.logger.notice("startDirectCapture(\(intent.rawValue)): recording busy")
             recordBusyError()
@@ -544,9 +549,10 @@ final class ScreenshotFeatureManager: ObservableObject {
         awaitingDirectCaptureResult = false
         do {
             let pipeline = resolvedResultPipeline()
-            // pin 用选区左下原点；copy 忽略 pinOrigin。
-            let origin: NSPoint? = (intent == .pin) ? pinOrigin : nil
-            _ = try pipeline.run(result: result, intent: intent, pinOrigin: origin)
+            // pin 用选区左下原点；hang 同样按原位挂绳；copy 忽略 pinOrigin。
+            let origin: NSPoint? = (intent == .pin || intent == .hang) ? pinOrigin : nil
+            let hangOrigin: NSPoint? = (intent == .hang) ? pinOrigin : nil
+            _ = try pipeline.run(result: result, intent: intent, pinOrigin: origin, hangOrigin: hangOrigin)
             lastOutcome = .triggered(mode: .allInOne, intent: intent)
             lastError = nil
             Self.logger.info("finishDirectCapture: pipeline \(intent.rawValue) ok")

@@ -9,7 +9,7 @@ final class AllInOneCaptureSession: ScreenshotCaptureSession {
     private let captureClient: ScreenCaptureClient
     private let overlayController: CaptureOverlayController
     private let onComplete: (NSImage?) -> Void
-    /// 入口意图：`.copy` / `.pin` 时 overlay 选区确认后直出，不进编辑器。
+    /// 入口意图：`.copy` / `.pin` / `.hang` 时 overlay 选区确认后直出，不进编辑器。
     private let entryIntent: ScreenshotEntryIntent?
 
     /// 测试钩子：覆盖冻屏枚举用的 display ID 列表。nil 时用 `NSScreen.screens`。

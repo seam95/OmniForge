@@ -17,4 +17,6 @@ enum ScreenshotEntryIntent: String, Equatable, Sendable, CaseIterable {
     case pin
     /// 准备可拖放临时文件
     case drag
+    /// 静默写盘后挂上晾衣绳
+    case hang
 }

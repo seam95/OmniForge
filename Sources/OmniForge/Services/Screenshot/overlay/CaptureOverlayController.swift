@@ -641,8 +641,8 @@ extension CaptureOverlayController: SelectionViewDelegate {
         // pinOrigin：选区屏幕左下原点（AppKit）；无法计算时由 pinService 居中。
         let pinOrigin = NSPoint(x: screenRect.minX, y: screenRect.minY)
 
-        // copy/pin 直出：裁切图 → ScreenshotResult → 回调 manager，不进编辑器。
-        if let intent = entryIntent, [.copy, .pin].contains(intent) {
+        // copy/pin/hang 直出：裁切图 → ScreenshotResult → 回调 manager，不进编辑器。
+        if let intent = entryIntent, [.copy, .pin, .hang].contains(intent) {
             deliverDirectCapture(
                 intent: intent,
                 selectionViewRect: alignedRect,

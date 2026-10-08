@@ -217,7 +217,8 @@ final class FakeScreenshotResultRunner: ScreenshotResultRunning {
     func run(
         result: ScreenshotResult,
         intent: ScreenshotEntryIntent,
-        pinOrigin: NSPoint? = nil
+        pinOrigin: NSPoint? = nil,
+        hangOrigin: NSPoint? = nil
     ) throws -> ScreenshotPipelineOutcome {
         calls.append(Call(result: result, intent: intent, pinOrigin: pinOrigin))
         if let errorToThrow { throw errorToThrow }
@@ -228,6 +229,7 @@ final class FakeScreenshotResultRunner: ScreenshotResultRunning {
         case .pin:
             o.didPin = true
             o.pinnedID = o.pinnedID ?? UUID()
+        case .hang: o.savedFilePath = o.savedFilePath ?? "/tmp/fake.png"
         case .drag: break
         }
         return o

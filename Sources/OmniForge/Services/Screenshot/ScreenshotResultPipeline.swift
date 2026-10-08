@@ -7,6 +7,7 @@ enum ScreenshotPipelineSideEffect: Equatable, Sendable {
     case copy
     case save
     case pin
+    case hangOnLine
 }
 
 enum ScreenshotPipelineError: Error, Equatable {
@@ -56,14 +57,36 @@ extension ScreenshotPinning {
     }
 }
 
+/// 晾衣绳管线钩子：save 落盘登记排除集（watcher 不得自动挂绳）；hang 意图直接挂绳。
+/// 宿主是晾衣绳协调桥（不反向强持管线），pipeline → hooks 单向无环。
+protocol ClotheslinePipelineHooks: AnyObject {
+    /// 所有经管线写盘的路径（save 与 hang）都要登记进自家排除集。
+    func noteOwnWrite(path: String)
+    /// hang 意图落盘完成后挂绳；origin 为可选屏幕原点（AppKit 坐标）。
+    func hangFromPipeline(path: String, origin: NSPoint?)
+}
+
 /// 截图结果副作用出口（便于编辑器注入 fake 断言 intent）。
 protocol ScreenshotResultRunning: AnyObject {
     @discardableResult
     func run(
         result: ScreenshotResult,
         intent: ScreenshotEntryIntent,
-        pinOrigin: NSPoint?
+        pinOrigin: NSPoint?,
+        hangOrigin: NSPoint?
     ) throws -> ScreenshotPipelineOutcome
+}
+
+extension ScreenshotResultRunning {
+    /// 兼容旧签名：编辑器等既有调用不关心挂绳原点，透传 nil。
+    @discardableResult
+    func run(
+        result: ScreenshotResult,
+        intent: ScreenshotEntryIntent,
+        pinOrigin: NSPoint?
+    ) throws -> ScreenshotPipelineOutcome {
+        try run(result: result, intent: intent, pinOrigin: pinOrigin, hangOrigin: nil)
+    }
 }
 
 /// 截图结果管线：统一 copy / save / pin 副作用出口。
@@ -79,6 +102,11 @@ final class ScreenshotResultPipeline: ScreenshotResultRunning {
 
     /// 弱引用，避免 `PinnedScreenshotRegistry → pipeline → pinBridge → registry` 环。
     weak var pinService: ScreenshotPinning?
+
+    /// 晾衣绳钩子。strong 而非 weak：宿主桥不反向强持管线，链路
+    /// `pipeline → 晾衣绳桥 → (weak) coordinator` 单向无环；与 pinService
+    /// 的 weak 断环理由（pinBridge 强持 registry，registry 又持管线）不同链路。
+    var clotheslineHooks: ClotheslinePipelineHooks?
 
     init(
         pasteboard: PasteboardWriting = SystemPasteboardWriter(),
@@ -106,16 +134,18 @@ final class ScreenshotResultPipeline: ScreenshotResultRunning {
     func runAsync(
         result: ScreenshotResult,
         intent: ScreenshotEntryIntent,
-        pinOrigin: NSPoint? = nil
+        pinOrigin: NSPoint? = nil,
+        hangOrigin: NSPoint? = nil
     ) async throws -> ScreenshotPipelineOutcome {
-        try run(result: result, intent: intent, pinOrigin: pinOrigin)
+        try run(result: result, intent: intent, pinOrigin: pinOrigin, hangOrigin: hangOrigin)
     }
 
     @discardableResult
     func run(
         result: ScreenshotResult,
         intent: ScreenshotEntryIntent,
-        pinOrigin: NSPoint? = nil
+        pinOrigin: NSPoint? = nil,
+        hangOrigin: NSPoint? = nil
     ) throws -> ScreenshotPipelineOutcome {
         let effects = try Self.sideEffects(for: intent)
         var outcome = ScreenshotPipelineOutcome()
@@ -140,6 +170,12 @@ final class ScreenshotResultPipeline: ScreenshotResultRunning {
                 let id = try performPin(result: result, origin: pinOrigin)
                 outcome.didPin = true
                 outcome.pinnedID = id
+
+            case .hangOnLine:
+                // 挂绳发生在 save 落盘之后（副作用序保证）；落盘失败不会走到这里。
+                if let path = outcome.savedFilePath {
+                    clotheslineHooks?.hangFromPipeline(path: path, origin: hangOrigin)
+                }
             }
         }
 
@@ -151,6 +187,7 @@ final class ScreenshotResultPipeline: ScreenshotResultRunning {
         case .copy: return [.copy]
         case .save: return [.save]
         case .pin: return [.pin]
+        case .hang: return [.save, .hangOnLine]
         case .drag: throw ScreenshotPipelineError.intentNotImplemented(intent)
         }
     }
@@ -192,6 +229,9 @@ final class ScreenshotResultPipeline: ScreenshotResultRunning {
                 fileName: fileName,
                 directory: snapshot.saveDirectory
             )
+            // 所有经管线的写盘（save 与 hang）都登记排除集：
+            // watcher 对自家写入只挂绳一次，避免 hang 意图双重挂载。
+            clotheslineHooks?.noteOwnWrite(path: url.path)
             return url.path
         } catch let error as ScreenshotPipelineError {
             throw error
