@@ -14,6 +14,10 @@ final class ScreenshotFolderWatcher {
     private var pending: Task<Void, Never>?
     private var onNew: ((URL) -> Void)?
     private var onChange: (() -> Void)?
+    /// 当前活跃目录：stop→start 重挂后，仍在主队列排队的旧扫描凭它自知过期。
+    /// 不加守卫时，旧扫描会用旧目录文件集整体覆盖新基线（known），
+    /// 且旧目录新文件会经由已重挂的新回调错误上报。
+    private var activeFolder: URL?
     /// 排除集提供者：自家 save/hang 意图写入的文件不自动挂绳。
     var ownWriteConsumer: ((URL) -> Bool)?
 
@@ -40,6 +44,7 @@ final class ScreenshotFolderWatcher {
         stop()
         self.onNew = onNew
         self.onChange = onChange
+        activeFolder = folder
         let files = listing(folder)
         // 启动即扫：基线前文件静默入 known；基线后文件立即补挂（覆盖权限弹窗窗口期）。
         known = Set(files.filter { creationDate($0) < launchDate }.map(\.path))
@@ -62,6 +67,7 @@ final class ScreenshotFolderWatcher {
         pending?.cancel()
         pending = nil
         watcher.stopWatching()
+        activeFolder = nil   // 使仍在主队列排队的旧扫描过期
         onNew = nil
         onChange = nil
     }
@@ -77,6 +83,9 @@ final class ScreenshotFolderWatcher {
     }
 
     private func scan(folder: URL, desktopOnlyTagged: Bool) {
+        // 重挂守卫：目录事件回调经 main.async 入队，stop→start 后才执行；
+        // 此时 folder 是旧目录而 activeFolder 已指向新目录，扫描必须整体放弃。
+        guard folder == activeFolder else { return }
         let files = listing(folder)
         for url in files where !known.contains(url.path) {
             guard Self.isCandidate(url, desktopOnlyTagged: desktopOnlyTagged) else { continue }
