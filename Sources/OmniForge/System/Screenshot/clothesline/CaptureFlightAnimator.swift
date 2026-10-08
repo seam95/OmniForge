@@ -106,7 +106,13 @@ final class CaptureFlightAnimator: CaptureFlightAnimating {
     }
 
     private func run() {
-        if falling { applyFall(0) } else { applyFlight(0) }
+        // 掉落前先完整布局一次（层尺寸只在 applyFlight 布置），applyFall(0) 再定起始帧
+        if falling {
+            applyFlight(1)
+            applyFall(0)
+        } else {
+            applyFlight(0)
+        }
         window.orderFrontRegardless()
         start = CACurrentMediaTime()
         let timer = Timer(timeInterval: 1.0 / 120.0, repeats: true) { [weak self] _ in

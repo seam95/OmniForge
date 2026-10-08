@@ -6,7 +6,7 @@ enum CaptureFlightMath {
     struct FlightState {
         var bounds: CGRect      // 动画卡尺寸（含相框）
         var position: CGPoint   // 窗内坐标，卡顶中心
-        var angle: CGFloat      // 弧度，正值顺时针（CA 需取负）
+        var angle: CGFloat      // 度，正值顺时针（CA 需取负并乘 π/180）
         var chrome: Float       // 相框+衣夹渐显 0…1
     }
 
