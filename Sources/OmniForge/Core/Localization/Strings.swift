@@ -864,6 +864,10 @@ struct Strings: Equatable {
     let clotheslineMenuTakeDown: String
     let clotheslineMenuTrash: String
     let clotheslineMenuDiscard: String
+    let clotheslineInboxOfferTitle: String
+    let clotheslineInboxOfferBody: String
+    let clotheslineInboxOfferEnable: String
+    let clotheslineInboxOfferLater: String
     let screenshotOutputSection: String
     let screenshotSaveDirectory: String
     let screenshotChooseDirectory: String

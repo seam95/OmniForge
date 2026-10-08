@@ -90,6 +90,14 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
         installKeyObserver()          // 其他窗口（含控制中心）成为 key → 收绳
         installSignalRestore()        // SIGTERM/SIGINT/SIGHUP 兜底还原 Inbox
         syncWithPreferences()
+        // 首次启用后 1.2s 一次性询问 Inbox 接管；改系统设置永远是用户的决定。
+        if !inbox.wasOffered {
+            inbox.wasOffered = true
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                self?.offerInbox()
+            }
+        }
     }
 
     func teardown() {
@@ -213,6 +221,22 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
 
     private func reapplyInboxIfNeeded() {
         inbox.apply(targetDirectory: saveDirectory)   // 目录变化后重写接管（幂等）
+    }
+
+    /// 首启一次性询问 Inbox 接管；点「开启」才动系统设置。
+    /// 已接管或保存目录为桌面时不打扰（桌面场景设置页有冲突说明）。
+    private func offerInbox() {
+        guard !inbox.isEnabled, !isDesktopSave else { return }
+        let alert = NSAlert()
+        alert.messageText = stringsProvider().clotheslineInboxOfferTitle
+        alert.informativeText = stringsProvider().clotheslineInboxOfferBody
+        alert.addButton(withTitle: stringsProvider().clotheslineInboxOfferEnable)
+        alert.addButton(withTitle: stringsProvider().clotheslineInboxOfferLater)
+        alert.icon = NSApp.applicationIconImage
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn {
+            setInboxEnabled(true)
+        }
     }
 
     // MARK: 显隐状态机
