@@ -142,6 +142,11 @@ struct ScreenshotSettingsSection: View {
                 )
             }
         }
+        // 保存目录变化 → 重挂监听 + 重写 Inbox 接管；挂在整段一次，
+        // 统一覆盖 NSOpenPanel 等全部写入来源，勿在子控件重复挂。
+        .onChange(of: saveDirectoryPath) { _, _ in
+            manager?.clothesline?.syncWithPreferences()
+        }
     }
 
     /// 长截图（滚动截图）偏好：高度上限、固定元素检测。

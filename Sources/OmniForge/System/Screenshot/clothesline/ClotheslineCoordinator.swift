@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import os
 import SwiftUI
 
 /// 飞行/掉落动画出口（真身 CaptureFlightAnimator；测试注入替身）。
@@ -23,11 +24,15 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
 
     private let manager: ClotheslineManager
     private let watcher: ScreenshotFolderWatcher
+    /// 桌面兜底监听（SPEC §14）：Inbox 接管生效时系统截图可能无视接管直接落桌面，
+    /// 需第二实例监听桌面带标记文件；与主监听分开构造（各自独立的基线与防抖）。
+    private let safetyWatcher = ScreenshotFolderWatcher()
     private let inbox: ScreenshotInboxSettings
     private let outputConfiguration: ScreenshotOutputConfiguration
     private let animator: CaptureFlightAnimating
     private let stringsProvider: () -> Strings
     private let userDefaults: UserDefaults
+    private static let logger = Logger(subsystem: "com.omniforge.app", category: "Clothesline")
     private var panel: ClotheslinePanel?
     private var cancellables = Set<AnyCancellable>()
     private var mouseMonitors: [Any] = []
@@ -103,7 +108,13 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
     func teardown() {
         if inbox.isEnabled { inbox.restore() }
         watcher.stop()
+        safetyWatcher.stop()
         removeMonitors()
+        // 恢复默认处置，防卸载后信号免疫：installSignalRestore 曾把三信号置 SIG_IGN，
+        // 不清理则特性卸载后 App 对 SIGTERM/SIGINT/SIGHUP 无响应（kill 不退出）。
+        for source in signalSources { source.cancel() }
+        signalSources.removeAll()
+        for sig in [SIGTERM, SIGINT, SIGHUP] { signal(sig, SIG_DFL) }
         panel?.orderOut(nil)
         panel = nil
         cancellables.removeAll()
@@ -124,6 +135,7 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
         guard enabled else {
             if inbox.isEnabled { inbox.restore() }
             watcher.stop()
+            safetyWatcher.stop()
             wanted = false
             refresh()
             return
@@ -153,14 +165,25 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
             watcher.start(folder: saveDirectory, desktopOnlyTagged: false,
                           onNew: { [weak self] in self?.hangCapture($0) },
                           onChange: { [weak self] in self?.manager.prune() })
+            // 桌面兜底真实现：系统可能无视接管设置仍把截图落桌面，
+            // 监听桌面带标记文件并挂绳，保证这类截图不失踪。
+            safetyWatcher.ownWriteConsumer = { [weak self] url in
+                self?.manager.consumeOwnWrite(url) ?? false
+            }
+            safetyWatcher.start(folder: ScreenshotSaver.defaultDirectory, desktopOnlyTagged: true,
+                                onNew: { [weak self] url in
+                Self.logger.warning("截图落桌面（系统无视接管设置）\(url.lastPathComponent, privacy: .public)")
+                self?.hangCapture(url)
+            }, onChange: { [weak self] in self?.manager.prune() })
         } else {
-            // 未接管：监听系统截图落点（默认桌面，带标记过滤）。
+            // 未接管：监听系统截图落点（默认桌面，带标记过滤）；桌面兜底不适用。
             let folder = systemScreenshotFolder()
             let isDesktop = folder.standardizedFileURL.path
                 == ScreenshotSaver.defaultDirectory.standardizedFileURL.path
             watcher.start(folder: folder, desktopOnlyTagged: isDesktop,
                           onNew: { [weak self] in self?.hangCapture($0) },
                           onChange: { [weak self] in self?.manager.prune() })
+            safetyWatcher.stop()
         }
     }
 

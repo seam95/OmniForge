@@ -87,6 +87,8 @@ final class AppCompositionRoot {
     func prepareForApplicationTermination() async -> Bool {
         // 便签：失效全部唤起定时器并撤销通知请求（窗口随 teardown 关闭）。
         FeatureRuntime.shared.manager(for: .stickyNotes, as: StickyNoteManager.self)?.teardown()
+        // 截图：teardown 链含 clothesline → inbox.restore，退出前还原系统截图落点。
+        FeatureRuntime.shared.manager(for: .screenshot, as: ScreenshotFeatureManager.self)?.teardown()
         if let manager = FeatureRuntime.shared.manager(for: .keepAwake, as: KeepAwakeManager.self) {
             await manager.shutdown(reason: .applicationTermination)
             if case .cleanupRequired = manager.state {
