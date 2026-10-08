@@ -2,18 +2,14 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// 飞行/掉落动画出口（真身 Task 10；测试注入替身）。
+/// 飞行/掉落动画出口（真身 CaptureFlightAnimator；测试注入替身）。
+/// 动画器驱动 NSPanel 与 CALayer，必须在主线程；协议同步标注隔离，
+/// 否则 @MainActor 真身的 fly/fall 无法见证 nonisolated 协议要求。
+@MainActor
 protocol CaptureFlightAnimating: AnyObject {
     func fly(image: CGImage, from: CGRect, to: CGRect, tilt: CGFloat, on screen: NSScreen,
              completion: @escaping () -> Void)
     func fall(image: CGImage, card: CGRect, tilt: CGFloat, on screen: NSScreen)
-}
-
-/// Task 10 前的空实现：只完成落地回调，不画动画。
-final class NoopCaptureFlightAnimator: CaptureFlightAnimating {
-    func fly(image: CGImage, from: CGRect, to: CGRect, tilt: CGFloat, on screen: NSScreen,
-             completion: @escaping () -> Void) { completion() }
-    func fall(image: CGImage, card: CGRect, tilt: CGFloat, on screen: NSScreen) {}
 }
 
 /// 晾衣绳运行时：面板窗口、显隐状态机、目录监听、Inbox 接管、飞行动画接线。
@@ -53,7 +49,7 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
          watcher: ScreenshotFolderWatcher,
          inbox: ScreenshotInboxSettings,
          outputConfiguration: ScreenshotOutputConfiguration,
-         animator: CaptureFlightAnimating = NoopCaptureFlightAnimator()) {
+         animator: CaptureFlightAnimating) {
         self.userDefaults = userDefaults
         self.manager = manager
         self.watcher = watcher
