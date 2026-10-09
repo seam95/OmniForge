@@ -267,12 +267,18 @@ struct FeatureFactory {
                 let pinBridge = PinnedScreenshotPipelineBridge(registry: pinRegistry)
                 pipeline.pinService = pinBridge
                 // 晾衣绳子系统：状态机 + 扫描 + Inbox 接管 + 面板协调器。
+                let clotheslineInbox = ScreenshotInboxSettings(userDefaults: userDefaults)
+                let clotheslineWatcher = ScreenshotFolderWatcher()
                 let clotheslineManager = ClotheslineManager(
                     userDefaults: userDefaults,
-                    inboxFolderProvider: { outputConfiguration.load().saveDirectory ?? ScreenshotSaver.defaultDirectory }
+                    // Inbox 目录只在接管开启时存在：关闭时任何文件（含桌面上的）
+                    // 都是外部文件，丢弃仅离绳、绝不删文件（SPEC「文件永不移动」）。
+                    inboxFolderProvider: {
+                        clotheslineInbox.isEnabled
+                            ? outputConfiguration.load().saveDirectory ?? ScreenshotSaver.defaultDirectory
+                            : nil
+                    }
                 )
-                let clotheslineWatcher = ScreenshotFolderWatcher()
-                let clotheslineInbox = ScreenshotInboxSettings(userDefaults: userDefaults)
                 let clothesline = ClotheslineCoordinator(
                     userDefaults: userDefaults,
                     manager: clotheslineManager,
