@@ -198,15 +198,30 @@ struct ScreenshotSettingsSection: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            LabeledContent(strings.clotheslineToggleHotkey) {
-                KeyboardShortcuts.Recorder(for: .clotheslineToggle) { shortcut in
-                    manager?.handleClotheslineRecorderChange(.toggle, shortcut: shortcut)
-                }
+            // 用自研 HotkeyRecorderView（与上方截图热键行同款）：
+            // KeyboardShortcuts.Recorder 需要库的 SPM 资源 bundle，
+            // 手动组装的 .app 未打包该 bundle，初始化即断言崩溃。
+            HStack {
+                Text(strings.clotheslineToggleHotkey)
+                Spacer()
+                HotkeyRecorderView(
+                    displayText: manager?.clotheslineHotkey(for: .toggle)?.displayString ?? "–",
+                    onShortcutChanged: { shortcut in
+                        manager?.handleClotheslineRecorderChange(.toggle, shortcut: shortcut)
+                    },
+                    l10n: state.l10n
+                )
             }
-            LabeledContent(strings.clotheslineHangHotkey) {
-                KeyboardShortcuts.Recorder(for: .clotheslineHang) { shortcut in
-                    manager?.handleClotheslineRecorderChange(.hang, shortcut: shortcut)
-                }
+            HStack {
+                Text(strings.clotheslineHangHotkey)
+                Spacer()
+                HotkeyRecorderView(
+                    displayText: manager?.clotheslineHotkey(for: .hang)?.displayString ?? "–",
+                    onShortcutChanged: { shortcut in
+                        manager?.handleClotheslineRecorderChange(.hang, shortcut: shortcut)
+                    },
+                    l10n: state.l10n
+                )
             }
         }
     }
