@@ -110,6 +110,18 @@ if [[ -d Resources/zh-Hans.lproj ]]; then
     cp -R Resources/zh-Hans.lproj "$STAGE/Contents/Resources/"
 fi
 
+# Step 4b: 嵌入 SPM 依赖资源 bundle（GRDB / KeyboardShortcuts / Vortex 等）。
+# 库代码经 Bundle.module 读自身资源，生成器在「可执行文件旁」与
+# Bundle.main.resourceURL 两处查找：swift run 时前者在位，手动组装的
+# .app 只把可执行文件放进 Contents/MacOS，bundle 不跟过去——必须显式
+# 放进 Contents/Resources，否则首次访问即断言崩溃（如 KeyboardShortcuts
+# 的 Recorder 视图读本地化文案，装包版点开即 SIGTRAP）。
+# 资源 bundle 无可执行文件，不构成嵌套代码，随外层签名覆盖即可。
+for dep_bundle in "$BUILD_DIR"/*.bundle; do
+    [[ -d "$dep_bundle" ]] || continue
+    ditto "$dep_bundle" "$STAGE/Contents/Resources/$(basename "$dep_bundle")"
+done
+
 # Step 4c: 嵌入 Sparkle.framework（自动更新）。
 # SPM 对可执行文件只注入 @loader_path 一个 rpath；.app 内 framework 位于
 # Contents/Frameworks，必须额外补 @loader_path/../Frameworks，否则 dyld 找不到。
