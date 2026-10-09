@@ -36,6 +36,7 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
     private var panel: ClotheslinePanel?
     private var cancellables = Set<AnyCancellable>()
     private var mouseMonitors: [Any] = []
+    private var mouseTimer: Timer?
     private var keyObserver: NSObjectProtocol?
     private var signalSources: [DispatchSourceSignal] = []
     private var isStarted = false
@@ -335,6 +336,8 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
         let screen = ClotheslinePanel.screenUnderPointer() ?? panel?.screen
         let blocked = screen.map(FullScreenSpaceDetector.isActive(on:)) ?? false
         if wanted, !blocked { present() } else { dismiss() }
+        // 绳子在场才轮询鼠标（含藏起状态——还要等顶边推挤唤出）。
+        if wanted { startMouseTracking() } else { stopMouseTracking() }
     }
 
     private func present() {
@@ -377,20 +380,28 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
         manager.maxItems = ClotheslineLayout.capacity(width: panel?.frame.width ?? 1000)
     }
 
-    // MARK: 鼠标驱动（monitor 版，无轮询）
+    // MARK: 鼠标驱动（30Hz 轮询，对齐参照实现）
 
-    private func installMouseMonitors() {
-        // 坐标源必须统一：local monitor 的 event.locationInWindow 是投递目标窗口的
-        // 局部坐标系，本 app 存在前台窗口（如设置窗）时它不等于全局屏幕坐标，
-        // 直接喂给 tick() 会热区误判、穿透误切换、收绳计时错乱。
-        // 因此 local/global 两条 mouseMoved 路径统一读 NSEvent.mouseLocation（全局坐标），
-        // local handler 只透传原事件、不改写。
-        let moved: (NSEvent?) -> Void = { [weak self] _ in
+    /// 鼠标位置用 30Hz Timer 轮询而非 mouseMoved monitor：静止的鼠标不产生
+    /// 事件，「菜单栏停留 0.25s」的判定在 monitor 驱动下永远等不到下一次
+    /// tick，必须晃一下才触发（体感不灵敏）。轮询仅在绳子在场（wanted）时
+    /// 运行，空闲零开销。mouseDown 走 monitor（点击必产生事件）。
+    private func startMouseTracking() {
+        guard mouseTimer == nil else { return }
+        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick(mouse: NSEvent.mouseLocation) }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        mouseTimer = timer
+    }
+
+    private func stopMouseTracking() {
+        mouseTimer?.invalidate()
+        mouseTimer = nil
+    }
+
+    private func installMouseMonitors() {
         mouseMonitors.append(contentsOf: [
-            NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved], handler: moved),
-            NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved], handler: { moved($0); return $0 }),
             NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
                 MainActor.assumeIsolated { self?.menuBarClicked() }
             }),
@@ -580,6 +591,7 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
     }
 
     private func removeMonitors() {
+        stopMouseTracking()
         mouseMonitors.forEach { NSEvent.removeMonitor($0) }
         mouseMonitors.removeAll()
         if let keyObserver { NotificationCenter.default.removeObserver(keyObserver) }
