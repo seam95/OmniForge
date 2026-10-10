@@ -868,6 +868,8 @@ struct Strings: Equatable {
     let clotheslineInboxOfferBody: String
     let clotheslineInboxOfferEnable: String
     let clotheslineInboxOfferLater: String
+    let clotheslineCapacity: String
+    let clotheslineOverflowA11yFormat: String
     let screenshotOutputSection: String
     let screenshotSaveDirectory: String
     let screenshotChooseDirectory: String

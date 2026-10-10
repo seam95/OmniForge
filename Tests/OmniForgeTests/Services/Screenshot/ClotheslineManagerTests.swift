@@ -109,7 +109,7 @@ final class ClotheslineManagerTests: XCTestCase {
 
     @MainActor
     func testCapacityEvictsOldest() throws {
-        manager.maxItems = 2
+        defaults.set(2, forKey: UserDefaultsKeys.screenshotClotheslineCapacity)
         let a = makeFile("a.png"); let b = makeFile("b.png"); let c = makeFile("c.png")
         manager.hang(a); manager.hang(b)
         XCTAssertEqual(manager.liveCount, 2)
@@ -119,6 +119,27 @@ final class ClotheslineManagerTests: XCTestCase {
         XCTAssertTrue(manager.items[0].falling)
         XCTAssertEqual(manager.items.first { !$0.falling }?.url, b)
         XCTAssertEqual(manager.items.last { !$0.falling }?.url, c)
+    }
+
+    @MainActor
+    func testCapacityDefaultsToTwelveAndClampsRange() {
+        XCTAssertEqual(manager.capacityN, 12)
+        defaults.set(0, forKey: UserDefaultsKeys.screenshotClotheslineCapacity)
+        XCTAssertEqual(manager.capacityN, 1)
+        defaults.set(99, forKey: UserDefaultsKeys.screenshotClotheslineCapacity)
+        XCTAssertEqual(manager.capacityN, 20)
+    }
+
+    @MainActor
+    func testApplyCapacityShrinksOldestFirst() throws {
+        defaults.set(3, forKey: UserDefaultsKeys.screenshotClotheslineCapacity)
+        let a = makeFile("a.png"); let b = makeFile("b.png"); let c = makeFile("c.png")
+        manager.hang(a); manager.hang(b); manager.hang(c)
+        XCTAssertEqual(manager.liveCount, 3)
+        defaults.set(1, forKey: UserDefaultsKeys.screenshotClotheslineCapacity)
+        manager.applyCapacity()
+        XCTAssertEqual(manager.liveCount, 1)
+        XCTAssertEqual(manager.items.first { !$0.falling }?.url, c)
     }
 
     @MainActor

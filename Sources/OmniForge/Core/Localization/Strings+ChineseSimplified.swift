@@ -828,6 +828,8 @@ extension Strings {
         clotheslineInboxOfferBody: "截图会立即挂上晾衣绳，不再有浮动缩略图，也不会堆满桌面。拖到文件夹即可保存，点叉号丢弃。随时可关，关闭后系统设置自动还原。",
         clotheslineInboxOfferEnable: "开启",
         clotheslineInboxOfferLater: "暂不",
+        clotheslineCapacity: "最多保留",
+        clotheslineOverflowA11yFormat: "还有 %d 张未展示",
         screenshotOutputSection: "输出",
         screenshotSaveDirectory: "保存目录",
         screenshotChooseDirectory: "选择目录…",

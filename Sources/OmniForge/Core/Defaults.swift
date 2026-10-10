@@ -128,6 +128,7 @@ enum Defaults {
             UserDefaultsKeys.screenshotClotheslineInboxEnabled: false,
             UserDefaultsKeys.screenshotClotheslineInboxOffered: false,
             UserDefaultsKeys.screenshotClotheslineSoundOn: false,
+            UserDefaultsKeys.screenshotClotheslineCapacity: 12,
             UserDefaultsKeys.screenshotClotheslineHotkeyToggleKeyCode: Int(kVK_ANSI_T),
             UserDefaultsKeys.screenshotClotheslineHotkeyToggleModifiers: HotkeyModifiers([.control, .option, .command]).rawValue,
             // hang 热键默认不绑定：两键缺省即未绑定（不出现在默认表）。

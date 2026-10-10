@@ -828,6 +828,8 @@ extension Strings {
         clotheslineInboxOfferBody: "Screenshots will hang on the clothesline instantly, without the floating thumbnail, and will not pile up on your Desktop. Drag one to a folder to keep it, or discard it with the cross. You can turn this off anytime; your settings come back when you do.",
         clotheslineInboxOfferEnable: "Turn on",
         clotheslineInboxOfferLater: "Not now",
+        clotheslineCapacity: "Keep at most",
+        clotheslineOverflowA11yFormat: "%d more photos hidden",
         screenshotOutputSection: "Output",
         screenshotSaveDirectory: "Save folder",
         screenshotChooseDirectory: "Choose Folder…",

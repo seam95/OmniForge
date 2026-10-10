@@ -63,8 +63,16 @@ final class ClotheslineManager: ObservableObject {
 
     /// 卡片帧（窗口坐标），视图上报；面板据此做「仅照片区接收鼠标」。
     var hitRects: [UUID: CGRect] = [:]
-    var maxItems = 8
     var liveCount: Int { items.filter { !$0.falling }.count }
+
+    /// 用户配置的容量（1–20，默认 12），直读 UserDefaults——
+    /// 设置页改值后无需回写，挂载淘汰与裁剪永远取当前值。
+    var capacityN: Int {
+        let raw = userDefaults.integer(forKey: UserDefaultsKeys.screenshotClotheslineCapacity)
+        return userDefaults.object(forKey: UserDefaultsKeys.screenshotClotheslineCapacity) == nil
+            ? 12
+            : min(20, max(1, raw))
+    }
 
     var onFall: ((PeggedPhoto) -> Void)?
 
@@ -113,13 +121,20 @@ final class ClotheslineManager: ObservableObject {
         var item = PeggedPhoto(url: url, thumb: thumb, tilt: PeggedPhoto.makeTilt())
         item.flying = flying
         items.append(item)
-        // 挂满时最旧一张从绳尾掉落。
-        while liveCount > maxItems, let oldest = items.first(where: { !$0.falling }) {
+        // 挂满时最旧一张从绳尾掉落（阈值=用户容量 n）。
+        while liveCount > capacityN, let oldest = items.first(where: { !$0.falling }) {
             drop(oldest.id, quietly: true)
         }
         save()
         if !quietly { soundPlayer.play(name: "Tink", volume: 0.35) }
         return item.id
+    }
+
+    /// 容量调小后立即裁剪：最旧的先掉，直到回到 n 以内。
+    func applyCapacity() {
+        while liveCount > capacityN, let oldest = items.first(where: { !$0.falling }) {
+            drop(oldest.id, quietly: true)
+        }
     }
 
     func land(_ id: UUID) {

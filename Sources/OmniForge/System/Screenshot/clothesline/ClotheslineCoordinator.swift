@@ -85,7 +85,6 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
         host.sizingOptions = []
         panel = ClotheslinePanel(content: host)
         panel?.placeOnScreen(nil)
-        updateCapacity()
         manager.startBreeze()
         manager.onFall = { [weak self] item in self?.fall(item) }
         manager.$items
@@ -247,6 +246,11 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
         inbox.apply(targetDirectory: saveDirectory)   // 目录变化后重写接管（幂等）
     }
 
+    /// 容量调小后立即裁剪（设置页 Stepper 入口）。
+    func applyCapacity() {
+        manager.applyCapacity()
+    }
+
     /// 首启一次性询问 Inbox 接管；点「开启」才动系统设置。
     /// 已接管或保存目录为桌面时不打扰（桌面场景设置页有冲突说明）。
     private func offerInbox() {
@@ -297,7 +301,6 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
             keepOpen = true
             wanted = true
             panel?.placeOnScreen(ClotheslinePanel.screenUnderPointer())
-            updateCapacity()
             refresh()
             reveal(pinned: true)
         }
@@ -315,7 +318,6 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
         if live > lastLiveCount {
             panel?.placeOnScreen(pendingScreen)
             pendingScreen = nil
-            updateCapacity()
             wanted = true
             refresh()
             reveal(peekFor: Self.peekSeconds)
@@ -376,10 +378,6 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
         }
     }
 
-    private func updateCapacity() {
-        manager.maxItems = ClotheslineLayout.capacity(width: panel?.frame.width ?? 1000)
-    }
-
     // MARK: 鼠标驱动（30Hz 轮询，对齐参照实现）
 
     /// 鼠标位置用 30Hz Timer 轮询而非 mouseMoved monitor：静止的鼠标不产生
@@ -438,7 +436,6 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
                     hotZoneSince = nil
                     if panel?.screen !== screen {
                         panel?.placeOnScreen(screen)
-                        updateCapacity()
                     }
                     refresh()
                     reveal()
