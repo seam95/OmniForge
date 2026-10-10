@@ -50,14 +50,17 @@ enum AggregationModelID {
 
     /// 切分结果组装：key 或上游模型名为空 → malformed；末尾 1M 标记（大小写不敏感）剥出。
     private static func assemble(key: String, rawModel: String) -> Decoded {
-        var model = rawModel
-        var oneM = false
+        let stripped = stripOneMMarker(rawModel)
+        guard !key.isEmpty, !stripped.model.isEmpty else { return .malformed }
+        return .stack(key: key, model: stripped.model, oneM: stripped.oneM)
+    }
+
+    /// 剥掉末尾 1M 标记（大小写不敏感）——发布源推导与解码共用同一口径。
+    static func stripOneMMarker(_ model: String) -> (model: String, oneM: Bool) {
         if model.lowercased().hasSuffix(oneMMarker.lowercased()) {
-            model = String(model.dropLast(oneMMarker.count))
-            oneM = true
+            return (String(model.dropLast(oneMMarker.count)), true)
         }
-        guard !key.isEmpty, !model.isEmpty else { return .malformed }
-        return .stack(key: key, model: model, oneM: oneM)
+        return (model, false)
     }
 }
 
