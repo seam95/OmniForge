@@ -83,7 +83,11 @@ final class ClotheslineManager: ObservableObject {
     private let inboxFolderProvider: () -> URL?
     private let now: () -> Date
     /// 自家写入排除集：save/hang 意图落盘的路径，watcher 不得自动挂绳。
+    /// 配 FIFO 队列封顶：缓存目录不被任何 watcher 监听，其登记永不被消费，
+    /// 不设上限会随确认次数无限增长（无界缓存）。
     private var ownWrites: Set<String> = []
+    private var ownWriteQueue: [String] = []
+    private static let ownWritesLimit = 64
 
     var soundOn: Bool {
         get {
@@ -287,7 +291,15 @@ final class ClotheslineManager: ObservableObject {
         URL(fileURLWithPath: path).resolvingSymlinksInPath().path
     }
 
-    func noteOwnWrite(_ path: String) { ownWrites.insert(Self.normalizedPath(path)) }
+    func noteOwnWrite(_ path: String) {
+        let normalized = Self.normalizedPath(path)
+        guard !ownWrites.contains(normalized) else { return }
+        ownWrites.insert(normalized)
+        ownWriteQueue.append(normalized)
+        while ownWriteQueue.count > Self.ownWritesLimit {
+            ownWrites.remove(ownWriteQueue.removeFirst())
+        }
+    }
 
     @discardableResult
     func consumeOwnWrite(_ url: URL) -> Bool { ownWrites.remove(Self.normalizedPath(url.path)) != nil }

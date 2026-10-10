@@ -134,6 +134,17 @@ final class ClotheslineManagerTests: XCTestCase {
     }
 
     @MainActor
+    func testOwnWriteSetIsBounded() {
+        // 缓存目录不被监听、登记永不被消费：集合必须封顶，否则无界增长。
+        for i in 0..<200 {
+            manager.noteOwnWrite("/tmp/cache/shot-\(i).png")
+        }
+        // 通过公开行为验证有界：200 次登记后，最早的必然已被淘汰、最近的仍可消费。
+        XCTAssertFalse(manager.consumeOwnWrite(URL(fileURLWithPath: "/tmp/cache/shot-0.png")))
+        XCTAssertTrue(manager.consumeOwnWrite(URL(fileURLWithPath: "/tmp/cache/shot-199.png")))
+    }
+
+    @MainActor
     func testApplyCapacityShrinksOldestFirst() throws {
         defaults.set(3, forKey: UserDefaultsKeys.screenshotClotheslineCapacity)
         let a = makeFile("a.png"); let b = makeFile("b.png"); let c = makeFile("c.png")
