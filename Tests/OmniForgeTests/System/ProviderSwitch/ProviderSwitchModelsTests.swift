@@ -343,4 +343,57 @@ final class ProviderSwitchModelsTests: XCTestCase {
         XCTAssertEqual(makeCodexProfile().codexModelList, [])
         XCTAssertEqual(makeCodexProfile(codexModels: ["", "   "]).codexModelList, [])
     }
+
+    // MARK: - Claude 聚合发布源
+
+    private func makeClaudeProfile(
+        model: String? = nil,
+        mapping: ProviderModelMapping? = nil,
+        stackModels: [ClaudeStackModel]? = nil
+    ) -> ProviderProfile {
+        ProviderProfile(
+            id: "kimi",
+            name: "Kimi For Coding",
+            tool: .claudeCode,
+            baseURL: "https://api.kimi.com/coding",
+            token: "sk-kimi",
+            modelOverride: model,
+            modelMapping: mapping,
+            stackModels: stackModels,
+            extraEnv: [:],
+            managedBy: ProviderProfile.managedByMarker
+        )
+    }
+
+    func test_aggregationModels_prefersStackModelsWhenConfigured() {
+        let profile = makeClaudeProfile(
+            model: "ignored-fallback",
+            mapping: ProviderModelMapping(sonnet: "s1", opus: "o1", fable: nil, haiku: "h1", subagent: "sub1"),
+            stackModels: [ClaudeStackModel(model: "k3", displayName: "Kimi K3", oneM: false)]
+        )
+        XCTAssertEqual(profile.aggregationModels.map(\.model), ["k3"])
+    }
+
+    func test_aggregationModels_emptyStackModelsPublishesNothing() {
+        let profile = makeClaudeProfile(model: "fallback", mapping: ProviderModelMapping(sonnet: "s1"), stackModels: [])
+        XCTAssertTrue(profile.aggregationModels.isEmpty)
+    }
+
+    func test_aggregationModels_fallsBackToMappingInFixedOrderExcludingSubagent() {
+        let profile = makeClaudeProfile(
+            model: "main-model",
+            mapping: ProviderModelMapping(sonnet: "s1", opus: "o1", fable: "f1", haiku: "h1", subagent: "sub1")
+        )
+        XCTAssertEqual(profile.aggregationModels.map(\.model), ["main-model", "o1", "s1", "h1", "f1"])
+    }
+
+    func test_aggregationModels_fallsBackToModelOverrideAloneWhenNoMapping() {
+        XCTAssertEqual(makeClaudeProfile(model: "solo").aggregationModels.map(\.model), ["solo"])
+    }
+
+    func test_claudeStackModel_roundTripsThroughCodable() throws {
+        let model = ClaudeStackModel(model: "glm-5.2", displayName: "GLM 5.2", oneM: true)
+        let decoded = try JSONDecoder().decode(ClaudeStackModel.self, from: JSONEncoder().encode(model))
+        XCTAssertEqual(decoded, model)
+    }
 }

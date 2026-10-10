@@ -170,6 +170,36 @@ final class ProviderSwitchProfileStoreTests: XCTestCase {
         )
     }
 
+    func test_list_roundTripsStackModels() throws {
+        let store = makeStore()
+        let stackModels = [
+            ClaudeStackModel(model: "k3", displayName: "Kimi K3", oneM: false),
+            ClaudeStackModel(model: "glm-5.2", displayName: "GLM 5.2", oneM: true),
+        ]
+        try store.upsert(ProviderProfile(
+            id: "",
+            name: "GLM",
+            tool: .claudeCode,
+            baseURL: "https://open.bigmodel.cn/api/anthropic",
+            token: "sk-glm",
+            modelOverride: "glm-5.3",
+            stackModels: stackModels,
+            managedBy: "omniforge"
+        ))
+        let listed = store.list(for: .claudeCode)
+        XCTAssertEqual(listed.count, 1)
+        XCTAssertEqual(listed[0].stackModels, stackModels)
+    }
+
+    func test_list_legacyJSONWithoutStackModelsDecodesNil() throws {
+        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+        let legacy = claudeDir.appendingPathComponent("glm.json")
+        try Data(#"{"name":"GLM","env":{"ANTHROPIC_AUTH_TOKEN":"sk-x","ANTHROPIC_BASE_URL":"https://x.example"},"_managedBy":"omniforge"}"#.utf8).write(to: legacy)
+        let listed = makeStore().list(for: .claudeCode)
+        XCTAssertEqual(listed.count, 1)
+        XCTAssertNil(listed[0].stackModels, "无 stackModels 键的旧数据解码为 nil（未配置）")
+    }
+
     func test_decode_oldFormatMapsSmallFastModelToHaiku() throws {
         try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
         let old = claudeDir.appendingPathComponent("glm.json")

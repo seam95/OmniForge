@@ -214,11 +214,21 @@ enum ProviderProfileFileCodec {
             for (key, value) in profile.extraEnv where !value.isEmpty {
                 env[key] = value
             }
-            let root: [String: Any] = [
+            var root: [String: Any] = [
                 "name": profile.name,
                 "env": env,
                 managedByKey: ProviderProfile.managedByMarker,
             ]
+            // 聚合发布源：逐条编码（displayName 缺省不写键）；nil 不写，空数组写 []——两者语义不同。
+            if let stackModels = profile.stackModels {
+                root["stackModels"] = stackModels.map { entry -> [String: Any] in
+                    var encoded: [String: Any] = ["model": entry.model, "oneM": entry.oneM]
+                    if let displayName = entry.displayName {
+                        encoded["displayName"] = displayName
+                    }
+                    return encoded
+                }
+            }
             return try? JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
         case .codex:
             var document = TOMLFile()
@@ -265,6 +275,15 @@ enum ProviderProfileFileCodec {
             // 直连模式经 extraEnv 原样合并，导入时必须保留。
             let owned = ProviderTool.claudeCoreEnvKeys
             let extraEnv = env.filter { !owned.contains($0.key) && !$0.value.isEmpty }
+            // 聚合发布源：无该键 → nil（未配置，按映射推导）；有键 → 逐条解码（空数组即「什么都不发布」）。
+            let stackModels = (root["stackModels"] as? [[String: Any]])?.compactMap { raw -> ClaudeStackModel? in
+                guard let model = raw["model"] as? String, !model.isEmpty else { return nil }
+                return ClaudeStackModel(
+                    model: model,
+                    displayName: raw["displayName"] as? String,
+                    oneM: raw["oneM"] as? Bool ?? false
+                )
+            }
             return ProviderProfile(
                 id: fallbackID,
                 name: root["name"] as? String ?? fallbackID,
@@ -273,6 +292,7 @@ enum ProviderProfileFileCodec {
                 token: token,
                 modelOverride: env["ANTHROPIC_MODEL"],
                 modelMapping: mapping.isEmpty ? nil : mapping,
+                stackModels: stackModels,
                 extraEnv: extraEnv,
                 managedBy: root[managedByKey] as? String
             )

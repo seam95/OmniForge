@@ -19,6 +19,10 @@ struct ProviderProfile: Identifiable, Codable, Equatable {
     var codexModels: [String]?
     /// Claude Code 角色模型映射（对齐 ccswitch）；Codex 为 nil。
     var modelMapping: ProviderModelMapping?
+    /// Claude Code 聚合发布源（有序）。nil = 未配置（按模型映射推导发布）；
+    /// 空数组 = 用户主动清空（什么都不发布）——两者语义相反，不可混淆。
+    /// Codex 侧恒为 nil（Codex 聚合发布走 `codexModels`）。本期无 UI 编辑入口。
+    var stackModels: [ClaudeStackModel]?
     /// 额外 env（如 `CLAUDE_CODE_EFFORT_LEVEL=max`），随 profile 原样写入。
     var extraEnv: [String: String]
     /// 来源标记：本 App 写入为 "omniforge"；CCQ 等外部文件为 nil（只读展示，可收编/编辑）。
@@ -34,6 +38,7 @@ struct ProviderProfile: Identifiable, Codable, Equatable {
         reasoningEffort: String? = nil,
         codexModels: [String]? = nil,
         modelMapping: ProviderModelMapping? = nil,
+        stackModels: [ClaudeStackModel]? = nil,
         extraEnv: [String: String] = [:],
         managedBy: String? = nil
     ) {
@@ -46,6 +51,7 @@ struct ProviderProfile: Identifiable, Codable, Equatable {
         self.reasoningEffort = reasoningEffort
         self.codexModels = codexModels
         self.modelMapping = modelMapping
+        self.stackModels = stackModels
         self.extraEnv = extraEnv
         self.managedBy = managedBy
     }
@@ -103,5 +109,25 @@ struct ProviderProfile: Identifiable, Codable, Equatable {
             seen.insert(trimmed)
             return trimmed
         }
+    }
+
+    // MARK: - Claude 聚合发布源
+
+    /// 聚合模式下的 Claude 有序发布源（顺序即客户端选择器里的顺序）。
+    /// - `stackModels != nil`（含空数组）→ 原样返回：空数组是用户主动清空，语义为「什么都不发布」。
+    /// - 否则按 `modelOverride` → 映射 opus → sonnet → haiku → fable 顺序推导，跳过空值，**不含 subagent**；
+    ///   全空时返回 `[]`。推导条目的 `oneM` 恒 false——1M 由发布方按模型名字面标记识别。
+    var aggregationModels: [ClaudeStackModel] {
+        if let stackModels { return stackModels }
+        var models: [ClaudeStackModel] = []
+        if let model = modelOverride, !model.isEmpty {
+            models.append(ClaudeStackModel(model: model, displayName: nil, oneM: false))
+        }
+        if let modelMapping {
+            for entry in modelMapping.orderedPublishEntries {
+                models.append(ClaudeStackModel(model: entry.model, displayName: entry.displayName, oneM: false))
+            }
+        }
+        return models
     }
 }
