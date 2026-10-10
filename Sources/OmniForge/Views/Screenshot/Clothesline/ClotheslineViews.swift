@@ -184,6 +184,18 @@ struct PeggedPhotoView: View {
                     .scaleEffect(hovering ? 1 : 0.6)
                     .allowsHitTesting(false)
             }
+            // 右上角复制按钮：与 × 同款玻璃圆钮、同显隐节奏（点击穿透 GrabPhotoView 命中）。
+            .overlay(alignment: .topTrailing) {
+                Image(systemName: "doc.on.doc")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 20, height: 20)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .padding(3)
+                    .opacity(hovering && !dragging ? 1 : 0)
+                    .scaleEffect(hovering ? 1 : 0.6)
+                    .allowsHitTesting(false)
+            }
             .overlay(GrabArea(item: item, manager: manager, menuProvider: menuProvider))
             .overlay(alignment: .bottom) {
                 if copied {

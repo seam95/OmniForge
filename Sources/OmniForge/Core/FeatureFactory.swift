@@ -290,9 +290,13 @@ struct FeatureFactory {
                 )
                 // 管线钩子桥：pipeline 强持桥、桥弱持协调器（断环不变量见桥定义）。
                 pipeline.clotheslineHooks = ClotheslinePipelineHooksBridge(coordinator: clothesline)
-                // Markup 写回刷新缩略图；长按进标注。
+                // Markup 写回：刷新绳上缩略图 + 复制进剪贴板（标注完粘贴即用）。
                 MarkupEditingService.shared.onSaved = { url in
                     clotheslineManager.reloadThumbnail(for: url)
+                }
+                MarkupEditingService.shared.onCopied = { url in
+                    let id = clotheslineManager.items.first { $0.url == url && !$0.falling }?.id
+                    clotheslineManager.copyFile(url, id: id)
                 }
                 clotheslineManager.markupEditor = { MarkupEditingService.shared.edit($0) }
                 clotheslineManager.copiedLabelProvider = { L10n(userDefaults: userDefaults).s.clotheslineCopied }

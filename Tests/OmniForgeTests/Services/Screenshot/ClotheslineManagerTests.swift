@@ -8,7 +8,10 @@ private final class FakeSoundPlayer: ClotheslineSoundPlaying {
 
 // 方法集对齐仓库既有 PasteboardWriting 协议（clearContents/setString/setData/writeObjects）。
 private final class FakePasteboard: PasteboardWriting {
+    /// 最近一次实例（测试断言写入内容用）。
+    static weak var lastInstance: FakePasteboard?
     var written: [Any] = []
+    init() { FakePasteboard.lastInstance = self }
     func clearContents() { written.removeAll() }
     @discardableResult
     func setString(_ string: String, forType type: NSPasteboard.PasteboardType) -> Bool {
@@ -264,6 +267,25 @@ final class ClotheslineManagerTests: XCTestCase {
         XCTAssertEqual(m.liveCount, 1)
         XCTAssertFalse(FileManager.default.fileExists(atPath: a.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: b.path))
+    }
+
+    @MainActor
+    func testCopyFileWritesPasteboardAndShowsBubble() throws {
+        let url = makeFile()
+        let id = try XCTUnwrap(manager.hang(url))
+        manager.copyFile(url, id: id)
+        XCTAssertEqual(manager.copiedID, id)          // 「已复制」气泡
+        let pb = FakePasteboard.lastInstance
+        XCTAssertEqual(pb?.written.count, 1)          // 写入了剪贴板（清空后写入=第一项）
+
+    }
+
+    @MainActor
+    func testCopyFileWithoutIDDoesNotShowBubble() throws {
+        let url = makeFile()
+        manager.copyFile(url)                          // 无 id（标注回调路径）：只复制不弹泡
+        XCTAssertNil(manager.copiedID)
+        XCTAssertEqual(FakePasteboard.lastInstance?.written.count, 1)
     }
 
     @MainActor

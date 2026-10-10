@@ -178,11 +178,18 @@ final class ClotheslineManager: ObservableObject {
 
     func copy(_ id: UUID) {
         guard let item = items.first(where: { $0.id == id }) else { return }
+        copyFile(item.url, id: id)
+    }
+
+    /// 把文件复制进剪贴板（PNG + 文件 URL，清空后写入=剪贴板第一项）。
+    /// 标注完成的回调与单击复制共用；id 非空时弹「已复制」气泡。
+    func copyFile(_ url: URL, id: UUID? = nil) {
         let entry = NSPasteboardItem()
-        if let png = pngData(item.url) { entry.setData(png, forType: .png) }
-        entry.setString(item.url.absoluteString, forType: .fileURL)
+        if let png = pngData(url) { entry.setData(png, forType: .png) }
+        entry.setString(url.absoluteString, forType: .fileURL)
         pasteboard.clearContents()
         _ = pasteboard.writeObjects([entry])
+        guard let id else { return }
         copiedID = id
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: 1_200_000_000)

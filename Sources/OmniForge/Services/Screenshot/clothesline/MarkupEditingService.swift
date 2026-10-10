@@ -25,6 +25,8 @@ final class MarkupEditingService: NSObject, NSSharingServiceDelegate {
 
     /// 编辑写回成功后回调（刷新绳上缩略图）。
     var onSaved: (URL) -> Void = { _ in }
+    /// 编辑写回成功后回调（把标注结果复制进剪贴板，粘贴即用）。
+    var onCopied: (URL) -> Void = { _ in }
 
     private var editing: URL?
     private let io: MarkupFileIO
@@ -49,21 +51,32 @@ final class MarkupEditingService: NSObject, NSSharingServiceDelegate {
         scheduleMarkupWindowMovable()
     }
 
-    /// 分享服务把 Markup 扩展 UI 呈现在我们进程里的一个**无标题无边框**窗口
-    /// （实测 styleMask 为 0，isMovableByWindowBackground 为 false）：没有标题栏
-    /// 可拖，点内容也不移动窗口——表现为「标注窗不能移动」。系统缩略图那条路
-    /// 给的是带标题栏的窗口所以能拖。这里延迟一瞬找到该窗口并打开背景拖动，
-    /// 恢复可移动性（拖工具栏/空白区即可移动；画布区域仍归绘制消费，不受影响）。
-    private func scheduleMarkupWindowMovable() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.makeMarkupWindowMovable()
+    /// 分享服务把 Markup 扩展 UI 呈现在我们进程里的**无标题无边框**窗口
+    /// （实测 styleMask 为 0），且它是离屏宿主窗的**子窗口**——子窗口只能随父
+    /// 移动，单开 isMovableByWindowBackground 无效（探针实证：属性写上也不动）。
+    /// 系统缩略图那条路给的是带标题栏的独立窗口所以能拖。
+    /// 修复：摘掉父窗口成为独立顶层窗 + 开背景拖动，恢复 AppKit 标准的
+    /// 无边框可移动语义（拖工具栏/空白区移动；按钮与画布各自消费事件不受影响）。
+    /// 标注窗约 1s 后才出现，故轮询重试至多 ~3s。
+    private func scheduleMarkupWindowMovable(attempt: Int = 0) {
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard let self else { return }
+            if self.makeMarkupWindowMovable() { return }
+            guard attempt < 10 else { return }
+            self.scheduleMarkupWindowMovable(attempt: attempt + 1)
         }
     }
 
-    private func makeMarkupWindowMovable() {
+    @discardableResult
+    private func makeMarkupWindowMovable() -> Bool {
+        var applied = false
         for window in NSApp.windows where window.title == "Markup" {
+            window.parent = nil
             window.isMovableByWindowBackground = true
+            applied = true
         }
+        return applied
     }
 
     // MARK: NSSharingServiceDelegate
@@ -72,9 +85,70 @@ final class MarkupEditingService: NSObject, NSSharingServiceDelegate {
         MainActor.assumeIsolated {
             guard let target = editing else { return }
             editing = nil
-            if Self.writeBack(items: items, target: target, io: io) {
-                onSaved(target)
+            let item = items.first
+            // URL / NSImage 两种同步形态走纯分发（可测）；其余（NSItemProvider）
+            // 走异步装载——实测系统扩展常回 provider，漏掉它会静默丢失标注结果。
+            if let item, Self.writeBack(items: [item], target: target, io: io) {
+                finish(target)
+            } else if let provider = item as? NSItemProvider {
+                loadProvider(provider, into: target)
+            } else {
+                log.error("Markup 返回了无法处理的形态：\(String(describing: type(of: item)), privacy: .public)")
             }
+        }
+    }
+
+    /// 写回成功后的收尾：绳上缩略图刷新 + 复制进剪贴板。
+    private func finish(_ target: URL) {
+        onSaved(target)
+        onCopied(target)
+    }
+
+    /// NSItemProvider 异步装载：优先文件 URL，其次原格式/任意图片数据。
+    private func loadProvider(_ provider: NSItemProvider, into target: URL) {
+        let types = provider.registeredTypeIdentifiers
+        log.notice("Markup provider types: \(types.joined(separator: ", "), privacy: .public)")
+        if types.contains(UTType.fileURL.identifier) {
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                DispatchQueue.main.async {
+                    if let url { self.writeBackFile(url, to: target) }
+                }
+            }
+            return
+        }
+        let original = UTType(filenameExtension: target.pathExtension)?.identifier
+        let imageType = types.first { $0 == original }
+            ?? types.first { UTType($0)?.conforms(to: .image) == true }
+        guard let imageType else {
+            log.error("Markup provider 无可识别的图片类型")
+            return
+        }
+        provider.loadDataRepresentation(forTypeIdentifier: imageType) { data, _ in
+            DispatchQueue.main.async {
+                self.writeBackData(data, to: target)
+            }
+        }
+    }
+
+    private func writeBackFile(_ source: URL, to target: URL) {
+        if source.standardizedFileURL == target.standardizedFileURL {
+            finish(target)   // 扩展自行覆盖了原文件
+        } else {
+            writeBackData(try? Data(contentsOf: source), to: target)
+        }
+    }
+
+    private func writeBackData(_ data: Data?, to target: URL) {
+        guard let data, !data.isEmpty else {
+            log.error("Markup provider 未给出有效数据")
+            return
+        }
+        do {
+            try data.write(to: target, options: .atomic)
+            finish(target)
+        } catch {
+            log.error("Markup 写回失败 \(error.localizedDescription, privacy: .public)")
+            NSSound.beep()
         }
     }
 

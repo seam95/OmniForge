@@ -37,6 +37,7 @@ struct GrabArea: NSViewRepresentable {
         // 二期手势：单击=标注（直进系统 Markup）、双击=复制。
         view.onClick = { [weak manager] in manager?.markup(id) }
         view.onDoubleClick = { [weak manager] in manager?.copy(id) }
+        view.onCopy = { [weak manager] in manager?.copy(id) }
         view.onDragStart = { [weak manager] in manager?.draggingID = id }
         view.onDragEnd = { [weak manager] in manager?.prune() }
         view.onTrash = { [weak manager] in manager?.trash(id) }
@@ -61,6 +62,7 @@ final class GrabPhotoView: NSView, NSDraggingSource {
     var dragImage: NSImage?
     var onClick: () -> Void = {}
     var onDoubleClick: () -> Void = {}
+    var onCopy: () -> Void = {}
     var onDragStart: () -> Void = {}
     var onDragEnd: () -> Void = {}
     var onTrash: () -> Void = {}
@@ -78,14 +80,33 @@ final class GrabPhotoView: NSView, NSDraggingSource {
     static func defaultMenu() -> NSMenu { NSMenu() }
 
     private func isInCross(_ event: NSEvent) -> Bool {
+        isInCorner(event, corner: .topLeft)
+    }
+
+    private func isInCopy(_ event: NSEvent) -> Bool {
+        isInCorner(event, corner: .topRight)
+    }
+
+    private enum Corner { case topLeft, topRight }
+
+    /// 角标热区（左上 × / 右上复制）：26pt 见方，覆写 isFlipped 的 y 基准。
+    private func isInCorner(_ event: NSEvent, corner: Corner) -> Bool {
         let p = convert(event.locationInWindow, from: nil)
-        let corner = NSRect(x: 0, y: isFlipped ? 0 : bounds.height - Self.crossHitSize,
-                            width: Self.crossHitSize, height: Self.crossHitSize)
-        return corner.contains(p)
+        let size = Self.crossHitSize
+        let rect: NSRect
+        switch corner {
+        case .topLeft:
+            rect = NSRect(x: 0, y: isFlipped ? 0 : bounds.height - size, width: size, height: size)
+        case .topRight:
+            rect = NSRect(x: bounds.width - size, y: isFlipped ? 0 : bounds.height - size,
+                          width: size, height: size)
+        }
+        return rect.contains(p)
     }
 
     override func mouseDown(with event: NSEvent) {
         if isInCross(event) { downPoint = nil; onDiscard(); return }
+        if isInCopy(event) { downPoint = nil; onCopy(); return }
         if event.clickCount == 2 {
             // 第二击到来：取消挂起的单击动作，双击语义独占。
             singleClickTask?.cancel()
