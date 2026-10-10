@@ -89,6 +89,28 @@ final class AggregationProxyTests: XCTestCase {
                 body: Data("{}".utf8)
             )))
         }
+
+        /// 数据面不经本 stub（单测只走 `handle` 的完成式聚合）；记录后立即完成。
+        func stream(
+            request: AggregationHTTPRequest,
+            to target: AggregationProxyTarget,
+            protocol: AggregationClientProtocol,
+            onHead: @escaping (Int, [String: String]) -> Void,
+            onChunk: @escaping (Data) -> Void,
+            onComplete: @escaping (Error?) -> Void
+        ) {
+            lastRequest = request
+            lastTarget = target
+            lastProtocol = `protocol`
+            let response = stubResponse ?? AggregationHTTPResponse(
+                statusCode: 200,
+                headers: ["content-type": "application/json"],
+                body: Data("{}".utf8)
+            )
+            onHead(response.statusCode, response.headers)
+            onChunk(response.body)
+            onComplete(nil)
+        }
     }
 
     private final class StubModelLister: AggregationProxyModelListing {

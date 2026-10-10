@@ -9,6 +9,9 @@ enum AggregationForwardError: Error, Equatable {
 /// 上游转发与 SSE 流式 — URLSession **delegate** 形态（不用 completion handler：会缓冲整个响应体）。
 /// 每个进行中的转发按 `taskIdentifier` 独立登记（`Stream`），连接与目标解析不共享可变状态。
 final class AggregationURLSessionForwarder: NSObject, AggregationForwarding {
+    /// 请求体上限默认值（连接层超限时先拦 413，不读 body）。
+    static let defaultBodyLimit = 200 * 1024 * 1024
+
     /// 请求体上限（连接层超限时先拦；这里只做转发侧防御，不重复读 body）。
     private let bodyLimit: Int
     private var session: URLSession!
@@ -44,7 +47,7 @@ final class AggregationURLSessionForwarder: NSObject, AggregationForwarding {
         var body = Data()
     }
 
-    init(bodyLimit: Int = 200 * 1024 * 1024) {
+    init(bodyLimit: Int = AggregationURLSessionForwarder.defaultBodyLimit) {
         self.bodyLimit = bodyLimit
         super.init()
         let configuration = URLSessionConfiguration.ephemeral

@@ -1,12 +1,23 @@
 import Foundation
+import Network
 
-/// 上游转发边界（完成式）。生产实现是 `AggregationURLSessionForwarder`（Task 14）。
+/// 上游转发边界。完成式 `forward` 供单测/冒烟聚合；生产数据面走流式 `stream`
+/// （完成式会缓冲整个响应体，与 SSE 逐块转发冲突）。
 protocol AggregationForwarding: AnyObject {
     func forward(
         _ request: AggregationHTTPRequest,
         to target: AggregationProxyTarget,
         protocol: AggregationClientProtocol,
         completion: @escaping (Result<AggregationHTTPResponse, Error>) -> Void
+    )
+    /// 流式转发。`onHead` 在首块**之前**回调（连接层据此先写状态行与响应头）。
+    func stream(
+        request: AggregationHTTPRequest,
+        to target: AggregationProxyTarget,
+        protocol: AggregationClientProtocol,
+        onHead: @escaping (Int, [String: String]) -> Void,
+        onChunk: @escaping (Data) -> Void,
+        onComplete: @escaping (Error?) -> Void
     )
 }
 
@@ -21,24 +32,99 @@ enum AggregationDispatch: Equatable {
     case forward(request: AggregationHTTPRequest, target: AggregationProxyTarget, protocol: AggregationClientProtocol)
 }
 
+/// 代理启动失败。
+enum AggregationProxyError: Error, Equatable {
+    /// 端口探测全部被占（顺延 maxAttempts 次仍无可绑端口）——不写任何配置。
+    case allPortsTaken
+    /// 已在运行。
+    case alreadyRunning
+}
+
+/// 代理服务边界（编排层持此协议；测试注入「必然启动失败」的 stub）。
+protocol AggregationProxying: AnyObject {
+    var isRunning: Bool { get }
+    var resolvedPort: UInt16? { get }
+    /// 代理异常退出（非主动 stop）时触发——编排层看门狗挂钩。
+    var onUnexpectedStop: (() -> Void)? { get set }
+    func start() throws
+    func stop()
+}
+
 /// 聚合代理主体 — 判定与搬运分层：`dispatch` 是同步纯函数（路由表、miss 信封、
 /// 模型名改写、发现端点在此完成判定，完全可测）；`handle` 把完成式 `forward`
-/// 聚合起来，**仅供单测与 Task 20 以前的冒烟**——生产路径（Task 15 的 NWListener
-/// 数据面）调用 `dispatch` + Task 14 的 `stream` 流式转发，`handle` 会缓冲整个
-/// 响应体，与 SSE 逐块转发的规格冲突。
-final class AggregationProxy {
+/// 聚合起来，**仅供单测与 Task 20 以前的冒烟**——生产路径是本文件的 NWListener
+/// 数据面：`dispatch` + Task 14 的 `stream` 流式转发（`handle` 会缓冲整个响应体，
+/// 与 SSE 逐块转发的规格冲突）。
+final class AggregationProxy: AggregationProxying {
     private let resolver: AggregationResolving
     private let modelLister: AggregationProxyModelListing
     private let forwarder: AggregationForwarding
+    private let defaults: UserDefaults
+    /// 连接数据面队列。每连接一个独立状态机，无共享可变状态。
+    private let connectionQueue = DispatchQueue(label: "AggregationProxy.connections")
+
+    /// 监听器。只在主线程访问（start/stop 与状态回调均收敛到主线程）。
+    private var listener: NWListener?
+
+    private(set) var resolvedPort: UInt16?
+    var onUnexpectedStop: (() -> Void)?
 
     init(
         resolver: AggregationResolving,
         modelLister: AggregationProxyModelListing,
-        forwarder: AggregationForwarding
+        forwarder: AggregationForwarding,
+        defaults: UserDefaults = .standard
     ) {
         self.resolver = resolver
         self.modelLister = modelLister
         self.forwarder = forwarder
+        self.defaults = defaults
+    }
+
+    // MARK: - 服务生命周期
+
+    var isRunning: Bool { listener != nil }
+
+    func start() throws {
+        if isRunning { throw AggregationProxyError.alreadyRunning }
+        // 编排层保证「先起代理、成功才写配置」；端口全占 → 抛错，调用方不写任何配置。
+        guard let port = AggregationPortAllocator.resolvePersisted(defaults: defaults) else {
+            throw AggregationProxyError.allPortsTaken
+        }
+        let listener = try NWListener(using: .tcp, on: NWEndpoint.Port(rawValue: port)!)
+        listener.newConnectionHandler = { [weak self] connection in
+            self?.handleConnection(connection)
+        }
+        listener.stateUpdateHandler = { [weak self] state in
+            // 状态回调收敛到主线程：listener / resolvedPort 只在主线程访问。
+            DispatchQueue.main.async {
+                guard let self else { return }
+                switch state {
+                case .failed, .cancelled:
+                    // 非本实例主动 stop（self.listener 已换人/置空）才视为异常退出。
+                    if self.listener === listener {
+                        self.handleUnexpectedStop()
+                    }
+                default:
+                    break
+                }
+            }
+        }
+        listener.start(queue: connectionQueue)
+        self.listener = listener
+        resolvedPort = port
+    }
+
+    func stop() {
+        listener?.cancel()
+        listener = nil
+        resolvedPort = nil
+    }
+
+    private func handleUnexpectedStop() {
+        listener = nil
+        resolvedPort = nil
+        onUnexpectedStop?()
     }
 
     // MARK: - 判定（同步纯函数）
@@ -106,8 +192,8 @@ final class AggregationProxy {
         case .forward(let forwarded, let target, let clientProtocol):
             let semaphore = DispatchSemaphore(value: 0)
             var outcome: Result<AggregationHTTPResponse, Error>?
-            forwarder.forward(forwarded, to: target, protocol: clientProtocol) { completion in
-                outcome = completion
+            forwarder.forward(forwarded, to: target, protocol: clientProtocol) { result in
+                outcome = result
                 semaphore.signal()
             }
             semaphore.wait()
@@ -128,6 +214,171 @@ final class AggregationProxy {
                     protocol: clientProtocol
                 )
             }
+        }
+    }
+
+    // MARK: - NWListener 数据面（生产路径）
+
+    /// 每连接一个独立状态机：收字节 → 解析头 → 按 content-length 收体 → 分派 → 应答/流式转发。
+    private func handleConnection(_ connection: NWConnection) {
+        connection.start(queue: connectionQueue)
+        receiveMore(on: connection, state: ConnectionState())
+    }
+
+    /// 单连接的收取状态（buffer / 已解析头 / 体起始偏移）。
+    private final class ConnectionState {
+        var buffer = Data()
+        var head: AggregationRequestHead?
+        var bodyStart = 0
+    }
+
+    private func receiveMore(on connection: NWConnection, state: ConnectionState) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [weak self] data, _, isComplete, error in
+            if let data { state.buffer.append(data) }
+            if error != nil {
+                connection.cancel()
+                return
+            }
+            guard let self else {
+                connection.cancel()
+                return
+            }
+            // 1) 头未收全 → 继续收（防御：超过 1MB 还没有头，或客户端已断 → 关连接）。
+            if state.head == nil {
+                guard let head = AggregationRequestParser.parseHead(state.buffer) else {
+                    if state.buffer.count > 1_048_576 || isComplete {
+                        connection.cancel()
+                    } else {
+                        self.receiveMore(on: connection, state: state)
+                    }
+                    return
+                }
+                state.head = head
+                guard let terminator = state.buffer.range(
+                    of: Data(AggregationRequestParser.headerTerminator.utf8)
+                ) else {
+                    connection.cancel()
+                    return
+                }
+                state.bodyStart = terminator.upperBound
+                // 声明体量超限 → 413 并关连接（不读 body）。
+                if head.contentLength > AggregationURLSessionForwarder.defaultBodyLimit {
+                    self.writeResponse(Self.payloadTooLargeResponse(), on: connection) {
+                        connection.cancel()
+                    }
+                    return
+                }
+            }
+            // 2) body 未收满 → 继续收（客户端断了 → 关连接）。
+            guard let head = state.head else {
+                self.receiveMore(on: connection, state: state)
+                return
+            }
+            let bodyLength = state.buffer.count - state.bodyStart
+            if bodyLength < head.contentLength {
+                if isComplete {
+                    connection.cancel()
+                    return
+                }
+                self.receiveMore(on: connection, state: state)
+                return
+            }
+            // 3) 组请求并分派。
+            let request = AggregationHTTPRequest(
+                head: head,
+                body: state.buffer.suffix(from: state.bodyStart)
+            )
+            self.dispatchAndWrite(request, on: connection)
+        }
+    }
+
+    private func dispatchAndWrite(_ request: AggregationHTTPRequest, on connection: NWConnection) {
+        switch dispatch(request) {
+        case .respond(let response):
+            // 不做 keep-alive 复用：每个请求一条连接，响应恒带 Connection: close。
+            writeResponse(response, on: connection) {
+                connection.cancel()
+            }
+        case .forward(let forwarded, let target, let clientProtocol):
+            // 首块前写状态行 + 转发头（剔除 content-length/content-encoding，标 Connection: close），
+            // onChunk 逐块写 socket，onComplete 关闭连接（close-delimited，SSE 以连接关闭为结束边界）。
+            var headWritten = false
+            forwarder.stream(
+                request: forwarded,
+                to: target,
+                protocol: clientProtocol,
+                onHead: { [weak self] statusCode, headers in
+                    guard let self else { return }
+                    self.writeForwardHead(statusCode: statusCode, headers: headers, on: connection)
+                    headWritten = true
+                },
+                onChunk: { chunk in
+                    connection.send(content: chunk, completion: .contentProcessed { _ in })
+                },
+                onComplete: { [weak self] _ in
+                    guard let self else {
+                        connection.cancel()
+                        return
+                    }
+                    if headWritten {
+                        connection.cancel()
+                    } else {
+                        // 上游不可达/构造失败：还没写任何字节 → 补 502 信封。
+                        self.writeResponse(
+                            Self.missResponse(statusCode: 502, message: "upstream unreachable", protocol: clientProtocol),
+                            on: connection
+                        ) {
+                            connection.cancel()
+                        }
+                    }
+                }
+            )
+        }
+    }
+
+    /// 本地应答：状态行 + 头（含 Content-Length）+ 体。恒带 Connection: close。
+    private func writeResponse(
+        _ response: AggregationHTTPResponse,
+        on connection: NWConnection,
+        completion: @escaping () -> Void
+    ) {
+        var payload = Data()
+        payload.append(Data("HTTP/1.1 \(response.statusCode) \(Self.reasonPhrase(response.statusCode))\r\n".utf8))
+        var hasContentLength = false
+        for (key, value) in response.headers {
+            payload.append(Data("\(key): \(value)\r\n".utf8))
+            if key.lowercased() == "content-length" { hasContentLength = true }
+        }
+        if !hasContentLength {
+            payload.append(Data("Content-Length: \(response.body.count)\r\n".utf8))
+        }
+        payload.append(Data("Connection: close\r\n\r\n".utf8))
+        payload.append(response.body)
+        connection.send(content: payload, completion: .contentProcessed { _ in completion() })
+    }
+
+    /// 转发响应头（首块前写）：状态行 + 转发头 + Connection: close；不带 Content-Length（close-delimited）。
+    private func writeForwardHead(statusCode: Int, headers: [String: String], on connection: NWConnection) {
+        var payload = Data()
+        payload.append(Data("HTTP/1.1 \(statusCode) \(Self.reasonPhrase(statusCode))\r\n".utf8))
+        for (key, value) in headers {
+            payload.append(Data("\(key): \(value)\r\n".utf8))
+        }
+        payload.append(Data("Connection: close\r\n\r\n".utf8))
+        connection.send(content: payload, completion: .contentProcessed { _ in })
+    }
+
+    private static func reasonPhrase(_ statusCode: Int) -> String {
+        switch statusCode {
+        case 200: return "OK"
+        case 400: return "Bad Request"
+        case 404: return "Not Found"
+        case 413: return "Payload Too Large"
+        case 429: return "Too Many Requests"
+        case 500: return "Internal Server Error"
+        case 502: return "Bad Gateway"
+        case 503: return "Service Unavailable"
+        default: return "Status"
         }
     }
 
@@ -171,6 +422,10 @@ final class AggregationProxy {
             body = ["error": message]
         }
         return jsonResponse(statusCode: statusCode, body: body)
+    }
+
+    private static func payloadTooLargeResponse() -> AggregationHTTPResponse {
+        jsonResponse(statusCode: 413, body: ["error": "request body too large"])
     }
 
     private static func jsonResponse(statusCode: Int, body: [String: Any]) -> AggregationHTTPResponse {
