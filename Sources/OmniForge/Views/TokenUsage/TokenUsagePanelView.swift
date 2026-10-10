@@ -48,29 +48,30 @@ struct TokenUsagePanelView: View {
 
     // MARK: - 限额显示齿轮
 
+    /// 齿轮悬停状态。
+    @State private var isLimitsSettingsHovered = false
+
     /// 齿轮按钮（「限额显示」弹层）：剩余/消耗切换、provider 显隐与排序、重置提示/撒花开关。
     private var limitsSettingsButton: some View {
         Button {
             showsLimitsSettings.toggle()
         } label: {
             Image(systemName: "gearshape")
-                .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(isLimitsSettingsHovered ? (colorScheme == .light ? Theme.Stats.text1 : Color.white) : (colorScheme == .light ? Theme.Stats.text2 : Color.secondary))
                 .frame(width: 26, height: 26)
                 .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Theme.Stats.cardInset)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .strokeBorder(
-                            colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08),
-                            lineWidth: 0.6
-                        )
+                        .fill(isLimitsSettingsHovered ? (colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.05)) : Color.clear)
                 )
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(Theme.Animation.hover) {
+                isLimitsSettingsHovered = hovering
+            }
+        }
         .help(strings.tokenSettingsLimitsDisplay)
         .accessibilityLabel(strings.tokenSettingsLimitsDisplay)
         .accessibilityIdentifier(SettingsAccessibilityID.tokenUsageGearButton.rawValue)
@@ -101,7 +102,7 @@ struct TokenUsagePanelView: View {
         )
     }
 
-    /// 「余额 / 用量」子 tab 分段行：紧凑分段 + 右端「限额显示」齿轮。
+    /// 「余额 / 用量」子 tab 分段行：下划线 Tab + 右端「限额显示」齿轮。
     private var sectionSwitcherRow: some View {
         HStack(spacing: 8) {
             sectionSwitcher
@@ -110,14 +111,14 @@ struct TokenUsagePanelView: View {
         }
     }
 
-    /// 「余额 / 用量」子 tab 分段（底块滑移与内容淡切同享一套曲线）。
+    /// 「余额 / 用量」子 tab 分段（下划线滑移与内容淡切同享一套曲线）。
     private var sectionSwitcher: some View {
         PanelSegmentedControl(
             options: TokenPanelSection.allCases.map { option in
                 .init(tag: option, title: option.title(strings))
             },
             selection: $selectedSection,
-            isFullWidth: false
+            style: .underline
         )
     }
 

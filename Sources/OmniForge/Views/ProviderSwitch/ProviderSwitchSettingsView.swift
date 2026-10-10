@@ -123,9 +123,10 @@ struct ProviderSwitchSettingsView: View {
         }
     }
 
-    // MARK: - 分段选择器与齿轮
+    /// 齿轮悬停状态。
+    @State private var isSettingsHovered = false
 
-    /// 「Claude Code / Codex」分段行：紧凑分段 + 右端齿轮设置入口
+    /// 「Claude Code / Codex」分段行：下划线 Tab + 右端齿轮设置入口
     /// （与 Token 面板「余额 / 用量」分段行同构）。
     private var sectionSwitcherRow: some View {
         HStack(spacing: 8) {
@@ -134,7 +135,7 @@ struct ProviderSwitchSettingsView: View {
                     .init(tag: tool, title: tool.displayName(in: strings))
                 },
                 selection: $selectedTool,
-                isFullWidth: false
+                style: .underline
             )
 
             Spacer()
@@ -151,23 +152,21 @@ struct ProviderSwitchSettingsView: View {
             showsSettingsPopover.toggle()
         } label: {
             Image(systemName: "gearshape")
-                .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(isSettingsHovered ? (colorScheme == .light ? Theme.Stats.text1 : Color.white) : (colorScheme == .light ? Theme.Stats.text2 : Color.secondary))
                 .frame(width: 26, height: 26)
                 .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Theme.Stats.cardInset)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .strokeBorder(
-                            colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08),
-                            lineWidth: 0.6
-                        )
+                        .fill(isSettingsHovered ? (colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.05)) : Color.clear)
                 )
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(Theme.Animation.hover) {
+                isSettingsHovered = hovering
+            }
+        }
         .help(strings.providerSettingsPopoverTitle)
         .accessibilityLabel(strings.providerSettingsPopoverTitle)
         .accessibilityIdentifier(SettingsAccessibilityID.providerSwitchGearButton.rawValue)
