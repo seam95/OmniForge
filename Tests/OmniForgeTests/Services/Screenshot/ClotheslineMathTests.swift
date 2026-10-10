@@ -54,11 +54,6 @@ final class ClotheslineMathTests: XCTestCase {
         XCTAssertEqual(ClotheslineLayout.capacity(width: 1500), 7)     // (1500-200)/174 ≈ 7.47 → 7
     }
 
-    func testClearAllXIsScreenCenter() {
-        XCTAssertEqual(ClotheslineLayout.clearAllX(width: 1440), 720)
-        XCTAssertEqual(ClotheslineLayout.clearAllX(width: 100), 50)
-    }
-
     func testVisibleAndHiddenCounts() {
         // 总数少于屏宽容量：全可见，无隐藏
         XCTAssertEqual(ClotheslineLayout.visibleCount(total: 5, width: 1500), 5)

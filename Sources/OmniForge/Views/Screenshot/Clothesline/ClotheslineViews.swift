@@ -103,16 +103,12 @@ struct ClotheslineView: View {
                                   y: badgeRopeY - ClotheslineLayout.pinAbove
                                     + (ClotheslineLayout.panelHeight - badgeRopeY) / 2)
                 }
-                // 一键清理扫帚：有照片才出现，随绳子一起滑入滑出（同在一个被 offset 的容器里）。
+                // 一键清理扫帚：坐在绳子右端「上方」（右上角、压住绳线），
+                // 与下方悬挂的照片彻底分离；有照片才出现，随绳滑入滑出。
                 if !manager.items.isEmpty {
-                    let broomX = ClotheslineLayout.clearAllX(width: width)
-                    let broomRopeY = ClotheslineLayout.ropeY(x: broomX, width: width)
                     ClearAllBroom(manager: manager, a11yLabel: clearAllA11yLabel)
-                        .frame(width: 64,
-                               height: ClotheslineLayout.panelHeight - broomRopeY, alignment: .top)
-                        .position(x: broomX,
-                                  y: broomRopeY - ClotheslineLayout.pinAbove
-                                    + (ClotheslineLayout.panelHeight - broomRopeY) / 2)
+                        .frame(width: 44, height: 44, alignment: .center)
+                        .position(x: width - 34, y: 26)
                 }
             }
             .animation(.spring(response: 0.55, dampingFraction: 0.78), value: manager.items.map(\.id))
@@ -430,36 +426,31 @@ private struct ClearAllBroom: View {
     @State private var hovering = false
 
     var body: some View {
-        VStack(spacing: -12) {
-            Clothespin()
-                .zIndex(1)
-            Button(action: { manager.clearAll() }) {
-                BroomGlyph()
-                    // 白底吊牌风格（与照片白框同族）：深色壁纸上半透明材质里的
-                    // primary 细线会隐形，只剩深色扫把头——观感即「图标与圆边重合」。
-                    .foregroundStyle(Color(white: 0.25))
-                    .frame(width: 32, height: 32)
-                    .padding(6)
-                    .background(Color(white: 0.97).opacity(0.92), in: Circle())
-                    .overlay(
-                        Circle().stroke(
-                            LinearGradient(colors: [Color.white.opacity(0.9), Color(white: 0.75).opacity(0.6)],
-                                           startPoint: .top, endPoint: .bottom), lineWidth: 1))
-                    .shadow(color: .black.opacity(hovering ? 0.30 : 0.20),
-                            radius: hovering ? 12 : 8, y: hovering ? 6 : 4)
-            }
-            .buttonStyle(.plain)
-            // 只上报按钮自身矩形：上报外层悬挂框会让按钮下方空白吞掉
-            // 本该透传给下方应用的点击。
-            .background(GeometryReader { g in
-                Color.clear.preference(key: HitRectsKey.self,
-                                       value: [ClotheslineControls.broomID: g.frame(in: .global)])
-            })
-            .scaleEffect(hovering ? 1.08 : 1)
-            .animation(.easeOut(duration: 0.15), value: hovering)
-            .onHover { hovering = $0 }
-            .accessibilityLabel(a11yLabel)
+        Button(action: { manager.clearAll() }) {
+            BroomGlyph()
+                // 白底圆牌（与照片白框同族）：深色壁纸上半透明材质+primary
+                // 细线会隐形，只剩深色扫把头——观感即「图标与圆边重合」。
+                .foregroundStyle(Color(white: 0.25))
+                .frame(width: 32, height: 32)
+                .padding(6)
+                .background(Color(white: 0.97).opacity(0.92), in: Circle())
+                .overlay(
+                    Circle().stroke(
+                        LinearGradient(colors: [Color.white.opacity(0.9), Color(white: 0.75).opacity(0.6)],
+                                       startPoint: .top, endPoint: .bottom), lineWidth: 1))
+                .shadow(color: .black.opacity(hovering ? 0.30 : 0.20),
+                        radius: hovering ? 12 : 8, y: hovering ? 6 : 4)
         }
+        .buttonStyle(.plain)
+        // 只上报按钮自身矩形：上报外层框会让按钮外空白吞掉下方应用的点击。
+        .background(GeometryReader { g in
+            Color.clear.preference(key: HitRectsKey.self,
+                                   value: [ClotheslineControls.broomID: g.frame(in: .global)])
+        })
+        .scaleEffect(hovering ? 1.08 : 1)
+        .animation(.easeOut(duration: 0.15), value: hovering)
+        .onHover { hovering = $0 }
+        .accessibilityLabel(a11yLabel)
     }
 }
 

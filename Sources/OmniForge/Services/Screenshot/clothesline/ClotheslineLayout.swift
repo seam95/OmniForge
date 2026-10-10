@@ -53,9 +53,4 @@ enum ClotheslineLayout {
     static func hiddenCount(total: Int, width: CGFloat) -> Int {
         max(0, total - visibleCount(total: total, width: width))
     }
-
-    /// 「一键清理」扫帚的悬挂 x：绳子正中央（照片为其分列左右）。
-    static func clearAllX(width: CGFloat) -> CGFloat {
-        width / 2
-    }
 }
