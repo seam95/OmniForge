@@ -20,7 +20,7 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
     // 节奏常量被 nonisolated 判定内核读取，自身也须 nonisolated（纯数值，无状态）。
     nonisolated static let revealDelay: TimeInterval = 0.25
     nonisolated static let retractDelay: TimeInterval = 0.5
-    static let peekSeconds: TimeInterval = 2.5
+    static let peekSeconds: TimeInterval = 1.0
 
     private let manager: ClotheslineManager
     private let watcher: ScreenshotFolderWatcher
