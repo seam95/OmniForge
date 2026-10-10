@@ -54,6 +54,9 @@ final class GrabPhotoView: NSView, NSDraggingSource {
     static var isDragging = false
     static let holdDuration: TimeInterval = 0.45
     static let crossHitSize: CGFloat = 26
+    /// 单击动作的执行延迟：等一个可能的第二击。双击打开前剪贴板不再被
+    /// 首击的复制污染（P4）。
+    static let doubleClickWindow: TimeInterval = 0.25
 
     var url: URL?
     var dragImage: NSImage?
@@ -71,6 +74,7 @@ final class GrabPhotoView: NSView, NSDraggingSource {
     private var startedDrag = false
     private var holdTimer: Timer?
     private var didLongPress = false
+    private var singleClickTask: Task<Void, Never>?
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
@@ -86,7 +90,14 @@ final class GrabPhotoView: NSView, NSDraggingSource {
 
     override func mouseDown(with event: NSEvent) {
         if isInCross(event) { downPoint = nil; onDiscard(); return }
-        if event.clickCount == 2 { downPoint = nil; onDoubleClick(); return }
+        if event.clickCount == 2 {
+            // 第二击到来：取消挂起的单击动作，双击语义独占。
+            singleClickTask?.cancel()
+            singleClickTask = nil
+            downPoint = nil
+            onDoubleClick()
+            return
+        }
         downPoint = event.locationInWindow
         startedDrag = false
         didLongPress = false
@@ -107,6 +118,8 @@ final class GrabPhotoView: NSView, NSDraggingSource {
         let p = event.locationInWindow
         guard hypot(p.x - start.x, p.y - start.y) > 4, !didLongPress else { return }
         startedDrag = true
+        singleClickTask?.cancel()   // 拖拽独占：挂起的单击不再执行
+        singleClickTask = nil
         endPress()
         let item = NSDraggingItem(pasteboardWriter: url as NSURL)
         item.setDraggingFrame(imageFrame(), contents: dragImage)
@@ -118,9 +131,22 @@ final class GrabPhotoView: NSView, NSDraggingSource {
 
     override func mouseUp(with event: NSEvent) {
         endPress()
-        if downPoint != nil, !startedDrag, !didLongPress, event.clickCount == 1 { onClick() }
+        if downPoint != nil, !startedDrag, !didLongPress, event.clickCount == 1 {
+            // 单击不立即执行：250ms 内可能跟来第二击（双击），先挂起。
+            scheduleSingleClick()
+        }
         downPoint = nil
         didLongPress = false
+    }
+
+    /// 延迟执行的单击动作；窗口内第二击会取消它（见 mouseDown）。
+    private func scheduleSingleClick() {
+        singleClickTask?.cancel()
+        singleClickTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(Self.doubleClickWindow * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            MainActor.assumeIsolated { self?.onClick() }
+        }
     }
 
     override func rightMouseDown(with event: NSEvent) {
