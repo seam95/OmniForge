@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// 聚合编排管理器 — 聚合模式的唯一编排入口：模式切换、成员管理、写前意图、
@@ -345,6 +346,20 @@ final class ProviderAggregationManager: ObservableObject {
             catalogURL: Self.codexAggregationCatalogURL(),
             catalogIsOurs: true
         )
+    }
+
+    /// 重启 Codex 托管守护进程（陈旧客户端一键重启）：读 `daemon.pid` 并发 SIGTERM，
+    /// 守护进程由其 Supervisor 重新拉起。pid 文件缺失/进程不在 → false（未在运行）。
+    func restartCodexDaemon() -> Bool {
+        let pidURL = ProviderSwitchPaths.codexHome()
+            .appendingPathComponent("app-server-daemon/daemon.pid")
+        guard let text = try? String(contentsOf: pidURL, encoding: .utf8),
+              let pid = Int32(text.trimmingCharacters(in: .whitespacesAndNewlines)),
+              pid > 0,
+              kill(pid, SIGTERM) == 0 else {
+            return false
+        }
+        return true
     }
 
     // MARK: - 生产装配
