@@ -103,12 +103,12 @@ struct ClotheslineView: View {
                                   y: badgeRopeY - ClotheslineLayout.pinAbove
                                     + (ClotheslineLayout.panelHeight - badgeRopeY) / 2)
                 }
-                // 一键清理扫帚：坐在绳子右端「上方」（右上角、压住绳线），
-                // 与下方悬挂的照片彻底分离；有照片才出现，随绳滑入滑出。
+                // 一键清理扫帚：居中坐在绳线上（压绳、略高于下方照片的衣夹位），
+                // 有照片才出现，随绳滑入滑出。
                 if !manager.items.isEmpty {
                     ClearAllBroom(manager: manager, a11yLabel: clearAllA11yLabel)
                         .frame(width: 44, height: 44, alignment: .center)
-                        .position(x: width - 34, y: 26)
+                        .position(x: width / 2, y: 26)
                 }
             }
             .animation(.spring(response: 0.55, dampingFraction: 0.78), value: manager.items.map(\.id))
