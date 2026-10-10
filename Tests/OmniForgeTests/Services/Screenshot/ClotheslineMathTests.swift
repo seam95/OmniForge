@@ -24,6 +24,18 @@ final class ClotheslineMathTests: XCTestCase {
         XCTAssertEqual(ClotheslineLayout.capacity(width: 1500), 7)     // (1500-200)/174 ≈ 7.47 → 7
     }
 
+    func testVisibleAndHiddenCounts() {
+        // 总数少于屏宽容量：全可见，无隐藏
+        XCTAssertEqual(ClotheslineLayout.visibleCount(total: 5, width: 1500), 5)
+        XCTAssertEqual(ClotheslineLayout.hiddenCount(total: 5, width: 1500), 0)
+        // 总数超出：展示最新的屏宽容量段
+        XCTAssertEqual(ClotheslineLayout.visibleCount(total: 10, width: 1500), 7)
+        XCTAssertEqual(ClotheslineLayout.hiddenCount(total: 10, width: 1500), 3)
+        // 总数 0
+        XCTAssertEqual(ClotheslineLayout.visibleCount(total: 0, width: 1500), 0)
+        XCTAssertEqual(ClotheslineLayout.hiddenCount(total: 0, width: 1500), 0)
+    }
+
     func testEaseInOutCubicEndpoints() {
         XCTAssertEqual(CaptureFlightMath.easeInOutCubic(0), 0)
         XCTAssertEqual(CaptureFlightMath.easeInOutCubic(1), 1, accuracy: 1e-9)

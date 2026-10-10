@@ -44,6 +44,8 @@ struct ClotheslineView: View {
     @ObservedObject var manager: ClotheslineManager
     var emptyHint: String = ""
     var menuProvider: ((PeggedPhoto) -> NSMenu)? = nil
+    /// +N 徽章的无障碍文案模板（含 %d）。
+    var overflowA11yFormat: String = "%d more photos hidden"
 
     var body: some View {
         GeometryReader { geo in
@@ -61,8 +63,13 @@ struct ClotheslineView: View {
                                   y: ClotheslineLayout.ropeY(x: width / 2, width: width) + 34)
                         .transition(.opacity)
                 }
-                ForEach(Array(manager.items.enumerated()), id: \.element.id) { index, item in
-                    let x = ClotheslineLayout.x(index: index, count: manager.items.count, width: width)
+                // 只渲染最新的一段（屏宽摆得下的张数）；更旧的折叠进绳尾 +N 徽章。
+                let visibleCount = ClotheslineLayout.visibleCount(total: manager.items.count, width: width)
+                let hiddenCount = ClotheslineLayout.hiddenCount(total: manager.items.count, width: width)
+                let displayStart = manager.items.count - visibleCount
+                ForEach(Array(manager.items.enumerated().suffix(visibleCount)), id: \.element.id) { index, item in
+                    let displayIndex = index - displayStart
+                    let x = ClotheslineLayout.x(index: displayIndex, count: visibleCount, width: width)
                     let ropeY = ClotheslineLayout.ropeY(x: x, width: width)
                     PeggedPhotoView(item: item, manager: manager, menuProvider: menuProvider)
                         .frame(width: ClotheslineLayout.cardWidth,
@@ -70,6 +77,21 @@ struct ClotheslineView: View {
                         .position(x: x,
                                   y: ropeY - ClotheslineLayout.pinAbove
                                     + (ClotheslineLayout.panelHeight - ropeY) / 2)
+                }
+                if hiddenCount > 0 {
+                    let badgeX = max(40, ClotheslineLayout.x(index: 0, count: visibleCount, width: width)
+                                       - ClotheslineLayout.spacing)
+                    let badgeRopeY = ClotheslineLayout.ropeY(x: badgeX, width: width)
+                    OverflowBadge(count: hiddenCount,
+                                  items: Array(manager.items.prefix(hiddenCount)),
+                                  manager: manager,
+                                  menuProvider: menuProvider,
+                                  overflowA11yFormat: overflowA11yFormat)
+                        .frame(width: 64,
+                               height: ClotheslineLayout.panelHeight - badgeRopeY, alignment: .top)
+                        .position(x: badgeX,
+                                  y: badgeRopeY - ClotheslineLayout.pinAbove
+                                    + (ClotheslineLayout.panelHeight - badgeRopeY) / 2)
                 }
             }
             .animation(.spring(response: 0.55, dampingFraction: 0.78), value: manager.items.map(\.id))
@@ -250,5 +272,110 @@ private struct Clothespin: View {
             }
             .shadow(color: .black.opacity(0.30), radius: 2, y: 1.5)
             .allowsHitTesting(false)
+    }
+}
+
+// MARK: - +N 溢出徽章与浮层列表
+
+/// 绳尾「+N」徽章：被屏宽挡住的旧照片计数。点击弹纵向列表取用。
+private struct OverflowBadge: View {
+    let count: Int
+    let items: [PeggedPhoto]
+    @ObservedObject var manager: ClotheslineManager
+    var menuProvider: ((PeggedPhoto) -> NSMenu)?
+    var overflowA11yFormat: String
+
+    @State private var showList = false
+
+    var body: some View {
+        VStack(spacing: -12) {
+            Clothespin()
+                .zIndex(1)
+            Button(action: { showList = true }) {
+                Text("+\(count)")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(
+                        Capsule().stroke(
+                            LinearGradient(colors: [Color.white.opacity(0.55), Color.white.opacity(0.12)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(String(format: overflowA11yFormat, count))
+            .popover(isPresented: $showList, arrowEdge: .bottom) {
+                OverflowListView(items: items, manager: manager, menuProvider: menuProvider)
+            }
+        }
+    }
+}
+
+/// 隐藏照片的纵向列表：行单击=标注（与绳上单击一致），右键=完整菜单。
+private struct OverflowListView: View {
+    let items: [PeggedPhoto]
+    @ObservedObject var manager: ClotheslineManager
+    var menuProvider: ((PeggedPhoto) -> NSMenu)?
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 6) {
+                ForEach(items) { item in
+                    OverflowRow(item: item, manager: manager, menuProvider: menuProvider)
+                }
+            }
+            .padding(10)
+        }
+        .frame(width: 240,
+               height: min(CGFloat(items.count) * 56 + 20, 400))
+    }
+}
+
+private struct OverflowRow: View {
+    let item: PeggedPhoto
+    @ObservedObject var manager: ClotheslineManager
+    var menuProvider: ((PeggedPhoto) -> NSMenu)?
+
+    var body: some View {
+        Button(action: { manager.markup(item.id) }) {
+            HStack(spacing: 10) {
+                Image(nsImage: item.thumb)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 52, height: 40)
+                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                Text(item.url.lastPathComponent)
+                    .font(.system(size: 11))
+                    .lineLimit(1)
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .overlay(ContextMenuBridge { menuProvider?(item) ?? NSMenu() })
+    }
+}
+
+/// 右键弹出注入 NSMenu 的桥（浮层行用；绳上卡片的右键走 GrabPhotoView）。
+private struct ContextMenuBridge: NSViewRepresentable {
+    let menuProvider: () -> NSMenu
+
+    func makeNSView(context: Context) -> MenuView { MenuView() }
+
+    func updateNSView(_ view: MenuView, context: Context) {
+        view.menuProvider = menuProvider
+    }
+
+    final class MenuView: NSView {
+        var menuProvider: () -> NSMenu = { NSMenu() }
+
+        override func rightMouseDown(with event: NSEvent) {
+            NSMenu.popUpContextMenu(menuProvider(), with: event, for: self)
+        }
     }
 }

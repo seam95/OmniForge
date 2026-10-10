@@ -80,7 +80,8 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
         let host = NSHostingView(rootView: ClotheslineView(
             manager: manager,
             emptyHint: strings.clotheslineEmptyHint,
-            menuProvider: { [weak self] item in self?.menu(for: item) ?? NSMenu() }
+            menuProvider: { [weak self] item in self?.menu(for: item) ?? NSMenu() },
+            overflowA11yFormat: strings.clotheslineOverflowA11yFormat
         ))
         host.sizingOptions = []
         panel = ClotheslinePanel(content: host)

@@ -30,4 +30,14 @@ enum ClotheslineLayout {
     static func capacity(width: CGFloat) -> Int {
         max(3, min(12, Int((width - 200) / spacing)))
     }
+
+    /// 屏上可见张数 = min(总数, 屏宽可容纳数)：展示最新的一段（后缀）。
+    static func visibleCount(total: Int, width: CGFloat) -> Int {
+        min(total, capacity(width: width))
+    }
+
+    /// 隐藏数 = 总数 − 可见数；绳尾「+N」徽章的 N。
+    static func hiddenCount(total: Int, width: CGFloat) -> Int {
+        max(0, total - visibleCount(total: total, width: width))
+    }
 }
