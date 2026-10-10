@@ -231,8 +231,8 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
         menu.addItem(ClosureMenuItem(title: strings.clotheslineMenuOpen) { [weak manager] in manager?.openInDefaultApp(id) })
         menu.addItem(ClosureMenuItem(title: strings.clotheslineMenuMarkup) { [weak manager] in manager?.markup(id) })
         menu.addItem(ClosureMenuItem(title: strings.clotheslineMenuReveal) { [weak manager] in manager?.revealInFinder(id) })
-        // 存到桌面仅 Inbox 文件有意义（文件在接管目录内才需要移出）。
-        if manager.isInInbox(id) {
+        // 存到桌面仅自有文件有意义（Inbox/缓存目录内的文件才需要移出保留）。
+        if manager.isOwned(id) {
             menu.addItem(ClosureMenuItem(title: strings.clotheslineMenuSaveToDesktop) { [weak manager] in
                 manager?.saveToDesktop(id)
             })

@@ -877,7 +877,11 @@ final class AnnotationEditorController {
             return
         }
         do {
-            _ = try resultRunner.run(result: result, intent: .copy, pinOrigin: nil)
+            // confirmCache：复制 + 写晾衣绳临时缓存 + 挂绳（开关关时降级为纯复制）。
+            // 飞行起点用选区左下角（AppKit 全局坐标）——与系统截图同款起飞动画。
+            let hangOrigin = result.selection?.appKitGlobalRect.origin
+            _ = try resultRunner.run(result: result, intent: .confirmCache,
+                                     pinOrigin: nil, hangOrigin: hangOrigin)
             Self.logger.info("editor.confirm 成功 → onComplete(image)")
             tearDown()
             onComplete(image)

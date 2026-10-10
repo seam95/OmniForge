@@ -19,4 +19,6 @@ enum ScreenshotEntryIntent: String, Equatable, Sendable, CaseIterable {
     case drag
     /// 静默写盘后挂上晾衣绳
     case hang
+    /// 编辑器确认（✓）：复制 + 写入晾衣绳临时缓存 + 挂绳（超出容量即销毁）
+    case confirmCache
 }

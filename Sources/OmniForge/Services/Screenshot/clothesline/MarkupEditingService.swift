@@ -46,6 +46,24 @@ final class MarkupEditingService: NSObject, NSSharingServiceDelegate {
         service.delegate = self
         NSApp.activate(ignoringOtherApps: true)
         service.perform(withItems: [url])
+        scheduleMarkupWindowMovable()
+    }
+
+    /// 分享服务把 Markup 扩展 UI 呈现在我们进程里的一个**无标题无边框**窗口
+    /// （实测 styleMask 为 0，isMovableByWindowBackground 为 false）：没有标题栏
+    /// 可拖，点内容也不移动窗口——表现为「标注窗不能移动」。系统缩略图那条路
+    /// 给的是带标题栏的窗口所以能拖。这里延迟一瞬找到该窗口并打开背景拖动，
+    /// 恢复可移动性（拖工具栏/空白区即可移动；画布区域仍归绘制消费，不受影响）。
+    private func scheduleMarkupWindowMovable() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.makeMarkupWindowMovable()
+        }
+    }
+
+    private func makeMarkupWindowMovable() {
+        for window in NSApp.windows where window.title == "Markup" {
+            window.isMovableByWindowBackground = true
+        }
     }
 
     // MARK: NSSharingServiceDelegate

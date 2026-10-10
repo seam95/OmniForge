@@ -23,6 +23,7 @@ struct ScreenshotSettingsSection: View {
     @AppStorage(UserDefaultsKeys.screenshotClotheslineInboxEnabled) private var clotheslineInboxEnabled = false
     @AppStorage(UserDefaultsKeys.screenshotClotheslineSoundOn) private var clotheslineSoundOn = false
     @AppStorage(UserDefaultsKeys.screenshotClotheslineCapacity) private var clotheslineCapacity = 12
+    @AppStorage(UserDefaultsKeys.screenshotClotheslineEditorConfirmHang) private var clotheslineEditorConfirmHang = true
 
     private var strings: Strings { state.l10n.s }
 
@@ -192,6 +193,10 @@ struct ScreenshotSettingsSection: View {
             }
             .onChange(of: clotheslineCapacity) { _, _ in
                 manager?.clothesline?.applyCapacity()
+            }
+            Toggle(isOn: $clotheslineEditorConfirmHang) {
+                InfoHintLabel(strings.clotheslineEditorConfirmHang,
+                              hint: strings.clotheslineEditorConfirmHangCaption)
             }
             Toggle(isOn: $clotheslineInboxEnabled) {
                 InfoHintLabel(strings.clotheslineInbox, hint: strings.clotheslineInboxCaption)

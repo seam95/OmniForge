@@ -130,7 +130,7 @@ final class GrabPhotoView: NSView, NSDraggingSource {
         singleClickTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(Self.doubleClickWindow * 1_000_000_000))
             guard !Task.isCancelled else { return }
-            MainActor.assumeIsolated { self?.onClick() }
+            await MainActor.run { self?.onClick() }
         }
     }
 

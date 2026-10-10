@@ -830,6 +830,8 @@ extension Strings {
         clotheslineInboxOfferLater: "暂不",
         clotheslineCapacity: "最多保留",
         clotheslineOverflowA11yFormat: "还有 %d 张未展示",
+        clotheslineEditorConfirmHang: "确认后缓存到晾衣绳",
+        clotheslineEditorConfirmHangCaption: "在编辑器点对勾后，截图写入临时缓存并挂上晾衣绳（上限为上方容量）。超出的旧缓存自动销毁，不占磁盘。",
         screenshotOutputSection: "输出",
         screenshotSaveDirectory: "保存目录",
         screenshotChooseDirectory: "选择目录…",

@@ -121,19 +121,19 @@ final class ClotheslineManager: ObservableObject {
         var item = PeggedPhoto(url: url, thumb: thumb, tilt: PeggedPhoto.makeTilt())
         item.flying = flying
         items.append(item)
-        // 挂满时最旧一张从绳尾掉落（阈值=用户容量 n）。
+        // 挂满时最旧一张淘汰（阈值=用户容量 n）：自有文件随之销毁。
         while liveCount > capacityN, let oldest = items.first(where: { !$0.falling }) {
-            drop(oldest.id, quietly: true)
+            evict(oldest.id)
         }
         save()
         if !quietly { soundPlayer.play(name: "Tink", volume: 0.35) }
         return item.id
     }
 
-    /// 容量调小后立即裁剪：最旧的先掉，直到回到 n 以内。
+    /// 容量调小后立即裁剪：最旧的先淘汰，直到回到 n 以内。
     func applyCapacity() {
         while liveCount > capacityN, let oldest = items.first(where: { !$0.falling }) {
-            drop(oldest.id, quietly: true)
+            evict(oldest.id)
         }
     }
 
@@ -216,16 +216,31 @@ final class ClotheslineManager: ObservableObject {
         }
     }
 
-    func isInInbox(_ id: UUID) -> Bool {
-        guard let item = items.first(where: { $0.id == id }),
-              let folder = inboxFolderProvider()
-        else { return false }
+    /// 文件是否在本应用自己的目录里（Inbox 接管目录或临时缓存目录）。
+    /// 自有文件才谈得上「销毁」：用户桌面/保存目录里的外部文件永远只离绳、不动文件。
+    func isOwned(_ id: UUID) -> Bool {
+        guard let item = items.first(where: { $0.id == id }) else { return false }
+        if ClotheslineCache.isCacheFile(item.url) { return true }
+        guard let folder = inboxFolderProvider() else { return false }
         return item.url.standardizedFileURL.path.hasPrefix(folder.standardizedFileURL.path + "/")
     }
 
     /// 角标 × 与右键「取下/丢弃」共用入口。
     func discard(_ id: UUID) {
-        if isInInbox(id) { trash(id) } else { drop(id) }
+        if isOwned(id) { trash(id) } else { drop(id) }
+    }
+
+    /// 容量淘汰：离绳 + 自有文件销毁（缓存目录直接删——本就是临时缓存；
+    /// Inbox 目录进废纸篓——那是用户系统截图的落点，留恢复余地）。
+    /// 外部文件（桌面等）只离绳。
+    private func evict(_ id: UUID) {
+        guard let item = items.first(where: { $0.id == id }) else { return }
+        drop(id, quietly: true)
+        if ClotheslineCache.isCacheFile(item.url) {
+            try? FileManager.default.removeItem(at: item.url)
+        } else if isOwned(id) {
+            try? FileManager.default.trashItem(at: item.url, resultingItemURL: nil)
+        }
     }
 
     /// Inbox 模式下「存到桌面」：移出文件并离绳。

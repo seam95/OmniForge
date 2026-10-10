@@ -84,6 +84,60 @@ final class ScreenshotHangIntentTests: XCTestCase {
         XCTAssertEqual(hooks.hung.count, 0)
     }
 
+    // MARK: - confirmCache（编辑器确认：复制+缓存+挂绳）
+
+    func test_sideEffects_forConfirmCache_isCopyCacheHang() throws {
+        XCTAssertEqual(try ScreenshotResultPipeline.sideEffects(for: .confirmCache),
+                       [.copy, .cacheSave, .hangOnLine])
+    }
+
+    func test_run_confirmCache_copiesCachesAndHangs() throws {
+        let saver = FakeScreenshotSaver()
+        let hooks = FakeClotheslineHooks()
+        let pipeline = makePipeline(saver: saver)
+        pipeline.clotheslineHooks = hooks
+        let origin = NSPoint(x: 300, y: 400)
+
+        let outcome = try pipeline.run(result: try makeResult(), intent: .confirmCache,
+                                       pinOrigin: nil, hangOrigin: origin)
+
+        XCTAssertTrue(outcome.didCopy)                                  // 复制副作用保留
+        XCTAssertEqual(outcome.cachedFilePath, saver.stubbedURL.path)   // 写的是缓存路径
+        XCTAssertEqual(hooks.noted, [saver.stubbedURL.path])            // 登记排除集
+        XCTAssertEqual(hooks.hung.map(\.0), [saver.stubbedURL.path])    // 挂绳用缓存路径
+        XCTAssertEqual(hooks.hung.first?.1, origin)                     // 飞行起点透传
+    }
+
+    func test_run_confirmCache_toggleOff_degradesToCopyOnly() throws {
+        let suite = "confirm-cache-off-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(false, forKey: UserDefaultsKeys.screenshotClotheslineEditorConfirmHang)
+        let saver = FakeScreenshotSaver()
+        let hooks = FakeClotheslineHooks()
+        let pipeline = ScreenshotResultPipeline(
+            userDefaults: defaults,
+            encoder: FakeImageOutputEncoder(),
+            clipboardWriter: FakeClipboardImageWriter(),
+            saver: saver,
+            outputConfigurationProvider: {
+                ScreenshotOutputConfigurationSnapshot(
+                    saveDirectory: URL(fileURLWithPath: "/tmp", isDirectory: true),
+                    fileNamePrefix: "Screenshot"
+                )
+            }
+        )
+        pipeline.clotheslineHooks = hooks
+
+        let outcome = try pipeline.run(result: try makeResult(), intent: .confirmCache)
+
+        XCTAssertTrue(outcome.didCopy)
+        XCTAssertNil(outcome.cachedFilePath)          // 不写缓存
+        XCTAssertEqual(saver.calls.count, 0)          // 不落盘
+        XCTAssertEqual(hooks.hung.count, 0)           // 不挂绳
+    }
+
     // MARK: - Helpers
 
     private func makePipeline(

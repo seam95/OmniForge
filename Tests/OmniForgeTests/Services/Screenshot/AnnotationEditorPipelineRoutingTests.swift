@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class AnnotationEditorPipelineRoutingTests: XCTestCase {
 
-    func test_confirm_routesCopyIntentThroughPipeline() throws {
+    func test_confirm_routesConfirmCacheIntentThroughPipeline() throws {
         let runner = FakeScreenshotResultRunner()
         let image = makeImage(width: 4, height: 3)
         var completed: NSImage?
@@ -22,7 +22,8 @@ final class AnnotationEditorPipelineRoutingTests: XCTestCase {
         editor.confirm()
 
         XCTAssertEqual(runner.calls.count, 1)
-        XCTAssertEqual(runner.calls[0].intent, .copy)
+        // 二期起 confirm 走 confirmCache（复制+缓存+挂绳），不再是纯 copy。
+        XCTAssertEqual(runner.calls[0].intent, .confirmCache)
         XCTAssertNil(runner.calls[0].pinOrigin)
         XCTAssertNotNil(completed)
         XCTAssertNil(editor.lastError)
@@ -230,6 +231,9 @@ final class FakeScreenshotResultRunner: ScreenshotResultRunning {
             o.didPin = true
             o.pinnedID = o.pinnedID ?? UUID()
         case .hang: o.savedFilePath = o.savedFilePath ?? "/tmp/fake.png"
+        case .confirmCache:
+            o.didCopy = true
+            o.cachedFilePath = o.cachedFilePath ?? "/tmp/fake-cache.png"
         case .drag: break
         }
         return o

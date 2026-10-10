@@ -211,8 +211,8 @@ final class ClotheslineManagerTests: XCTestCase {
         let m = ClotheslineManager.testable(userDefaults: defaults, inboxFolder: inbox)
         let inboxID = try XCTUnwrap(m.hang(inInbox))
         let outsideID = try XCTUnwrap(m.hang(outside))
-        XCTAssertTrue(m.isInInbox(inboxID))
-        XCTAssertFalse(m.isInInbox(outsideID))
+        XCTAssertTrue(m.isOwned(inboxID))
+        XCTAssertFalse(m.isOwned(outsideID))
 
         m.discard(outsideID)   // 外部文件：仅离绳，文件仍在
         XCTAssertFalse(FileManager.default.fileExists(atPath: outside.path) == false)
@@ -220,6 +220,50 @@ final class ClotheslineManagerTests: XCTestCase {
 
         m.trash(inboxID)       // Inbox 文件：移废纸篓（测试环境 trashItem 可用；失败则仅断言离绳）
         XCTAssertEqual(m.items.first { $0.id == inboxID }?.falling, true)
+    }
+
+    @MainActor
+    func testCacheEvictionDestroysFile() throws {
+        // 缓存文件（临时缓存目录）：容量淘汰即销毁文件本体
+        defaults.set(1, forKey: UserDefaultsKeys.screenshotClotheslineCapacity)
+        let m = ClotheslineManager.testable(userDefaults: defaults)   // 无 Inbox 目录
+        let cached = ClotheslineCache.directory.appendingPathComponent("c1.png")
+        try FileManager.default.createDirectory(at: ClotheslineCache.directory, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: cached.path, contents: Data([1]))
+        let first = try XCTUnwrap(m.hang(cached))
+        XCTAssertTrue(m.isOwned(first))
+        m.hang(makeFile("second.png"))   // 超出容量 → 淘汰最旧（缓存文件）
+        XCTAssertEqual(m.liveCount, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cached.path))   // 文件已销毁
+        XCTAssertTrue(m.items.first { !$0.falling }?.url.lastPathComponent == "second.png")
+    }
+
+    @MainActor
+    func testEvictionOfExternalFileKeepsFile() throws {
+        // 外部文件（桌面等）：容量淘汰只离绳，文件永不被动
+        defaults.set(1, forKey: UserDefaultsKeys.screenshotClotheslineCapacity)
+        let m = ClotheslineManager.testable(userDefaults: defaults)
+        let external = makeFile("ext.png")
+        m.hang(external)
+        m.hang(makeFile("ext2.png"))
+        XCTAssertEqual(m.liveCount, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: external.path))
+    }
+
+    @MainActor
+    func testApplyCapacityDestroysCacheFiles() throws {
+        let m = ClotheslineManager.testable(userDefaults: defaults)
+        let a = ClotheslineCache.directory.appendingPathComponent("a.png")
+        let b = ClotheslineCache.directory.appendingPathComponent("b.png")
+        try FileManager.default.createDirectory(at: ClotheslineCache.directory, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: a.path, contents: Data([1]))
+        FileManager.default.createFile(atPath: b.path, contents: Data([1]))
+        m.hang(a); m.hang(b)
+        defaults.set(1, forKey: UserDefaultsKeys.screenshotClotheslineCapacity)
+        m.applyCapacity()
+        XCTAssertEqual(m.liveCount, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: a.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: b.path))
     }
 
     @MainActor

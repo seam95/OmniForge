@@ -830,6 +830,8 @@ extension Strings {
         clotheslineInboxOfferLater: "Not now",
         clotheslineCapacity: "Keep at most",
         clotheslineOverflowA11yFormat: "%d more photos hidden",
+        clotheslineEditorConfirmHang: "Cache screenshots on the clothesline",
+        clotheslineEditorConfirmHangCaption: "After you tap Done in the editor, the screenshot is cached (up to the capacity above) and hangs on the line. Older cached photos are destroyed automatically.",
         screenshotOutputSection: "Output",
         screenshotSaveDirectory: "Save folder",
         screenshotChooseDirectory: "Choose Folder…",

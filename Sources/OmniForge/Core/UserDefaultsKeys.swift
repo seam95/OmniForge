@@ -99,6 +99,7 @@ enum UserDefaultsKeys {
     static let screenshotClotheslineInboxSavedSettings = "screenshot.clothesline.inboxSavedSettings"
     static let screenshotClotheslineSoundOn = "screenshot.clothesline.soundOn"
     static let screenshotClotheslineCapacity = "screenshot.clothesline.capacity"
+    static let screenshotClotheslineEditorConfirmHang = "screenshot.clothesline.editorConfirmHang"
     static let screenshotClotheslineHotkeyToggleKeyCode = "screenshot.clothesline.hotkey.toggle.keyCode"
     static let screenshotClotheslineHotkeyToggleModifiers = "screenshot.clothesline.hotkey.toggle.modifiers"
     static let screenshotClotheslineHotkeyHangKeyCode = "screenshot.clothesline.hotkey.hang.keyCode"

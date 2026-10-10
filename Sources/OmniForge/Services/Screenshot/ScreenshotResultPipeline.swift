@@ -7,6 +7,8 @@ enum ScreenshotPipelineSideEffect: Equatable, Sendable {
     case copy
     case save
     case pin
+    /// 写入晾衣绳临时缓存目录（编辑器确认的缓存底座）
+    case cacheSave
     case hangOnLine
 }
 
@@ -26,17 +28,21 @@ enum ScreenshotPipelineError: Error, Equatable {
 struct ScreenshotPipelineOutcome: Equatable, Sendable {
     var didCopy: Bool
     var savedFilePath: String?
+    /// 写入晾衣绳临时缓存目录的路径（confirmCache 意图）。
+    var cachedFilePath: String?
     var didPin: Bool
     var pinnedID: UUID?
 
     init(
         didCopy: Bool = false,
         savedFilePath: String? = nil,
+        cachedFilePath: String? = nil,
         didPin: Bool = false,
         pinnedID: UUID? = nil
     ) {
         self.didCopy = didCopy
         self.savedFilePath = savedFilePath
+        self.cachedFilePath = cachedFilePath
         self.didPin = didPin
         self.pinnedID = pinnedID
     }
@@ -147,7 +153,7 @@ final class ScreenshotResultPipeline: ScreenshotResultRunning {
         pinOrigin: NSPoint? = nil,
         hangOrigin: NSPoint? = nil
     ) throws -> ScreenshotPipelineOutcome {
-        let effects = try Self.sideEffects(for: intent)
+        let effects = try resolveEffects(for: intent)
         var outcome = ScreenshotPipelineOutcome()
         // 编码结果缓存：同一 run 内多副作用只编码一次。
         var encodedOutput: EncodedImageOutput?
@@ -166,14 +172,20 @@ final class ScreenshotResultPipeline: ScreenshotResultRunning {
                 let path = try performSave(output: output)
                 outcome.savedFilePath = path
 
+            case .cacheSave:
+                let output = try encodedOutput ?? encodeOnce(result: result)
+                encodedOutput = output
+                let path = try performCacheSave(output: output)
+                outcome.cachedFilePath = path
+
             case .pin:
                 let id = try performPin(result: result, origin: pinOrigin)
                 outcome.didPin = true
                 outcome.pinnedID = id
 
             case .hangOnLine:
-                // 挂绳发生在 save 落盘之后（副作用序保证）；落盘失败不会走到这里。
-                if let path = outcome.savedFilePath {
+                // 挂绳发生在落盘之后（副作用序保证）；落盘失败不会走到这里。
+                if let path = outcome.cachedFilePath ?? outcome.savedFilePath {
                     clotheslineHooks?.hangFromPipeline(path: path, origin: hangOrigin)
                 }
             }
@@ -182,12 +194,28 @@ final class ScreenshotResultPipeline: ScreenshotResultRunning {
         return outcome
     }
 
+    /// 实例级效果解析：confirmCache 在开关关闭时降级为纯复制
+    /// （编辑器确认回归传统行为，不写缓存不挂绳）。
+    private func resolveEffects(for intent: ScreenshotEntryIntent) throws -> [ScreenshotPipelineSideEffect] {
+        let effects = try Self.sideEffects(for: intent)
+        guard intent == .confirmCache, !editorConfirmHangEnabled else { return effects }
+        return effects.filter { $0 != .cacheSave && $0 != .hangOnLine }
+    }
+
+    /// 编辑器确认后自动挂绳开关（默认开）。
+    private var editorConfirmHangEnabled: Bool {
+        userDefaults.object(forKey: UserDefaultsKeys.screenshotClotheslineEditorConfirmHang) == nil
+            ? true
+            : userDefaults.bool(forKey: UserDefaultsKeys.screenshotClotheslineEditorConfirmHang)
+    }
+
     static func sideEffects(for intent: ScreenshotEntryIntent) throws -> [ScreenshotPipelineSideEffect] {
         switch intent {
         case .copy: return [.copy]
         case .save: return [.save]
         case .pin: return [.pin]
         case .hang: return [.save, .hangOnLine]
+        case .confirmCache: return [.copy, .cacheSave, .hangOnLine]
         case .drag: throw ScreenshotPipelineError.intentNotImplemented(intent)
         }
     }
@@ -231,6 +259,32 @@ final class ScreenshotResultPipeline: ScreenshotResultRunning {
             )
             // 所有经管线的写盘（save 与 hang）都登记排除集：
             // watcher 对自家写入只挂绳一次，避免 hang 意图双重挂载。
+            clotheslineHooks?.noteOwnWrite(path: url.path)
+            return url.path
+        } catch let error as ScreenshotPipelineError {
+            throw error
+        } catch let error as ScreenshotSavingError {
+            throw mapSavingError(error)
+        } catch {
+            throw ScreenshotPipelineError.writeFailed(String(describing: error))
+        }
+    }
+
+    /// 写入晾衣绳临时缓存目录（编辑器确认的缓存底座）。
+    /// 文件名沿用时间戳模板；同 saver 的目录创建与去重逻辑。
+    private func performCacheSave(output: EncodedImageOutput) throws -> String {
+        let fileName = ScreenshotSaver.timestampedFileName(
+            prefix: "Screenshot",
+            quality: .original,
+            date: Date()
+        )
+        do {
+            let url = try saver.save(
+                output: output,
+                quality: .original,
+                fileName: fileName,
+                directory: ClotheslineCache.directory
+            )
             clotheslineHooks?.noteOwnWrite(path: url.path)
             return url.path
         } catch let error as ScreenshotPipelineError {
