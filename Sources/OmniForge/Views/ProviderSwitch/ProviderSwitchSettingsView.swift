@@ -125,7 +125,7 @@ struct ProviderSwitchSettingsView: View {
 
     // MARK: - 分段选择器与齿轮
 
-    /// 「Claude Code / Codex」分段行：等分分段 + 右端齿轮设置入口
+    /// 「Claude Code / Codex」分段行：紧凑分段 + 右端齿轮设置入口
     /// （与 Token 面板「余额 / 用量」分段行同构）。
     private var sectionSwitcherRow: some View {
         HStack(spacing: 8) {
@@ -133,8 +133,11 @@ struct ProviderSwitchSettingsView: View {
                 options: ProviderTool.allCases.map { tool in
                     .init(tag: tool, title: tool.displayName(in: strings))
                 },
-                selection: $selectedTool
+                selection: $selectedTool,
+                isFullWidth: false
             )
+
+            Spacer()
 
             settingsButton
         }
@@ -148,13 +151,20 @@ struct ProviderSwitchSettingsView: View {
             showsSettingsPopover.toggle()
         } label: {
             Image(systemName: "gearshape")
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
-                .frame(width: 22, height: 22)
+                .frame(width: 26, height: 26)
                 .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Theme.Stats.cardInset)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(
+                            colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08),
+                            lineWidth: 0.6
+                        )
                 )
         }
         .buttonStyle(.plain)

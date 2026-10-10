@@ -54,13 +54,20 @@ struct TokenUsagePanelView: View {
             showsLimitsSettings.toggle()
         } label: {
             Image(systemName: "gearshape")
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(colorScheme == .light ? Theme.Stats.text2 : Color.secondary)
-                .frame(width: 22, height: 22)
+                .frame(width: 26, height: 26)
                 .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Theme.Stats.cardInset)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(
+                            colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08),
+                            lineWidth: 0.6
+                        )
                 )
         }
         .buttonStyle(.plain)
@@ -94,10 +101,11 @@ struct TokenUsagePanelView: View {
         )
     }
 
-    /// 「余额 / 用量」子 tab 分段行：等分分段 + 右端「限额显示」齿轮。
+    /// 「余额 / 用量」子 tab 分段行：紧凑分段 + 右端「限额显示」齿轮。
     private var sectionSwitcherRow: some View {
         HStack(spacing: 8) {
             sectionSwitcher
+            Spacer()
             limitsSettingsButton
         }
     }
@@ -108,7 +116,8 @@ struct TokenUsagePanelView: View {
             options: TokenPanelSection.allCases.map { option in
                 .init(tag: option, title: option.title(strings))
             },
-            selection: $selectedSection
+            selection: $selectedSection,
+            isFullWidth: false
         )
     }
 

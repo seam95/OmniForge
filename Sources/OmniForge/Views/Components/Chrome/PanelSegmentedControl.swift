@@ -17,10 +17,20 @@ struct PanelSegmentedControl<Tag: Hashable>: View {
 
     let options: [Option]
     @Binding var selection: Tag
+    var isFullWidth: Bool = true
 
     @Namespace private var indicator
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var hoveredTag: Tag?
+
+    private var outerCornerRadius: CGFloat {
+        isFullWidth ? 10 : 7
+    }
+
+    private var innerCornerRadius: CGFloat {
+        isFullWidth ? 8 : 5.5
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -32,16 +42,27 @@ struct PanelSegmentedControl<Tag: Hashable>: View {
                     Text(option.title)
                         .font(Theme.Stats.font12Medium)
                         .foregroundStyle(isSelected ? (colorScheme == .light ? Theme.Stats.text1 : Color.white) : (colorScheme == .light ? Theme.Stats.text2 : Color.secondary))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
+                        .lineLimit(1)
+                        .frame(maxWidth: isFullWidth ? .infinity : nil)
+                        .padding(.horizontal, isFullWidth ? 0 : 14)
+                        .padding(.vertical, isFullWidth ? 6 : 4)
                         .background {
                             if isSelected {
                                 selectedIndicator
+                            } else if hoveredTag == option.tag {
+                                RoundedRectangle(cornerRadius: innerCornerRadius, style: .continuous)
+                                    .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04))
+                                    .transition(.opacity)
                             }
                         }
-                        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .contentShape(RoundedRectangle(cornerRadius: innerCornerRadius, style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .onHover { hovering in
+                    withAnimation(Theme.Animation.hover) {
+                        hoveredTag = hovering ? option.tag : nil
+                    }
+                }
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
@@ -49,10 +70,17 @@ struct PanelSegmentedControl<Tag: Hashable>: View {
             PageSwitchMotionToken.selectionIndicator(reduceMotion: reduceMotion),
             value: selection
         )
-        .padding(3)
+        .padding(isFullWidth ? 3 : 2)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: outerCornerRadius, style: .continuous)
                 .fill(colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.06))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: outerCornerRadius, style: .continuous)
+                .strokeBorder(
+                    colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08),
+                    lineWidth: 0.6
+                )
         )
     }
 
@@ -61,14 +89,14 @@ struct PanelSegmentedControl<Tag: Hashable>: View {
     @ViewBuilder
     private var selectedIndicator: some View {
         if reduceMotion {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: innerCornerRadius, style: .continuous)
                 .fill(selectedFill)
-                .shadow(color: Color.black.opacity(colorScheme == .light ? 0.06 : 0.0), radius: 2, x: 0, y: 1)
+                .shadow(color: Color.black.opacity(colorScheme == .light ? (isFullWidth ? 0.06 : 0.08) : 0.0), radius: isFullWidth ? 2 : 1.5, x: 0, y: isFullWidth ? 1 : 0.5)
                 .transition(.opacity)
         } else {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: innerCornerRadius, style: .continuous)
                 .fill(selectedFill)
-                .shadow(color: Color.black.opacity(colorScheme == .light ? 0.06 : 0.0), radius: 2, x: 0, y: 1)
+                .shadow(color: Color.black.opacity(colorScheme == .light ? (isFullWidth ? 0.06 : 0.08) : 0.0), radius: isFullWidth ? 2 : 1.5, x: 0, y: isFullWidth ? 1 : 0.5)
                 .matchedGeometryEffect(id: activeIndicatorID, in: indicator)
         }
     }
