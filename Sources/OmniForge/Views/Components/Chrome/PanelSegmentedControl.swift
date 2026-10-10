@@ -24,15 +24,18 @@ struct PanelSegmentedControl<Tag: Hashable>: View {
     let options: [Option]
     @Binding var selection: Tag
     var style: Style
+    var underlineColor: Color
 
     init(
         options: [Option],
         selection: Binding<Tag>,
-        style: Style = .capsule(isFullWidth: true)
+        style: Style = .capsule(isFullWidth: true),
+        underlineColor: Color = Theme.accentColor
     ) {
         self.options = options
         self._selection = selection
         self.style = style
+        self.underlineColor = underlineColor
     }
 
     init(
@@ -43,6 +46,7 @@ struct PanelSegmentedControl<Tag: Hashable>: View {
         self.options = options
         self._selection = selection
         self.style = .capsule(isFullWidth: isFullWidth)
+        self.underlineColor = Theme.accentColor
     }
 
     @Namespace private var indicator
@@ -62,35 +66,31 @@ struct PanelSegmentedControl<Tag: Hashable>: View {
     // MARK: - 极简文字下划线样式
 
     private var underlineBody: some View {
-        HStack(spacing: 20) {
+        HStack(spacing: 22) {
             ForEach(options) { option in
                 let isSelected = selection == option.tag
                 Button {
                     selection = option.tag
                 } label: {
-                    VStack(spacing: 5) {
-                        Text(option.title)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(
-                                isSelected
-                                    ? (colorScheme == .light ? Theme.Stats.text1 : Color.white)
-                                    : (hoveredTag == option.tag
-                                        ? (colorScheme == .light ? Theme.Stats.text1 : Color.white.opacity(0.85))
-                                        : (colorScheme == .light ? Theme.Stats.text2 : Color.secondary))
-                            )
-                            .lineLimit(1)
-                            .padding(.horizontal, 2)
-                            .padding(.top, 2)
-
-                        ZStack {
+                    Text(option.title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(
+                            isSelected
+                                ? (colorScheme == .light ? Theme.Stats.text1 : Color.white)
+                                : (hoveredTag == option.tag
+                                    ? (colorScheme == .light ? Theme.Stats.text1.opacity(0.8) : Color.white.opacity(0.85))
+                                    : (colorScheme == .light ? Theme.Stats.text2 : Color.secondary))
+                        )
+                        .lineLimit(1)
+                        .padding(.horizontal, 4)
+                        .padding(.top, 2)
+                        .padding(.bottom, 6)
+                        .overlay(alignment: .bottom) {
                             if isSelected {
                                 underlineIndicator
-                            } else {
-                                Color.clear.frame(height: 2)
                             }
                         }
-                    }
-                    .contentShape(Rectangle())
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .onHover { hovering in
@@ -111,13 +111,13 @@ struct PanelSegmentedControl<Tag: Hashable>: View {
     private var underlineIndicator: some View {
         if reduceMotion {
             Capsule()
-                .fill(colorScheme == .light ? Theme.Stats.text1 : Color.white)
-                .frame(height: 2)
+                .fill(underlineColor)
+                .frame(height: 2.5)
                 .transition(.opacity)
         } else {
             Capsule()
-                .fill(colorScheme == .light ? Theme.Stats.text1 : Color.white)
-                .frame(height: 2)
+                .fill(underlineColor)
+                .frame(height: 2.5)
                 .matchedGeometryEffect(id: activeIndicatorID, in: indicator)
         }
     }
