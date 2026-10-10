@@ -20,10 +20,21 @@ enum ClotheslineLayout {
         return ropeTop + 4 * sag(width: width) * f * (1 - f)
     }
 
-    /// 第 index 张卡片的中心 x（整体居中）。
-    static func x(index: Int, count: Int, width: CGFloat) -> CGFloat {
-        let total = CGFloat(max(count - 1, 0)) * spacing
-        return width / 2 - total / 2 + CGFloat(index) * spacing
+    /// 绳子中央给一键清理扫帚留的缺口宽（扫帚约 34pt + 两侧余量，须小于间距）。
+    static let centerGap: CGFloat = 96
+
+    /// 第 displayIndex 张卡片的中心 x：照片分列扫帚左右（偶数张完全对称，
+    /// 奇数张右侧多一张）。左半=较旧、右半=较新，与 items 顺序一致。
+    /// displayIndex 是**展示段内**下标（0..<可见数），不是 items 下标。
+    static func photoX(displayIndex: Int, count: Int, width: CGFloat) -> CGFloat {
+        let center = width / 2
+        let leftCount = count / 2
+        if displayIndex < leftCount {
+            let n = leftCount - displayIndex          // 距中央第 n 格（左）
+            return center - centerGap / 2 - spacing * (CGFloat(n) - 0.5)
+        }
+        let n = displayIndex - leftCount              // 距中央第 n+1 格（右）
+        return center + centerGap / 2 + spacing * (CGFloat(n) + 0.5)
     }
 
     /// 按屏宽算容量，钳在 3…12。
@@ -41,10 +52,8 @@ enum ClotheslineLayout {
         max(0, total - visibleCount(total: total, width: width))
     }
 
-    /// 右端「一键清理」扫帚的悬挂 x：贴右缘留 64pt。
-    /// 照片居中排布，右端常为空地；极窄屏（<800pt）才可能与最右卡片相碰，
-    /// 那种场景通常也没有几张照片，可接受。
+    /// 「一键清理」扫帚的悬挂 x：绳子正中央（照片为其分列左右）。
     static func clearAllX(width: CGFloat) -> CGFloat {
-        max(60, width - 64)
+        width / 2
     }
 }

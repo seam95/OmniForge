@@ -12,10 +12,40 @@ final class ClotheslineMathTests: XCTestCase {
         XCTAssertEqual(mid, 10 + 4 * sag * 0.25)       // 顶点 = ropeTop + sag
     }
 
-    func testXCentersItems() {
-        XCTAssertEqual(ClotheslineLayout.x(index: 0, count: 1, width: 1000), 500)
-        XCTAssertEqual(ClotheslineLayout.x(index: 0, count: 3, width: 1000), 500 - 174)
-        XCTAssertEqual(ClotheslineLayout.x(index: 2, count: 3, width: 1000), 500 + 174)
+    func testPhotoXFlanksCenterGapSymmetricallyForEvenCounts() {
+        // 偶数张：以中央缺口完全对称，最内两张距缺口各半格
+        let gap = ClotheslineLayout.centerGap
+        let left = ClotheslineLayout.photoX(displayIndex: 0, count: 2, width: 1000)
+        let right = ClotheslineLayout.photoX(displayIndex: 1, count: 2, width: 1000)
+        XCTAssertEqual(left, 500 - gap / 2 - ClotheslineLayout.spacing / 2)
+        XCTAssertEqual(right, 500 + gap / 2 + ClotheslineLayout.spacing / 2)
+        XCTAssertEqual(500 - left, right - 500)   // 对称
+
+        // 四张：两侧各两张，逐格外扩
+        let xs = (0..<4).map { ClotheslineLayout.photoX(displayIndex: $0, count: 4, width: 1000) }
+        XCTAssertEqual(xs[1], xs[0] + ClotheslineLayout.spacing)         // 左半由内向外
+        XCTAssertEqual(xs[2], 500 + gap / 2 + ClotheslineLayout.spacing / 2)
+        XCTAssertEqual(xs[3], xs[2] + ClotheslineLayout.spacing)
+        XCTAssertEqual(500 - xs[0], xs[3] - 500)                        // 整体对称
+    }
+
+    func testPhotoXOddCountPutsExtraOnRight() {
+        // 奇数张：右半多一张（左 ceil/2、右 floor/2 之外的归属固定给右侧）
+        let xs = (0..<3).map { ClotheslineLayout.photoX(displayIndex: $0, count: 3, width: 1000) }
+        XCTAssertEqual(xs[0], 500 - ClotheslineLayout.centerGap / 2 - ClotheslineLayout.spacing / 2)
+        XCTAssertEqual(xs[1], 500 + ClotheslineLayout.centerGap / 2 + ClotheslineLayout.spacing / 2)
+        XCTAssertEqual(xs[2], xs[1] + ClotheslineLayout.spacing)
+    }
+
+    func testPhotoXNeverOccupiesCenter() {
+        // 任何数量下，卡片都不落在扫帚位（中央 ±gap/2 内无卡片中心）
+        for count in 1...12 {
+            for i in 0..<count {
+                let x = ClotheslineLayout.photoX(displayIndex: i, count: count, width: 1440)
+                XCTAssertFalse(abs(x - 720) < ClotheslineLayout.centerGap / 2 + 1,
+                               "count=\(count) idx=\(i) x=\(x) 侵入了扫帚位")
+            }
+        }
     }
 
     func testCapacityClamped() {
@@ -24,10 +54,9 @@ final class ClotheslineMathTests: XCTestCase {
         XCTAssertEqual(ClotheslineLayout.capacity(width: 1500), 7)     // (1500-200)/174 ≈ 7.47 → 7
     }
 
-    func testClearAllXAnchorsRightEdgeWithFloor() {
-        XCTAssertEqual(ClotheslineLayout.clearAllX(width: 1440), 1376)
-        XCTAssertEqual(ClotheslineLayout.clearAllX(width: 5120), 5056)
-        XCTAssertEqual(ClotheslineLayout.clearAllX(width: 100), 60)   // 极窄屏兜底
+    func testClearAllXIsScreenCenter() {
+        XCTAssertEqual(ClotheslineLayout.clearAllX(width: 1440), 720)
+        XCTAssertEqual(ClotheslineLayout.clearAllX(width: 100), 50)
     }
 
     func testVisibleAndHiddenCounts() {

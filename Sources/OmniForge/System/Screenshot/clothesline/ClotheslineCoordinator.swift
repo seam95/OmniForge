@@ -573,7 +573,11 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
               let index = manager.items.firstIndex(where: { $0.id == id })
         else { return nil }
         let width = panel.frame.width
-        let x = ClotheslineLayout.x(index: index, count: manager.items.count, width: width)
+        // 与视图同口径：只展示最新 visibleCount 张，下标须换算成展示段内下标，
+        // 否则溢出（+N）时飞行/掉落的落位会算错。
+        let visibleCount = ClotheslineLayout.visibleCount(total: manager.items.count, width: width)
+        let displayIndex = index - (manager.items.count - visibleCount)
+        let x = ClotheslineLayout.photoX(displayIndex: displayIndex, count: visibleCount, width: width)
         let viewTop = ClotheslineLayout.ropeY(x: x, width: width) - ClotheslineLayout.pinAbove
         let size = PeggedPhotoView.cardSize(for: manager.items[index].thumb.size)
         return CGRect(x: panel.frame.minX + x - size.width / 2,

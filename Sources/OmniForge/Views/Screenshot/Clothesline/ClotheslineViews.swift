@@ -79,7 +79,7 @@ struct ClotheslineView: View {
                 let displayStart = manager.items.count - visibleCount
                 ForEach(Array(manager.items.enumerated().suffix(visibleCount)), id: \.element.id) { index, item in
                     let displayIndex = index - displayStart
-                    let x = ClotheslineLayout.x(index: displayIndex, count: visibleCount, width: width)
+                    let x = ClotheslineLayout.photoX(displayIndex: displayIndex, count: visibleCount, width: width)
                     let ropeY = ClotheslineLayout.ropeY(x: x, width: width)
                     PeggedPhotoView(item: item, manager: manager, menuProvider: menuProvider)
                         .frame(width: ClotheslineLayout.cardWidth,
@@ -89,8 +89,8 @@ struct ClotheslineView: View {
                                     + (ClotheslineLayout.panelHeight - ropeY) / 2)
                 }
                 if hiddenCount > 0 {
-                    let badgeX = max(40, ClotheslineLayout.x(index: 0, count: visibleCount, width: width)
-                                       - ClotheslineLayout.spacing)
+                    let badgeX = ClotheslineLayout.photoX(displayIndex: 0, count: visibleCount, width: width)
+                        - ClotheslineLayout.spacing
                     let badgeRopeY = ClotheslineLayout.ropeY(x: badgeX, width: width)
                     OverflowBadge(count: hiddenCount,
                                   items: Array(manager.items.prefix(hiddenCount)),
