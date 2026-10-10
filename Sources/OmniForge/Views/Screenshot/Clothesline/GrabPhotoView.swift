@@ -34,13 +34,13 @@ struct GrabArea: NSViewRepresentable {
         let id = item.id
         view.url = item.url
         view.dragImage = item.thumb
-        view.onClick = { [weak manager] in manager?.copy(id) }
-        view.onDoubleClick = { [weak manager] in manager?.openInDefaultApp(id) }
+        // 二期手势：单击=标注（直进系统 Markup）、双击=复制。
+        view.onClick = { [weak manager] in manager?.markup(id) }
+        view.onDoubleClick = { [weak manager] in manager?.copy(id) }
         view.onDragStart = { [weak manager] in manager?.draggingID = id }
         view.onDragEnd = { [weak manager] in manager?.prune() }
         view.onTrash = { [weak manager] in manager?.trash(id) }
         view.onDiscard = { [weak manager] in manager?.discard(id) }
-        view.onLongPress = { [weak manager] in manager?.markup(id) }
         view.onPressChange = { [weak manager] pressed in manager?.pressedID = pressed ? id : nil }
         view.menuProvider = {
             // 有注入用注入菜单；无注入给空菜单（Task 12 装配时注入带 l10n 的真身）。
@@ -52,7 +52,6 @@ struct GrabArea: NSViewRepresentable {
 final class GrabPhotoView: NSView, NSDraggingSource {
     /// 拖拽进行中标志：显隐状态机据此判定「忙碌不收绳」。
     static var isDragging = false
-    static let holdDuration: TimeInterval = 0.45
     static let crossHitSize: CGFloat = 26
     /// 单击动作的执行延迟：等一个可能的第二击。双击打开前剪贴板不再被
     /// 首击的复制污染（P4）。
@@ -66,14 +65,11 @@ final class GrabPhotoView: NSView, NSDraggingSource {
     var onDragEnd: () -> Void = {}
     var onTrash: () -> Void = {}
     var onDiscard: () -> Void = {}
-    var onLongPress: () -> Void = {}
     var onPressChange: (Bool) -> Void = { _ in }
     var menuProvider: () -> NSMenu = { NSMenu() }
 
     private var downPoint: NSPoint?
     private var startedDrag = false
-    private var holdTimer: Timer?
-    private var didLongPress = false
     private var singleClickTask: Task<Void, Never>?
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -100,23 +96,13 @@ final class GrabPhotoView: NSView, NSDraggingSource {
         }
         downPoint = event.locationInWindow
         startedDrag = false
-        didLongPress = false
         onPressChange(true)
-        holdTimer?.invalidate()
-        holdTimer = Timer.scheduledTimer(withTimeInterval: Self.holdDuration, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, self.downPoint != nil, !self.startedDrag else { return }
-                self.didLongPress = true
-                self.onPressChange(false)
-                self.onLongPress()
-            }
-        }
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard let start = downPoint, !startedDrag, let url else { return }
         let p = event.locationInWindow
-        guard hypot(p.x - start.x, p.y - start.y) > 4, !didLongPress else { return }
+        guard hypot(p.x - start.x, p.y - start.y) > 4 else { return }
         startedDrag = true
         singleClickTask?.cancel()   // 拖拽独占：挂起的单击不再执行
         singleClickTask = nil
@@ -131,12 +117,11 @@ final class GrabPhotoView: NSView, NSDraggingSource {
 
     override func mouseUp(with event: NSEvent) {
         endPress()
-        if downPoint != nil, !startedDrag, !didLongPress, event.clickCount == 1 {
+        if downPoint != nil, !startedDrag, event.clickCount == 1 {
             // 单击不立即执行：250ms 内可能跟来第二击（双击），先挂起。
             scheduleSingleClick()
         }
         downPoint = nil
-        didLongPress = false
     }
 
     /// 延迟执行的单击动作；窗口内第二击会取消它（见 mouseDown）。
@@ -154,8 +139,6 @@ final class GrabPhotoView: NSView, NSDraggingSource {
     }
 
     private func endPress() {
-        holdTimer?.invalidate()
-        holdTimer = nil
         onPressChange(false)
     }
 
