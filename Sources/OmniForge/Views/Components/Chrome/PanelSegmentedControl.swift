@@ -66,31 +66,35 @@ struct PanelSegmentedControl<Tag: Hashable>: View {
     // MARK: - 极简文字下划线样式
 
     private var underlineBody: some View {
-        HStack(spacing: 22) {
+        HStack(spacing: 20) {
             ForEach(options) { option in
                 let isSelected = selection == option.tag
                 Button {
                     selection = option.tag
                 } label: {
-                    Text(option.title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(
-                            isSelected
-                                ? (colorScheme == .light ? Theme.Stats.text1 : Color.white)
-                                : (hoveredTag == option.tag
-                                    ? (colorScheme == .light ? Theme.Stats.text1.opacity(0.8) : Color.white.opacity(0.85))
-                                    : (colorScheme == .light ? Theme.Stats.text2 : Color.secondary))
-                        )
-                        .lineLimit(1)
-                        .padding(.horizontal, 4)
-                        .padding(.top, 2)
-                        .padding(.bottom, 6)
-                        .overlay(alignment: .bottom) {
+                    VStack(spacing: 5) {
+                        Text(option.title)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(
+                                isSelected
+                                    ? (colorScheme == .light ? Theme.Stats.text1 : Color.white)
+                                    : (hoveredTag == option.tag
+                                        ? (colorScheme == .light ? Theme.Stats.text1 : Color.white.opacity(0.85))
+                                        : (colorScheme == .light ? Theme.Stats.text2 : Color.secondary))
+                            )
+                            .lineLimit(1)
+                            .padding(.horizontal, 2)
+                            .padding(.top, 2)
+
+                        ZStack {
                             if isSelected {
                                 underlineIndicator
+                            } else {
+                                Color.clear.frame(height: 2)
                             }
                         }
-                        .contentShape(Rectangle())
+                    }
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .onHover { hovering in
@@ -112,12 +116,12 @@ struct PanelSegmentedControl<Tag: Hashable>: View {
         if reduceMotion {
             Capsule()
                 .fill(underlineColor)
-                .frame(height: 2.5)
+                .frame(height: 2)
                 .transition(.opacity)
         } else {
             Capsule()
                 .fill(underlineColor)
-                .frame(height: 2.5)
+                .frame(height: 2)
                 .matchedGeometryEffect(id: activeIndicatorID, in: indicator)
         }
     }
