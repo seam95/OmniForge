@@ -38,6 +38,32 @@ final class CodexModelCatalogStoreTests: XCTestCase {
         )
     }
 
+    private func makePublished(
+        key: String,
+        profileName: String,
+        model: String,
+        upstream: String? = nil,
+        displayName: String? = nil,
+        window: UInt64 = 256_000,
+        oneM: Bool = false
+    ) -> AggregationPublishedModel {
+        AggregationPublishedModel(
+            key: key,
+            profileName: profileName,
+            model: model,
+            upstream: upstream ?? model,
+            displayName: displayName ?? model,
+            oneM: oneM,
+            window: window
+        )
+    }
+
+    private func readModels() throws -> [[String: Any]] {
+        let data = try Data(contentsOf: catalogURL)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        return try XCTUnwrap(json["models"] as? [[String: Any]])
+    }
+
     func test_writeCatalog_withCustomModel_generatesValidJSON() throws {
         let profile = makeProfile(name: "GLM", model: "glm-4-7", reasoningEffort: "medium")
         try store.writeCatalog(for: profile)
@@ -169,5 +195,55 @@ final class CodexModelCatalogStoreTests: XCTestCase {
 
         // 文件不存在时再次调用不报错
         XCTAssertNoThrow(try store.removeCatalog())
+    }
+
+    // MARK: - 聚合目录（多家供应商同列）
+
+    func test_writeAggregatedCatalog_routeRowsFirstThenMembersInJoinOrder() throws {
+        let ds = makeProfile(name: "DeepSeek", key: "deepseek")
+        let published = [
+            makePublished(key: "kimi", profileName: "Kimi", model: "kimi-k3"),
+            makePublished(key: "deepseek", profileName: "DeepSeek", model: "deepseek-v4-pro")
+        ]
+        try store.writeAggregatedCatalog(defaultProfile: ds, published: published)
+
+        let models = try readModels()
+        XCTAssertEqual(models.map { $0["slug"] as? String }, ["deepseek-v4-pro", "ccs-kimi/kimi-k3"])
+        XCTAssertEqual(models.map { $0["priority"] as? Int }, [1, 2])
+    }
+
+    func test_writeAggregatedCatalog_memberRowGetsStackSlugAndCompHash() throws {
+        let published = [makePublished(key: "kimi", profileName: "Kimi", model: "kimi-k3")]
+        try store.writeAggregatedCatalog(defaultProfile: makeProfile(name: "DeepSeek", key: "deepseek"),
+                                         published: published)
+        let row = try XCTUnwrap(try readModels().first { ($0["slug"] as? String) == "ccs-kimi/kimi-k3" })
+        XCTAssertEqual(row["comp_hash"] as? String, "cc-switch")
+        XCTAssertEqual(row["display_name"] as? String, "kimi-k3（Kimi）")
+        XCTAssertEqual(row["description"] as? String, "kimi-k3 · 256K")
+    }
+
+    func test_writeAggregatedCatalog_routeRowKeepsPlainSlugAndNoCompHash() throws {
+        try store.writeAggregatedCatalog(defaultProfile: makeProfile(name: "DeepSeek", key: "deepseek"),
+                                         published: [])
+        let row = try XCTUnwrap(try readModels().first { ($0["slug"] as? String) == "deepseek-reasoner" })
+        XCTAssertNil(row["comp_hash"])
+    }
+
+    func test_writeAggregatedCatalog_forcesUseResponsesLiteFalseOnlyWhenOriginallyTrue() throws {
+        let published = [makePublished(key: "kimi", profileName: "Kimi", model: "kimi-k3")]
+        try store.writeAggregatedCatalog(defaultProfile: makeProfile(name: "DeepSeek", key: "deepseek"),
+                                         published: published)
+        let row = try XCTUnwrap(try readModels().first { ($0["slug"] as? String) == "ccs-kimi/kimi-k3" })
+        XCTAssertNotEqual(row["use_responses_lite"] as? Bool, true)
+    }
+
+    func test_writeAggregatedCatalog_sinksWindowKeysIntoEveryRow() throws {
+        let published = [makePublished(key: "kimi", profileName: "Kimi", model: "kimi-k3", window: 400_000)]
+        try store.writeAggregatedCatalog(defaultProfile: makeProfile(name: "DeepSeek", key: "deepseek"),
+                                         published: published)
+        let row = try XCTUnwrap(try readModels().first { ($0["slug"] as? String) == "ccs-kimi/kimi-k3" })
+        XCTAssertEqual(row["context_window"] as? Int, 400_000)
+        XCTAssertEqual(row["max_context_window"] as? Int, 400_000)
+        XCTAssertEqual(row["auto_compact_token_limit"] as? Int, 360_000)
     }
 }

@@ -76,6 +76,19 @@ enum ProviderSwitchPaths {
             .appendingPathComponent(codexModelCatalogFileName, isDirectory: false)
     }
 
+    /// Codex 聚合模式模型目录文件名（对齐 cc-switch 口径，`config.toml` 按此名引用）。
+    static let codexAggregationCatalogFileName = "cc-switch-model-catalog.json"
+
+    /// Codex 聚合模式模型目录路径：`~/.codex/cc-switch-model-catalog.json`。
+    /// 与直连模式的 `omniforge-model-catalog.json` 是两份文件，互不覆盖。
+    static func codexAggregationCatalogURL(
+        homePath: String = FileManager.default.homeDirectoryForCurrentUser.path,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL {
+        codexHome(homePath: homePath, environment: environment)
+            .appendingPathComponent(codexAggregationCatalogFileName, isDirectory: false)
+    }
+
     // MARK: - 统一入口
 
     /// 目标工具配置文件 URL。
