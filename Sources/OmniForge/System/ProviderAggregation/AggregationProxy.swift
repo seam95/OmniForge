@@ -21,9 +21,10 @@ protocol AggregationForwarding: AnyObject {
     )
 }
 
-/// 已发布模型列表边界（发现端点用；由编排层注入，Task 20 前用 stub）。
+/// 已发布模型列表边界（发现端点用；按工具分别列——Anthropic 形状列 Claude 侧、
+/// OpenAI 形状列 Codex 侧）。由编排层注入，Task 20 前用 stub。
 protocol AggregationProxyModelListing: AnyObject {
-    func publishedModels() -> [AggregationPublishedModel]
+    func publishedModels(tool: ProviderTool) -> [AggregationPublishedModel]
 }
 
 /// 分派判定结果：本地应答，或（可能已改写体的）转发。
@@ -140,22 +141,24 @@ final class AggregationProxy: AggregationProxying {
         case .unsupported:
             return .respond(Self.jsonResponse(statusCode: 404, body: ["error": "not_found"]))
         case .modelDiscovery:
-            let published = modelLister.publishedModels()
             if AggregationModelDiscovery.isModelDiscoveryRequest(
                 method: request.head.method,
                 path: request.head.path,
                 headers: request.head.headers,
                 query: request.head.query
             ) {
+                // Anthropic 形状（Claude 的模型发现）。
                 return .respond(Self.jsonDataResponse(
                     statusCode: 200,
-                    body: AggregationModelDiscovery.responseBody(published: published)
+                    body: AggregationModelDiscovery.responseBody(
+                        published: modelLister.publishedModels(tool: .claudeCode)
+                    )
                 ))
             }
             // OpenAI 形状（Codex 可达性检查）。
             return .respond(Self.jsonDataResponse(
                 statusCode: 200,
-                body: Self.openAIModelListBody(published: published)
+                body: Self.openAIModelListBody(published: modelLister.publishedModels(tool: .codex))
             ))
         case .anthropicMessages, .openAIResponses, .openAIChatCompletions:
             guard let tool = clientProtocol.modelIDTool else {

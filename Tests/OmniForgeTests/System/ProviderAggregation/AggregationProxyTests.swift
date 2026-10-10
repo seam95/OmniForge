@@ -115,7 +115,7 @@ final class AggregationProxyTests: XCTestCase {
 
     private final class StubModelLister: AggregationProxyModelListing {
         var models: [AggregationPublishedModel] = []
-        func publishedModels() -> [AggregationPublishedModel] { models }
+        func publishedModels(tool: ProviderTool) -> [AggregationPublishedModel] { models }
     }
 
     // MARK: - tests

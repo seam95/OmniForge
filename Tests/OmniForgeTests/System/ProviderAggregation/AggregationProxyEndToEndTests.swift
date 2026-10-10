@@ -219,5 +219,5 @@ private final class StubUpstreamServer {
 // MARK: - Stub 模型列表
 
 private final class StubModelLister: AggregationProxyModelListing {
-    func publishedModels() -> [AggregationPublishedModel] { [] }
+    func publishedModels(tool: ProviderTool) -> [AggregationPublishedModel] { [] }
 }

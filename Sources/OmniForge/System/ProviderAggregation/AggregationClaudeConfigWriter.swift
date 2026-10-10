@@ -4,6 +4,10 @@ import Foundation
 protocol AggregationClaudeConfigWriting: AnyObject {
     func applyAggregation(defaultProfile: ProviderProfile, published: [AggregationPublishedModel], port: UInt16) throws
     func clearAggregation() throws
+    /// 磁盘现状的契约摘要（供「未变更不重写」比对）。
+    func currentContractDigest() -> String
+    /// 给定投影的契约摘要（不落盘）。
+    func projectedContractDigest(defaultProfile: ProviderProfile, published: [AggregationPublishedModel], port: UInt16) -> String
 }
 
 /// `~/.claude/settings.json` 聚合投影：裸 origin 指向本机代理、占位凭证、
@@ -24,7 +28,24 @@ final class AggregationClaudeConfigWriter: AggregationClaudeConfigWriting {
     }
 
     func applyAggregation(defaultProfile: ProviderProfile, published: [AggregationPublishedModel], port: UInt16) throws {
-        var root = (try SettingsJSONFile.readRoot(from: settingsURL, fileManager: fileManager)) ?? [:]
+        let root = projectedRoot(defaultProfile: defaultProfile, published: published, port: port)
+        try SettingsJSONFile.writeRoot(root, to: settingsURL, fileManager: fileManager)
+    }
+
+    func currentContractDigest() -> String {
+        let root = (try? SettingsJSONFile.readRoot(from: settingsURL, fileManager: fileManager)) ?? [:]
+        return AggregationContractDigest.claude(projectedRoot: root)
+    }
+
+    func projectedContractDigest(defaultProfile: ProviderProfile, published: [AggregationPublishedModel], port: UInt16) -> String {
+        AggregationContractDigest.claude(
+            projectedRoot: projectedRoot(defaultProfile: defaultProfile, published: published, port: port)
+        )
+    }
+
+    /// 聚合投影（纯合并，不落盘）：当前 root 上合并拥有键与顶层 `modelPicker`。
+    func projectedRoot(defaultProfile: ProviderProfile, published: [AggregationPublishedModel], port: UInt16) -> [String: Any] {
+        var root = (try? SettingsJSONFile.readRoot(from: settingsURL, fileManager: fileManager)) ?? [:]
         var env = (root["env"] as? [String: Any]) ?? [:]
 
         // 只动拥有键：先清掉全部拥有 env 键（直连模式残留的模型/窗口键），再写聚合投影。
@@ -70,7 +91,7 @@ final class AggregationClaudeConfigWriter: AggregationClaudeConfigWriting {
                 "description": $0.description,
             ] },
         ]
-        try SettingsJSONFile.writeRoot(root, to: settingsURL, fileManager: fileManager)
+        return root
     }
 
     func clearAggregation() throws {

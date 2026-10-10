@@ -9,6 +9,15 @@ protocol AggregationCodexConfigWriting: AnyObject {
         requiresOpenAIAuth: Bool
     ) throws
     func clearAggregation() throws
+    /// 磁盘现状的契约摘要（config 文本 + 目录字节）。
+    func currentContractDigest() -> String
+    /// 给定投影的契约摘要（不落盘）。
+    func projectedContractDigest(
+        defaultProfile: ProviderProfile,
+        published: [AggregationPublishedModel],
+        port: UInt16,
+        requiresOpenAIAuth: Bool
+    ) -> String
 }
 
 /// `~/.codex/config.toml` 聚合投影 + `cc-switch-model-catalog.json` 目录写入。
@@ -46,6 +55,56 @@ final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
         port: UInt16,
         requiresOpenAIAuth: Bool
     ) throws {
+        let text = projectedConfigText(
+            defaultProfile: defaultProfile,
+            published: published,
+            port: port,
+            requiresOpenAIAuth: requiresOpenAIAuth
+        )
+        // 先写目录文件再写 config——客户端只认「目录在、配置指向它」的完整形态。
+        try CodexModelCatalogStore(catalogURL: catalogURL, fileManager: fileManager)
+            .writeAggregatedCatalog(defaultProfile: defaultProfile, published: published)
+        try AtomicFileWriter.write(
+            text.data(using: .utf8) ?? Data(),
+            to: configURL,
+            fileManager: fileManager
+        )
+    }
+
+    func currentContractDigest() -> String {
+        let configText = (try? String(contentsOf: configURL, encoding: .utf8)) ?? ""
+        let catalogData = try? Data(contentsOf: catalogURL)
+        return AggregationContractDigest.codex(configText: configText, catalogData: catalogData)
+    }
+
+    func projectedContractDigest(
+        defaultProfile: ProviderProfile,
+        published: [AggregationPublishedModel],
+        port: UInt16,
+        requiresOpenAIAuth: Bool
+    ) -> String {
+        let catalogData = CodexModelCatalogStore.aggregatedCatalogData(
+            defaultProfile: defaultProfile,
+            published: published
+        )
+        return AggregationContractDigest.codex(
+            configText: projectedConfigText(
+                defaultProfile: defaultProfile,
+                published: published,
+                port: port,
+                requiresOpenAIAuth: requiresOpenAIAuth
+            ),
+            catalogData: catalogData
+        )
+    }
+
+    /// 投影后的 config 文本（读当前文档合并，不落盘）。
+    func projectedConfigText(
+        defaultProfile: ProviderProfile,
+        published: [AggregationPublishedModel],
+        port: UInt16,
+        requiresOpenAIAuth: Bool
+    ) -> String {
         var document = Self.loadDocument(configURL: configURL, fileManager: fileManager)
 
         // 顶层：指向 custom 表 + 默认模型 + 目录文件名。
@@ -77,15 +136,7 @@ final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
         } else {
             document.remove(key: "requires_openai_auth", table: customTable)
         }
-
-        // 先写目录文件再写 config——客户端只认「目录在、配置指向它」的完整形态。
-        try CodexModelCatalogStore(catalogURL: catalogURL, fileManager: fileManager)
-            .writeAggregatedCatalog(defaultProfile: defaultProfile, published: published)
-        try AtomicFileWriter.write(
-            document.serialize().data(using: .utf8) ?? Data(),
-            to: configURL,
-            fileManager: fileManager
-        )
+        return document.serialize()
     }
 
     func clearAggregation() throws {
