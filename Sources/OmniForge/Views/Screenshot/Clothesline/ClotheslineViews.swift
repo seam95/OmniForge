@@ -436,8 +436,8 @@ private struct ClearAllBroom: View {
             Button(action: { manager.clearAll() }) {
                 BroomGlyph()
                     .foregroundStyle(.primary)
-                    .frame(width: 22, height: 22)
-                    .padding(6)
+                    .frame(width: 26, height: 26)
+                    .padding(7)
                     .background(.ultraThinMaterial, in: Circle())
                     .overlay(
                         Circle().stroke(

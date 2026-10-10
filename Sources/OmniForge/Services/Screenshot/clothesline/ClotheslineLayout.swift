@@ -20,8 +20,10 @@ enum ClotheslineLayout {
         return ropeTop + 4 * sag(width: width) * f * (1 - f)
     }
 
-    /// 绳子中央给一键清理扫帚留的缺口宽（扫帚约 34pt + 两侧余量，须小于间距）。
-    static let centerGap: CGFloat = 96
+    /// 绳子中央给一键清理扫帚留的缺口宽（半格 + 两侧余量）。
+    /// 150 保证：最近卡片中心距中央 162pt、卡片内缘距中央 90pt，
+    /// 与扫帚钮（40pt 宽 + 阴影）之间仍有 ~60pt 净距——重叠不可能发生。
+    static let centerGap: CGFloat = 150
 
     /// 第 displayIndex 张卡片的中心 x：照片分列扫帚左右（偶数张完全对称，
     /// 奇数张右侧多一张）。左半=较旧、右半=较新，与 items 顺序一致。
