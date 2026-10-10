@@ -79,6 +79,12 @@ final class AppCompositionRoot {
             userDefaults: foundation.userDefaults
         )
         root.finishWiring()
+        // 启动自愈唯一调用点：pending 前滚/丢弃；聚合配置在而代理起不来 → 该工具回落直连。
+        // 非 throws——内部错误进 lastError，不阻断启动（SPEC 6.8）。
+        FeatureRuntime.shared.manager(
+            for: .providerSwitch,
+            as: ProviderAggregationManager.self
+        )?.recoverOnLaunch()
         return root
     }
 

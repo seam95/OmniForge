@@ -21,6 +21,8 @@ extension ProviderTool {
 struct ProviderSwitchSettingsView: View {
     @ObservedObject var manager: ProviderSwitchManager
     let strings: Strings
+    /// 聚合编排管理器（nil = 未注册，降级为只显示直连页）。
+    var aggregation: ProviderAggregationManager?
     var commandCopier: ProviderLaunchCommandCopying = ProviderLaunchCommandCopier()
 
     @State private var selectedTool: ProviderTool = .claudeCode
