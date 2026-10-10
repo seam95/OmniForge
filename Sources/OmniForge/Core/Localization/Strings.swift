@@ -1441,6 +1441,94 @@ struct Strings: Equatable {
     /// 备份内容读取失败提示。
     let providerBackupContentFailed: String
 
+    // MARK: - 聚合模式（Provider Aggregation）
+    /// 模式分段行：直连。
+    let providerModeDirect: String
+    /// 模式分段行：聚合。
+    let providerModeAggregation: String
+    /// 聚合面板状态行引导语。
+    let providerAggregationStatusLead: String
+    /// 聚合面板状态行取值（%@ = 默认供应商名，%ld = 成员数，%ld = 模型数）。
+    let providerAggregationStatusValueFormat: String
+    /// 进入聚合模式动作。
+    let providerAggregationEnter: String
+    /// 退出聚合模式动作。
+    let providerAggregationExit: String
+    /// 切换确认框标题。
+    let providerAggregationConfirmTitle: String
+    /// 确认框：聚合形态说明。
+    let providerAggregationConfirmStack: String
+    /// 确认框：直连配置备份说明。
+    let providerAggregationConfirmDirect: String
+    /// 名单说明：默认那家职责。
+    let providerAggregationNoteDefault: String
+    /// 名单说明：成员数（%ld = 成员数）。
+    let providerAggregationNoteMembersFormat: String
+    /// 名单说明：尚无成员。
+    let providerAggregationNoteEmpty: String
+    /// 名单说明：不做故障转移。
+    let providerAggregationNoteNoFailover: String
+    /// 名单说明：Codex 需重启。
+    let providerAggregationNoteRestartCodex: String
+    /// 官方账号说明（确认框内）。
+    let providerAggregationOfficialNote: String
+    /// 官方账号不可加入的原因（行内说明）。
+    let providerAggregationOfficialReason: String
+    /// 名单分区标题：默认。
+    let providerAggregationSectionDefault: String
+    /// 名单分区标题：已添加（%ld = 数量）。
+    let providerAggregationSectionAddedFormat: String
+    /// 名单分区标题：可用（%ld = 数量）。
+    let providerAggregationSectionAvailableFormat: String
+    /// 成员动作：加入。
+    let providerAggregationAdd: String
+    /// 成员动作：移除。
+    let providerAggregationRemove: String
+    /// 成员动作：设为默认。
+    let providerAggregationSetDefault: String
+    /// 进入聚合 toast（Claude 立即生效）。
+    let providerAggregationEnteredClaude: String
+    /// 进入聚合 toast（Codex 重启生效）。
+    let providerAggregationEnteredCodex: String
+    /// 回到直连 toast（%@ = 恢复的默认供应商名）。
+    let providerAggregationExitedFormat: String
+    /// 回到直连 toast 的撤销动作。
+    let providerAggregationUndo: String
+    /// 常驻提示：客户端缓存。
+    let providerAggregationCacheHint: String
+    /// 横幅：代理未运行（请求必然失败）。
+    let providerAggregationProxyDown: String
+    /// 横幅动作：启动服务。
+    let providerAggregationStartService: String
+    /// 错误：代理启动失败已回落直连。
+    let providerAggregationAttachFailed: String
+    /// 直连分区锁定原因（聚合生效时两个写者不得同时生效）。
+    let providerAggregationDirectLockedReason: String
+    /// 陈旧横幅标题：守护进程过期。
+    let providerAggregationStaleDaemonTitle: String
+    /// 陈旧横幅正文：守护进程。
+    let providerAggregationStaleDaemonBody: String
+    /// 陈旧横幅正文：其余客户端。
+    let providerAggregationStaleOthersBody: String
+    /// 陈旧横幅动作：重启守护进程。
+    let providerAggregationRestartDaemon: String
+    /// 重启守护进程确认标题。
+    let providerAggregationRestartDaemonConfirmTitle: String
+    /// 重启守护进程确认正文。
+    let providerAggregationRestartDaemonConfirmMessage: String
+    /// 重启结果：已重启。
+    let providerAggregationDaemonRestarted: String
+    /// 重启结果：未在运行。
+    let providerAggregationDaemonNotRunning: String
+    /// Miss 短标签：聚合模式未开启（完整双语文案见 `AggregationMiss.message`）。
+    let providerMissStackOff: String
+    /// Miss 短标签：模型不存在。
+    let providerMissUnknown: String
+    /// Miss 短标签：成员已移除。
+    let providerMissRemoved: String
+    /// Miss 短标签：供应商已删除。
+    let providerMissDeleted: String
+
     // MARK: - Sticky Notes（桌面便签）
     /// 实用工具列表行副标题。
     let utilityStickyNotesSubtitle: String

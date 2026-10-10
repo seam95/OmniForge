@@ -57,4 +57,34 @@ final class StringsTranslationTests: XCTestCase {
             XCTAssertFalse(source.captureAnnotationErrorFreeze.isEmpty)
         }
     }
+
+    /// 聚合模式字符串键在英文侧必须全部声明（中文侧由数量一致性测试兜底）。
+    func test_bothLanguagesDeclareTheSameAggregationStrings() {
+        let names = Set(Mirror(reflecting: Strings.en).children.compactMap { $0.label })
+        for key in ["providerModeDirect", "providerModeAggregation", "providerAggregationStatusLead",
+                    "providerAggregationStatusValueFormat", "providerAggregationEnter", "providerAggregationExit",
+                    "providerAggregationConfirmTitle", "providerAggregationConfirmStack", "providerAggregationConfirmDirect",
+                    "providerAggregationNoteDefault", "providerAggregationNoteMembersFormat", "providerAggregationNoteEmpty",
+                    "providerAggregationNoteNoFailover", "providerAggregationNoteRestartCodex",
+                    "providerAggregationOfficialNote", "providerAggregationOfficialReason",
+                    "providerAggregationSectionDefault", "providerAggregationSectionAddedFormat",
+                    "providerAggregationSectionAvailableFormat", "providerAggregationAdd", "providerAggregationRemove",
+                    "providerAggregationSetDefault", "providerAggregationEnteredClaude", "providerAggregationEnteredCodex",
+                    "providerAggregationExitedFormat", "providerAggregationUndo", "providerAggregationCacheHint",
+                    "providerAggregationProxyDown", "providerAggregationStartService", "providerAggregationAttachFailed",
+                    "providerAggregationDirectLockedReason",
+                    "providerAggregationStaleDaemonTitle", "providerAggregationStaleDaemonBody",
+                    "providerAggregationStaleOthersBody", "providerAggregationRestartDaemon",
+                    "providerAggregationRestartDaemonConfirmTitle", "providerAggregationRestartDaemonConfirmMessage",
+                    "providerAggregationDaemonRestarted", "providerAggregationDaemonNotRunning",
+                    "providerMissStackOff", "providerMissUnknown", "providerMissRemoved", "providerMissDeleted"] {
+            XCTAssertTrue(names.contains(key), "missing \(key)")
+        }
+    }
+
+    func test_accessibilityIDs_areDistinct() {
+        let ids: [SettingsAccessibilityID] = [.providerAggregationModeSegment, .providerAggregationEnter,
+                                              .providerAggregationExit, .providerAggregationRestartDaemon]
+        XCTAssertEqual(Set(ids.map(\.rawValue)).count, ids.count)
+    }
 }
