@@ -25,10 +25,12 @@ enum ProviderTool: String, Codable, CaseIterable, Identifiable {
 }
 
 extension ProviderTool {
-    /// Claude Code 拥有的 env 键 — 切 Official 时全部删除；写 profile 时只合并这些键。
+    /// Claude Code 基础拥有 env 键 — 切 Official 时全部删除；写 profile 时只合并这些键。
     /// 含旧版 `ANTHROPIC_SMALL_FAST_MODEL`（已由 Haiku 映射取代，仍一并清理）与
     /// ccswitch 风格的角色映射键（`ANTHROPIC_DEFAULT_*`、`CLAUDE_CODE_SUBAGENT_MODEL`）。
-    static let claudeOwnedEnvKeys: Set<String> = [
+    /// 这些键都有 profile 专属字段（token/baseURL/modelOverride/modelMapping），
+    /// 导入外部文件时被专属字段消费，不进入 `extraEnv`。
+    static let claudeCoreEnvKeys: Set<String> = [
         "ANTHROPIC_AUTH_TOKEN",
         "ANTHROPIC_BASE_URL",
         "ANTHROPIC_MODEL",
@@ -44,12 +46,48 @@ extension ProviderTool {
         "CLAUDE_CODE_SUBAGENT_MODEL",
     ]
 
+    /// 聚合模式计算写入的窗口/兼容键（对齐 cc-switch `CLAUDE_EXCLUSIVE_ENV`）。
+    /// 没有专属 profile 字段：直连模式下经 `extraEnv` 原样合并，
+    /// 导入外部文件时必须保留在 `extraEnv`（否则预设的窗口键会在 upsert→list 往返中丢失）。
+    static let claudeAggregationEnvKeys: Set<String> = [
+        "CLAUDE_CODE_MAX_CONTEXT_TOKENS",
+        "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
+        "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+        "CLAUDE_CODE_DISABLE_1M_CONTEXT",
+        "CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT",
+        "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS",
+        "CLAUDE_CODE_DISABLE_ARTIFACT",
+        "CLAUDE_CODE_DISABLE_THINKING",
+        "DISABLE_INTERLEAVED_THINKING",
+        "CLAUDE_CODE_ALWAYS_ENABLE_EFFORT",
+        "CLAUDE_CODE_EXTRA_BODY",
+        "CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING",
+        "CLAUDE_CODE_AUTO_MODE_SERVER",
+        "ENABLE_TOOL_SEARCH",
+    ]
+
+    /// Claude Code 拥有的全部 env 键 = 基础键 ∪ 聚合窗口键。
+    /// clearOverrides 与聚合投影以此为准；导入过滤用 `claudeCoreEnvKeys`。
+    static let claudeOwnedEnvKeys: Set<String> = claudeCoreEnvKeys.union(claudeAggregationEnvKeys)
+
+    /// Claude Code `settings.json` 顶层拥有的键 — 聚合模式的 `modelPicker` 落在此层
+    /// （不是 `env` 内），退出聚合时整键删除。
+    static let claudeOwnedTopLevelKeys: Set<String> = ["modelPicker"]
+
     /// Codex 顶层拥有的键（model_provider 指向激活的 provider 表）。
+    /// 后半段窗口/兼容键是聚合模式要计算写入的；直连模式下经 `extraEnv` 原样合并。
     static let codexOwnedTopLevelKeys: Set<String> = [
         "model_provider",
         "model",
         "model_reasoning_effort",
         "model_catalog_json",
+        // MARK: 聚合模式窗口键（计算写入；直连模式经 extraEnv 原样合并）
+        "model_context_window",
+        "model_auto_compact_token_limit",
+        "openai_base_url",
+        "review_model",
+        "plan_mode_reasoning_effort",
+        "disable_response_storage",
     ]
 
     /// Codex `[model_providers.<key>]` 表内拥有的键 — 凭证直写 experimental_bearer_token，不走 env。

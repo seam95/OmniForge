@@ -260,8 +260,10 @@ enum ProviderProfileFileCodec {
             let baseURL = env["ANTHROPIC_BASE_URL"] ?? ""
             let token = env["ANTHROPIC_AUTH_TOKEN"] ?? ""
             let mapping = ProviderModelMapping.fromEnv(env)
-            // 额外 env：拥有键之外的非空键（含 preset 的 CLAUDE_CODE_* 扩展）。
-            let owned = ProviderTool.claudeOwnedEnvKeys
+            // 额外 env：专属字段消费键之外的非空键（含 preset 的 CLAUDE_CODE_* 扩展）。
+            // 注意用 `claudeCoreEnvKeys` 而非全部拥有键——聚合窗口键没有专属字段，
+            // 直连模式经 extraEnv 原样合并，导入时必须保留。
+            let owned = ProviderTool.claudeCoreEnvKeys
             let extraEnv = env.filter { !owned.contains($0.key) && !$0.value.isEmpty }
             return ProviderProfile(
                 id: fallbackID,

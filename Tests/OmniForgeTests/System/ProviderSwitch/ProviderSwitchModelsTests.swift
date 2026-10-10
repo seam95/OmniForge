@@ -38,6 +38,21 @@ final class ProviderSwitchModelsTests: XCTestCase {
                 "ANTHROPIC_DEFAULT_HAIKU_MODEL",
                 "ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME",
                 "CLAUDE_CODE_SUBAGENT_MODEL",
+                // MARK: 聚合模式窗口/兼容键
+                "CLAUDE_CODE_MAX_CONTEXT_TOKENS",
+                "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
+                "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+                "CLAUDE_CODE_DISABLE_1M_CONTEXT",
+                "CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT",
+                "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS",
+                "CLAUDE_CODE_DISABLE_ARTIFACT",
+                "CLAUDE_CODE_DISABLE_THINKING",
+                "DISABLE_INTERLEAVED_THINKING",
+                "CLAUDE_CODE_ALWAYS_ENABLE_EFFORT",
+                "CLAUDE_CODE_EXTRA_BODY",
+                "CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING",
+                "CLAUDE_CODE_AUTO_MODE_SERVER",
+                "ENABLE_TOOL_SEARCH",
             ]
         )
     }
@@ -45,7 +60,12 @@ final class ProviderSwitchModelsTests: XCTestCase {
     func test_codexOwnedKeys() {
         XCTAssertEqual(
             ProviderTool.codexOwnedTopLevelKeys,
-            ["model_provider", "model", "model_reasoning_effort", "model_catalog_json"]
+            [
+                "model_provider", "model", "model_reasoning_effort", "model_catalog_json",
+                // MARK: 聚合模式窗口键
+                "model_context_window", "model_auto_compact_token_limit", "openai_base_url",
+                "review_model", "plan_mode_reasoning_effort", "disable_response_storage",
+            ]
         )
         XCTAssertEqual(
             ProviderTool.codexOwnedProviderKeys,
