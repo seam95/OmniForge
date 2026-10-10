@@ -2,6 +2,33 @@ import XCTest
 @testable import OmniForge
 
 final class GRDBClipboardStoreTests: XCTestCase {
+    func test_initPrunesUndecodableImageEntries() {
+        let tempDB = FileManager.default.temporaryDirectory
+            .appendingPathComponent("GRDBClipboardStorePrune_\(UUID().uuidString).sqlite")
+        defer {
+            try? FileManager.default.removeItem(at: tempDB)
+        }
+
+        // 先建库并写入一条 4 字节占位「图片」（微信式 stub）。
+        let store = GRDBClipboardStore(databaseURL: tempDB)
+        let createdAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let stubEntry = ClipboardEntry(
+            id: UUID(uuidString: "cccccccc-cccc-cccc-cccc-cccccccccccc")!,
+            createdAt: createdAt,
+            type: .image,
+            preview: "Image",
+            sourceAppBundleID: nil,
+            sourceAppName: "WeChat",
+            content: .image(Data([0x89, 0x50, 0x4E, 0x47]))
+        )
+        store.saveEntry(stubEntry)
+        XCTAssertEqual(store.loadEntries().count, 1)
+
+        // 重新开库：启动时清理，占位条目被删除。
+        let reopened = GRDBClipboardStore(databaseURL: tempDB)
+        XCTAssertEqual(reopened.loadEntries().count, 0, "4 字节占位图片条目应在开库时清理")
+    }
+
     func test_saveAndLoadRoundTrip() {
         let tempDB = FileManager.default.temporaryDirectory
             .appendingPathComponent("GRDBClipboardStoreTests_\(UUID().uuidString).sqlite")

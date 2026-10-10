@@ -264,6 +264,19 @@ final class ClipboardHistoryManager: ObservableObject {
     }
 
     private func captureEntry() -> ClipboardEntry? {
+        // 图片数据优先于文件 URL：截图工具常见「PNG 数据 + 文件 URL」双写，
+        // 按图片归档才有缩略图与图片详情（按文件归档两者皆失，且只能粘回文件引用）。
+        // 纯文件复制（无图片数据，如访达里的 .png/.pdf）仍走 .file。
+        if let imageData = pasteboard.readImageData(),
+           ClipboardImageDownsampler.isDecodable(imageData) {
+            return makeEntry(
+                type: .image,
+                preview: "Image",
+                content: .image(imageData),
+                thumbnailData: makeImageThumbnailData(from: imageData)
+            )
+        }
+
         let fileURLs = pasteboard.readFileURLs()
         if !fileURLs.isEmpty {
             return makeEntry(
@@ -278,15 +291,6 @@ final class ClipboardHistoryManager: ObservableObject {
                 type: .url,
                 preview: url.absoluteString,
                 content: .url(url)
-            )
-        }
-
-        if let imageData = pasteboard.readImageData() {
-            return makeEntry(
-                type: .image,
-                preview: "Image",
-                content: .image(imageData),
-                thumbnailData: makeImageThumbnailData(from: imageData)
             )
         }
 

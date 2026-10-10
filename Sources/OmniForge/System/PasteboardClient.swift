@@ -36,16 +36,21 @@ final class SystemPasteboardClient: PasteboardClient {
     }
 
     func readImageData() -> Data? {
-        if let data = pasteboard.data(forType: .png) {
+        // .png 槽位可能是占位符（微信等只写 4 字节魔数）：必须过可解码校验。
+        if let data = pasteboard.data(forType: .png), ClipboardImageDownsampler.isDecodable(data) {
             return data
         }
-        guard let tiffData = pasteboard.data(forType: .tiff) else {
-            return nil
+        if let tiffData = pasteboard.data(forType: .tiff), ClipboardImageDownsampler.isDecodable(tiffData) {
+            guard let imageRep = NSBitmapImageRep(data: tiffData) else { return tiffData }
+            return imageRep.representation(using: .png, properties: [:]) ?? tiffData
         }
-        guard let imageRep = NSBitmapImageRep(data: tiffData) else {
-            return nil
+        // 最后经 NSImage 类读取：多表示画布上取得到真实位图表示。
+        if let image = pasteboard.readObjects(forClasses: [NSImage.self])?.first as? NSImage,
+           let tiff = image.tiffRepresentation, ClipboardImageDownsampler.isDecodable(tiff) {
+            return NSBitmapImageRep(data: tiff)?
+                .representation(using: .png, properties: [:]) ?? tiff
         }
-        return imageRep.representation(using: .png, properties: [:])
+        return nil
     }
 
     func readText() -> String? {

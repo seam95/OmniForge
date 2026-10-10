@@ -118,6 +118,77 @@ final class ClipboardHistoryManagerTests: XCTestCase {
         XCTAssertEqual(store.releaseMemoryCallCount, 1)
     }
 
+    // MARK: - 采集分类顺序（图片数据优先于文件 URL）
+
+    func test_capture_prefersImageWhenBothImageDataAndFileURLPresent() {
+        let pasteboard = FakeHistoryPasteboardClient()
+        let manager = ClipboardHistoryManager(
+            store: FakeClipboardStore(entries: []),
+            userDefaults: UserDefaults(suiteName: "ClipboardHistoryManagerTests_imgfirst")!,
+            pasteboard: pasteboard
+        )
+        pasteboard.imageData = Self.tinyPNG()
+        pasteboard.fileURLs = [URL(fileURLWithPath: "/tmp/shot.png")]
+
+        pasteboard.changeCountValue += 1
+        manager.pollPasteboard()
+
+        XCTAssertEqual(manager.entries.count, 1)
+        XCTAssertEqual(manager.entries.first?.type, .image, "PNG 数据 + 文件 URL 双写应按图片归档")
+        XCTAssertNotNil(manager.entries.first?.thumbnailData, "图片条目必须有缩略图")
+        guard case .image = manager.entries.first?.content else {
+            return XCTFail("content 应为 .image")
+        }
+    }
+
+    func test_capture_fileEntryWhenOnlyFileURL() {
+        let pasteboard = FakeHistoryPasteboardClient()
+        let manager = ClipboardHistoryManager(
+            store: FakeClipboardStore(entries: []),
+            userDefaults: UserDefaults(suiteName: "ClipboardHistoryManagerTests_fileonly")!,
+            pasteboard: pasteboard
+        )
+        pasteboard.fileURLs = [URL(fileURLWithPath: "/tmp/doc.pdf")]
+
+        pasteboard.changeCountValue += 1
+        manager.pollPasteboard()
+
+        XCTAssertEqual(manager.entries.count, 1)
+        XCTAssertEqual(manager.entries.first?.type, .file, "纯文件复制仍按文件归档")
+    }
+
+    func test_capture_rejectsUndecodableImageStub() {
+        let pasteboard = FakeHistoryPasteboardClient()
+        let manager = ClipboardHistoryManager(
+            store: FakeClipboardStore(entries: []),
+            userDefaults: UserDefaults(suiteName: "ClipboardHistoryManagerTests_stub")!,
+            pasteboard: pasteboard
+        )
+        // 微信式占位符：.png 槽位只放 4 字节魔数（真实读取层会过滤掉；
+        // 此处直接经假件注入，验证采集层的第二道防线）。
+        pasteboard.imageData = Data([0x89, 0x50, 0x4E, 0x47])
+
+        pasteboard.changeCountValue += 1
+        manager.pollPasteboard()
+
+        XCTAssertTrue(manager.entries.isEmpty, "不可解码的图片数据不得入库（否则永远无法预览）")
+    }
+
+    /// 8×8 合法 PNG（远大于 32 字节阈值）。
+    static func tinyPNG() -> Data {
+        let image = NSImage(size: NSSize(width: 8, height: 8))
+        image.lockFocus()
+        NSColor.systemBlue.setFill()
+        NSRect(x: 0, y: 0, width: 8, height: 8).fill()
+        image.unlockFocus()
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let png = rep.representation(using: .png, properties: [:]) else {
+            fatalError("tinyPNG fixture failed")
+        }
+        return png
+    }
+
     // MARK: - 采集暂停窗口（⌘C 兜底取词的零污染保障）
 
     func test_suspendCapture_skipsChangesAndResumeDiscardsThem() {
@@ -185,16 +256,18 @@ final class ClipboardHistoryManagerTests: XCTestCase {
     }
 }
 
-/// 可控 changeCount / 文本的 PasteboardClient 假件（驱动 pollPasteboard 采集分支）。
+/// 可控 changeCount / 文本 / 图片 / 文件 URL 的 PasteboardClient 假件。
 private final class FakeHistoryPasteboardClient: PasteboardClient {
     var changeCountValue = 0
     var text: String?
+    var imageData: Data?
+    var fileURLs: [URL] = []
 
     var changeCount: Int { changeCountValue }
 
-    func readFileURLs() -> [URL] { [] }
+    func readFileURLs() -> [URL] { fileURLs }
     func readURL() -> URL? { nil }
-    func readImageData() -> Data? { nil }
+    func readImageData() -> Data? { imageData }
     func readText() -> String? { text }
     func readRTFData() -> Data? { nil }
 }

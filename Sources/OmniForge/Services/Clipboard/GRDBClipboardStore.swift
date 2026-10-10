@@ -26,6 +26,7 @@ final class GRDBClipboardStore: ClipboardStore {
 
             let queue = try DatabaseQueue(path: databaseURL.path, configuration: configuration)
             try Self.makeMigrator().migrate(queue)
+            Self.pruneUndecodableImageEntries(in: queue)
             self.databaseQueue = queue
 
             if removeLegacyStoreFiles {
@@ -40,6 +41,28 @@ final class GRDBClipboardStore: ClipboardStore {
     }
 
     // MARK: - 轻量加载（排除 blobData）
+
+    /// 清理历史遗留的不可解码图片条目：部分应用（微信）在 .png 槽位只写几字节
+    /// 占位符，旧版采集照存不误，条目永远「无法预览」。合法 PNG/TIFF 不可能
+    /// 小于 32 字节，按长度一刀切（SQL 级，启动时零成本）。
+    private static func pruneUndecodableImageEntries(in queue: DatabaseQueue) {
+        do {
+            let deleted = try queue.write { db in
+                try db.execute(
+                    sql: """
+                        DELETE FROM clipboard_entries
+                        WHERE type = 'image' AND (blobSize IS NULL OR blobSize < 32)
+                        """
+                )
+                return db.changesCount
+            }
+            if deleted > 0 {
+                Self.logger.notice("pruned \(deleted, privacy: .public) undecodable image entries")
+            }
+        } catch {
+            Self.logger.error("prune undecodable image entries failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
 
     func loadEntries() -> [ClipboardEntry] {
         guard let databaseQueue else {
