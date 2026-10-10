@@ -11,6 +11,19 @@ enum WhatsNewReleaseCatalog {
     /// 历次版本的更新内容，新版本在前
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            version: "3.15.0",
+            entries: [
+                WhatsNewEntry(type: .added, text: "新增截图晾衣绳：系统截图自动挂到屏幕顶部的晾衣绳上，鼠标停菜单栏即滑出；支持单击标注、双击复制、拖到应用或文件夹、右键菜单，⌃⌥⌘T 随时唤出"),
+                WhatsNewEntry(type: .added, text: "晾衣绳容量可配置（1–20 张），屏幕摆不下的旧照片折叠为绳尾「+N」徽章，点击展开列表"),
+                WhatsNewEntry(type: .added, text: "编辑器点对勾后截图自动缓存并挂上晾衣绳（临时缓存，超出容量自动销毁，不占磁盘），且标注完成后结果直接进剪贴板、绳上图片同步更新"),
+                WhatsNewEntry(type: .fixed, text: "修复打开设置截图页即闪退（第三方热键组件缺少资源文件）"),
+                WhatsNewEntry(type: .fixed, text: "修复晾衣绳唤出/收回不灵敏（静止鼠标不触发），改为持续轮询驱动"),
+                WhatsNewEntry(type: .fixed, text: "修复系统标注窗口无法移动的问题"),
+                WhatsNewEntry(type: .fixed, text: "修复桌面上截图在晾衣绳上点叉号被误删，现仅从绳上取下、不动文件"),
+                WhatsNewEntry(type: .fixed, text: "修复剪贴板历史里图片条目没有缩略图、显示无法预览（含微信复制图片的场景）"),
+            ]
+        ),
+        WhatsNewRelease(
             version: "3.14.0",
             entries: [
                 WhatsNewEntry(type: .added, text: "新增访达鼠标右键增强：新建文件与终端、用编辑器打开、复制文件路径、管理常用目录并一键跳转"),
