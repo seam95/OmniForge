@@ -8,6 +8,14 @@ struct HitRectsKey: PreferenceKey {
     }
 }
 
+/// 绳上控件（+N 徽章、一键清理扫帚）的命中区哨兵键。
+/// 面板默认整条鼠标穿透、只对 hitRects 里的矩形接收事件；控件必须上报
+/// 自己的全局帧才可点击（早期徽章漏报=点不动）。
+enum ClotheslineControls {
+    static let badgeID = UUID(uuidString: "00000000-0000-0000-0000-0000000000B1")!
+    static let broomID = UUID(uuidString: "00000000-0000-0000-0000-0000000000B2")!
+}
+
 /// 绳子本体：中性灰主线 + 顶部高光 + 柔影，两端渐隐。
 private struct RopeShape: View {
     let width: CGFloat
@@ -46,6 +54,8 @@ struct ClotheslineView: View {
     var menuProvider: ((PeggedPhoto) -> NSMenu)? = nil
     /// +N 徽章的无障碍文案模板（含 %d）。
     var overflowA11yFormat: String = "%d more photos hidden"
+    /// 一键清理扫帚的无障碍标签。
+    var clearAllA11yLabel: String = "Clear all photos"
 
     var body: some View {
         GeometryReader { geo in
@@ -92,6 +102,17 @@ struct ClotheslineView: View {
                         .position(x: badgeX,
                                   y: badgeRopeY - ClotheslineLayout.pinAbove
                                     + (ClotheslineLayout.panelHeight - badgeRopeY) / 2)
+                }
+                // 一键清理扫帚：有照片才出现，随绳子一起滑入滑出（同在一个被 offset 的容器里）。
+                if !manager.items.isEmpty {
+                    let broomX = ClotheslineLayout.clearAllX(width: width)
+                    let broomRopeY = ClotheslineLayout.ropeY(x: broomX, width: width)
+                    ClearAllBroom(manager: manager, a11yLabel: clearAllA11yLabel)
+                        .frame(width: 64,
+                               height: ClotheslineLayout.panelHeight - broomRopeY, alignment: .top)
+                        .position(x: broomX,
+                                  y: broomRopeY - ClotheslineLayout.pinAbove
+                                    + (ClotheslineLayout.panelHeight - broomRopeY) / 2)
                 }
             }
             .animation(.spring(response: 0.55, dampingFraction: 0.78), value: manager.items.map(\.id))
@@ -317,6 +338,11 @@ private struct OverflowBadge: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(String(format: overflowA11yFormat, count))
+            // 只上报按钮自身矩形（同扫帚）：避免悬挂框空白区吞点击。
+            .background(GeometryReader { g in
+                Color.clear.preference(key: HitRectsKey.self,
+                                       value: [ClotheslineControls.badgeID: g.frame(in: .global)])
+            })
             .popover(isPresented: $showList, arrowEdge: .bottom) {
                 OverflowListView(items: items, manager: manager, menuProvider: menuProvider)
             }
@@ -389,5 +415,77 @@ private struct ContextMenuBridge: NSViewRepresentable {
         override func rightMouseDown(with event: NSEvent) {
             NSMenu.popUpContextMenu(menuProvider(), with: event, for: self)
         }
+    }
+}
+
+// MARK: - 一键清理扫帚
+
+/// 绳右端的「一键清理」：衣夹 + 玻璃圆钮 + 手绘扫帚（SF Symbol 无此符号）。
+/// 只在有照片时出现；点击把全部照片逐张收起（级联掉落动画），自有文件
+/// 按 × 的同款语义处理（缓存直接删 / Inbox 进废纸篓 / 桌面文件仅离绳）。
+private struct ClearAllBroom: View {
+    @ObservedObject var manager: ClotheslineManager
+    var a11yLabel: String
+
+    @State private var hovering = false
+
+    var body: some View {
+        VStack(spacing: -12) {
+            Clothespin()
+                .zIndex(1)
+            Button(action: { manager.clearAll() }) {
+                BroomGlyph()
+                    .foregroundStyle(.primary)
+                    .frame(width: 22, height: 22)
+                    .padding(6)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .overlay(
+                        Circle().stroke(
+                            LinearGradient(colors: [Color.white.opacity(0.55), Color.white.opacity(0.12)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 0.75))
+                    .shadow(color: .black.opacity(hovering ? 0.26 : 0.18),
+                            radius: hovering ? 12 : 8, y: hovering ? 6 : 4)
+            }
+            .buttonStyle(.plain)
+            // 只上报按钮自身矩形：上报外层悬挂框会让按钮下方空白吞掉
+            // 本该透传给下方应用的点击。
+            .background(GeometryReader { g in
+                Color.clear.preference(key: HitRectsKey.self,
+                                       value: [ClotheslineControls.broomID: g.frame(in: .global)])
+            })
+            .scaleEffect(hovering ? 1.08 : 1)
+            .animation(.easeOut(duration: 0.15), value: hovering)
+            .onHover { hovering = $0 }
+            .accessibilityLabel(a11yLabel)
+        }
+    }
+}
+
+/// 手绘扫帚（系统符号集没有）：斜柄 + 扫把头 + 三缕刷毛，内绘后整体倾斜。
+/// 与衣夹同为纯 Shape 手绘，保持晾衣绳的手作质感。
+private struct BroomGlyph: View {
+    var body: some View {
+        ZStack {
+            // 柄
+            RoundedRectangle(cornerRadius: 0.9, style: .continuous)
+                .fill(Color.primary)
+                .frame(width: 1.8, height: 9)
+                .offset(y: -3.2)
+            // 扫把头
+            RoundedRectangle(cornerRadius: 1.6, style: .continuous)
+                .fill(Color.primary)
+                .frame(width: 10, height: 3.6)
+                .offset(y: 1.4)
+            // 刷毛
+            HStack(spacing: 2.2) {
+                ForEach(0..<3, id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: 0.5, style: .continuous)
+                        .fill(Color.primary)
+                        .frame(width: 1, height: 2.6)
+                }
+            }
+            .offset(y: 4.4)
+        }
+        .rotationEffect(.degrees(-20))
     }
 }

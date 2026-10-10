@@ -40,4 +40,11 @@ enum ClotheslineLayout {
     static func hiddenCount(total: Int, width: CGFloat) -> Int {
         max(0, total - visibleCount(total: total, width: width))
     }
+
+    /// 右端「一键清理」扫帚的悬挂 x：贴右缘留 64pt。
+    /// 照片居中排布，右端常为空地；极窄屏（<800pt）才可能与最右卡片相碰，
+    /// 那种场景通常也没有几张照片，可接受。
+    static func clearAllX(width: CGFloat) -> CGFloat {
+        max(60, width - 64)
+    }
 }

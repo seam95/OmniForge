@@ -870,6 +870,7 @@ struct Strings: Equatable {
     let clotheslineInboxOfferLater: String
     let clotheslineCapacity: String
     let clotheslineOverflowA11yFormat: String
+    let clotheslineClearAllA11y: String
     let clotheslineEditorConfirmHang: String
     let clotheslineEditorConfirmHangCaption: String
     let screenshotOutputSection: String
