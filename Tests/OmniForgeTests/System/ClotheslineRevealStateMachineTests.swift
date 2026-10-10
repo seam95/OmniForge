@@ -52,6 +52,20 @@ final class ClotheslineRevealStateMachineTests: XCTestCase {
         XCTAssertFalse(ClotheslineCoordinator.shouldRetract(
             inside: false, busy: false, awaySince: nil, now: now))
     }
+
+    func testFullScreenCheckScreenPrefersPanelScreen() {
+        // 绳子所在屏优先（与参照实现一致）：绳在 A 屏时只看 A 屏的全屏状态，
+        // 指针在 B 屏（无论 B 是否全屏）都不影响——否则 B 屏全屏会误收 A 屏的绳。
+        let panelScreen = FakeScreen(frame: .zero, visibleFrame: .zero)
+        let pointerScreen = FakeScreen(frame: .zero, visibleFrame: .zero)
+        XCTAssertTrue(ClotheslineCoordinator.fullScreenCheckScreen(panelScreen: panelScreen,
+                                                                   pointerScreen: pointerScreen) === panelScreen)
+        // 面板无屏（未在场）才回退指针屏
+        XCTAssertTrue(ClotheslineCoordinator.fullScreenCheckScreen(panelScreen: nil,
+                                                                   pointerScreen: pointerScreen) === pointerScreen)
+        // 两者皆无 → 不压制
+        XCTAssertNil(ClotheslineCoordinator.fullScreenCheckScreen(panelScreen: nil, pointerScreen: nil))
+    }
 }
 
 /// 测试用 NSScreen 替身：frame/visibleFrame/safeAreaInsets 可注入（类别覆写不可行，用轻量子类）。

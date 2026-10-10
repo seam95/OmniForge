@@ -333,11 +333,19 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
         lastLiveCount = live
     }
 
+    /// 全屏压制的判定屏选择：绳子所在屏优先，指针屏兜底。
+    /// 绳子画在哪块屏，就看哪块屏的全屏状态——与参照实现一致。
+    /// 顺序颠倒会双向误判：绳在 A 屏而 A 全屏时绳子不收起（横穿全屏视频），
+    /// 或 B 屏全屏误收 A 屏的绳子。
+    nonisolated static func fullScreenCheckScreen(panelScreen: NSScreen?, pointerScreen: NSScreen?) -> NSScreen? {
+        panelScreen ?? pointerScreen
+    }
+
     /// 面板是否该在场：有内容且该屏不在全屏 Space。
     private func refresh() {
-        // 指针所在屏优先，面板所在屏兜底；该屏处于全屏 Space 则压制（视频/演示不横穿）。
-        let screen = ClotheslinePanel.screenUnderPointer() ?? panel?.screen
-        let blocked = screen.map(FullScreenSpaceDetector.isActive(on:)) ?? false
+        let checkScreen = Self.fullScreenCheckScreen(panelScreen: panel?.screen,
+                                                     pointerScreen: ClotheslinePanel.screenUnderPointer())
+        let blocked = checkScreen.map(FullScreenSpaceDetector.isActive(on:)) ?? false
         if wanted, !blocked { present() } else { dismiss() }
         // 绳子在场才轮询鼠标（含藏起状态——还要等顶边推挤唤出）。
         if wanted { startMouseTracking() } else { stopMouseTracking() }
