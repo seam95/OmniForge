@@ -103,12 +103,14 @@ struct ClotheslineView: View {
                                   y: badgeRopeY - ClotheslineLayout.pinAbove
                                     + (ClotheslineLayout.panelHeight - badgeRopeY) / 2)
                 }
-                // 一键清理扫帚：居中坐在绳线上（压绳、略高于下方照片的衣夹位），
-                // 有照片才出现，随绳滑入滑出。
+                // 一键清理扫帚：居中、绳线下方 40pt（用户指定下移 80 物理像素）。
+                // 不被照片遮挡的双重保证：①横向上最近卡片内缘距中心
+                // centerGap/2+spacing/2−cardWidth/2 = 87pt > 扫帚半宽 22pt；
+                // ②本视图在 ZStack 中位于照片之后，渲染在上层。
                 if !manager.items.isEmpty {
                     ClearAllBroom(manager: manager, a11yLabel: clearAllA11yLabel)
                         .frame(width: 44, height: 44, alignment: .center)
-                        .position(x: width / 2, y: 26)
+                        .position(x: width / 2, y: 66)
                 }
             }
             .animation(.spring(response: 0.55, dampingFraction: 0.78), value: manager.items.map(\.id))
