@@ -432,8 +432,21 @@ final class ClotheslineCoordinator: NSObject, ObservableObject {
         }
     }
 
+    /// 面板位置自愈：用户实测「有概率出现在屏幕中间」——borderless 面板在
+    /// Space 切换/屏参数变化等时序下可能被系统挪离目标位（无法稳定复现）。
+    /// 每 tick（30Hz）校验 frame 是否贴合当前屏顶边，偏了立即归位。
+    /// 以面板自身所在屏为基准，避免鼠标在别屏时误跳屏。
+    private func clampPanelFrame() {
+        guard let panel else { return }
+        guard let visible = (panel.screen ?? ClotheslinePanel.screenUnderPointer())?.visibleFrame else { return }
+        let target = NSRect(x: visible.minX, y: visible.maxY - ClotheslineLayout.panelHeight,
+                            width: visible.width, height: ClotheslineLayout.panelHeight)
+        if panel.frame != target { panel.placeOnScreen(panel.screen) }
+    }
+
     private func tick(mouse: NSPoint) {
         let now = Date()
+        clampPanelFrame()
         let screenUnderPointer = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
         let inMenuBar = screenUnderPointer.map { Self.menuBarBand(of: $0).contains(mouse) } ?? false
         if !inMenuBar { menuBarSuppressed = false }

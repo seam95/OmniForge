@@ -429,11 +429,12 @@ private struct ClearAllBroom: View {
 
     var body: some View {
         Button(action: { manager.clearAll() }) {
-            BroomGlyph()
-                // 白底圆牌（与照片白框同族）：深色壁纸上半透明材质+primary
-                // 细线会隐形，只剩深色扫把头——观感即「图标与圆边重合」。
+            // 系统 trash 符号：清理语义最直观，矢量渲染质量稳定，
+            // 深浅壁纸通吃（手绘扫帚在细线/深色场景观感差）。
+            Image(systemName: "trash")
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(Color(white: 0.25))
-                .frame(width: 32, height: 32)
+                .frame(width: 30, height: 30)
                 .padding(6)
                 .background(Color(white: 0.97).opacity(0.92), in: Circle())
                 .overlay(
@@ -456,33 +457,3 @@ private struct ClearAllBroom: View {
     }
 }
 
-/// 手绘扫帚（系统符号集没有）：粗柄 + 扫把头 + 三缕刷毛，整体倾斜。
-/// 线条加粗到在 32pt 内占满（细线在深色壁纸上会隐形）；绘制包围盒中心
-/// 偏上（柄长头短），整体下移 1.5pt 使视觉居中。
-private struct BroomGlyph: View {
-    var body: some View {
-        ZStack {
-            // 柄
-            RoundedRectangle(cornerRadius: 1.3, style: .continuous)
-                .fill(Color(white: 0.25))
-                .frame(width: 2.6, height: 13)
-                .offset(y: -4.6)
-            // 扫把头
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(Color(white: 0.25))
-                .frame(width: 14, height: 5)
-                .offset(y: 2)
-            // 刷毛
-            HStack(spacing: 3) {
-                ForEach(0..<3, id: \.self) { _ in
-                    RoundedRectangle(cornerRadius: 0.7, style: .continuous)
-                        .fill(Color(white: 0.25))
-                        .frame(width: 1.4, height: 3.8)
-                }
-            }
-            .offset(y: 6.2)
-        }
-        .rotationEffect(.degrees(-20))
-        .offset(y: 1.5)
-    }
-}
