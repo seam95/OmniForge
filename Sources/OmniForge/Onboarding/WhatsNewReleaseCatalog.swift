@@ -11,6 +11,14 @@ enum WhatsNewReleaseCatalog {
     /// 历次版本的更新内容，新版本在前
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            version: "3.16.0",
+            entries: [
+                WhatsNewEntry(type: .added, text: "截图晾衣绳新增一键清理：扫帚按钮随晾衣绳显隐，点击即可取下绳上全部截图（文件不动）"),
+                WhatsNewEntry(type: .changed, text: "二级分段选择器改版为极简下划线 Tab：指示条贴合文字宽度，并跟随系统强调色"),
+                WhatsNewEntry(type: .fixed, text: "修复晾衣绳缓存路径登记无界增长，长时间使用内存缓慢膨胀的问题"),
+            ]
+        ),
+        WhatsNewRelease(
             version: "3.15.0",
             entries: [
                 WhatsNewEntry(type: .added, text: "新增截图晾衣绳：系统截图自动挂到屏幕顶部的晾衣绳上，鼠标停菜单栏即滑出；支持单击标注、双击复制、拖到应用或文件夹、右键菜单，⌃⌥⌘T 随时唤出"),
