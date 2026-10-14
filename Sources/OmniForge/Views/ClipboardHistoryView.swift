@@ -8,6 +8,8 @@ struct ClipboardHistoryView: View {
     @ObservedObject var l10n: L10n
     @ObservedObject var uiState: ClipboardOverlayState
     let onRequestClose: () -> Void
+    /// 双击粘贴：回调给 ClipboardWindowController 走统一的粘贴链路（含焦点恢复）。
+    let onPasteEntry: (ClipboardEntry) -> Void
 
     @State private var loadedEntryCount: Int = 15
     @State private var containerHeight: CGFloat = 0
@@ -22,7 +24,6 @@ struct ClipboardHistoryView: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.displayScale) private var displayScale
-    private let pasteService = ClipboardPasteService()
 
     private static let detailTimeFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -714,7 +715,7 @@ struct ClipboardHistoryView: View {
         default:
             break
         }
-        pasteService.paste(entry: entryToPaste, close: onRequestClose)
+        onPasteEntry(entryToPaste)
     }
 
 }

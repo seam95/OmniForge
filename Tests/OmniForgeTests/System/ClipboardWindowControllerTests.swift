@@ -158,6 +158,46 @@ final class ClipboardWindowControllerTests: XCTestCase {
         XCTAssertTrue(window.collectionBehavior.contains(.moveToActiveSpace))
         XCTAssertTrue(window.collectionBehavior.contains(.fullScreenAuxiliary))
     }
+
+    // MARK: - 粘贴焦点恢复
+
+    func test_showRecordsFrontmostAppAsReactivationTarget() {
+        let state = makeState()
+        let controller = ClipboardWindowController(state: state)
+
+        controller.show()
+        defer { controller.hide() }
+
+        // 测试进程自身不可能是前台 GUI 应用：恢复目标应与呼出时的前台应用一致，
+        // 防止面板 orderOut 后焦点滞留自家其他 keyable 窗口（便签）。
+        guard let frontmost = NSWorkspace.shared.frontmostApplication,
+              frontmost.bundleIdentifier != Bundle.main.bundleIdentifier else {
+            return
+        }
+        let reactivateTarget = mirrorValue(controller, label: "appToReactivate") as? NSRunningApplication
+        let previousTarget = mirrorValue(controller, label: "previousActiveApp") as? NSRunningApplication
+        XCTAssertEqual(reactivateTarget?.processIdentifier, frontmost.processIdentifier)
+        XCTAssertEqual(previousTarget?.processIdentifier, frontmost.processIdentifier)
+    }
+
+    func test_dismissClearsReactivationTarget() {
+        let state = makeState()
+        let controller = ClipboardWindowController(state: state)
+
+        controller.show()
+        defer { controller.hide() }
+        controller.hide()
+
+        let reactivateTarget = mirrorValue(controller, label: "appToReactivate") as? NSRunningApplication
+        let previousTarget = mirrorValue(controller, label: "previousActiveApp") as? NSRunningApplication
+        XCTAssertNil(reactivateTarget)
+        XCTAssertNil(previousTarget)
+    }
+}
+
+@MainActor
+private func mirrorValue(_ controller: ClipboardWindowController, label: String) -> Any? {
+    Mirror(reflecting: controller).children.first(where: { $0.label == label })?.value
 }
 
 @MainActor

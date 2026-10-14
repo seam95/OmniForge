@@ -2,7 +2,8 @@ import AppKit
 import XCTest
 @testable import OmniForge
 
-/// 对齐 Maccy 后的粘贴服务：写入剪贴板 → 关闭面板 → 权限预检 → 同步注入 Cmd+V（无轮询/延时）。
+/// 粘贴服务：写入剪贴板 → 关闭面板 → 权限预检 → 焦点恢复（有原应用时）→ 注入 Cmd+V。
+/// 恢复焦点时注入经 schedule 延后，等待激活 IPC 完成。
 final class ClipboardPasteServiceTests: XCTestCase {
     func test_unloadedPayloadDoesNotClearCloseOrPostPaste() {
         let writer = FakePasteboardWriter()
@@ -48,6 +49,70 @@ final class ClipboardPasteServiceTests: XCTestCase {
         service.paste(entry: makeTextEntry(), close: { events.append("close") })
 
         XCTAssertEqual(events, ["close", "post"])
+    }
+
+    func test_pasteWithReactivateReactivatesBeforePosting() {
+        let poster = FakeKeyEventPoster()
+        let service = makeService(poster: poster)
+
+        var events: [String] = []
+        poster.onPost = { events.append("post") }
+
+        service.paste(
+            entry: makeTextEntry(),
+            close: { events.append("close") },
+            reactivate: { events.append("reactivate") },
+            schedule: { work in
+                events.append("schedule")
+                work()
+            }
+        )
+
+        // 关面板 → 焦点交还原应用 → 等激活 IPC 完成（schedule）→ 注入 Cmd+V
+        XCTAssertEqual(events, ["close", "reactivate", "schedule", "post"])
+    }
+
+    func test_pasteWithReactivateDefersPostUntilScheduled() {
+        let poster = FakeKeyEventPoster()
+        let service = makeService(poster: poster)
+
+        var scheduledWork: (() -> Void)?
+        service.paste(
+            entry: makeTextEntry(),
+            close: nil,
+            reactivate: {},
+            schedule: { work in scheduledWork = work }
+        )
+
+        // 注入必须推迟到 schedule 执行后：activate 是异步 IPC，同步注入会早于焦点转移
+        XCTAssertEqual(poster.postCount, 0)
+
+        scheduledWork?()
+        XCTAssertEqual(poster.postCount, 1)
+    }
+
+    func test_pasteWithReactivateSkipsReactivationWhenAccessibilityMissing() {
+        let poster = FakeKeyEventPoster()
+        var deniedPromptCount = 0
+        let service = ClipboardPasteService(
+            writer: FakePasteboardWriter(),
+            keyPoster: poster,
+            isAccessibilityGranted: { false },
+            onAccessibilityDenied: { deniedPromptCount += 1 }
+        )
+        var reactivateCount = 0
+
+        service.paste(
+            entry: makeTextEntry(),
+            close: nil,
+            reactivate: { reactivateCount += 1 },
+            schedule: { $0() }
+        )
+
+        // 权限缺失时仅引导授权：不恢复焦点、不注入（内容已写入剪贴板可手动粘贴）
+        XCTAssertEqual(reactivateCount, 0)
+        XCTAssertEqual(poster.postCount, 0)
+        XCTAssertEqual(deniedPromptCount, 1)
     }
 
     func test_pasteWithoutAccessibilityWritesPasteboardButDoesNotPost() {

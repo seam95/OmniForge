@@ -6,14 +6,14 @@ struct QuickPhraseView: View {
     @ObservedObject var tabState: TabPanelState
     let l10n: L10n
     let onRequestClose: () -> Void
+    /// 粘贴：回调给 ClipboardWindowController 走统一的粘贴链路（含焦点恢复）。
+    let onPasteEntry: (ClipboardEntry) -> Void
 
     @State private var hoveredPhraseID: UUID?
     @State private var showEditor = false
     @State private var editingPhrase: QuickPhraseEntry?
     @FocusState private var isSearchFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
-
-    private let pasteService = ClipboardPasteService()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -260,7 +260,7 @@ struct QuickPhraseView: View {
             contentHash: nil
         )
 
-        pasteService.paste(entry: entry, close: onRequestClose)
+        onPasteEntry(entry)
     }
 
     private func editPhrase(_ phrase: QuickPhraseEntry) {

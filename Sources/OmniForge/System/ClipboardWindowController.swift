@@ -14,6 +14,10 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
     private var quickPhraseState: QuickPhraseOverlayState?
     private var tabState: TabPanelState?
     private var previousActiveApp: NSRunningApplication?
+    /// 粘贴后需要显式恢复焦点的原前台应用：仅当呼出前面板不是自家 app 时才非空。
+    /// nonactivating 面板持焦期间本 app 抢占系统键盘焦点，orderOut 后焦点可能
+    /// 滞留自家其他 keyable 窗口（便签）而不回落，需在注入 Cmd+V 前交还原应用。
+    private var appToReactivate: NSRunningApplication?
     private var keyEventMonitor: Any?
     private var activeAppObserver: Any?
     private var lastNonSelfActiveApp: NSRunningApplication?
@@ -108,13 +112,14 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
 
         // releaseViewSession 可能把 panel 压成 1×1；show 前/后都恢复记忆 frame 并校正屏外位置。
         ensureValidVisibleFrame()
+        // 记录须早于 makeKey：面板持焦后 frontmost 之外的焦点信号已不可信。
+        rememberPreviousApp()
         if panel.isVisible {
             panel.orderFrontRegardless()
             panel.makeKey()
             requestSearchFocus()
             return
         }
-        rememberPreviousApp()
         installViewIfNeeded()
         // 重新挂 content 后 AppKit 可能再次改写 frame，装载后再校正一次。
         ensureValidVisibleFrame()
@@ -153,9 +158,18 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
 
     private func updatePasteTargetName() {
         guard let uiState, let quickPhraseState else { return }
-        let appName = previousActiveApp?.localizedName ?? NSWorkspace.shared.frontmostApplication?.localizedName
+        let appName = pasteTargetDisplayName()
         uiState.pasteTargetAppName = appName
         quickPhraseState.updatePasteTargetName(appName)
+    }
+
+    /// 「将粘贴到 XXX」显示名与实际注入目标保持一致：
+    /// 呼出前焦点在自家文本输入（便签）时目标是本 app，否则是原前台应用。
+    private func pasteTargetDisplayName() -> String? {
+        if isSelfApp(NSWorkspace.shared.frontmostApplication), appHoldsTextFocus() {
+            return NSRunningApplication.current.localizedName
+        }
+        return previousActiveApp?.localizedName ?? NSWorkspace.shared.frontmostApplication?.localizedName
     }
 
     func hide() {
@@ -229,6 +243,9 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
                     uiState: uiState,
                     onRequestClose: { [weak self] in
                         self?.hide()
+                    },
+                    onPasteEntry: { [weak self] entry in
+                        self?.pasteEntry(entry)
                     }
                 ),
                 quickPhraseView: QuickPhraseView(
@@ -238,6 +255,9 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
                     l10n: l10n,
                     onRequestClose: { [weak self] in
                         self?.hide()
+                    },
+                    onPasteEntry: { [weak self] entry in
+                        self?.pasteEntry(entry)
                     }
                 )
             ))
@@ -251,14 +271,25 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
         installView()
     }
 
-    /// 记录呼出面板前的应用，仅用于「将粘贴到 XXX」的名称展示。
+    /// 记录呼出面板前的应用，仅用于「将粘贴到 XXX」的名称展示；
+    /// 同时决定粘贴后是否要把系统焦点交还原应用。
     private func rememberPreviousApp() {
         let frontmost = NSWorkspace.shared.frontmostApplication
         if isSelfApp(frontmost) {
             previousActiveApp = lastNonSelfActiveApp
+            // 呼出前前台即本 app：仅当焦点不在自家文本输入（如便签编辑中）时才恢复，
+            // 否则用户光标就在自家窗口，粘贴目标本就是该窗口。
+            appToReactivate = appHoldsTextFocus() ? nil : lastNonSelfActiveApp
         } else {
             previousActiveApp = frontmost
+            appToReactivate = frontmost
         }
+    }
+
+    /// 本 app 当前是否持有文本输入焦点（key window 的 first responder 是文本视图）。
+    private func appHoldsTextFocus() -> Bool {
+        guard let keyWindow = NSApp.keyWindow else { return false }
+        return keyWindow.firstResponder is NSTextView
     }
 
     private func dismiss() {
@@ -274,6 +305,7 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
         NSCursor.arrow.set()
 
         previousActiveApp = nil
+        appToReactivate = nil
         isProgrammaticDismiss = false
     }
 
@@ -478,25 +510,52 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
         uiState.moveSelection(in: entries, direction: direction)
     }
 
-    private func pasteSelectedClipboardEntry() {
-        guard let uiState, let clipboardHistory else { return }
-        let entries = uiState.filteredEntries(from: clipboardHistory.entries)
-        guard let selectedID = uiState.selectedEntryID,
-              var entry = entries.first(where: { $0.id == selectedID }) else {
-            return
+    /// 构造粘贴后的焦点恢复动作：必须在 close（dismiss 会清空状态）之前捕获目标。
+    /// 面板持焦期间本 app 抢占系统键盘焦点，orderOut 后焦点可能滞留自家其他
+    /// keyable 窗口（便签）而不回落原应用；先激活原应用并等其真正拿到焦点，
+    /// 注入的 Cmd+V 才会命中原输入框而不是便签。
+    private func makePasteReactivate() -> (() -> Void)? {
+        guard let app = appToReactivate else { return nil }
+        return {
+            app.activate(options: [])
+            // activate 是异步 IPC：轮询等待「目标 active 且本 app 已让出焦点」，
+            // 上限 250ms 兜底（真机激活通常 1-50ms，超时则维持旧有同步注入行为）。
+            let deadline = Date().addingTimeInterval(0.25)
+            while !(app.isActive && !NSApp.isActive) && Date() < deadline {
+                RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.002))
+            }
         }
+    }
 
-        // blob 类型可能未加载完整内容，与双击路径一致先补全
-        switch entry.content {
+    /// 统一粘贴链路（回车 / 双击共用）：blob 补全 + 写剪贴板 + 关面板 + 焦点恢复 + 注入 Cmd+V。
+    private func pasteEntry(_ entry: ClipboardEntry) {
+        var entryToPaste = entry
+        // blob 类型可能未加载完整内容，先补全再写入
+        switch entryToPaste.content {
         case .text(nil), .image(nil), .rtf(nil), .unknown(nil):
-            if let fullContent = clipboardHistory.fullContent(for: entry.id) {
-                entry = entry.withContent(fullContent)
+            if let fullContent = clipboardHistory?.fullContent(for: entryToPaste.id) {
+                entryToPaste = entryToPaste.withContent(fullContent)
             }
         default:
             break
         }
 
-        pasteService.paste(entry: entry, close: { [weak self] in self?.hide() })
+        pasteService.paste(
+            entry: entryToPaste,
+            close: { [weak self] in self?.hide() },
+            reactivate: makePasteReactivate(),
+            schedule: { work in DispatchQueue.main.async(execute: work) }
+        )
+    }
+
+    private func pasteSelectedClipboardEntry() {
+        guard let uiState, let clipboardHistory else { return }
+        let entries = uiState.filteredEntries(from: clipboardHistory.entries)
+        guard let selectedID = uiState.selectedEntryID,
+              let entry = entries.first(where: { $0.id == selectedID }) else {
+            return
+        }
+        pasteEntry(entry)
     }
 
     private func stopKeyMonitor() {
@@ -557,6 +616,6 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
             imageHeight: nil,
             contentHash: nil
         )
-        pasteService.paste(entry: entry, close: { [weak self] in self?.hide() })
+        pasteEntry(entry)
     }
 }

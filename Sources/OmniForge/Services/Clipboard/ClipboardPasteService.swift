@@ -105,7 +105,17 @@ final class ClipboardPasteService {
     ///
     /// 前提：剪贴板面板为 nonactivating（呼出期间原应用从未失去键盘焦点），
     /// 因此 close（面板 orderOut）后立即注入即可命中原输入框，无需任何焦点恢复与等待。
-    func paste(entry: ClipboardEntry, close: (() -> Void)?) {
+    ///
+    /// reactivate：面板持焦期间本 app 会抢占系统键盘焦点；若本 app 内还有其他
+    /// 可成为 key 的窗口（便签），orderOut 后系统焦点会滞留其中而不回落原应用，
+    /// 此时先把焦点交还原前台应用，再经 schedule 延后一拍注入（等激活 IPC 完成）。
+    /// 呼出前前台即本 app 时传 nil（焦点本就留在自家窗口，即用户光标所在）。
+    func paste(
+        entry: ClipboardEntry,
+        close: (() -> Void)?,
+        reactivate: (() -> Void)? = nil,
+        schedule: (@escaping () -> Void) -> Void = { $0() }
+    ) {
         guard writeEntry(entry) else { return }
 
         close?()
@@ -115,7 +125,15 @@ final class ClipboardPasteService {
             onAccessibilityDenied()
             return
         }
-        keyPoster.postCommandV()
+
+        if let reactivate {
+            reactivate()
+            schedule { [keyPoster] in
+                keyPoster.postCommandV()
+            }
+        } else {
+            keyPoster.postCommandV()
+        }
     }
 
     private func writeEntry(_ entry: ClipboardEntry) -> Bool {
