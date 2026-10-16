@@ -135,6 +135,12 @@ final class ProviderSwitchClaudeSettingsStoreTests: XCTestCase {
         XCTAssertEqual(env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] as? String, "786432")
     }
 
+    func test_applyProfile_writesWindowKeysFromExtraEnv() throws {
+        try makeStore().applyProfile(makeProfile(extraEnv: ["CLAUDE_CODE_MAX_CONTEXT_TOKENS": "128000"]))
+        let env = try XCTUnwrap(try readSettings()["env"] as? [String: Any])
+        XCTAssertEqual(env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] as? String, "128000")
+    }
+
     func test_applyProfile_removesLegacySmallFastModelKey() throws {
         try writeSettings([
             "env": ["ANTHROPIC_SMALL_FAST_MODEL": "glm-4-flash"],
@@ -187,6 +193,13 @@ final class ProviderSwitchClaudeSettingsStoreTests: XCTestCase {
         XCTAssertEqual(root["permissions"] as? [String: [String]], ["allow": ["Bash"]])
     }
 
+    func test_clearOverrides_removesWindowKeys() throws {
+        try makeStore().applyProfile(makeProfile(extraEnv: ["CLAUDE_CODE_MAX_CONTEXT_TOKENS": "128000"]))
+        try makeStore().clearOverrides()
+        let env = try readSettings()["env"] as? [String: Any] ?? [:]
+        XCTAssertNil(env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"])
+    }
+
     func test_clearOverrides_missingFileIsNoop() throws {
         XCTAssertNoThrow(try makeStore().clearOverrides())
         XCTAssertFalse(FileManager.default.fileExists(atPath: settingsURL.path))
@@ -214,5 +227,11 @@ final class ProviderSwitchClaudeSettingsStoreTests: XCTestCase {
         try makeStore().applyProfile(makeProfile())
         let attributes = try FileManager.default.attributesOfItem(atPath: settingsURL.path)
         XCTAssertEqual(attributes[.posixPermissions] as? NSNumber, NSNumber(value: 0o600))
+    }
+
+    // MARK: - 拥有键集合
+
+    func test_claudeOwnedTopLevelKeys_containsModelPickerOnly() {
+        XCTAssertEqual(ProviderTool.claudeOwnedTopLevelKeys, ["modelPicker"])
     }
 }

@@ -21,9 +21,14 @@ extension ProviderTool {
 struct ProviderSwitchSettingsView: View {
     @ObservedObject var manager: ProviderSwitchManager
     let strings: Strings
+    /// 聚合编排管理器（nil = 未注册，降级为只显示直连页）。
+    var aggregation: ProviderAggregationManager?
     var commandCopier: ProviderLaunchCommandCopying = ProviderLaunchCommandCopier()
 
     @State private var selectedTool: ProviderTool = .claudeCode
+    /// 模式查看态（直连 / 聚合）——仅切换查看内容，不持久化；
+    /// 随 `selectedTool` 变化重置为 .direct（对齐 cc-switch「查看中不持久化」）。
+    @State private var panelMode: ProviderAggregationManager.AggregationMode = .direct
     /// 齿轮弹层（供应商设置）展示状态。
     @State private var showsSettingsPopover = false
     /// 当前展示 tool 的快照：齿轮位于 Host 外，经 `onDisplayedSurfaceChange`
@@ -48,6 +53,11 @@ struct ProviderSwitchSettingsView: View {
         VStack(alignment: .leading, spacing: 0) {
             sectionSwitcherRow
 
+            // 模式分段行（直连 / 聚合）：仅聚合管理器已注册时出现。
+            if aggregation != nil {
+                modeSegmentRow
+            }
+
             // Claude Code / Codex 平级切换：按工具分段顺序方向化滑移（SPEC 三期），
             // 不再整树交叉淡化；Provider 状态（展开/编辑 sheet 目标）不随切换重建。
             PageSwitchHost(
@@ -67,10 +77,19 @@ struct ProviderSwitchSettingsView: View {
                 // exiting 期间旧 tool 内容保持可见，交换点才换成新 tool；
                 // selectedTool 只承担导航请求职责。
                 VStack(alignment: .leading, spacing: 0) {
-                    providerList(for: tool)
+                    if let aggregation, panelMode == .aggregation {
+                        AggregationPanelView(
+                            manager: aggregation,
+                            switchManager: manager,
+                            tool: tool,
+                            strings: strings
+                        )
+                    } else {
+                        providerList(for: tool)
 
-                    unmanagedBanner(for: tool)
-                    corruptedBanner(for: tool)
+                        unmanagedBanner(for: tool)
+                        corruptedBanner(for: tool)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
@@ -78,6 +97,17 @@ struct ProviderSwitchSettingsView: View {
         }
         .padding(.top, 12)
         .padding(.bottom, 12)
+        .onChange(of: selectedTool) { _, _ in
+            // 切工具即回到直连查看态（模式选择不跨工具持久化）。
+            panelMode = .direct
+        }
+        .onChange(of: manager.profiles) { _, _ in
+            // 聚合管理器只在启动时列举过一次 profile（`production()` 的快照）。用户新建/
+            // 改名/删除供应商后必须重列，否则新 profile 进不了面板的「可加入」名单，
+            // 作为默认那家时 `enterAggregation` 还会抛 profileNotFound（切换失败）。
+            // 面板 `.task` 只覆盖「打开面板」这一次，这里补上面板开着时的增量。
+            aggregation?.refresh()
+        }
         .providerToast(message: $toastMessage)
         .sheet(item: $addingProfileForTool) { tool in
             ProfileEditorView(manager: manager, strings: strings, tool: tool)
@@ -146,6 +176,22 @@ struct ProviderSwitchSettingsView: View {
         .padding(.bottom, 6)
     }
 
+    /// 「直连 / 聚合」模式分段行：仅切换查看内容（面板态不持久化，随工具切换重置）。
+    private var modeSegmentRow: some View {
+        PanelSegmentedControl(
+            options: [
+                .init(tag: ProviderAggregationManager.AggregationMode.direct,
+                      title: strings.providerModeDirect),
+                .init(tag: ProviderAggregationManager.AggregationMode.aggregation,
+                      title: strings.providerModeAggregation),
+            ],
+            selection: $panelMode
+        )
+        .padding(.horizontal, 12)
+        .padding(.bottom, 6)
+        .accessibilityIdentifier(SettingsAccessibilityID.providerAggregationModeSegment.rawValue)
+    }
+
     /// 齿轮按钮（「供应商设置」弹层）：新增供应商（菜单栏）、编辑配置文件、恢复备份。
     private var settingsButton: some View {
         Button {
@@ -194,6 +240,17 @@ struct ProviderSwitchSettingsView: View {
     /// 官方 + Profile 卡片列表：独立卡片，卡片间 10pt 间距（无发丝线体系）。
     private func providerList(for tool: ProviderTool) -> some View {
         VStack(alignment: .leading, spacing: ProviderCardVisual.cardSpacing) {
+            // 直连互斥（SPEC 6.10）：该工具聚合生效时，直连「连接」会改写同一份
+            // 客户端配置、静默破坏聚合投影——两个写者不得同时生效。
+            if directActionsDisabled(for: tool) {
+                PanelTintBanner(
+                    icon: "lock.fill",
+                    tint: .orange,
+                    title: strings.providerAggregationDirectLockedReason,
+                    message: nil
+                )
+            }
+
             officialCard(for: tool)
 
             let profiles = manager.profiles(for: tool)
@@ -202,6 +259,11 @@ struct ProviderSwitchSettingsView: View {
             }
         }
         .padding(.horizontal, 12)
+    }
+
+    /// 该工具聚合生效中 → 直连连接动作禁用（防止两个写者互相覆盖配置）。
+    private func directActionsDisabled(for tool: ProviderTool) -> Bool {
+        aggregation?.isAggregating(tool) == true
     }
 
     // MARK: - 官方卡片
@@ -240,6 +302,8 @@ struct ProviderSwitchSettingsView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            // 聚合生效中禁用切官方（与 Profile 卡同一直连互斥规则，SPEC 6.10）。
+            .disabled(directActionsDisabled(for: tool))
         }
     }
 
@@ -270,8 +334,7 @@ struct ProviderSwitchSettingsView: View {
                     if !active && profile.hasCompleteConnection {
                         activate(profile)
                     }
-                } label: {
-                    HStack(spacing: 12) {
+                } label: {                    HStack(spacing: 12) {
                         brandLogoBadge(
                             color: visual.color,
                             logo: visual.logo,
@@ -296,7 +359,8 @@ struct ProviderSwitchSettingsView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .disabled(!profile.hasCompleteConnection)
+                // 连接不完整或聚合生效中 → 禁用（后者防两个写者互相覆盖配置）。
+                .disabled(!profile.hasCompleteConnection || directActionsDisabled(for: tool))
 
                 HStack(spacing: 8) {
                     if active {

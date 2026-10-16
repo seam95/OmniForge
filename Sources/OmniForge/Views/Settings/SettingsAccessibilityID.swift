@@ -30,6 +30,14 @@ enum SettingsAccessibilityID: String, CaseIterable {
     case providerSwitchPopoverAddProvider = "providerSwitch.popover.addProvider"
     case providerSwitchPopoverEditConfig = "providerSwitch.popover.editConfig"
     case providerSwitchPopoverRestoreBackup = "providerSwitch.popover.restoreBackup"
+    /// 聚合模式分段行（直连 / 聚合）。
+    case providerAggregationModeSegment = "providerAggregation.modeSegment"
+    /// 进入聚合模式动作。
+    case providerAggregationEnter = "providerAggregation.enter"
+    /// 回到直连动作。
+    case providerAggregationExit = "providerAggregation.exit"
+    /// 重启 Codex 守护进程动作（陈旧客户端横幅）。
+    case providerAggregationRestartDaemon = "providerAggregation.restartDaemon"
     case deepSeekApiKeyField = "deepSeek.apiKeyField"
     case deepSeekSaveKey = "deepSeek.saveKey"
     case deepSeekClearKey = "deepSeek.clearKey"

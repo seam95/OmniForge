@@ -38,6 +38,21 @@ final class ProviderSwitchModelsTests: XCTestCase {
                 "ANTHROPIC_DEFAULT_HAIKU_MODEL",
                 "ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME",
                 "CLAUDE_CODE_SUBAGENT_MODEL",
+                // MARK: 聚合模式窗口/兼容键
+                "CLAUDE_CODE_MAX_CONTEXT_TOKENS",
+                "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
+                "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+                "CLAUDE_CODE_DISABLE_1M_CONTEXT",
+                "CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT",
+                "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS",
+                "CLAUDE_CODE_DISABLE_ARTIFACT",
+                "CLAUDE_CODE_DISABLE_THINKING",
+                "DISABLE_INTERLEAVED_THINKING",
+                "CLAUDE_CODE_ALWAYS_ENABLE_EFFORT",
+                "CLAUDE_CODE_EXTRA_BODY",
+                "CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING",
+                "CLAUDE_CODE_AUTO_MODE_SERVER",
+                "ENABLE_TOOL_SEARCH",
             ]
         )
     }
@@ -45,7 +60,12 @@ final class ProviderSwitchModelsTests: XCTestCase {
     func test_codexOwnedKeys() {
         XCTAssertEqual(
             ProviderTool.codexOwnedTopLevelKeys,
-            ["model_provider", "model", "model_reasoning_effort", "model_catalog_json"]
+            [
+                "model_provider", "model", "model_reasoning_effort", "model_catalog_json",
+                // MARK: 聚合模式窗口键
+                "model_context_window", "model_auto_compact_token_limit", "openai_base_url",
+                "review_model", "plan_mode_reasoning_effort", "disable_response_storage",
+            ]
         )
         XCTAssertEqual(
             ProviderTool.codexOwnedProviderKeys,
@@ -322,5 +342,58 @@ final class ProviderSwitchModelsTests: XCTestCase {
     func test_codexModelList_nilAndBlankAreEmpty() {
         XCTAssertEqual(makeCodexProfile().codexModelList, [])
         XCTAssertEqual(makeCodexProfile(codexModels: ["", "   "]).codexModelList, [])
+    }
+
+    // MARK: - Claude 聚合发布源
+
+    private func makeClaudeProfile(
+        model: String? = nil,
+        mapping: ProviderModelMapping? = nil,
+        stackModels: [ClaudeStackModel]? = nil
+    ) -> ProviderProfile {
+        ProviderProfile(
+            id: "kimi",
+            name: "Kimi For Coding",
+            tool: .claudeCode,
+            baseURL: "https://api.kimi.com/coding",
+            token: "sk-kimi",
+            modelOverride: model,
+            modelMapping: mapping,
+            stackModels: stackModels,
+            extraEnv: [:],
+            managedBy: ProviderProfile.managedByMarker
+        )
+    }
+
+    func test_aggregationModels_prefersStackModelsWhenConfigured() {
+        let profile = makeClaudeProfile(
+            model: "ignored-fallback",
+            mapping: ProviderModelMapping(sonnet: "s1", opus: "o1", fable: nil, haiku: "h1", subagent: "sub1"),
+            stackModels: [ClaudeStackModel(model: "k3", displayName: "Kimi K3", oneM: false)]
+        )
+        XCTAssertEqual(profile.aggregationModels.map(\.model), ["k3"])
+    }
+
+    func test_aggregationModels_emptyStackModelsPublishesNothing() {
+        let profile = makeClaudeProfile(model: "fallback", mapping: ProviderModelMapping(sonnet: "s1"), stackModels: [])
+        XCTAssertTrue(profile.aggregationModels.isEmpty)
+    }
+
+    func test_aggregationModels_fallsBackToMappingInFixedOrderExcludingSubagent() {
+        let profile = makeClaudeProfile(
+            model: "main-model",
+            mapping: ProviderModelMapping(sonnet: "s1", opus: "o1", fable: "f1", haiku: "h1", subagent: "sub1")
+        )
+        XCTAssertEqual(profile.aggregationModels.map(\.model), ["main-model", "o1", "s1", "h1", "f1"])
+    }
+
+    func test_aggregationModels_fallsBackToModelOverrideAloneWhenNoMapping() {
+        XCTAssertEqual(makeClaudeProfile(model: "solo").aggregationModels.map(\.model), ["solo"])
+    }
+
+    func test_claudeStackModel_roundTripsThroughCodable() throws {
+        let model = ClaudeStackModel(model: "glm-5.2", displayName: "GLM 5.2", oneM: true)
+        let decoded = try JSONDecoder().decode(ClaudeStackModel.self, from: JSONEncoder().encode(model))
+        XCTAssertEqual(decoded, model)
     }
 }

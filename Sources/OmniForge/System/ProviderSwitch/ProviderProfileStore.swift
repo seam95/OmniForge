@@ -214,11 +214,21 @@ enum ProviderProfileFileCodec {
             for (key, value) in profile.extraEnv where !value.isEmpty {
                 env[key] = value
             }
-            let root: [String: Any] = [
+            var root: [String: Any] = [
                 "name": profile.name,
                 "env": env,
                 managedByKey: ProviderProfile.managedByMarker,
             ]
+            // 聚合发布源：逐条编码（displayName 缺省不写键）；nil 不写，空数组写 []——两者语义不同。
+            if let stackModels = profile.stackModels {
+                root["stackModels"] = stackModels.map { entry -> [String: Any] in
+                    var encoded: [String: Any] = ["model": entry.model, "oneM": entry.oneM]
+                    if let displayName = entry.displayName {
+                        encoded["displayName"] = displayName
+                    }
+                    return encoded
+                }
+            }
             return try? JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
         case .codex:
             var document = TOMLFile()
@@ -229,6 +239,15 @@ enum ProviderProfileFileCodec {
             let models = profile.codexModelList
             if !models.isEmpty {
                 document.setValue(models, key: "models", table: nil)
+            }
+            // 平行数组（与 models 按位对齐，空串是「未配置」的占位）：仅当至少一项非空时才写键。
+            if let displayNames = profile.modelDisplayNames,
+               displayNames.contains(where: { !$0.isEmpty }) {
+                document.setValue(displayNames, key: "model_display_names", table: nil)
+            }
+            if let windows = profile.modelContextWindows,
+               windows.contains(where: { !$0.isEmpty }) {
+                document.setValue(windows, key: "model_context_windows", table: nil)
             }
             if let effort = profile.reasoningEffort, !effort.isEmpty {
                 document.setValue(effort, key: "reasoning_effort", table: nil)
@@ -260,9 +279,20 @@ enum ProviderProfileFileCodec {
             let baseURL = env["ANTHROPIC_BASE_URL"] ?? ""
             let token = env["ANTHROPIC_AUTH_TOKEN"] ?? ""
             let mapping = ProviderModelMapping.fromEnv(env)
-            // 额外 env：拥有键之外的非空键（含 preset 的 CLAUDE_CODE_* 扩展）。
-            let owned = ProviderTool.claudeOwnedEnvKeys
+            // 额外 env：专属字段消费键之外的非空键（含 preset 的 CLAUDE_CODE_* 扩展）。
+            // 注意用 `claudeCoreEnvKeys` 而非全部拥有键——聚合窗口键没有专属字段，
+            // 直连模式经 extraEnv 原样合并，导入时必须保留。
+            let owned = ProviderTool.claudeCoreEnvKeys
             let extraEnv = env.filter { !owned.contains($0.key) && !$0.value.isEmpty }
+            // 聚合发布源：无该键 → nil（未配置，按映射推导）；有键 → 逐条解码（空数组即「什么都不发布」）。
+            let stackModels = (root["stackModels"] as? [[String: Any]])?.compactMap { raw -> ClaudeStackModel? in
+                guard let model = raw["model"] as? String, !model.isEmpty else { return nil }
+                return ClaudeStackModel(
+                    model: model,
+                    displayName: raw["displayName"] as? String,
+                    oneM: raw["oneM"] as? Bool ?? false
+                )
+            }
             return ProviderProfile(
                 id: fallbackID,
                 name: root["name"] as? String ?? fallbackID,
@@ -271,6 +301,7 @@ enum ProviderProfileFileCodec {
                 token: token,
                 modelOverride: env["ANTHROPIC_MODEL"],
                 modelMapping: mapping.isEmpty ? nil : mapping,
+                stackModels: stackModels,
                 extraEnv: extraEnv,
                 managedBy: root[managedByKey] as? String
             )
@@ -342,6 +373,9 @@ enum ProviderProfileFileCodec {
             reasoningEffort: document.stringValue(key: "reasoning_effort", table: nil),
             codexModels: models.isEmpty ? nil : models,
             modelMapping: nil,
+            // 平行数组：缺键 → nil（未配置）；与 models 长度不齐由 `codexModelEntries` 按缺省消化。
+            modelDisplayNames: document.stringArrayValue(key: "model_display_names", table: nil),
+            modelContextWindows: document.stringArrayValue(key: "model_context_windows", table: nil),
             extraEnv: [:],
             managedBy: document.stringValue(key: managedByKey, table: nil)
         )

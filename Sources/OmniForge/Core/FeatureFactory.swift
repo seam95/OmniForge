@@ -314,6 +314,10 @@ struct FeatureFactory {
             if runtime.manager(for: .providerSwitch, as: ProviderSwitchManager.self) == nil {
                 runtime.register(.providerSwitch, manager: ProviderSwitchManager.production())
             }
+            // 聚合编排管理器与切换管理器同属 providerSwitch 特性（依赖沿用同一 App Support 根）。
+            if runtime.manager(for: .providerSwitch, as: ProviderAggregationManager.self) == nil {
+                runtime.register(.providerSwitch, manager: ProviderAggregationManager.production())
+            }
         case .promptOptimizer:
             // 轻量接线：无后台工作，install 即注册快捷键（availability 已由 FeatureRuntime 把关）。
             if runtime.manager(for: .promptOptimizer, as: PromptOptimizerManager.self) == nil {
@@ -438,8 +442,8 @@ struct FeatureFactory {
         case .screenshot:
             runtime.manager(for: .screenshot, as: ScreenshotFeatureManager.self)?.teardown()
         case .providerSwitch:
-            // 无后台工作；视图持有引用，卸注册即释放
-            break
+            // 聚合代理是常驻端口占用者：卸注册即停（SPEC 6.8）。
+            runtime.manager(for: .providerSwitch, as: ProviderAggregationManager.self)?.stopProxyForTeardown()
         case .promptOptimizer:
             runtime.manager(for: .promptOptimizer, as: PromptOptimizerManager.self)?.teardown()
         case .stickyNotes:

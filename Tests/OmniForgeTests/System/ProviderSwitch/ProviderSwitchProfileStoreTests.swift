@@ -170,6 +170,36 @@ final class ProviderSwitchProfileStoreTests: XCTestCase {
         )
     }
 
+    func test_list_roundTripsStackModels() throws {
+        let store = makeStore()
+        let stackModels = [
+            ClaudeStackModel(model: "k3", displayName: "Kimi K3", oneM: false),
+            ClaudeStackModel(model: "glm-5.2", displayName: "GLM 5.2", oneM: true),
+        ]
+        try store.upsert(ProviderProfile(
+            id: "",
+            name: "GLM",
+            tool: .claudeCode,
+            baseURL: "https://open.bigmodel.cn/api/anthropic",
+            token: "sk-glm",
+            modelOverride: "glm-5.3",
+            stackModels: stackModels,
+            managedBy: "omniforge"
+        ))
+        let listed = store.list(for: .claudeCode)
+        XCTAssertEqual(listed.count, 1)
+        XCTAssertEqual(listed[0].stackModels, stackModels)
+    }
+
+    func test_list_legacyJSONWithoutStackModelsDecodesNil() throws {
+        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+        let legacy = claudeDir.appendingPathComponent("glm.json")
+        try Data(#"{"name":"GLM","env":{"ANTHROPIC_AUTH_TOKEN":"sk-x","ANTHROPIC_BASE_URL":"https://x.example"},"_managedBy":"omniforge"}"#.utf8).write(to: legacy)
+        let listed = makeStore().list(for: .claudeCode)
+        XCTAssertEqual(listed.count, 1)
+        XCTAssertNil(listed[0].stackModels, "无 stackModels 键的旧数据解码为 nil（未配置）")
+    }
+
     func test_decode_oldFormatMapsSmallFastModelToHaiku() throws {
         try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
         let old = claudeDir.appendingPathComponent("glm.json")
@@ -261,6 +291,82 @@ final class ProviderSwitchProfileStoreTests: XCTestCase {
         let listed = store.list(for: .codex)
         XCTAssertEqual(listed[0].codexModels, ["glm-5.3", "glm-4.7-air"])
         XCTAssertEqual(listed[0].codexModelList, ["glm-5.3", "glm-4.7-air"])
+    }
+
+    func test_codexProfile_roundTripsParallelDisplayArrays() throws {
+        let store = makeStore()
+        try store.upsert(ProviderProfile(
+            id: "",
+            name: "GLM",
+            tool: .codex,
+            baseURL: "https://open.bigmodel.cn/api/paas/v4",
+            token: "sk-glm",
+            codexModels: ["glm-5.3", "glm-4.7-air"],
+            modelDisplayNames: ["GLM 5.3", ""],
+            modelContextWindows: ["256000", ""],
+            managedBy: ProviderProfile.managedByMarker
+        ))
+        let text = try String(contentsOf: codexDir.appendingPathComponent("glm.config.toml"))
+        XCTAssertTrue(text.contains("model_display_names = [\"GLM 5.3\", \"\"]"))
+        XCTAssertTrue(text.contains("model_context_windows = [\"256000\", \"\"]"))
+
+        let listed = store.list(for: .codex)
+        XCTAssertEqual(listed[0].modelDisplayNames, ["GLM 5.3", ""])
+        XCTAssertEqual(listed[0].modelContextWindows, ["256000", ""])
+        XCTAssertEqual(listed[0].codexModelEntries.map(\.displayName), ["GLM 5.3", nil], "空串=未配置")
+        XCTAssertEqual(listed[0].codexModelEntries.map(\.contextWindow), [256_000, nil])
+    }
+
+    func test_codexProfile_withoutParallelKeysDecodesNoDisplayNames() throws {
+        let store = makeStore()
+        // 两个条目都没配显示名/窗口 → 两个键都不写（仅当存在非空值时写）。
+        try store.upsert(ProviderProfile(
+            id: "",
+            name: "GLM",
+            tool: .codex,
+            baseURL: "https://open.bigmodel.cn/api/paas/v4",
+            token: "sk-glm",
+            codexModels: ["glm-5.3"],
+            modelDisplayNames: [""],
+            modelContextWindows: [""],
+            managedBy: ProviderProfile.managedByMarker
+        ))
+        let text = try String(contentsOf: codexDir.appendingPathComponent("glm.config.toml"))
+        XCTAssertFalse(text.contains("model_display_names"))
+        XCTAssertFalse(text.contains("model_context_windows"))
+
+        // 旧档案：只有 models，无新键 → 解码为未配置（nil），条目无显示名无窗口。
+        try FileManager.default.createDirectory(at: codexDir, withIntermediateDirectories: true)
+        try Data("""
+        name = "GLM"
+        models = ["glm-5.3", "glm-4.7-air"]
+        """.utf8).write(to: codexDir.appendingPathComponent("legacy.config.toml"))
+
+        let listed = store.list(for: .codex)
+        XCTAssertEqual(listed.count, 2)
+        let legacy = try XCTUnwrap(listed.first { $0.id == "legacy" })
+        XCTAssertNil(legacy.modelDisplayNames)
+        XCTAssertNil(legacy.modelContextWindows)
+        XCTAssertEqual(legacy.codexModelEntries.map(\.displayName), [nil, nil])
+        XCTAssertEqual(legacy.codexModelEntries.map(\.contextWindow), [nil, nil])
+    }
+
+    func test_codexProfile_shortParallelArraysDoNotDropModels() throws {
+        try FileManager.default.createDirectory(at: codexDir, withIntermediateDirectories: true)
+        // 手改档案：平行数组比 models 短 → 缺的部分按未配置处理，不报错也不丢模型。
+        try Data("""
+        name = "GLM"
+        models = ["glm-5.3", "glm-4.7-air", "glm-4.6"]
+        model_display_names = ["GLM 5.3"]
+        model_context_windows = ["256000", "128000"]
+        """.utf8).write(to: codexDir.appendingPathComponent("glm.config.toml"))
+
+        let listed = makeStore().list(for: .codex)
+        let entries = listed[0].codexModelEntries
+        XCTAssertEqual(entries.count, 3, "长度不齐不丢模型")
+        XCTAssertEqual(entries.map(\.model), ["glm-5.3", "glm-4.7-air", "glm-4.6"])
+        XCTAssertEqual(entries.map(\.displayName), ["GLM 5.3", nil, nil])
+        XCTAssertEqual(entries.map(\.contextWindow), [256_000, 128_000, nil])
     }
 
     func test_codexProfile_legacyModelOverrideMigratesToList() throws {

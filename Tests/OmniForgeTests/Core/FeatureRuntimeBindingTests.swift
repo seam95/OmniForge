@@ -4,6 +4,8 @@ import XCTest
 @MainActor
 final class FeatureRuntimeBindingTests: XCTestCase {
 
+    private var tmpDir: URL!
+
     override func setUp() {
         super.setUp()
         // AppFeature.isAvailable 和 binding 都读取 UserDefaults.standard，
@@ -13,6 +15,9 @@ final class FeatureRuntimeBindingTests: XCTestCase {
         }
         UserDefaults.standard.set(true, forKey: UserDefaultsKeys.clipboardFeatureEnabled)
         FeatureRuntime.shared.resetForTesting()
+        tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FeatureRuntimeBindingTests_\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
     }
 
     override func tearDown() {
@@ -23,6 +28,7 @@ final class FeatureRuntimeBindingTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: UserDefaultsKeys.clipboardFeatureEnabled)
         UserDefaults.standard.removeObject(forKey: "OmniForge.monitorConfiguration")
         UserDefaults.standard.removeObject(forKey: "InputLock.monitorConfiguration")
+        try? FileManager.default.removeItem(at: tmpDir)
         super.tearDown()
     }
 
@@ -203,6 +209,148 @@ final class FeatureRuntimeBindingTests: XCTestCase {
         FeatureRuntime.shared.setAvailable(.tokenUsage, false)
         FeatureRuntime.shared.setAvailable(.tokenUsage, true)
     }
+
+    // MARK: - 供应商聚合接线
+
+    /// 注入式聚合管理器（绕开 production 的真实路径，不写 ~/.claude 与 App Support）。
+    private func makeAggregationManager() -> ProviderAggregationManager {
+        ProviderAggregationManager(
+            profileStore: BindingStubProfileStore(),
+            backupStore: BindingStubBackupStore(),
+            stackStore: AggregationStackStore(stackURL: tmpDir.appendingPathComponent("stack.json")),
+            pendingStore: AggregationPendingStore(pendingURL: tmpDir.appendingPathComponent("pending.json")),
+            loginStashStore: BindingStubLoginStashStore(),
+            staleDetector: BindingStubStaleDetector(),
+            proxy: BindingStubProxy(),
+            claudeWriter: BindingStubClaudeWriter(),
+            codexWriter: BindingStubCodexWriter(),
+            profiles: [kimiProfile, glmProfile]
+        )
+    }
+
+    private var kimiProfile: ProviderProfile {
+        ProviderProfile(
+            id: "kimi", name: "Kimi", tool: .claudeCode,
+            baseURL: "https://api.kimi.com/coding", token: "sk-kimi",
+            stackModels: [ClaudeStackModel(model: "k3", displayName: "Kimi K3", oneM: false)]
+        )
+    }
+
+    private var glmProfile: ProviderProfile {
+        ProviderProfile(
+            id: "glm", name: "GLM", tool: .claudeCode,
+            baseURL: "https://open.bigmodel.cn/api/anthropic", token: "sk-glm"
+        )
+    }
+
+    func test_providerSwitch_registersAggregationManagerAlongsideSwitchManager() {
+        let runtime = FeatureRuntime.shared
+        runtime.register(.providerSwitch, manager: ProviderSwitchManager.production(applicationSupportRoot: tmpDir))
+        runtime.register(.providerSwitch, manager: makeAggregationManager())
+        XCTAssertNotNil(runtime.manager(for: .providerSwitch, as: ProviderSwitchManager.self))
+        XCTAssertNotNil(runtime.manager(for: .providerSwitch, as: ProviderAggregationManager.self))
+    }
+
+    func test_teardown_stopsAggregationProxy() throws {
+        let runtime = FeatureRuntime.shared
+        let manager = makeAggregationManager()
+        runtime.register(.providerSwitch, manager: manager)
+        try manager.enterAggregation(tool: .claudeCode, defaultProfileID: "kimi")
+        FeatureFactory().teardownSync(.providerSwitch, from: runtime)
+        XCTAssertFalse(manager.isProxyRunning)
+    }
+}
+
+// MARK: - 供应商聚合接线 stubs
+
+private final class BindingStubProxy: AggregationProxying {
+    var isRunning = false
+    var resolvedPort: UInt16?
+    var onUnexpectedStop: (() -> Void)?
+    func start() throws {
+        isRunning = true
+        resolvedPort = 15721
+    }
+    func stop() {
+        isRunning = false
+        resolvedPort = nil
+    }
+}
+
+private final class BindingStubProfileStore: ProviderProfileStoring {
+    var stubProfiles: [ProviderProfile] = []
+    func list(for tool: ProviderTool) -> [ProviderProfile] {
+        stubProfiles.filter { $0.tool == tool }
+    }
+    func upsert(_ profile: ProviderProfile) throws {}
+    func delete(_ profile: ProviderProfile) throws {}
+    func adopt(name: String, tool: ProviderTool, baseURL: String, token: String, modelOverride: String?) throws -> ProviderProfile {
+        ProviderProfile(id: "", name: name, tool: tool, baseURL: baseURL, token: token, modelOverride: modelOverride)
+    }
+}
+
+private final class BindingStubBackupStore: ProviderBackupStoring {
+    private var backups: [ProviderTool: [ProviderBackup]] = [:]
+    func snapshot(tool: ProviderTool, of configURL: URL) throws -> ProviderBackup {
+        let backup = ProviderBackup(id: "stub-\(UUID().uuidString)", tool: tool, date: Date())
+        backups[tool, default: []].insert(backup, at: 0)
+        return backup
+    }
+    func list(tool: ProviderTool) -> [ProviderBackup] { backups[tool] ?? [] }
+    func content(of backup: ProviderBackup) throws -> String { "" }
+    func restore(_ backup: ProviderBackup, to configURL: URL) throws {}
+}
+
+private final class BindingStubLoginStashStore: CodexLoginStashStoring {
+    var hasNativeLogin = false
+    func stash() throws -> Bool { false }
+    func restore() throws -> Bool { false }
+    func discard() throws {}
+}
+
+private final class BindingStubStaleDetector: CodexStaleClientDetecting {
+    func observe(catalogURL: URL, catalogIsOurs: Bool) {}
+    func observeLogin(authURL: URL) {}
+    func acknowledge(catalogURL: URL, authURL: URL) {}
+    func staleClients(catalogURL: URL, catalogIsOurs: Bool) async -> CodexStaleClients? { nil }
+}
+
+private final class BindingStubClaudeWriter: AggregationClaudeConfigWriting {
+    func applyAggregation(
+        defaultProfile: ProviderProfile,
+        published: [AggregationPublishedModel],
+        port: UInt16,
+        memberSwitches: [String: String]
+    ) throws {}
+    func clearAggregation() throws {}
+    func currentContractDigest() -> String { "" }
+    func projectedContractDigest(
+        defaultProfile: ProviderProfile,
+        published: [AggregationPublishedModel],
+        port: UInt16,
+        memberSwitches: [String: String]
+    ) -> String { "" }
+}
+
+private final class BindingStubCodexWriter: AggregationCodexConfigWriting {
+    func applyAggregation(
+        defaultProfile: ProviderProfile,
+        defaultKey: String,
+        published: [AggregationPublishedModel],
+        port: UInt16,
+        requiresOpenAIAuth: Bool,
+        defaultIsOfficial: Bool
+    ) throws {}
+    func clearAggregation() throws {}
+    func currentContractDigest() -> String { "" }
+    func projectedContractDigest(
+        defaultProfile: ProviderProfile,
+        defaultKey: String,
+        published: [AggregationPublishedModel],
+        port: UInt16,
+        requiresOpenAIAuth: Bool,
+        defaultIsOfficial: Bool
+    ) -> String { "" }
 }
 
 private final class BindingTestStore: ClipboardStore {

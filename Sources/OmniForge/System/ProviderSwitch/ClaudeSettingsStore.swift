@@ -94,25 +94,10 @@ final class ClaudeSettingsStore: ClaudeSettingsStoring {
 
     /// 读取根对象；文件缺失 → nil；存在但非 JSON 对象 → 抛 corrupted。
     private func readRoot() throws -> [String: Any]? {
-        guard fileManager.fileExists(atPath: settingsURL.path) else { return nil }
-        guard let data = try? Data(contentsOf: settingsURL),
-              let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-            throw ProviderConfigFileError.corrupted(path: settingsURL.path)
-        }
-        return root
+        try SettingsJSONFile.readRoot(from: settingsURL, fileManager: fileManager)
     }
 
     private func writeRoot(_ root: [String: Any]) throws {
-        let data: Data
-        do {
-            data = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
-        } catch {
-            throw ProviderConfigFileError.writeFailed(path: settingsURL.path)
-        }
-        do {
-            try AtomicFileWriter.write(data, to: settingsURL, fileManager: fileManager)
-        } catch {
-            throw ProviderConfigFileError.writeFailed(path: settingsURL.path)
-        }
+        try SettingsJSONFile.writeRoot(root, to: settingsURL, fileManager: fileManager)
     }
 }
