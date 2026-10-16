@@ -67,6 +67,7 @@ final class StringsTranslationTests: XCTestCase {
                     "providerAggregationNoteDefault", "providerAggregationNoteMembersFormat", "providerAggregationNoteEmpty",
                     "providerAggregationNoteNoFailover", "providerAggregationNoteRestartCodex",
                     "providerAggregationOfficialNote", "providerAggregationOfficialReason",
+                    "providerAggregationOfficialDefaultCodexHint",
                     "providerAggregationSectionDefault", "providerAggregationSectionAddedFormat",
                     "providerAggregationSectionAvailableFormat", "providerAggregationAdd", "providerAggregationRemove",
                     "providerAggregationSetDefault", "providerAggregationEnteredClaude", "providerAggregationEnteredCodex",
@@ -74,10 +75,24 @@ final class StringsTranslationTests: XCTestCase {
                     "providerAggregationProxyDown", "providerAggregationStartService", "providerAggregationAttachFailed",
                     "providerAggregationDirectLockedReason",
                     "providerAggregationStaleDaemonTitle", "providerAggregationStaleDaemonBody",
-                    "providerAggregationStaleOthersBody", "providerAggregationRestartDaemon",
+                    "providerAggregationStaleOthersBody", "providerAggregationStaleLoginTitle",
+                    "providerAggregationStaleUnverifiedTitle",
+                    "providerAggregationRestartDaemon",
                     "providerAggregationRestartDaemonConfirmTitle", "providerAggregationRestartDaemonConfirmMessage",
                     "providerAggregationDaemonRestarted", "providerAggregationDaemonNotRunning",
                     "providerMissStackOff", "providerMissUnknown", "providerMissRemoved", "providerMissDeleted"] {
+            XCTAssertTrue(names.contains(key), "missing \(key)")
+        }
+    }
+
+    /// 聚合成员模型编辑（Claude stackModels 行 / Codex 显示名行）字符串键在英文侧必须全部声明
+    /// （中文侧由数量一致性测试兜底）。
+    func test_bothLanguagesDeclareTheSameStackModelStrings() {
+        let names = Set(Mirror(reflecting: Strings.en).children.compactMap { $0.label })
+        for key in ["providerStackModelsSectionTitle", "providerStackModelsAdd", "providerStackModelsDelete",
+                    "providerStackModelsDisplayNamePlaceholder", "providerStackModelsModelPlaceholder",
+                    "providerStackModelsOneM", "providerStackModelsEmptyHint",
+                    "providerCodexModelDisplayNamePlaceholder"] {
             XCTAssertTrue(names.contains(key), "missing \(key)")
         }
     }

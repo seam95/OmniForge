@@ -1380,6 +1380,19 @@ struct Strings: Equatable {
     let providerCodexModelsDelete: String
     let providerCodexModelsFirstPlaceholder: String
     let providerCodexModelsPlaceholder: String
+    /// Codex 模型行「显示名称」输入占位（可选，留空用模型名）。
+    let providerCodexModelDisplayNamePlaceholder: String
+    /// Claude 聚合成员模型编辑区：每行「显示名 / 实际请求模型 / 1M 复选 / 删除」。
+    let providerStackModelsSectionTitle: String
+    /// 追加一行（无「+」前缀：列表项不带头部符号）。
+    let providerStackModelsAdd: String
+    let providerStackModelsDelete: String
+    let providerStackModelsDisplayNamePlaceholder: String
+    let providerStackModelsModelPlaceholder: String
+    /// 1M 复选列标题。
+    let providerStackModelsOneM: String
+    /// 空态：这家加入聚合也不会多出模型。
+    let providerStackModelsEmptyHint: String
     /// 思考强度（Codex）。
     let providerReasoningEffortLabel: String
     let providerReasoningEffortDefault: String
@@ -1474,6 +1487,8 @@ struct Strings: Equatable {
     let providerAggregationOfficialNote: String
     /// 官方账号不可加入的原因（行内说明）。
     let providerAggregationOfficialReason: String
+    /// 官方账号做 Codex 默认时目录不写的提示（成员模型不进 /model）。
+    let providerAggregationOfficialDefaultCodexHint: String
     /// 名单分区标题：默认。
     let providerAggregationSectionDefault: String
     /// 名单分区标题：已添加（%ld = 数量）。
@@ -1506,6 +1521,10 @@ struct Strings: Equatable {
     let providerAggregationDirectLockedReason: String
     /// 陈旧横幅标题：守护进程过期。
     let providerAggregationStaleDaemonTitle: String
+    /// 陈旧横幅标题：登录代次变了（客户端可能还持着旧账号）。
+    let providerAggregationStaleLoginTitle: String
+    /// 陈旧横幅标题：进程表不可得，无法确认客户端是否在跑。
+    let providerAggregationStaleUnverifiedTitle: String
     /// 陈旧横幅正文：守护进程。
     let providerAggregationStaleDaemonBody: String
     /// 陈旧横幅正文：其余客户端。

@@ -386,12 +386,9 @@ struct AggregationPanelView: View {
     }
 
     /// 三态标题（优先序对齐 cc-switch：`unverified` > `auth` > 目录陈旧）。
-    /// `loginChanged`/`unverified` 两态的专属文案待补本地化键
-    /// （`providerAggregationStaleLoginTitle` / `providerAggregationStaleUnverifiedTitle`），
-    /// 落地前暂借最接近的既有键。
     private func staleTitle(_ stale: CodexStaleClients) -> String {
-        if stale.unverified { return strings.providerAggregationStaleDaemonTitle }
-        if stale.loginChanged { return strings.providerAggregationStaleDaemonTitle }
+        if stale.unverified { return strings.providerAggregationStaleUnverifiedTitle }
+        if stale.loginChanged { return strings.providerAggregationStaleLoginTitle }
         return strings.providerAggregationStaleDaemonTitle
     }
 
