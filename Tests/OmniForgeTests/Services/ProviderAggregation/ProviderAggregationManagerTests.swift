@@ -246,6 +246,33 @@ final class ProviderAggregationManagerTests: XCTestCase {
         XCTAssertEqual(backupStore.restoreCallCount, 1)   // 退出 = 从进入前快照恢复直连配置
     }
 
+    func test_enterAndExitAggregation_observeCodexLoginGeneration() throws {
+        // 第三方分支在 stash 前、退出在 restore 后各记一代（P1-9 三处挂点）。
+        try manager.enterAggregation(tool: .codex, defaultProfileID: "deepseek")
+        XCTAssertEqual(loginStash.stashCallCount, 1)
+        XCTAssertEqual(staleDetector.observeLoginCallCount, 1)
+        try manager.exitAggregation(tool: .codex)
+        XCTAssertEqual(loginStash.restoreCallCount, 1)
+        XCTAssertEqual(staleDetector.observeLoginCallCount, 2)
+    }
+
+    func test_enterAggregation_observesLoginGenerationAfterOfficialRestore() throws {
+        profileStore.stubProfiles = [officialCodexProfile]
+        manager = makeManager()
+        try manager.enterAggregation(tool: .codex, defaultProfileID: "openai-official")
+        XCTAssertEqual(staleDetector.observeLoginCallCount, 1, "官方分支：还原之后记一代（登录从无到有）")
+    }
+
+    func test_enterAggregation_doesNotObserveLoginGenerationForClaudeCode() throws {
+        try manager.enterAggregation(tool: .claudeCode, defaultProfileID: "kimi")
+        XCTAssertEqual(staleDetector.observeLoginCallCount, 0, "登录代次只管 Codex")
+    }
+
+    func test_acknowledgeStaleClients_asksDetectorToRecordCurrentFingerprints() {
+        manager.acknowledgeStaleClients()
+        XCTAssertEqual(staleDetector.acknowledgeCallCount, 1)
+    }
+
     func test_enterAggregation_isIndependentPerTool() throws {
         try manager.enterAggregation(tool: .codex, defaultProfileID: "deepseek")
         XCTAssertEqual(manager.mode(tool: .codex), .aggregation)
@@ -504,10 +531,20 @@ private final class StubLoginStashStore: CodexLoginStashStoring {
 
 private final class StubStaleDetector: CodexStaleClientDetecting {
     var observeCallCount = 0
+    var observeLoginCallCount = 0
+    var acknowledgeCallCount = 0
     var stubStale: CodexStaleClients?
 
     func observe(catalogURL: URL, catalogIsOurs: Bool) {
         observeCallCount += 1
+    }
+
+    func observeLogin(authURL: URL) {
+        observeLoginCallCount += 1
+    }
+
+    func acknowledge(catalogURL: URL, authURL: URL) {
+        acknowledgeCallCount += 1
     }
 
     func staleClients(catalogURL: URL, catalogIsOurs: Bool) async -> CodexStaleClients? {

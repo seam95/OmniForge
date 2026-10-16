@@ -310,6 +310,8 @@ private final class BindingStubLoginStashStore: CodexLoginStashStoring {
 
 private final class BindingStubStaleDetector: CodexStaleClientDetecting {
     func observe(catalogURL: URL, catalogIsOurs: Bool) {}
+    func observeLogin(authURL: URL) {}
+    func acknowledge(catalogURL: URL, authURL: URL) {}
     func staleClients(catalogURL: URL, catalogIsOurs: Bool) async -> CodexStaleClients? { nil }
 }
 

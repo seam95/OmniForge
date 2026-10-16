@@ -37,8 +37,7 @@ struct AggregationPanelView: View {
 
                 if manager.isAggregating(tool) {
                     proxyDownBanner
-                    staleDaemonBanner
-                    staleOthersRow
+                    staleBanner
                     defaultSection
                     addedSection
                     availableSection
@@ -358,32 +357,53 @@ struct AggregationPanelView: View {
         }
     }
 
+    /// Codex 陈旧客户端横幅：目录陈旧 / 登录变了 / 进程表不可得三态标题 + 重启守护进程 +
+    /// 关闭（写 ack，指纹再变才重现）。对齐 cc-switch `CodexStaleClientsNotice`。
     @ViewBuilder
-    private var staleDaemonBanner: some View {
-        if let stale = manager.staleClients, stale.daemon {
+    private var staleBanner: some View {
+        if let stale = manager.staleClients, stale.daemon || stale.others || stale.loginChanged {
             PanelTintBanner(
                 icon: "arrow.clockwise.circle.fill",
                 tint: .blue,
-                title: strings.providerAggregationStaleDaemonTitle,
-                message: strings.providerAggregationStaleDaemonBody
+                title: staleTitle(stale),
+                message: staleMessage(stale)
             ) {
-                Button(strings.providerAggregationRestartDaemon) {
-                    confirmingRestartDaemon = true
+                HStack(spacing: 8) {
+                    if stale.daemon {
+                        Button(strings.providerAggregationRestartDaemon) {
+                            confirmingRestartDaemon = true
+                        }
+                        .font(.system(size: 11, weight: .medium))
+                        .accessibilityIdentifier(SettingsAccessibilityID.providerAggregationRestartDaemon.rawValue)
+                    }
+                    Button(strings.menuClose) {
+                        dismissStaleClients()
+                    }
+                    .font(.system(size: 11, weight: .medium))
                 }
-                .font(.system(size: 11, weight: .medium))
-                .accessibilityIdentifier(SettingsAccessibilityID.providerAggregationRestartDaemon.rawValue)
             }
         }
     }
 
-    @ViewBuilder
-    private var staleOthersRow: some View {
-        if let stale = manager.staleClients, !stale.daemon, stale.others {
-            Text(strings.providerAggregationStaleOthersBody)
-                .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
+    /// 三态标题（优先序对齐 cc-switch：`unverified` > `auth` > 目录陈旧）。
+    /// `loginChanged`/`unverified` 两态的专属文案待补本地化键
+    /// （`providerAggregationStaleLoginTitle` / `providerAggregationStaleUnverifiedTitle`），
+    /// 落地前暂借最接近的既有键。
+    private func staleTitle(_ stale: CodexStaleClients) -> String {
+        if stale.unverified { return strings.providerAggregationStaleDaemonTitle }
+        if stale.loginChanged { return strings.providerAggregationStaleDaemonTitle }
+        return strings.providerAggregationStaleDaemonTitle
+    }
+
+    /// 横幅正文：守护进程 / 其余客户端各一条指引；仅登录变了时标题自明（cc-switch 同款）。
+    private func staleMessage(_ stale: CodexStaleClients) -> String? {
+        if stale.daemon {
+            return strings.providerAggregationStaleDaemonBody
         }
+        if stale.others {
+            return strings.providerAggregationStaleOthersBody
+        }
+        return nil
     }
 
     // MARK: - 数据解析
@@ -489,6 +509,14 @@ struct AggregationPanelView: View {
             showToast(restarted
                       ? strings.providerAggregationDaemonRestarted
                       : strings.providerAggregationDaemonNotRunning)
+            await manager.refreshStaleClients()
+        }
+    }
+
+    /// 关掉陈旧横幅：记下当前目录与登录指纹 → 重新检测（同一份不再提示，指纹再变才重现）。
+    private func dismissStaleClients() {
+        Task { @MainActor in
+            manager.acknowledgeStaleClients()
             await manager.refreshStaleClients()
         }
     }

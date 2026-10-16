@@ -218,6 +218,8 @@ final class ProviderAggregationManager: ObservableObject {
         }
         if tool == .codex {
             try? loginStashStore.restore()
+            // 还原之后记一代登录：auth.json 从无到有/换人都是代次变化（P1-9 挂点）。
+            observeCodexLoginGeneration()
         }
         var newStack = stack
         var toolStack = newStack.toolStack(tool)
@@ -355,6 +357,8 @@ final class ProviderAggregationManager: ObservableObject {
 
     /// 重启 Codex 托管守护进程（陈旧客户端一键重启）：读 `daemon.pid` 并发 SIGTERM，
     /// 守护进程由其 Supervisor 重新拉起。pid 文件缺失/进程不在 → false（未在运行）。
+    /// 与 cc-switch 的差异：不等守护进程停机宽限期（60-300s）再起新的——我方 SIGTERM 即返，
+    /// 由 Codex 自己的 Supervisor 负责重拉（P1-9 保留简化）。
     func restartCodexDaemon() -> Bool {
         let pidURL = ProviderSwitchPaths.codexHome()
             .appendingPathComponent("app-server-daemon/daemon.pid")
@@ -365,6 +369,14 @@ final class ProviderAggregationManager: ObservableObject {
             return false
         }
         return true
+    }
+
+    /// 用户关掉陈旧横幅：记下当前目录与登录指纹，同一份不再提示，指纹再变才重现（P1-9）。
+    func acknowledgeStaleClients() {
+        staleDetector.acknowledge(
+            catalogURL: Self.codexAggregationCatalogURL(),
+            authURL: Self.codexAuthURL()
+        )
     }
 
     // MARK: - 生产装配
@@ -417,7 +429,9 @@ final class ProviderAggregationManager: ObservableObject {
                 fileManager: fileManager
             ),
             staleDetector: CodexStaleClientDetector(
-                historyURL: aggregationRoot.appendingPathComponent("codex-catalog-history.json"),
+                historyURL: aggregationRoot.appendingPathComponent(CodexStaleClientDetector.historyFileName),
+                loginHistoryURL: aggregationRoot.appendingPathComponent(CodexStaleClientDetector.loginHistoryFileName),
+                ackURL: aggregationRoot.appendingPathComponent(CodexStaleClientDetector.ackFileName),
                 fileManager: fileManager
             ),
             proxy: proxy,
@@ -444,13 +458,23 @@ final class ProviderAggregationManager: ObservableObject {
     /// 第三方默认 → 收纳官方登录（第三方投影写的是占位 token，用不上 OAuth 登录，
     /// 不收起来会被它抢占）；官方默认 → 不收纳，并还原此前已收纳的登录。
     /// 进入聚合与「聚合中换默认那家」两条路径共用同一条规则。
+    /// 登录代次挂点（P1-9）：第三方分支在 stash **前**、官方分支在 restore **后**各记一代
+    /// ——auth.json 随后被移走/放回，登录从无到有或换人都是代次变化，老进程可能还缓存旧账号。
+    /// `setDefault` 走同一函数，同理；`exitAggregation`/`fallbackToDirect` 的 restore 后另有一处。
     private func syncCodexLoginStash(tool: ProviderTool, defaultProfile: ProviderProfile) {
         guard tool == .codex else { return }
         if Self.isOfficial(defaultProfile) {
             try? loginStashStore.restore()
+            observeCodexLoginGeneration()
         } else {
+            observeCodexLoginGeneration()
             try? loginStashStore.stash()
         }
+    }
+
+    /// 记一次 Codex 登录代次（陈旧客户端检测：登录身份变了，进程可能还缓存旧账号）。
+    private func observeCodexLoginGeneration() {
+        staleDetector.observeLogin(authURL: Self.codexAuthURL())
     }
 
     /// 提交栈态：内存 + 落盘 + 喂代理快照。
@@ -574,6 +598,8 @@ final class ProviderAggregationManager: ObservableObject {
         }
         if tool == .codex {
             try? loginStashStore.restore()
+            // 与 exitAggregation 同一条挂点：还原之后记一代登录。
+            observeCodexLoginGeneration()
         }
         var newStack = stack
         var toolStack = newStack.toolStack(tool)
@@ -680,6 +706,11 @@ final class ProviderAggregationManager: ObservableObject {
 
     private static func codexAggregationCatalogURL() -> URL {
         ProviderSwitchPaths.codexAggregationCatalogURL()
+    }
+
+    /// Codex 登录身份文件 `auth.json`（登录代次指纹的取源；与收纳用的同一路径）。
+    private static func codexAuthURL() -> URL {
+        CodexAuthFileCredentialReader.defaultAuthURL()
     }
 }
 

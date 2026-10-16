@@ -181,6 +181,8 @@ private final class StubLoginStashStore: CodexLoginStashStoring {
 
 private final class StubStaleDetector: CodexStaleClientDetecting {
     func observe(catalogURL: URL, catalogIsOurs: Bool) {}
+    func observeLogin(authURL: URL) {}
+    func acknowledge(catalogURL: URL, authURL: URL) {}
     func staleClients(catalogURL: URL, catalogIsOurs: Bool) async -> CodexStaleClients? { nil }
 }
 
