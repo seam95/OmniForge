@@ -217,6 +217,24 @@ final class ProviderAggregationManagerTests: XCTestCase {
         XCTAssertFalse(target.passesThroughAuthorization)
     }
 
+    /// Claude 侧官方默认（api.anthropic.com + 静态 API key）**不**透传：
+    /// Claude 投影写死 `ANTHROPIC_AUTH_TOKEN = PROXY_MANAGED`，透传等于把占位符
+    /// 发给 Anthropic → 每个请求都 401（SPEC §3 收尾「Claude 侧不动」：官方默认照
+    /// BASE_URL + token 替换路径）。透传位只属于 Codex 官方（OAuth、无静态 token）。
+    func test_proxySnapshot_officialClaudeDefaultTargetKeepsCredentialRewrite() throws {
+        profileStore.stubProfiles = [ProviderProfile(
+            id: "anthropic-official", name: "Anthropic", tool: .claudeCode,
+            baseURL: "https://api.anthropic.com", token: "sk-official"
+        )]
+        manager = makeManager()
+
+        try manager.enterAggregation(tool: .claudeCode, defaultProfileID: "anthropic-official")
+
+        let target = try XCTUnwrap(manager.proxySnapshot().defaultTargets[.claudeCode])
+        XCTAssertFalse(target.passesThroughAuthorization)
+        XCTAssertEqual(target.token, "sk-official", "静态 API key 仍作为替换凭证下发给上游")
+    }
+
     /// 聚合中换默认那家 → 透传位跟着翻（与登录收纳态同一条跟随规则）。
     /// 官方默认进入 → 切第三方默认：必须摘掉透传位，否则第三方路由会把客户端的
     /// `Authorization` 原样透传给第三方（它的 token 根本不在那里）。
@@ -418,6 +436,35 @@ final class ProviderAggregationManagerTests: XCTestCase {
         XCTAssertEqual(published.map(\.window), [1_000_000, 400_000], "窗口空串 → 回落 extraEnv 全局口径")
     }
 
+    // MARK: - 快照刷新（面板挂载时补列）
+
+    /// 面板 `.task` 靠 `refresh()` 把启动期那份 profile 快照刷成当前的：`production()`
+    /// 在用户还没建任何东西时就列举过一次，此后新建的 profile 不在快照里 —— 不进「可加入」
+    /// 名单，且作为默认那家时 `enterAggregation` 会抛 profileNotFound（切换失败）。
+    func test_refresh_picksUpProfilesCreatedAfterLaunch() {
+        XCTAssertFalse(manager.joinableProfileIDs(tool: .claudeCode).contains("moonshot"))
+
+        profileStore.stubProfiles.append(ProviderProfile(
+            id: "moonshot", name: "Moonshot", tool: .claudeCode,
+            baseURL: "https://api.moonshot.cn/v1", token: "sk-moonshot"
+        ))
+        manager.refresh()
+
+        XCTAssertTrue(manager.joinableProfileIDs(tool: .claudeCode).contains("moonshot"))
+    }
+
+    /// 刷新同时摘掉已删除的成员（key 永不回收——重新加入拿回原 key，旧会话里的 id 继续有效）。
+    func test_refresh_prunesDeletedMembersButKeepsKeys() throws {
+        try manager.enterAggregation(tool: .claudeCode, defaultProfileID: "kimi")
+        try manager.addMember("glm")
+
+        profileStore.stubProfiles.removeAll { $0.id == "glm" }
+        manager.refresh()
+
+        XCTAssertEqual(manager.toolStack(.claudeCode).members, ["kimi"])
+        XCTAssertEqual(manager.toolStack(.claudeCode).keys["glm"], "glm", "key 一经分配永不回收")
+    }
+
     // MARK: - 部分写入与看门狗
 
     func test_partialFailureReportsPartialTrueAfterPublish() throws {
@@ -611,6 +658,7 @@ private final class StubCodexWriter: AggregationCodexConfigWriting {
 
     func applyAggregation(
         defaultProfile: ProviderProfile,
+        defaultKey: String,
         published: [AggregationPublishedModel],
         port: UInt16,
         requiresOpenAIAuth: Bool,
@@ -633,6 +681,7 @@ private final class StubCodexWriter: AggregationCodexConfigWriting {
 
     func projectedContractDigest(
         defaultProfile: ProviderProfile,
+        defaultKey: String,
         published: [AggregationPublishedModel],
         port: UInt16,
         requiresOpenAIAuth: Bool,

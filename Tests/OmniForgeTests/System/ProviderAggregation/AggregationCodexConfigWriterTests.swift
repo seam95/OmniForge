@@ -71,7 +71,7 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
     }
 
     func test_applyAggregation_writesCustomProviderTableAndTopLevelKeys() throws {
-        try writer.applyAggregation(defaultProfile: deepseek, published: [kimiK3], port: 15721, requiresOpenAIAuth: true)
+        try writer.applyAggregation(defaultProfile: deepseek, defaultKey: "deepseek", published: [kimiK3], port: 15721, requiresOpenAIAuth: true)
         let text = try String(contentsOf: configURL, encoding: .utf8)
         XCTAssertTrue(text.contains("model_provider = \"custom\""))
         XCTAssertTrue(text.contains("model = \"deepseek-v4-pro\""))
@@ -84,14 +84,14 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
     }
 
     func test_applyAggregation_omitsRequiresOpenAIAuthWhenNoLoginOnDisk() throws {
-        try writer.applyAggregation(defaultProfile: deepseek, published: [kimiK3], port: 15721, requiresOpenAIAuth: false)
+        try writer.applyAggregation(defaultProfile: deepseek, defaultKey: "deepseek", published: [kimiK3], port: 15721, requiresOpenAIAuth: false)
         let doc = try readConfigDocument()
         XCTAssertNil(doc.booleanValue(key: "requires_openai_auth", table: ["model_providers", "custom"]))
     }
 
     func test_applyAggregation_stripsGlobalWindowKeysFromTopLevel() throws {
         try writeConfig("model_context_window = 999999\nmodel_auto_compact_token_limit = 888888\n")
-        try writer.applyAggregation(defaultProfile: deepseek, published: [kimiK3], port: 15721, requiresOpenAIAuth: false)
+        try writer.applyAggregation(defaultProfile: deepseek, defaultKey: "deepseek", published: [kimiK3], port: 15721, requiresOpenAIAuth: false)
         let doc = try readConfigDocument()
         XCTAssertNil(doc.stringValue(key: "model_context_window", table: nil))
         XCTAssertNil(doc.stringValue(key: "model_auto_compact_token_limit", table: nil))
@@ -107,7 +107,7 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
         name = "OpenAI"
         base_url = "https://api.openai.com/v1"
         """)
-        try writer.applyAggregation(defaultProfile: deepseek, published: [kimiK3], port: 15721, requiresOpenAIAuth: false)
+        try writer.applyAggregation(defaultProfile: deepseek, defaultKey: "deepseek", published: [kimiK3], port: 15721, requiresOpenAIAuth: false)
         let text = try String(contentsOf: configURL, encoding: .utf8)
         XCTAssertTrue(text.contains("[model_providers.ollama_local]"))
         XCTAssertTrue(text.contains("[model_providers.openai]"))
@@ -146,12 +146,12 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
     }
 
     func test_applyAggregation_writesCatalogFileAlongsideConfig() throws {
-        try writer.applyAggregation(defaultProfile: deepseek, published: [kimiK3], port: 15721, requiresOpenAIAuth: false)
+        try writer.applyAggregation(defaultProfile: deepseek, defaultKey: "deepseek", published: [kimiK3], port: 15721, requiresOpenAIAuth: false)
         XCTAssertTrue(FileManager.default.fileExists(atPath: catalogURL.path))
     }
 
     func test_applyAggregation_officialDefaultWritesOpenAIBaseURLInsteadOfCustomTable() throws {
-        try writer.applyAggregation(defaultProfile: officialOpenAI, published: [kimiK3], port: 15721,
+        try writer.applyAggregation(defaultProfile: officialOpenAI, defaultKey: "openai", published: [kimiK3], port: 15721,
                                     requiresOpenAIAuth: false, defaultIsOfficial: true)
         let doc = try readConfigDocument()
         XCTAssertEqual(doc.stringValue(key: "openai_base_url", table: nil), "http://127.0.0.1:15721/v1")
@@ -163,10 +163,10 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
 
     func test_applyAggregation_switchingToOfficialDefaultDropsStaleCatalogKeyAndFile() throws {
         // 先按第三方默认写一轮：目录指针 + 目录文件都在盘上。
-        try writer.applyAggregation(defaultProfile: deepseek, published: [kimiK3], port: 15721, requiresOpenAIAuth: false)
+        try writer.applyAggregation(defaultProfile: deepseek, defaultKey: "deepseek", published: [kimiK3], port: 15721, requiresOpenAIAuth: false)
         XCTAssertTrue(FileManager.default.fileExists(atPath: catalogURL.path))
 
-        try writer.applyAggregation(defaultProfile: officialOpenAI, published: [kimiK3], port: 15721,
+        try writer.applyAggregation(defaultProfile: officialOpenAI, defaultKey: "openai", published: [kimiK3], port: 15721,
                                     requiresOpenAIAuth: false, defaultIsOfficial: true)
         let doc = try readConfigDocument()
         XCTAssertNil(doc.stringValue(key: "model_catalog_json", table: nil), "拥有键语义：切到官方默认时主动摘掉目录指针")
@@ -176,7 +176,7 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
     }
 
     func test_clearAggregation_removesOpenAIBaseURL() throws {
-        try writer.applyAggregation(defaultProfile: officialOpenAI, published: [kimiK3], port: 15721,
+        try writer.applyAggregation(defaultProfile: officialOpenAI, defaultKey: "openai", published: [kimiK3], port: 15721,
                                     requiresOpenAIAuth: false, defaultIsOfficial: true)
         try writer.clearAggregation()
         let doc = try readConfigDocument()
@@ -184,15 +184,15 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
     }
 
     func test_projectedContractDigest_seesOfficialBranchAndMatchesDiskAfterApply() throws {
-        try writer.applyAggregation(defaultProfile: officialOpenAI, published: [kimiK3], port: 15721,
+        try writer.applyAggregation(defaultProfile: officialOpenAI, defaultKey: "openai", published: [kimiK3], port: 15721,
                                     requiresOpenAIAuth: false, defaultIsOfficial: true)
         // 盘上现状固定为官方投影：两个分支的投影摘要必须分居它两侧。
         let officialDigest = writer.projectedContractDigest(
-            defaultProfile: officialOpenAI, published: [kimiK3], port: 15721,
+            defaultProfile: officialOpenAI, defaultKey: "openai", published: [kimiK3], port: 15721,
             requiresOpenAIAuth: false, defaultIsOfficial: true
         )
         let thirdPartyDigest = writer.projectedContractDigest(
-            defaultProfile: officialOpenAI, published: [kimiK3], port: 15721,
+            defaultProfile: officialOpenAI, defaultKey: "openai", published: [kimiK3], port: 15721,
             requiresOpenAIAuth: false, defaultIsOfficial: false
         )
         XCTAssertEqual(writer.currentContractDigest(), officialDigest, "官方分支落盘后闸门应判定「未变更」，不触发无谓重写")

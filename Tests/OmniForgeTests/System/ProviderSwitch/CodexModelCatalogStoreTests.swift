@@ -205,7 +205,7 @@ final class CodexModelCatalogStoreTests: XCTestCase {
             makePublished(key: "kimi", profileName: "Kimi", model: "kimi-k3"),
             makePublished(key: "deepseek", profileName: "DeepSeek", model: "deepseek-v4-pro")
         ]
-        try store.writeAggregatedCatalog(defaultProfile: ds, published: published)
+        try store.writeAggregatedCatalog(defaultProfile: ds, published: published, defaultKey: "deepseek")
 
         let models = try readModels()
         XCTAssertEqual(models.map { $0["slug"] as? String }, ["deepseek-v4-pro", "ccs-kimi/kimi-k3"])
@@ -215,7 +215,7 @@ final class CodexModelCatalogStoreTests: XCTestCase {
     func test_writeAggregatedCatalog_memberRowGetsStackSlugAndCompHash() throws {
         let published = [makePublished(key: "kimi", profileName: "Kimi", model: "kimi-k3")]
         try store.writeAggregatedCatalog(defaultProfile: makeProfile(name: "DeepSeek", key: "deepseek"),
-                                         published: published)
+                                         published: published, defaultKey: "deepseek")
         let row = try XCTUnwrap(try readModels().first { ($0["slug"] as? String) == "ccs-kimi/kimi-k3" })
         XCTAssertEqual(row["comp_hash"] as? String, "cc-switch")
         XCTAssertEqual(row["display_name"] as? String, "kimi-k3（Kimi）")
@@ -224,7 +224,7 @@ final class CodexModelCatalogStoreTests: XCTestCase {
 
     func test_writeAggregatedCatalog_routeRowKeepsPlainSlugAndNoCompHash() throws {
         try store.writeAggregatedCatalog(defaultProfile: makeProfile(name: "DeepSeek", key: "deepseek"),
-                                         published: [])
+                                         published: [], defaultKey: "deepseek")
         let row = try XCTUnwrap(try readModels().first { ($0["slug"] as? String) == "deepseek-reasoner" })
         XCTAssertNil(row["comp_hash"])
     }
@@ -232,7 +232,7 @@ final class CodexModelCatalogStoreTests: XCTestCase {
     func test_writeAggregatedCatalog_forcesUseResponsesLiteFalseOnlyWhenOriginallyTrue() throws {
         let published = [makePublished(key: "kimi", profileName: "Kimi", model: "kimi-k3")]
         try store.writeAggregatedCatalog(defaultProfile: makeProfile(name: "DeepSeek", key: "deepseek"),
-                                         published: published)
+                                         published: published, defaultKey: "deepseek")
         let row = try XCTUnwrap(try readModels().first { ($0["slug"] as? String) == "ccs-kimi/kimi-k3" })
         XCTAssertNotEqual(row["use_responses_lite"] as? Bool, true)
     }
@@ -240,10 +240,38 @@ final class CodexModelCatalogStoreTests: XCTestCase {
     func test_writeAggregatedCatalog_sinksWindowKeysIntoEveryRow() throws {
         let published = [makePublished(key: "kimi", profileName: "Kimi", model: "kimi-k3", window: 400_000)]
         try store.writeAggregatedCatalog(defaultProfile: makeProfile(name: "DeepSeek", key: "deepseek"),
-                                         published: published)
+                                         published: published, defaultKey: "deepseek")
         let row = try XCTUnwrap(try readModels().first { ($0["slug"] as? String) == "ccs-kimi/kimi-k3" })
         XCTAssertEqual(row["context_window"] as? Int, 400_000)
         XCTAssertEqual(row["max_context_window"] as? Int, 400_000)
         XCTAssertEqual(row["auto_compact_token_limit"] as? Int, 360_000)
+    }
+
+    /// 回归：默认那家的目录行归属必须按**登记簿 key**（`AggregationKeyRegistry.slug`：
+    /// ASCII-only、截断 24）判定，不能用 `ProviderProfile.profileKey`（`slugify`：拼音转换、
+    /// 不截断）——两套规则刻意不同，名称含汉字时必然不一致（`"GLM 智谱"` → profileKey
+    /// `glm-zhi-pu` vs 登记簿 key `glm`）。一旦用错，`defaultPublished` 为空 →
+    /// 回退分支发一遍普通 slug 行、成员循环再把同一批模型发成 `ccs-glm/<model>` 行，
+    /// `/model` 菜单里每个默认模型出现两遍，且普通行走的是旧的展示名与 extraEnv 窗口回落。
+    func test_writeAggregatedCatalog_defaultModelsAppearExactlyOnceForNonASCIIProfileName() throws {
+        let glm = makeProfile(name: "GLM 智谱", key: "glm")
+        XCTAssertEqual(glm.profileKey, "glm-zhi-pu", "拼音 slug 与登记簿 key 分属两套规则")
+        let published = [
+            makePublished(key: "glm", profileName: "GLM 智谱", model: "glm-5.3", window: 200_000),
+            makePublished(key: "kimi", profileName: "Kimi", model: "kimi-k3")
+        ]
+
+        try store.writeAggregatedCatalog(defaultProfile: glm, published: published, defaultKey: "glm")
+
+        let models = try readModels()
+        XCTAssertEqual(models.map { $0["slug"] as? String }, ["glm-5.3", "ccs-kimi/kimi-k3"])
+        XCTAssertEqual(
+            models.filter { ($0["slug"] as? String)?.contains("glm-5.3") == true }.count, 1,
+            "默认那家的模型只出现一次（普通 slug 路由行），不得再出一条 ccs- 成员行"
+        )
+        let routeRow = try XCTUnwrap(models.first)
+        XCTAssertNil(routeRow["comp_hash"], "路由行不带聚合来源标记")
+        XCTAssertEqual(routeRow["display_name"] as? String, "GLM 智谱 (glm-5.3)")
+        XCTAssertEqual(routeRow["context_window"] as? Int, 200_000, "窗口取发布条目值，不是 extraEnv 全局回落")
     }
 }

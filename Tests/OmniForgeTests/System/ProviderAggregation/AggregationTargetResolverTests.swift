@@ -2,7 +2,8 @@ import XCTest
 @testable import OmniForge
 
 /// 目标解析：普通模型走默认、带前缀命中归属成员并还原上游名、1M 标记随行、
-/// Codex 用裸名、四种 Miss 一律不回落到默认、双语文案含 OmniForge。
+/// Codex 用裸名、四种 Miss 一律不回落到默认、双语文案含 OmniForge；
+/// 官方透传位按**工具**分侧——Codex 官方透传客户端凭证，Claude 官方仍做凭证替换。
 final class AggregationTargetResolverTests: XCTestCase {
     private var resolver: AggregationTargetResolver!
     private var registry: AggregationKeyRegistry!
@@ -84,15 +85,44 @@ final class AggregationTargetResolverTests: XCTestCase {
 
     /// 官方那家入不了名单（`joinableProfileIDs` 排除官方），却能作为默认那家坐在
     /// `members[0]` 并分到 key、发布模型——它的 Stack id 同样可被命中（代理的模型发现
-    /// 端点把全部成员的已发布模型都列出去）。命中官方时必须透传：官方无静态 token，
-    /// 换成空串只会 401（SPEC §3 契约 4「plain 与 hit 同规则」）。
-    func test_hitTargetOnOfficialMemberPassesAuthorizationThrough() {
+    /// 端点把全部成员的已发布模型都列出去）。命中 Codex 官方时必须透传：官方无静态 token，
+    /// 换成空串只会 401（SPEC 3 契约 4「plain 与 hit 同规则」）。
+    func test_hitTargetOnOfficialCodexMemberPassesAuthorizationThrough() {
+        let official = ProviderProfile(
+            id: "openai-official",
+            name: "OpenAI",
+            tool: .codex,
+            baseURL: "https://api.openai.com/v1",
+            token: "",
+            codexModels: ["gpt-5-codex"]
+        )
+        let officialResolver = AggregationTargetResolver(
+            stack: .init(enabled: true, members: ["openai-official"],
+                         keys: ["openai-official": "openai-official"]),
+            registry: AggregationKeyRegistry(keys: ["openai-official": "openai-official"]),
+            profiles: [official],
+            defaultTarget: defaultTarget
+        )
+
+        guard case .hit(let target, let upstreamModel) =
+            officialResolver.resolve(tool: .codex, model: "ccs-openai-official/gpt-5-codex") else {
+            return XCTFail("expected hit")
+        }
+        XCTAssertEqual(upstreamModel, "gpt-5-codex")
+        XCTAssertEqual(target.token, "", "官方账号无静态 token（OAuth 走 auth.json）")
+        XCTAssertTrue(target.passesThroughAuthorization, "命中 Codex 官方：客户端 Authorization 原样透传")
+    }
+
+    /// Claude 侧官方成员（api.anthropic.com）**不**透传：投影写死
+    /// `ANTHROPIC_AUTH_TOKEN = PROXY_MANAGED`，透传等于把占位符发给 Anthropic → 每个请求 401。
+    /// 官方 Anthropic 的数据模型形状是静态 API key，凭证照常替换（SPEC §3 收尾「Claude 侧不动」）。
+    func test_hitTargetOnOfficialClaudeMemberKeepsCredentialRewrite() {
         let official = ProviderProfile(
             id: "anthropic-official",
             name: "Anthropic",
             tool: .claudeCode,
             baseURL: "https://api.anthropic.com",
-            token: "",
+            token: "sk-ant-official",
             stackModels: [ClaudeStackModel(model: "k3", displayName: "K3 K3", oneM: false)]
         )
         let officialResolver = AggregationTargetResolver(
@@ -108,8 +138,8 @@ final class AggregationTargetResolverTests: XCTestCase {
             return XCTFail("expected hit")
         }
         XCTAssertEqual(upstreamModel, "k3")
-        XCTAssertEqual(target.token, "", "官方账号无静态 token（OAuth 走 auth.json）")
-        XCTAssertTrue(target.passesThroughAuthorization, "命中官方：客户端 Authorization 原样透传")
+        XCTAssertEqual(target.token, "sk-ant-official", "Claude 官方是静态 API key：替换用的真实凭证")
+        XCTAssertFalse(target.passesThroughAuthorization, "Claude 侧不透传：否则占位 token 直达 Anthropic")
     }
 
     func test_prefixedModelHitsOwningMemberWithUpstreamNameRestored() {

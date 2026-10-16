@@ -4,6 +4,7 @@ import Foundation
 protocol AggregationCodexConfigWriting: AnyObject {
     func applyAggregation(
         defaultProfile: ProviderProfile,
+        defaultKey: String,
         published: [AggregationPublishedModel],
         port: UInt16,
         requiresOpenAIAuth: Bool,
@@ -15,6 +16,7 @@ protocol AggregationCodexConfigWriting: AnyObject {
     /// 给定投影的契约摘要（不落盘）。
     func projectedContractDigest(
         defaultProfile: ProviderProfile,
+        defaultKey: String,
         published: [AggregationPublishedModel],
         port: UInt16,
         requiresOpenAIAuth: Bool,
@@ -30,6 +32,10 @@ protocol AggregationCodexConfigWriting: AnyObject {
 /// 默认那家为官方账号时（`defaultIsOfficial`，SPEC 3 / P0-3）换一种形状：官方登录走
 /// `auth.json` OAuth、无静态 token 可替换，故不写 `custom` 表与占位 token，改指顶层
 /// `openai_base_url`；同时拿不到官方模型行 → 目录整体不写（成员模型因此不进 Codex `/model`）。
+///
+/// `defaultKey` 是默认那家在 `AggregationKeyRegistry` 里的 key（编排层按 `toolStack.keyOf(profileID:)`
+/// 取），目录按它认「哪些 published 行属于默认那家」——与 `ProviderProfile.profileKey` 是两套
+/// 刻意不同的 slug 规则，不能互换（见 `CodexModelCatalogStore.aggregatedCatalogData`）。
 final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
     let configURL: URL
     let catalogURL: URL
@@ -60,6 +66,7 @@ final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
 
     func applyAggregation(
         defaultProfile: ProviderProfile,
+        defaultKey: String,
         published: [AggregationPublishedModel],
         port: UInt16,
         requiresOpenAIAuth: Bool,
@@ -75,7 +82,7 @@ final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
         if !defaultIsOfficial {
             // 先写目录文件再写 config——客户端只认「目录在、配置指向它」的完整形态。
             try CodexModelCatalogStore(catalogURL: catalogURL, fileManager: fileManager)
-                .writeAggregatedCatalog(defaultProfile: defaultProfile, published: published)
+                .writeAggregatedCatalog(defaultProfile: defaultProfile, published: published, defaultKey: defaultKey)
         }
         try AtomicFileWriter.write(
             text.data(using: .utf8) ?? Data(),
@@ -98,6 +105,7 @@ final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
 
     func projectedContractDigest(
         defaultProfile: ProviderProfile,
+        defaultKey: String,
         published: [AggregationPublishedModel],
         port: UInt16,
         requiresOpenAIAuth: Bool,
@@ -109,7 +117,8 @@ final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
             ? nil
             : CodexModelCatalogStore.aggregatedCatalogData(
                 defaultProfile: defaultProfile,
-                published: published
+                published: published,
+                defaultKey: defaultKey
             )
         return AggregationContractDigest.codex(
             configText: projectedConfigText(

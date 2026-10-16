@@ -89,7 +89,15 @@ struct AggregationPanelView: View {
         } message: {
             Text(strings.providerAggregationRestartDaemonConfirmMessage)
         }
-        .task { await manager.refreshStaleClients() }
+        // 开面板即重新列举 profile：管理器构造时的那份快照是启动期的，用户此后新建/改名/
+        // 删除的 profile 都不在里面（`production()` 在用户还没建任何东西时就快照了）。
+        // 不刷新的话，新建的 profile 进不了「可加入」名单，作为默认那家时还会
+        // `enterAggregation` 抛 profileNotFound（切换失败）。`ProviderSwitchManager`
+        // 每次 upsert/delete 都自刷，这里补上聚合管理器这一侧。
+        .task {
+            manager.refresh()
+            await manager.refreshStaleClients()
+        }
     }
 
     // MARK: - 可测成员（纯函数：不依赖渲染）
@@ -417,11 +425,15 @@ struct AggregationPanelView: View {
     }
 
     /// 横幅正文：守护进程 / 其余客户端各一条指引；仅登录变了时标题自明（cc-switch 同款）。
-    private func staleMessage(_ stale: CodexStaleClients) -> String? {
+    /// `unverified`（进程表读不出来）时不发正文：那一态下 `others` 只表示「你上次确认后
+    /// 目录或登录变了」（`CodexStaleClientDetector`），并不等于「有客户端还在用旧目录」——
+    /// 配 `providerAggregationStaleOthersBody` 会自相矛盾（标题才说不知道有谁在跑）。
+    /// 非 `private`：与 `officialDefaultCodexHint` 同款，供单测直接锁定这条互斥规则。
+    func staleMessage(_ stale: CodexStaleClients) -> String? {
         if stale.daemon {
             return strings.providerAggregationStaleDaemonBody
         }
-        if stale.others {
+        if stale.others, !stale.unverified {
             return strings.providerAggregationStaleOthersBody
         }
         return nil

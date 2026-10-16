@@ -56,6 +56,10 @@ struct ProfileEditorView: View {
     @State private var codexModelRows: [String] = []
     /// Codex 模型显示名编辑态：与 `codexModelRows` **按位平行**（等长，空串 = 未配置）。
     @State private var codexDisplayNameRows: [String] = []
+    /// Codex 模型上下文窗口编辑态：与 `codexModelRows` **按位平行**（等长，空串 = 未配置）。
+    /// 窗口本身无编辑 UI（SPEC §7 只做数据层），但**必须跟着行增删同步平移**——否则删掉
+    /// 中间一行后，幸存行的窗口还按原下标读取，每个模型都会拿到邻居的窗口。
+    @State private var codexWindowRows: [String] = []
     /// Claude 聚合发布源编辑态（`stackModels`）：**nil = 用户没动过**（回显与保存都按表单
     /// 当前模型映射实时推导）；非 nil = 用户动过（含 `[]` = 主动清空，什么都不发布）。
     /// 三态不可混淆：nil 跟着映射、`[]` 什么都不发布、`[行]` 原样发布。
@@ -389,7 +393,8 @@ struct ProfileEditorView: View {
                     Button {
                         codexModelRows.append("")
                         codexDisplayNameRows.append("")
-                        syncCodexDisplayNameRows()
+                        codexWindowRows.append("")
+                        syncCodexParallelRows()
                     } label: {
                         Image(systemName: "plus")
                             .font(.system(size: 12, weight: .semibold))
@@ -431,7 +436,8 @@ struct ProfileEditorView: View {
                             Button {
                                 codexModelRows.remove(at: index)
                                 codexDisplayNameRows.remove(at: index)
-                                syncCodexDisplayNameRows()
+                                codexWindowRows.remove(at: index)
+                                syncCodexParallelRows()
                             } label: {
                                 Image(systemName: "trash")
                                     .font(.system(size: 12))
@@ -686,7 +692,9 @@ struct ProfileEditorView: View {
             models: codexModelRows,
             displayNames: profile.modelDisplayNames ?? []
         ).map(\.displayName)
-        syncCodexDisplayNameRows()
+        // 窗口与 `codexModelList` 按位平行（落盘口径见 `ProviderProfile.codexModelEntries`）。
+        codexWindowRows = profile.modelContextWindows ?? []
+        syncCodexParallelRows()
         reasoningEffort = profile.reasoningEffort ?? ""
         sonnet = profile.modelMapping?.sonnet ?? ""
         sonnetName = profile.modelMapping?.sonnetName ?? ""
@@ -733,6 +741,7 @@ struct ProfileEditorView: View {
                 baseURL = connection.baseURL
                 codexModelRows = [connection.defaultModel]
                 codexDisplayNameRows = [""]
+                codexWindowRows = [""]
                 reasoningEffort = ""
             }
         }
@@ -754,7 +763,8 @@ struct ProfileEditorView: View {
     private func save() {
         let codexRows = Self.alignedCodexSaveRows(
             models: codexModelRows,
-            displayNames: codexDisplayNameRows
+            displayNames: codexDisplayNameRows,
+            windows: codexWindowRows
         )
         let profile = makeProfile(
             name: trimmed(name),
@@ -771,7 +781,9 @@ struct ProfileEditorView: View {
                 ? ProfileEditorView.stackModelsForSave(editedStackRows, profile: draftProfile())
                 : nil,
             // 与 codexModels 同源过滤 → 按位对齐；一个都没配 → nil（不写键）
-            codexModelDisplayNames: ProfileEditorView.codexDisplayNamesForSave(codexRows)
+            codexModelDisplayNames: ProfileEditorView.codexDisplayNamesForSave(codexRows),
+            // 窗口同样与 codexModels 同源过滤（删行不错位）；Claude 侧恒为空 → nil
+            codexModelContextWindows: ProfileEditorView.codexContextWindowsForSave(codexRows)
         )
         do {
             try manager.upsertProfile(profile)
@@ -796,7 +808,8 @@ struct ProfileEditorView: View {
     }
 
     /// 显示名编辑态与模型行严格等长（平行数组的编辑侧不变量）。
-    private func syncCodexDisplayNameRows() {
+    /// 窗口行与显示名行共用同一条不变量（按位平行，越界按空串 = 未配置）。
+    private func syncCodexParallelRows() {
         if codexDisplayNameRows.count > codexModelRows.count {
             codexDisplayNameRows = Array(codexDisplayNameRows.prefix(codexModelRows.count))
         } else if codexDisplayNameRows.count < codexModelRows.count {
@@ -804,32 +817,49 @@ struct ProfileEditorView: View {
                 contentsOf: Array(repeating: "", count: codexModelRows.count - codexDisplayNameRows.count)
             )
         }
+        if codexWindowRows.count > codexModelRows.count {
+            codexWindowRows = Array(codexWindowRows.prefix(codexModelRows.count))
+        } else if codexWindowRows.count < codexModelRows.count {
+            codexWindowRows.append(
+                contentsOf: Array(repeating: "", count: codexModelRows.count - codexWindowRows.count)
+            )
+        }
     }
 
-    /// Codex 待保存的（模型, 显示名）行：丢空白行与空行，**显示名与模型同源过滤**——
-    /// 空白模型行被丢掉时它的显示名必须一起丢，否则平行数组整体串位（数据层容错不崩，
-    /// 只会静默显示错的名字）。显示名短于模型（历史档案长度不齐）→ 越界按未配置补空。
+    /// Codex 待保存的（模型, 显示名, 窗口）行：丢空白行与空行，**三个平行字段与模型同源过滤**——
+    /// 空白模型行被丢掉时它的显示名与窗口必须一起丢，否则平行数组整体串位（数据层容错不崩，
+    /// 只会静默显示错的名字/窗口）。显示名与窗口短于模型（历史档案长度不齐）→ 越界按未配置补空。
     static func alignedCodexSaveRows(
         models: [String],
-        displayNames: [String]
-    ) -> [(model: String, displayName: String)] {
-        var rows: [(model: String, displayName: String)] = []
+        displayNames: [String],
+        windows: [String] = []
+    ) -> [(model: String, displayName: String, window: String)] {
+        var rows: [(model: String, displayName: String, window: String)] = []
         for (index, raw) in models.enumerated() {
             let model = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !model.isEmpty else { continue }
             let displayName = index < displayNames.count
                 ? displayNames[index].trimmingCharacters(in: .whitespacesAndNewlines)
                 : ""
-            rows.append((model, displayName))
+            let window = index < windows.count
+                ? windows[index].trimmingCharacters(in: .whitespacesAndNewlines)
+                : ""
+            rows.append((model, displayName, window))
         }
         return rows
     }
 
     /// 显示名平行数组的落盘值：一个都没配 → nil（不写 `model_display_names` 键，
     /// 保持新增档案的既有落盘形状）；有任一个非空 → 原样写（含空串占位，保住按位对齐）。
-    static func codexDisplayNamesForSave(_ rows: [(model: String, displayName: String)]) -> [String]? {
+    static func codexDisplayNamesForSave(_ rows: [(model: String, displayName: String, window: String)]) -> [String]? {
         let names = rows.map(\.displayName)
         return names.allSatisfy { $0.isEmpty } ? nil : names
+    }
+
+    /// 窗口平行数组的落盘值：口径同显示名（一个都没配 → nil，不写键）。
+    static func codexContextWindowsForSave(_ rows: [(model: String, displayName: String, window: String)]) -> [String]? {
+        let windows = rows.map(\.window)
+        return windows.allSatisfy { $0.isEmpty } ? nil : windows
     }
 
     /// 由「表单当前值 + 既有档案」构造待保存档案。
@@ -842,8 +872,11 @@ struct ProfileEditorView: View {
     /// - `stackModels`：Claude 聚合发布源；`[]` = 用户主动清空（什么都不发布），与 nil
     ///   （未配置、按模型映射推导）语义相反——漏传会把「清空」静默还原成「跟着映射」。
     /// - `codexModelDisplayNames`：Codex 模型显示名，与 `codexModels` 按位平行（空串 = 未配置）。
+    /// - `codexModelContextWindows`：Codex 模型上下文窗口，与 `codexModels` 按位平行（空串 = 未配置）。
+    ///   由 `alignedCodexSaveRows` 与模型行**同源过滤**后实时推导，不能再取既有档案的原数组——
+    ///   删掉中间一行后模型会左移，原数组的下标就整体错位（每个模型拿到邻居的窗口）。
     ///
-    /// 窗口平行数组仍取既有档案（按 SPEC §7 只做数据层、无编辑 UI），保存路径是它唯一的保留点。
+    /// 窗口仍无编辑 UI（SPEC §7 只做数据层），本保存路径是它唯一的保留点。
     func makeProfile(
         name: String,
         baseURL: String,
@@ -854,7 +887,8 @@ struct ProfileEditorView: View {
         modelMapping: ProviderModelMapping?,
         extraEnv: [String: String],
         stackModels: [ClaudeStackModel]?,
-        codexModelDisplayNames: [String]?
+        codexModelDisplayNames: [String]?,
+        codexModelContextWindows: [String]? = nil
     ) -> ProviderProfile {
         ProviderProfile(
             id: self.profile?.id ?? ProviderProfile.slugify(name),
@@ -868,7 +902,7 @@ struct ProfileEditorView: View {
             modelMapping: modelMapping,
             stackModels: stackModels,
             modelDisplayNames: codexModelDisplayNames,
-            modelContextWindows: self.profile?.modelContextWindows,
+            modelContextWindows: codexModelContextWindows,
             extraEnv: extraEnv,
             // 收编外部文件时保留原来源标记；本 App 新建一律打 omniforge
             managedBy: self.profile?.managedBy ?? ProviderProfile.managedByMarker

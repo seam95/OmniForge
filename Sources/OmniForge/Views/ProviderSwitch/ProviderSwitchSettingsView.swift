@@ -101,6 +101,13 @@ struct ProviderSwitchSettingsView: View {
             // 切工具即回到直连查看态（模式选择不跨工具持久化）。
             panelMode = .direct
         }
+        .onChange(of: manager.profiles) { _, _ in
+            // 聚合管理器只在启动时列举过一次 profile（`production()` 的快照）。用户新建/
+            // 改名/删除供应商后必须重列，否则新 profile 进不了面板的「可加入」名单，
+            // 作为默认那家时 `enterAggregation` 还会抛 profileNotFound（切换失败）。
+            // 面板 `.task` 只覆盖「打开面板」这一次，这里补上面板开着时的增量。
+            aggregation?.refresh()
+        }
         .providerToast(message: $toastMessage)
         .sheet(item: $addingProfileForTool) { tool in
             ProfileEditorView(manager: manager, strings: strings, tool: tool)

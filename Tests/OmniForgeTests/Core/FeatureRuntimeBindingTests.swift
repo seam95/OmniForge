@@ -335,6 +335,7 @@ private final class BindingStubClaudeWriter: AggregationClaudeConfigWriting {
 private final class BindingStubCodexWriter: AggregationCodexConfigWriting {
     func applyAggregation(
         defaultProfile: ProviderProfile,
+        defaultKey: String,
         published: [AggregationPublishedModel],
         port: UInt16,
         requiresOpenAIAuth: Bool,
@@ -344,6 +345,7 @@ private final class BindingStubCodexWriter: AggregationCodexConfigWriting {
     func currentContractDigest() -> String { "" }
     func projectedContractDigest(
         defaultProfile: ProviderProfile,
+        defaultKey: String,
         published: [AggregationPublishedModel],
         port: UInt16,
         requiresOpenAIAuth: Bool,

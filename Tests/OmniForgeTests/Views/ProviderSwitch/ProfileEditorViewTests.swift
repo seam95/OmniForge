@@ -287,7 +287,13 @@ final class ProfileEditorViewTests: XCTestCase {
         )
 
         // 打开编辑器 → 不改任何字段直接保存。
+        // 平行数组走 `save()` 的同一条推导：按模型行同源过滤后按位携带（删行不错位）。
         let view = ProfileEditorView(manager: manager, strings: Strings.zhHans, tool: .codex, profile: existing)
+        let codexRows = ProfileEditorView.alignedCodexSaveRows(
+            models: existing.codexModels ?? [],
+            displayNames: existing.modelDisplayNames ?? [],
+            windows: existing.modelContextWindows ?? []
+        )
         let saved = view.makeProfile(
             name: existing.name,
             baseURL: existing.baseURL,
@@ -298,7 +304,8 @@ final class ProfileEditorViewTests: XCTestCase {
             modelMapping: nil,
             extraEnv: [:],
             stackModels: nil,
-            codexModelDisplayNames: existing.modelDisplayNames
+            codexModelDisplayNames: ProfileEditorView.codexDisplayNamesForSave(codexRows),
+            codexModelContextWindows: ProfileEditorView.codexContextWindowsForSave(codexRows)
         )
 
         XCTAssertEqual(saved.id, "kimi", "编辑既有档案保留原 id")

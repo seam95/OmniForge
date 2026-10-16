@@ -7,7 +7,11 @@ struct AggregationProxyTarget: Equatable {
     let baseURL: String
     let token: String
     /// 官方目标：客户端的 `Authorization` 原样透传，不换成 profile 的 token
-    /// （官方账号无静态 token，SPEC 3 契约 4）。
+    /// （官方账号无静态 token，SPEC 3 契约 4）。**仅 Codex 侧**（`tool == .codex`）：
+    /// Codex 官方登录走 `auth.json` OAuth，客户端自己带着有效凭证；
+    /// Claude 侧官方 Anthropic 走的是静态 API key，投影写的又是
+    /// `ANTHROPIC_AUTH_TOKEN = PROXY_MANAGED`，一旦透传就把占位符发给 Anthropic → 401
+    /// （SPEC §3 收尾「Claude 侧不动」：官方默认照 BASE_URL + token 替换路径）。
     /// 置位按**目标那家**的官方性判定（`ProviderProfile.isOfficial`，Models 层纯谓词）：
     /// plain 路径由 manager 构造 `defaultTarget` 时置好；hit 路径由 resolver 按命中的
     /// profile 自行置位——官方那家虽入不了名单（`joinableProfileIDs` 排除官方），却能作为
@@ -66,12 +70,14 @@ final class AggregationTargetResolver: AggregationResolving {
             // 官方那家也能被命中（它作为默认那家在 members[0]、分到 key、有已发布模型）：
             // 命中官方时同样透传客户端凭证，否则空 token 覆盖 → 401（SPEC 3 契约 4，
             // plain 与 hit 同规则）。判据是 Models 层的纯谓词 `ProviderProfile.isOfficial`。
+            // 但透传只属于 Codex：Claude 侧官方默认仍按占位凭证替换（SPEC §3 收尾
+            // 「Claude 侧不动」），否则 `Bearer PROXY_MANAGED` 直达 Anthropic。
             let target = AggregationProxyTarget(
                 key: key,
                 profileID: profileID,
                 baseURL: profile.baseURL,
                 token: profile.token,
-                passesThroughAuthorization: profile.isOfficial
+                passesThroughAuthorization: tool == .codex && profile.isOfficial
             )
             return .hit(target: target, upstreamModel: upstreamModel(tool: tool, profile: profile, key: key, model: stackModel, oneM: oneM))
         }

@@ -132,12 +132,18 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
 
     /// 聚合目录字节（**不落盘**）— 写入与契约摘要（Task 18）共用同一生成路径，
     /// 摘要才能在「磁盘目录字节 vs 即将写入的目录字节」之间做无副作用比对。
+    /// - `defaultKey`：默认那家在 `AggregationKeyRegistry` 里的 key（`toolStack.keyOf(profileID:)`），
+    ///   用来认「哪些 `published` 行属于默认那家」。**不能**在库内用
+    ///   `defaultProfile.profileKey` 推导——那是 `ProviderProfile.slugify`（拼音转换、不截断），
+    ///   与登记簿的 ASCII-only + 24 位截断是两套刻意不同的规则（见 `AggregationKeyRegistry`），
+    ///   名称含汉字时两者必然不同，一错位默认那家的模型就会在 `/model` 菜单里出现两遍。
     static func aggregatedCatalogData(
         defaultProfile: ProviderProfile,
-        published: [AggregationPublishedModel]
+        published: [AggregationPublishedModel],
+        defaultKey: String
     ) -> Data? {
         let root: [String: Any] = [
-            "models": aggregatedCatalogEntries(defaultProfile: defaultProfile, published: published)
+            "models": aggregatedCatalogEntries(defaultProfile: defaultProfile, published: published, defaultKey: defaultKey)
         ]
         return try? JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
     }
@@ -145,9 +151,10 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
     /// 生成并原子写入聚合目录。
     func writeAggregatedCatalog(
         defaultProfile: ProviderProfile,
-        published: [AggregationPublishedModel]
+        published: [AggregationPublishedModel],
+        defaultKey: String
     ) throws {
-        guard let data = Self.aggregatedCatalogData(defaultProfile: defaultProfile, published: published) else {
+        guard let data = Self.aggregatedCatalogData(defaultProfile: defaultProfile, published: published, defaultKey: defaultKey) else {
             throw ProviderConfigFileError.writeFailed(path: catalogURL.path)
         }
         try AtomicFileWriter.write(data, to: catalogURL, fileManager: fileManager)
@@ -160,11 +167,12 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
     /// - **成员行按 `published` 顺序追加**：Stack slug（`ccs-<key>/<model>`）、
     ///   全角展示名、`comp_hash = "cc-switch"`、`use_responses_lite = false`。
     /// - 全部行写入窗口下沉三键；结尾对整份列表重排 `priority = 1...n`。
+    /// - `defaultKey`：默认那家的**登记簿** key（见 `aggregatedCatalogData` 的说明）。
     private static func aggregatedCatalogEntries(
         defaultProfile: ProviderProfile,
-        published: [AggregationPublishedModel]
+        published: [AggregationPublishedModel],
+        defaultKey: String
     ) -> [[String: Any]] {
-        let defaultKey = defaultProfile.profileKey
         let defaultPublished = published.filter { $0.key == defaultKey }
         let defaultEffort = defaultProfile.reasoningEffort?.isEmpty == false ? defaultProfile.reasoningEffort! : "high"
 

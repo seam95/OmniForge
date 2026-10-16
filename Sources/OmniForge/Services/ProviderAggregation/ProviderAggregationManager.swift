@@ -173,7 +173,7 @@ final class ProviderAggregationManager: ObservableObject {
             toolStack.members.insert(defaultProfileID, at: 0)
         }
         let registry = AggregationKeyRegistry(keys: toolStack.keys)
-        _ = registry.allocate(profile: defaultProfile)
+        let defaultKey = registry.allocate(profile: defaultProfile)
         toolStack.keys = registry.keys
         newStack.setToolStack(toolStack, for: tool)
 
@@ -187,9 +187,9 @@ final class ProviderAggregationManager: ObservableObject {
         entered.published = true
         try pendingStore.save(entered)
 
-        // 7) 写该工具投影。
+        // 7) 写该工具投影（新栈此刻还没 commit，故 key 由调用方显式带下去）。
         do {
-            try publishProjection(tool: tool, defaultProfile: defaultProfile, port: port)
+            try publishProjection(tool: tool, defaultProfile: defaultProfile, defaultKey: defaultKey, port: port)
         } catch {
             // 已进入发布 → partial：保留 pending，提交栈态，下次操作或重启前滚。
             lastPartialWrite = true
@@ -500,8 +500,8 @@ final class ProviderAggregationManager: ObservableObject {
     }
 
     /// 进入聚合的投影写入（无条件）。
-    private func publishProjection(tool: ProviderTool, defaultProfile: ProviderProfile, port: UInt16) throws {
-        try writeProjection(tool: tool, defaultProfile: defaultProfile, port: port)
+    private func publishProjection(tool: ProviderTool, defaultProfile: ProviderProfile, defaultKey: String, port: UInt16) throws {
+        try writeProjection(tool: tool, defaultProfile: defaultProfile, defaultKey: defaultKey, port: port)
         observeCatalogIfNeeded(tool: tool)
     }
 
@@ -512,6 +512,8 @@ final class ProviderAggregationManager: ObservableObject {
               let defaultProfile = profiles.first(where: { $0.id == defaultID }) else {
             return
         }
+        // 默认那家的登记簿 key：Codex 目录按它认「哪些 published 行属于默认那家」。
+        let defaultKey = stack.toolStack(tool).keyOf(profileID: defaultID) ?? ""
         let published = publishedModels(tool: tool)
         let changed: Bool
         switch tool {
@@ -525,17 +527,17 @@ final class ProviderAggregationManager: ObservableObject {
         case .codex:
             changed = codexWriter.currentContractDigest()
                 != codexWriter.projectedContractDigest(
-                    defaultProfile: defaultProfile, published: published, port: port,
+                    defaultProfile: defaultProfile, defaultKey: defaultKey, published: published, port: port,
                     requiresOpenAIAuth: loginStashStore.hasNativeLogin,
                     defaultIsOfficial: Self.isOfficial(defaultProfile)
                 )
         }
         guard changed else { return }
-        try writeProjection(tool: tool, defaultProfile: defaultProfile, port: port)
+        try writeProjection(tool: tool, defaultProfile: defaultProfile, defaultKey: defaultKey, port: port)
         observeCatalogIfNeeded(tool: tool)
     }
 
-    private func writeProjection(tool: ProviderTool, defaultProfile: ProviderProfile, port: UInt16) throws {
+    private func writeProjection(tool: ProviderTool, defaultProfile: ProviderProfile, defaultKey: String, port: UInt16) throws {
         let published = publishedModels(tool: tool)
         switch tool {
         case .claudeCode:
@@ -545,7 +547,7 @@ final class ProviderAggregationManager: ObservableObject {
             )
         case .codex:
             try codexWriter.applyAggregation(
-                defaultProfile: defaultProfile, published: published, port: port,
+                defaultProfile: defaultProfile, defaultKey: defaultKey, published: published, port: port,
                 requiresOpenAIAuth: loginStashStore.hasNativeLogin,
                 defaultIsOfficial: Self.isOfficial(defaultProfile)
             )
@@ -667,9 +669,12 @@ final class ProviderAggregationManager: ObservableObject {
                     profileID: defaultID,
                     baseURL: profile.baseURL,
                     token: profile.token,
-                    // 官方默认：登录走 auth.json OAuth、没有静态 token，客户端自己的
-                    // Authorization 原样透传（换成空串只会 401；SPEC 3 契约 4）。
-                    passesThroughAuthorization: Self.isOfficial(profile)
+                    // 官方默认（**仅 Codex**）：登录走 auth.json OAuth、没有静态 token，
+                    // 客户端自己的 Authorization 原样透传（换成空串只会 401；SPEC 3 契约 4）。
+                    // Claude 侧官方 Anthropic 是静态 API key，投影写的又是占位 token，
+                    // 必须照常替换（SPEC §3 收尾「Claude 侧不动」）——漏掉工具闸门会让
+                    // `Bearer PROXY_MANAGED` 直达 Anthropic，每个请求都 401。
+                    passesThroughAuthorization: tool == .codex && Self.isOfficial(profile)
                 )
             }
             published[tool] = publishedModels(tool: tool)

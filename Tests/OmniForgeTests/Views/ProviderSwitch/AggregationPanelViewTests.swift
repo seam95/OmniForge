@@ -298,6 +298,31 @@ final class AggregationPanelViewTests: XCTestCase {
         XCTAssertNil(exited.officialDefaultCodexHint(manager: exited.manager))
     }
 
+    /// 陈旧横幅正文与标题不得互相矛盾：`unverified`（进程表不可得）时 `others` 只表示
+    /// 「上次确认后目录或登录变了」（`CodexStaleClientDetector`），不等于「有客户端还在用
+    /// 旧目录」——那一态下发 `staleOthersBody` 会与 `staleUnverifiedTitle` 直接打架。
+    func test_staleMessage_unverifiedOthersGetsNoContradictoryBody() throws {
+        let view = try makeView()
+        let strings = Strings.zhHans
+
+        XCTAssertEqual(
+            view.staleMessage(CodexStaleClients(daemon: false, others: true, unverified: true)),
+            nil,
+            "unverified：标题才说不知道有谁在跑，正文不能断言有客户端在用旧目录"
+        )
+        XCTAssertEqual(
+            view.staleMessage(CodexStaleClients(daemon: false, others: true, unverified: false)),
+            strings.providerAggregationStaleOthersBody,
+            "进程表可得、确认后目录变过 → 照常给其余客户端指引"
+        )
+        XCTAssertEqual(
+            view.staleMessage(CodexStaleClients(daemon: true, others: true, unverified: true)),
+            strings.providerAggregationStaleDaemonBody,
+            "守护进程陈旧优先：它不受 unverified 影响"
+        )
+        XCTAssertNil(view.staleMessage(CodexStaleClients(daemon: false, others: false)))
+    }
+
     // MARK: - 保存路径承载（R1 / R2 / R3）
 
     /// 保存必须带上 stackModels：normalize 后的行原样进 profile；
@@ -435,11 +460,50 @@ final class AggregationPanelViewTests: XCTestCase {
         XCTAssertEqual(saved.modelDisplayNames, ["Kimi K3", ""])
 
         // 一个都没配 → nil（不写键，保持既有落盘形状）。
-        XCTAssertNil(ProfileEditorView.codexDisplayNamesForSave([("kimi-k3", "")]))
+        XCTAssertNil(ProfileEditorView.codexDisplayNamesForSave([("kimi-k3", "", "")]))
         XCTAssertNil(ProfileEditorView.codexDisplayNamesForSave([]))
         XCTAssertEqual(
-            ProfileEditorView.codexDisplayNamesForSave([("kimi-k3", "Kimi K3"), ("kimi-k2", "")]),
+            ProfileEditorView.codexDisplayNamesForSave([("kimi-k3", "Kimi K3", ""), ("kimi-k2", "", "")]),
             ["Kimi K3", ""],
+            "有任一个非空就原样写（含空串占位），保住按位对齐"
+        )
+    }
+
+    /// 回归：窗口平行数组必须与**过滤后**的模型列表同源对齐。删掉中间一行后模型左移，
+    /// 窗口若还按档案原数组的下标读取，每个幸存模型都会拿到邻居的窗口（R13 让窗口靠
+    /// 「原样携带」存活，Task 11 的行删除打破了这份按位对齐）。
+    @MainActor
+    func test_save_codexContextWindowsFollowSurvivingRows() throws {
+        let view = makeEditor(tool: .codex, profile: nil)
+
+        // 档案原状：三个模型、三个窗口（按位平行）。用户删掉中间那行。
+        let surviving = ProfileEditorView.alignedCodexSaveRows(
+            models: ["glm-5.3", "kimi-k3", "kimi-k2"],
+            displayNames: ["GLM", "Kimi K3", ""],
+            windows: ["200000", "256000", "128000"]
+        ).filter { $0.model != "kimi-k3" }
+
+        let saved = view.makeProfile(
+            name: "GLM", baseURL: "https://open.bigmodel.cn/api/anthropic", token: "sk",
+            modelOverride: nil, reasoningEffort: nil,
+            codexModels: surviving.map(\.model), modelMapping: nil, extraEnv: [:],
+            stackModels: nil,
+            codexModelDisplayNames: ProfileEditorView.codexDisplayNamesForSave(surviving),
+            codexModelContextWindows: ProfileEditorView.codexContextWindowsForSave(surviving)
+        )
+        XCTAssertEqual(saved.codexModels, ["glm-5.3", "kimi-k2"])
+        XCTAssertEqual(
+            saved.modelContextWindows, ["200000", "128000"],
+            "窗口跟着幸存行平移，不得把 256000（已删那行的）留给 kimi-k2"
+        )
+        XCTAssertEqual(saved.codexModelEntries.map(\.contextWindow), [200_000, 128_000])
+
+        // 一个窗口都没配 → nil（不写键，保持既有落盘形状）。
+        XCTAssertNil(ProfileEditorView.codexContextWindowsForSave([("glm-5.3", "", "")]))
+        XCTAssertNil(ProfileEditorView.codexContextWindowsForSave([]))
+        XCTAssertEqual(
+            ProfileEditorView.codexContextWindowsForSave([("glm-5.3", "", "200000"), ("kimi-k2", "", "")]),
+            ["200000", ""],
             "有任一个非空就原样写（含空串占位），保住按位对齐"
         )
     }
@@ -529,6 +593,7 @@ private final class StubClaudeWriter: AggregationClaudeConfigWriting {
 private final class StubCodexWriter: AggregationCodexConfigWriting {
     func applyAggregation(
         defaultProfile: ProviderProfile,
+        defaultKey: String,
         published: [AggregationPublishedModel],
         port: UInt16,
         requiresOpenAIAuth: Bool,
@@ -538,6 +603,7 @@ private final class StubCodexWriter: AggregationCodexConfigWriting {
     func currentContractDigest() -> String { "" }
     func projectedContractDigest(
         defaultProfile: ProviderProfile,
+        defaultKey: String,
         published: [AggregationPublishedModel],
         port: UInt16,
         requiresOpenAIAuth: Bool,
