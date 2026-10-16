@@ -335,6 +335,75 @@ final class AggregationPanelViewTests: XCTestCase {
         XCTAssertEqual(cleared.stackModels, [])
     }
 
+    /// R23 修复的回归：没动过编辑区时，保存值必须**跟着表单当前映射**推导，而不是把打开时的
+    /// 推导值冻住。冻住的后果是静默偏离——`modelMapping` 存新模型、发布列表留旧模型，
+    /// 用户改的角色模型既不进发布列表也不报错。
+    @MainActor
+    func test_stackModelsForSave_followsLiveMappingWhenUntouched() throws {
+        let beforeEdit = ProviderProfile(
+            id: "glm", name: "GLM", tool: .claudeCode,
+            baseURL: "https://open.bigmodel.cn/api/anthropic", token: "sk",
+            modelOverride: "glm-5.3",
+            modelMapping: ProviderModelMapping(sonnet: "glm-5.3-air", opus: "glm-5.3")
+        )
+        // 注意 normalize 会按模型名去重：modelOverride 与 opus 同为 glm-5.3 → 合并成一行。
+        XCTAssertEqual(
+            ProfileEditorView.stackModelsForSave(nil, profile: beforeEdit).map(\.model),
+            ["glm-5.3", "glm-5.3-air"]
+        )
+
+        // 用户在映射区把 opus 改成新模型（编辑区没动过）→ 保存值必须反映新映射。
+        let afterEdit = ProviderProfile(
+            id: "glm", name: "GLM", tool: .claudeCode,
+            baseURL: "https://open.bigmodel.cn/api/anthropic", token: "sk",
+            modelOverride: "glm-5.3",
+            modelMapping: ProviderModelMapping(sonnet: "glm-5.3-air", opus: "glm-6")
+        )
+        XCTAssertEqual(
+            ProfileEditorView.stackModelsForSave(nil, profile: afterEdit).map(\.model),
+            ["glm-5.3", "glm-6", "glm-5.3-air"],
+            "未动过的编辑区必须按当前映射实时推导，不能冻结成打开时的值"
+        )
+
+        // 动过 → 用编辑态（normalize 后），不再看映射。
+        XCTAssertEqual(
+            ProfileEditorView.stackModelsForSave(
+                [ClaudeStackModel(model: "k3[1m]", displayName: nil, oneM: false)],
+                profile: afterEdit
+            ),
+            [ClaudeStackModel(model: "k3", displayName: nil, oneM: true)]
+        )
+    }
+
+    /// R23 的关键不变量：`[]` 是**非 nil 的空数组**，`??` 不得用推导值把它顶掉——
+    /// 否则用户清空列表后下次打开又长出模型，删除被静默还原（R7）。
+    @MainActor
+    func test_stackModelsForSave_clearedListIsNotResurrectedByFallback() throws {
+        let profile = ProviderProfile(
+            id: "glm", name: "GLM", tool: .claudeCode,
+            baseURL: "https://open.bigmodel.cn/api/anthropic", token: "sk",
+            modelOverride: "glm-5.3",
+            modelMapping: ProviderModelMapping(opus: "glm-5.3")
+        )
+        XCTAssertEqual(profile.aggregationModels.count, 2, "该档案的推导值非空，足以暴露被顶掉")
+
+        let saved = ProfileEditorView.stackModelsForSave([], profile: profile)
+        XCTAssertEqual(saved, [], "主动清空必须落成 []，不得回落到映射推导值")
+
+        // 落进 profile 后仍是 []（`ProviderProfile.swift:190` 对非 nil 的 stackModels 原样返回，
+        // 空数组因此能一路传到发布侧的空发布分支）。
+        let view = makeEditor(tool: .claudeCode, profile: nil)
+        let roundTripped = view.makeProfile(
+            name: "GLM", baseURL: profile.baseURL, token: "sk",
+            modelOverride: nil, reasoningEffort: nil, codexModels: nil, modelMapping: nil,
+            extraEnv: [:],
+            stackModels: saved,
+            codexModelDisplayNames: nil
+        )
+        XCTAssertEqual(roundTripped.stackModels, [])
+        XCTAssertEqual(roundTripped.aggregationModels, [], "空数组不得被推导值顶掉")
+    }
+
     /// Codex 显示名平行数组必须与**过滤后**的模型列表同源对齐：空白模型行被丢掉时，
     /// 它的显示名必须一起丢（否则整体串位——数据层容错不崩，只会静默显示错的名字）。
     @MainActor

@@ -56,8 +56,10 @@ struct ProfileEditorView: View {
     @State private var codexModelRows: [String] = []
     /// Codex 模型显示名编辑态：与 `codexModelRows` **按位平行**（等长，空串 = 未配置）。
     @State private var codexDisplayNameRows: [String] = []
-    /// Claude 聚合发布源编辑态（`stackModels`）：初始 = 已存值 ?? 按模型映射推导的回显。
-    @State private var stackRows: [ClaudeStackModel] = []
+    /// Claude 聚合发布源编辑态（`stackModels`）：**nil = 用户没动过**（回显与保存都按表单
+    /// 当前模型映射实时推导）；非 nil = 用户动过（含 `[]` = 主动清空，什么都不发布）。
+    /// 三态不可混淆：nil 跟着映射、`[]` 什么都不发布、`[行]` 原样发布。
+    @State private var editedStackRows: [ClaudeStackModel]?
     @State private var reasoningEffort = ""
     @State private var sonnet = ""
     @State private var sonnetName = ""
@@ -458,21 +460,41 @@ struct ProfileEditorView: View {
         ClaudeStackModelsField(rows: stackRowsBinding, strings: strings)
     }
 
+    /// 编辑区当前显示的行：用户动过就用编辑态，**没动过按表单当前映射实时推导**——
+    /// 对齐 cc-switch `shownClaudeStackRows = claudeStackRows ?? mappedClaudeStackRows`
+    /// （`ProviderForm.tsx:683`，`mappedClaudeStackRows` 是 `useMemo` 跟着表单 env 变的）。
+    /// 少了这层「实时」，用户改角色模型字段不会反映到发布列表，保存时还会把旧推导固化成显式
+    /// `stackModels`——静默偏离（映射存新值、发布列表留旧值）。
+    private var shownStackRows: [ClaudeStackModel] {
+        editedStackRows ?? ClaudeStackModelsField.fromMapping(profile: draftProfile())
+    }
+
     /// 编辑态与 `modelOverride`（`ANTHROPIC_MODEL`）的联动绑定：
     /// 第一行的模型变化时把默认兜底模型字段改成同一个值。
     /// 对齐 cc-switch `handleClaudeStackRowsChange`（`ProviderForm.tsx:685-691`）——
     /// 首行是默认模型；删光了不碰（无首行即无默认值可比，见 `ClaudeStackModelsField.defaultModel`）。
     private var stackRowsBinding: Binding<[ClaudeStackModel]> {
         Binding(
-            get: { stackRows },
+            get: { shownStackRows },
             set: { newRows in
-                let previous = ClaudeStackModelsField.defaultModel(stackRows)
-                stackRows = newRows
+                let previous = ClaudeStackModelsField.defaultModel(shownStackRows)
+                editedStackRows = newRows
                 if let next = ClaudeStackModelsField.defaultModel(newRows), next != previous {
                     model = next
                 }
             }
         )
+    }
+
+    /// 保存用的发布源（normalize 后）：
+    /// - 动过 → normalize 编辑态。**`[]` 是非 nil 的空数组**，`??` 不会用推导值顶掉它——
+    ///   用户主动清空必须落成空数组（什么都不发布），回落 nil 会让下次打开又长出推导模型。
+    /// - 没动过 → normalize 推导值：本次保存把「跟着映射」固化成显式列表，值与当前映射一致。
+    static func stackModelsForSave(
+        _ edited: [ClaudeStackModel]?,
+        profile: ProviderProfile
+    ) -> [ClaudeStackModel] {
+        ClaudeStackModelsField.normalize(edited ?? ClaudeStackModelsField.fromMapping(profile: profile))
     }
 
     private var codexReasoningEffortRow: some View {
@@ -651,9 +673,8 @@ struct ProfileEditorView: View {
                 presetID = first.id
                 applyPreset(first.id)
             }
-            // 新增态同样按模型映射回显发布源（此刻 preset 已带入映射值），
-            // 与「打开既有未配置档案」一致：未配置 = 跟着映射，而不是空列表。
-            stackRows = ClaudeStackModelsField.fromMapping(profile: draftProfile())
+            // 新增态：编辑态保持 nil（没动过），发布源由 stackRowsBinding 按 preset 刚带入的
+            // 映射实时推导——用户之后改角色模型字段也会跟着变（对齐 cc-switch 的 ?? 回退）。
             return
         }
         name = profile.name
@@ -677,8 +698,9 @@ struct ProfileEditorView: View {
         haikuName = profile.modelMapping?.haikuName ?? ""
         subagent = profile.modelMapping?.subagent ?? ""
         extraEnv = profile.extraEnv
-        // 已存发布源原样回显；未配置（nil）才按模型映射推导（SPEC §4）。
-        stackRows = profile.stackModels ?? ClaudeStackModelsField.fromMapping(profile: profile)
+        // 已存发布源原样回显；未配置（nil = 没动过）保持 nil，由 stackRowsBinding 按表单
+        // 当前映射实时推导（SPEC §4；对齐 cc-switch `claudeStackRows ?? mappedClaudeStackRows`）。
+        editedStackRows = profile.stackModels
 
         if !sonnetName.isEmpty || !opusName.isEmpty || !fableName.isEmpty || !haikuName.isEmpty {
             showDisplayNames = true
@@ -745,7 +767,9 @@ struct ProfileEditorView: View {
             extraEnv: tool == .claudeCode ? extraEnv : [:],
             // normalize 后写入；**全空 → `[]`（用户主动清空、什么都不发布）**，
             // 绝不能折算成 nil（未配置）——否则下次打开又按映射长出模型，删除被静默还原。
-            stackModels: tool == .claudeCode ? ClaudeStackModelsField.normalize(stackRows) : nil,
+            stackModels: tool == .claudeCode
+                ? ProfileEditorView.stackModelsForSave(editedStackRows, profile: draftProfile())
+                : nil,
             // 与 codexModels 同源过滤 → 按位对齐；一个都没配 → nil（不写键）
             codexModelDisplayNames: ProfileEditorView.codexDisplayNamesForSave(codexRows)
         )
