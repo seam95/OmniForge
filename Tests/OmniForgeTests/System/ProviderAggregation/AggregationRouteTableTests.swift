@@ -99,6 +99,27 @@ final class AggregationRouteTableTests: XCTestCase {
         XCTAssertEqual(fresh["anthropic-beta"], "claude-code-20250219")
     }
 
+    func test_rewrittenHeaders_anthropicKeepsBetaUnchangedWhenClaudeCodeAlreadyPresent() {
+        // 已含 claude-code-20250219 → 原样保留：证明是无条件前置之外的真实判定，重复前置会在此暴露
+        let exact = AggregationUpstream.rewrittenHeaders(
+            ["anthropic-beta": "claude-code-20250219,context-1m-2025-08-07"],
+            credential: "sk-real", protocol: .anthropicMessages)
+        XCTAssertEqual(exact["anthropic-beta"], "claude-code-20250219,context-1m-2025-08-07")
+
+        // 逗号两侧带空白也能识别为已含（split 后逐项 trim），值同样原样保留
+        let padded = AggregationUpstream.rewrittenHeaders(
+            ["anthropic-beta": " claude-code-20250219 , context-1m-2025-08-07 "],
+            credential: "sk-real", protocol: .anthropicMessages)
+        XCTAssertEqual(padded["anthropic-beta"], " claude-code-20250219 , context-1m-2025-08-07 ")
+
+        // 已含 beta 时 version 仍走各自的规则：缺失补默认值，已有值不覆盖
+        XCTAssertEqual(exact["anthropic-version"], "2023-06-01")
+        let withVersion = AggregationUpstream.rewrittenHeaders(
+            ["anthropic-beta": "claude-code-20250219", "anthropic-version": "2024-01-01"],
+            credential: "sk-real", protocol: .anthropicMessages)
+        XCTAssertEqual(withVersion["anthropic-version"], "2024-01-01")
+    }
+
     func test_rewrittenHeaders_usesBearerForOpenAIProtocols() {
         let headers = ["authorization": "Bearer PROXY_MANAGED"]
         let rewritten = AggregationUpstream.rewrittenHeaders(headers, credential: "sk-real", protocol: .openAIResponses)
