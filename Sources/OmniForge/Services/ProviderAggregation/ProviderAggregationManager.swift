@@ -145,7 +145,7 @@ final class ProviderAggregationManager: ObservableObject {
         guard defaultProfile.tool == tool else {
             throw AggregationManagerError.toolMismatch(id: defaultProfileID, expected: tool)
         }
-        guard defaultProfile.hasCompleteConnection else {
+        guard defaultProfile.hasCompleteConnection || Self.isOfficial(defaultProfile) else {
             throw AggregationManagerError.incompleteConnection(id: defaultProfileID)
         }
         // 已在聚合 → 视为切换默认那家。
@@ -159,14 +159,8 @@ final class ProviderAggregationManager: ObservableObject {
         guard let port = proxy.resolvedPort else { throw AggregationProxyError.allPortsTaken }
         syncProxyState()
 
-        // 2) Codex 官方登录收纳（仅 Codex）。默认那家是官方 → 不收纳：官方登录走
-        // auth.json OAuth，第三方投影的占位 token 用不上它；若此前已收纳则还原
-        // （SPEC 3 / P0-3 契约 3）。
-        if tool == .codex && !Self.isOfficial(defaultProfile) {
-            try? loginStashStore.stash()
-        } else if tool == .codex {
-            try? loginStashStore.restore()
-        }
+        // 2) Codex 官方登录收纳（仅 Codex）——跟随默认那家是否官方。
+        syncCodexLoginStash(tool: tool, defaultProfile: defaultProfile)
 
         // 3) 目标文件快照 — 退出聚合时的直连恢复点。
         try? backupStore.snapshot(tool: tool, of: Self.configURL(for: tool))
@@ -285,6 +279,13 @@ final class ProviderAggregationManager: ObservableObject {
         toolStack.members.removeAll { $0 == profileID }
         toolStack.members.insert(profileID, at: 0)
         newStack.setToolStack(toolStack, for: profile.tool)
+        // 默认那家换了人 → 登录收纳态跟着换（SPEC 3 / P0-3 契约 3）：投影会翻到官方
+        // 分支（或不翻），收纳态若停在切换前的样子，官方登录就会被第三方路由抢占用、
+        // 或官方分支发现自己依赖的登录还被收着。仅在聚合生效期间有意义——未聚合时
+        // 不动用户的登录态。`stash`/`restore` 无事可做时都是无副作用的空操作，重复调用安全。
+        if toolStack.enabled {
+            syncCodexLoginStash(tool: profile.tool, defaultProfile: profile)
+        }
         commit(stack: newStack)
         try rewriteProjectionIfChanged(tool: profile.tool)
     }
@@ -438,6 +439,19 @@ final class ProviderAggregationManager: ObservableObject {
     }
 
     // MARK: - private
+
+    /// Codex 官方登录收纳跟随「默认那家是否官方」（SPEC 3 / P0-3 契约 3）：
+    /// 第三方默认 → 收纳官方登录（第三方投影写的是占位 token，用不上 OAuth 登录，
+    /// 不收起来会被它抢占）；官方默认 → 不收纳，并还原此前已收纳的登录。
+    /// 进入聚合与「聚合中换默认那家」两条路径共用同一条规则。
+    private func syncCodexLoginStash(tool: ProviderTool, defaultProfile: ProviderProfile) {
+        guard tool == .codex else { return }
+        if Self.isOfficial(defaultProfile) {
+            try? loginStashStore.restore()
+        } else {
+            try? loginStashStore.stash()
+        }
+    }
 
     /// 提交栈态：内存 + 落盘 + 喂代理快照。
     private func commit(stack newStack: AggregationStack) {

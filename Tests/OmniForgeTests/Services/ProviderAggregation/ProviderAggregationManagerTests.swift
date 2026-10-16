@@ -70,16 +70,28 @@ final class ProviderAggregationManagerTests: XCTestCase {
         )
     }
 
-    /// 官方 Codex fixture：官方登录走 `auth.json` OAuth，无静态 token；
-    /// 这里的 token 只是为通过「连接完整」校验的占位（`isOfficial` 按宿主判定，与 token 无关）。
+    /// 官方 Codex fixture：官方登录走 `auth.json` OAuth，**无静态 token**（`isOfficial`
+    /// 按宿主判定、与 token 无关）；`codexModels` 是官方模型名。
     private var officialCodexProfile: ProviderProfile {
         ProviderProfile(
             id: "openai-official",
             name: "OpenAI",
             tool: .codex,
             baseURL: "https://api.openai.com/v1",
-            token: "oauth",
+            token: "",
             codexModels: ["gpt-5-codex"]
+        )
+    }
+
+    /// 第三方 Codex fixture（默认切换的对照方）。
+    private var thirdPartyCodexProfile: ProviderProfile {
+        ProviderProfile(
+            id: "deepseek",
+            name: "DeepSeek",
+            tool: .codex,
+            baseURL: "https://api.deepseek.com/v1",
+            token: "sk-ds",
+            codexModels: ["deepseek-v4-pro"]
         )
     }
 
@@ -106,6 +118,31 @@ final class ProviderAggregationManagerTests: XCTestCase {
         XCTAssertEqual(codexWriter.lastDefaultIsOfficial, false, "第三方默认仍走 custom 表投影")
     }
 
+    func test_enterAggregation_allowsOfficialProfileWithoutStaticToken() throws {
+        profileStore.stubProfiles = [officialCodexProfile]   // token 为空
+        manager = makeManager()
+        try manager.enterAggregation(tool: .codex, defaultProfileID: "openai-official")
+        XCTAssertEqual(manager.mode(tool: .codex), .aggregation, "官方登录走 auth.json OAuth，无静态 token 也能做默认那家（SPEC 3 契约的前提）")
+        XCTAssertEqual(codexWriter.lastDefaultIsOfficial, true)
+    }
+
+    func test_enterAggregation_rejectsThirdPartyProfileWithoutStaticToken() {
+        profileStore.stubProfiles = [
+            ProviderProfile(
+                id: "keyless", name: "Keyless", tool: .codex,
+                baseURL: "https://api.keyless.com/v1", token: "",
+                codexModels: ["keyless-v1"]
+            )
+        ]
+        manager = makeManager()
+        XCTAssertThrowsError(try manager.enterAggregation(tool: .codex, defaultProfileID: "keyless")) { error in
+            XCTAssertEqual(error as? AggregationManagerError, .incompleteConnection(id: "keyless"),
+                           "第三方无静态 token 仍不得借官方登录的路（SPEC 0 / P1-11）")
+        }
+        XCTAssertEqual(manager.mode(tool: .codex), .direct)
+        XCTAssertEqual(loginStash.stashCallCount, 0)
+    }
+
     func test_enterAggregation_skipsLoginStashWhenCodexDefaultIsOfficial() throws {
         profileStore.stubProfiles = [officialCodexProfile]
         manager = makeManager()
@@ -130,6 +167,32 @@ final class ProviderAggregationManagerTests: XCTestCase {
         XCTAssertNil(doc.stringValue(key: "model_provider", table: nil))
         XCTAssertNil(doc.stringValue(key: "model_catalog_json", table: nil))
         XCTAssertEqual(doc.stringValue(key: "model", table: nil), "gpt-5-codex", "选哪个模型与 provider 形状无关，官方默认照写")
+    }
+
+    /// 聚合中换默认那家 → 登录收纳态跟着换（SPEC 3 / P0-3 契约 3）。
+    /// 官方默认进入（不收纳）→ 切第三方：必须收纳，否则官方 auth.json 在第三方路由期间仍然裸露；
+    /// 再切回官方：必须还原，否则官方分支依赖的登录还被收着。
+    func test_setDefault_movesLoginStashWithDefaultOfficialness() throws {
+        profileStore.stubProfiles = [officialCodexProfile, thirdPartyCodexProfile]
+        manager = makeManager()
+
+        try manager.enterAggregation(tool: .codex, defaultProfileID: "openai-official")
+        XCTAssertEqual(loginStash.stashCallCount, 0, "官方默认进入：不收纳")
+        // 官方分支顺带 restore——首次进入本就没有 stash，是无副作用空操作。
+        XCTAssertEqual(loginStash.restoreCallCount, 1)
+
+        try manager.addMember("deepseek")
+        try manager.setDefault("deepseek")
+        XCTAssertEqual(manager.toolStack(.codex).members.first, "deepseek")
+        XCTAssertEqual(loginStash.stashCallCount, 1, "切到第三方默认：收纳官方登录")
+        XCTAssertEqual(loginStash.restoreCallCount, 1, "收纳路径不还原")
+        XCTAssertEqual(codexWriter.lastDefaultIsOfficial, false)
+
+        try manager.setDefault("openai-official")
+        XCTAssertEqual(manager.toolStack(.codex).members.first, "openai-official")
+        XCTAssertEqual(loginStash.stashCallCount, 1, "切回官方默认：不再收纳")
+        XCTAssertEqual(loginStash.restoreCallCount, 2, "并还原此前收纳的登录")
+        XCTAssertEqual(codexWriter.lastDefaultIsOfficial, true)
     }
 
     func test_exitAggregation_restoresLoginAndStopsProxyWhenNoToolAggregates() throws {
