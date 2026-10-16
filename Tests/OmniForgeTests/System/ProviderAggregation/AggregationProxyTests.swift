@@ -128,6 +128,16 @@ final class AggregationProxyTests: XCTestCase {
         XCTAssertEqual(proxy.handle(post("/v1/embeddings", body: #"{"model":"x"}"#)).statusCode, 404)
     }
 
+    func test_websocketProbe_returns426WithNotSupportedEnvelope() throws {
+        let response = proxy.handle(get("/v1/responses"))
+        XCTAssertEqual(response.statusCode, 426)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: response.body) as? [String: Any])
+        let error = try XCTUnwrap(json["error"] as? [String: Any])
+        XCTAssertEqual(error["type"] as? String, "invalid_request_error")
+        XCTAssertEqual(error["code"] as? String, "websocket_not_supported")
+        XCTAssertTrue((error["message"] as? String)?.contains("OmniForge") == true)
+    }
+
     func test_modelDiscovery_returnsAnthropicShapedList() throws {
         let response = proxy.handle(get("/v1/models", headers: ["anthropic-version": "2023-06-01"]))
         XCTAssertEqual(response.statusCode, 200)

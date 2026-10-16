@@ -21,6 +21,12 @@ final class AggregationRouteTableTests: XCTestCase {
         XCTAssertEqual(AggregationRouteTable.protocolOf(method: "GET", path: "/status"), .health)
     }
 
+    func test_protocolOf_getResponsesIsWebsocketProbe() {
+        for path in ["/responses", "/v1/responses", "/v1/v1/responses", "/codex/v1/responses"] {
+            XCTAssertEqual(AggregationRouteTable.protocolOf(method: "GET", path: path), .websocketProbe, path)
+        }
+    }
+
     func test_protocolOf_unknownPathOrMethodIsUnsupported() {
         XCTAssertEqual(AggregationRouteTable.protocolOf(method: "GET", path: "/v1/messages"), .unsupported)
         XCTAssertEqual(AggregationRouteTable.protocolOf(method: "POST", path: "/v1/embeddings"), .unsupported)

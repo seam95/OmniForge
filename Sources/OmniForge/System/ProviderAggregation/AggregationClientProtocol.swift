@@ -12,15 +12,17 @@ enum AggregationClientProtocol: Equatable {
     case modelDiscovery
     /// 存活探活。
     case health
+    /// WebSocket 探测（GET `/responses`）——本地直接回 426，不向上游转发。
+    case websocketProbe
     /// 未命中路由表的方法/路径组合。
     case unsupported
 
-    /// 该协议形状对应的工具（用于模型 id 解码）；本地应答的形状（发现/探活）无归属。
+    /// 该协议形状对应的工具（用于模型 id 解码）；本地应答的形状（发现/探活/WebSocket 探测）无归属。
     var modelIDTool: ProviderTool? {
         switch self {
         case .anthropicMessages: return .claudeCode
         case .openAIResponses, .openAIChatCompletions: return .codex
-        case .modelDiscovery, .health, .unsupported: return nil
+        case .modelDiscovery, .health, .websocketProbe, .unsupported: return nil
         }
     }
 }
@@ -44,6 +46,12 @@ enum AggregationRouteTable {
              ("POST", "/v1/responses/compact"),
              ("POST", "/codex/v1/responses/compact"):
             return .openAIResponses
+        // 同路径集合的 GET 形态是 Codex 的 WebSocket 探测，本地应答，不转发。
+        case ("GET", "/responses"),
+             ("GET", "/v1/responses"),
+             ("GET", "/v1/v1/responses"),
+             ("GET", "/codex/v1/responses"):
+            return .websocketProbe
         case ("POST", "/chat/completions"),
              ("POST", "/v1/v1/chat/completions"):
             return .openAIChatCompletions

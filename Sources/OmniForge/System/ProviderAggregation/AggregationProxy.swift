@@ -138,6 +138,16 @@ final class AggregationProxy: AggregationProxying {
         switch clientProtocol {
         case .health:
             return .respond(Self.jsonResponse(statusCode: 200, body: ["status": "ok"]))
+        // WebSocket 探测必须回 426：Codex 内置的 openai 默认先连 `/responses` 的 WebSocket，
+        // 握手拿到 426 就在本会话内改走 HTTP；换成 404 或其他失败码会让 Codex 先把重试耗尽才回退
+        // （cc-switch `handlers.rs:966-969` 的结论，响应形态见同文件 973-984）。
+        case .websocketProbe:
+            return .respond(Self.jsonResponse(
+                statusCode: 426,
+                body: ["error": ["type": "invalid_request_error",
+                                 "code": "websocket_not_supported",
+                                 "message": "OmniForge local routing does not support Responses over WebSocket; use HTTP"]]
+            ))
         case .unsupported:
             return .respond(Self.jsonResponse(statusCode: 404, body: ["error": "not_found"]))
         case .modelDiscovery:
@@ -377,6 +387,7 @@ final class AggregationProxy: AggregationProxying {
         case 400: return "Bad Request"
         case 404: return "Not Found"
         case 413: return "Payload Too Large"
+        case 426: return "Upgrade Required"
         case 429: return "Too Many Requests"
         case 500: return "Internal Server Error"
         case 502: return "Bad Gateway"
@@ -421,7 +432,7 @@ final class AggregationProxy: AggregationProxying {
         case .openAIResponses, .openAIChatCompletions:
             body = ["error": ["message": message, "type": "invalid_request_error",
                               "param": "model", "code": "model_not_found"]]
-        case .modelDiscovery, .health, .unsupported:
+        case .modelDiscovery, .health, .websocketProbe, .unsupported:
             body = ["error": message]
         }
         return jsonResponse(statusCode: statusCode, body: body)
