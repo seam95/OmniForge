@@ -8,8 +8,10 @@ struct AggregationProxyTarget: Equatable {
     let token: String
     /// 官方目标：客户端的 `Authorization` 原样透传，不换成 profile 的 token
     /// （官方账号无静态 token，SPEC 3 契约 4）。
-    /// 置位职责只在 manager 构造 `defaultTarget` 时按 `isOfficial` 判定；名单成员
-    /// 皆第三方（`joinableProfileIDs` 排除官方），故 hit 目标恒 `false`。
+    /// 置位按**目标那家**的官方性判定（`ProviderProfile.isOfficial`，Models 层纯谓词）：
+    /// plain 路径由 manager 构造 `defaultTarget` 时置好；hit 路径由 resolver 按命中的
+    /// profile 自行置位——官方那家虽入不了名单（`joinableProfileIDs` 排除官方），却能作为
+    /// **默认那家**坐在 `members[0]` 并分到 key，其 Stack id 同样可被命中，故 hit 并非恒第三方。
     var passesThroughAuthorization: Bool = false
 }
 
@@ -61,13 +63,15 @@ final class AggregationTargetResolver: AggregationResolving {
             guard let profileID = registry.keys[key] else { return .miss(.unknown) }
             guard let profile = profiles.first(where: { $0.id == profileID }) else { return .miss(.deleted) }
             guard stack.isMember(profileID) else { return .miss(.removed) }
-            // 成员皆第三方（官方账号入不了名单）→ 恒按占位凭证换成真实 token，透传位恒假。
+            // 官方那家也能被命中（它作为默认那家在 members[0]、分到 key、有已发布模型）：
+            // 命中官方时同样透传客户端凭证，否则空 token 覆盖 → 401（SPEC 3 契约 4，
+            // plain 与 hit 同规则）。判据是 Models 层的纯谓词 `ProviderProfile.isOfficial`。
             let target = AggregationProxyTarget(
                 key: key,
                 profileID: profileID,
                 baseURL: profile.baseURL,
                 token: profile.token,
-                passesThroughAuthorization: false
+                passesThroughAuthorization: profile.isOfficial
             )
             return .hit(target: target, upstreamModel: upstreamModel(tool: tool, profile: profile, key: key, model: stackModel, oneM: oneM))
         }

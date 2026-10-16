@@ -112,6 +112,26 @@ struct ProviderProfile: Identifiable, Codable, Equatable {
         !baseURL.isEmpty && !token.isEmpty
     }
 
+    /// 官方账号判定：指向厂商官方端点（或无 override 的空 baseURL）的 profile。
+    /// 官方账号只能作为默认供应商，不能加入聚合（SPEC 6.9）；按宿主识别比任何
+    /// 分类标记更宽——未标 category 的官方托管账号同样命中。
+    ///
+    /// 置于 Models 层（纯谓词、无 I/O）：聚合的目标解析（System 层）要按命中那家的
+    /// 官方性决定凭证是否透传，编排层（Services）要按默认那家的官方性决定投影形状与
+    /// 登录收纳，而 System 不得反向依赖 `ProviderAggregationManager`
+    /// （层序见 `AggregationSwitchMerger` 的说明）。
+    var isOfficial: Bool {
+        let host = URL(string: baseURL)?.host?.lowercased() ?? ""
+        switch tool {
+        case .claudeCode:
+            return host.isEmpty || host == "api.anthropic.com" || host.hasSuffix(".anthropic.com")
+        case .codex:
+            return host.isEmpty
+                || host == "api.openai.com" || host.hasSuffix(".openai.com")
+                || host == "chatgpt.com" || host.hasSuffix(".chatgpt.com")
+        }
+    }
+
     // MARK: - Codex 模型列表
 
     /// 规范化的 Codex 模型列表：去首尾空白、丢空项、按序去重。

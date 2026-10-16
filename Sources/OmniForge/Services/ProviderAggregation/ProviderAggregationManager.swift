@@ -656,19 +656,11 @@ final class ProviderAggregationManager: ObservableObject {
         )
     }
 
-    /// 官方账号判定：指向厂商官方端点（或无 override 的空 baseURL）的 profile。
-    /// 官方账号只能作为默认供应商，不能加入聚合（SPEC 6.9）；按宿主识别比任何
-    /// 分类标记更宽——未标 category 的官方托管账号同样命中。
+    /// 官方账号判定 — 转发到 `ProviderProfile.isOfficial`（Models 层的纯谓词，
+    /// 判据与「为何按宿主而非分类标记」的说明见那里）。保留本转发只为不一次性
+    /// 改动全部调用点；新代码请直接读 `profile.isOfficial`。
     static func isOfficial(_ profile: ProviderProfile) -> Bool {
-        let host = URL(string: profile.baseURL)?.host?.lowercased() ?? ""
-        switch profile.tool {
-        case .claudeCode:
-            return host.isEmpty || host == "api.anthropic.com" || host.hasSuffix(".anthropic.com")
-        case .codex:
-            return host.isEmpty
-                || host == "api.openai.com" || host.hasSuffix(".openai.com")
-                || host == "chatgpt.com" || host.hasSuffix(".chatgpt.com")
-        }
+        profile.isOfficial
     }
 
     private static func message(for error: Error) -> String {

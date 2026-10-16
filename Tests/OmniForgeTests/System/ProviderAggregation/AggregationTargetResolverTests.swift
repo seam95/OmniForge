@@ -73,14 +73,43 @@ final class AggregationTargetResolverTests: XCTestCase {
         XCTAssertEqual(official.resolve(tool: .claudeCode, model: "claude-sonnet-4-6"), .plain(target: passthroughDefault))
     }
 
-    /// hit 目标恒不带透传位：名单成员皆第三方（`joinableProfileIDs` 排除官方），
-    /// 第三方一律按占位凭证换成真实 token，没有「官方成员」可透传。
-    func test_hitTargetNeverCarriesPassthroughBit() {
+    /// hit 目标随**命中那家**的官方性置位：第三方成员一律按占位凭证换成真实 token。
+    func test_hitTargetOnThirdPartyMemberKeepsCredentialRewrite() {
         guard case .hit(let target, _) = resolver.resolve(tool: .claudeCode, model: "ccs-claude-kimi--k3") else {
             return XCTFail("expected hit")
         }
         XCTAssertEqual(target, kimiTarget)
         XCTAssertFalse(target.passesThroughAuthorization)
+    }
+
+    /// 官方那家入不了名单（`joinableProfileIDs` 排除官方），却能作为默认那家坐在
+    /// `members[0]` 并分到 key、发布模型——它的 Stack id 同样可被命中（代理的模型发现
+    /// 端点把全部成员的已发布模型都列出去）。命中官方时必须透传：官方无静态 token，
+    /// 换成空串只会 401（SPEC §3 契约 4「plain 与 hit 同规则」）。
+    func test_hitTargetOnOfficialMemberPassesAuthorizationThrough() {
+        let official = ProviderProfile(
+            id: "anthropic-official",
+            name: "Anthropic",
+            tool: .claudeCode,
+            baseURL: "https://api.anthropic.com",
+            token: "",
+            stackModels: [ClaudeStackModel(model: "k3", displayName: "K3 K3", oneM: false)]
+        )
+        let officialResolver = AggregationTargetResolver(
+            stack: .init(enabled: true, members: ["anthropic-official"],
+                         keys: ["anthropic-official": "anthropic-official"]),
+            registry: AggregationKeyRegistry(keys: ["anthropic-official": "anthropic-official"]),
+            profiles: [official],
+            defaultTarget: defaultTarget
+        )
+
+        guard case .hit(let target, let upstreamModel) =
+            officialResolver.resolve(tool: .claudeCode, model: "ccs-claude-anthropic-official--k3") else {
+            return XCTFail("expected hit")
+        }
+        XCTAssertEqual(upstreamModel, "k3")
+        XCTAssertEqual(target.token, "", "官方账号无静态 token（OAuth 走 auth.json）")
+        XCTAssertTrue(target.passesThroughAuthorization, "命中官方：客户端 Authorization 原样透传")
     }
 
     func test_prefixedModelHitsOwningMemberWithUpstreamNameRestored() {
