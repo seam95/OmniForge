@@ -39,6 +39,7 @@ struct AggregationPanelView: View {
                     proxyDownBanner
                     staleBanner
                     defaultSection
+                    officialDefaultCodexHint
                     addedSection
                     availableSection
                     exitAction
@@ -109,6 +110,21 @@ struct AggregationPanelView: View {
     /// 直连互斥判定：该工具聚合生效时直连动作禁用（SPEC 6.10）。
     var directActionsDisabled: Bool {
         manager.isAggregating(tool)
+    }
+
+    /// 官方默认 Codex 提示（SPEC §3 / P0-3 契约第 2 条的 UI 面）：默认那家是 Codex 官方账号时
+    /// 模型目录整体不写，成员模型不会出现在 Codex 的 `/model` 菜单——必须显式告知，
+    /// 否则用户会以为名单里的模型都可用。
+    ///
+    /// 两个条件都必需：仅 Codex 侧有此行为（Claude 官方默认照走 BASE_URL + token 替换）；
+    /// 且只在聚合生效且有默认那家时出现。
+    func officialDefaultCodexHint(manager: ProviderAggregationManager) -> String? {
+        guard tool == .codex,
+              let member = manager.members(tool: tool).first(where: { $0.isDefault }),
+              member.isOfficial else {
+            return nil
+        }
+        return strings.providerAggregationOfficialDefaultCodexHint
     }
 
     // MARK: - 状态行
@@ -322,6 +338,14 @@ struct AggregationPanelView: View {
         Text(title)
             .font(.system(size: 10.5, weight: .semibold))
             .foregroundStyle(.secondary)
+    }
+
+    /// 官方默认 Codex 提示行（见 `officialDefaultCodexHint`）：一行说明，不单独成分区。
+    @ViewBuilder
+    private var officialDefaultCodexHint: some View {
+        if let hint = officialDefaultCodexHint(manager: manager) {
+            noteRow(hint)
+        }
     }
 
     private func noteRow(_ text: String) -> some View {

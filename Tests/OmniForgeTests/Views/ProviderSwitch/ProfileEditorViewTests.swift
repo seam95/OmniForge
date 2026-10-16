@@ -296,7 +296,9 @@ final class ProfileEditorViewTests: XCTestCase {
             reasoningEffort: nil,
             codexModels: existing.codexModels,
             modelMapping: nil,
-            extraEnv: [:]
+            extraEnv: [:],
+            stackModels: nil,
+            codexModelDisplayNames: existing.modelDisplayNames
         )
 
         XCTAssertEqual(saved.id, "kimi", "编辑既有档案保留原 id")
@@ -331,7 +333,9 @@ final class ProfileEditorViewTests: XCTestCase {
             reasoningEffort: nil,
             codexModels: ["kimi-k3"],
             modelMapping: nil,
-            extraEnv: [:]
+            extraEnv: [:],
+            stackModels: nil,
+            codexModelDisplayNames: nil
         )
 
         XCTAssertNil(saved.modelDisplayNames)

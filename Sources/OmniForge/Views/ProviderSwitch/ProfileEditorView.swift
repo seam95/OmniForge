@@ -54,6 +54,10 @@ struct ProfileEditorView: View {
     @State private var model = ""
     /// Codex 模型列表编辑态：第一行为默认模型，其余条目进入模型目录。
     @State private var codexModelRows: [String] = []
+    /// Codex 模型显示名编辑态：与 `codexModelRows` **按位平行**（等长，空串 = 未配置）。
+    @State private var codexDisplayNameRows: [String] = []
+    /// Claude 聚合发布源编辑态（`stackModels`）：初始 = 已存值 ?? 按模型映射推导的回显。
+    @State private var stackRows: [ClaudeStackModel] = []
     @State private var reasoningEffort = ""
     @State private var sonnet = ""
     @State private var sonnetName = ""
@@ -114,6 +118,11 @@ struct ProfileEditorView: View {
             sectionDivider
 
             modelMappingSection
+
+            if tool == .claudeCode {
+                sectionDivider
+                stackModelsSection
+            }
 
             if let errorMessage {
                 Text(errorMessage)
@@ -377,6 +386,8 @@ struct ProfileEditorView: View {
 
                     Button {
                         codexModelRows.append("")
+                        codexDisplayNameRows.append("")
+                        syncCodexDisplayNameRows()
                     } label: {
                         Image(systemName: "plus")
                             .font(.system(size: 12, weight: .semibold))
@@ -388,6 +399,18 @@ struct ProfileEditorView: View {
 
                 ForEach(codexModelRows.indices, id: \.self) { index in
                     HStack(spacing: 8) {
+                        // 显示名（可选）：留空用模型名（SPEC §7 / P1-8）
+                        TextField(
+                            strings.providerCodexModelDisplayNamePlaceholder,
+                            text: codexDisplayNameBinding(index)
+                        )
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .padding(.horizontal, 10)
+                        .frame(height: 32)
+                        .background(mappingInputBackground)
+                        .overlay(mappingInputBorder)
+
                         TextField(
                             index == 0
                                 ? strings.providerCodexModelsFirstPlaceholder
@@ -397,7 +420,7 @@ struct ProfileEditorView: View {
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
                         .padding(.horizontal, 10)
-                        .frame(height: 32)
+                        .frame(width: 200, height: 32)
                         .background(mappingInputBackground)
                         .overlay(mappingInputBorder)
 
@@ -405,6 +428,8 @@ struct ProfileEditorView: View {
                         if codexModelRows.count > 1 {
                             Button {
                                 codexModelRows.remove(at: index)
+                                codexDisplayNameRows.remove(at: index)
+                                syncCodexDisplayNameRows()
                             } label: {
                                 Image(systemName: "trash")
                                     .font(.system(size: 12))
@@ -423,6 +448,31 @@ struct ProfileEditorView: View {
                 codexReasoningEffortRow
             }
         }
+    }
+
+    // MARK: - Claude 聚合发布源（stackModels）
+
+    /// 聚合发布源编辑区（SPEC §4 / P1-5）：每行「显示名 / 实际请求模型 / 1M / 删除」。
+    /// 首行即默认模型——它一变就同步上面的「默认兜底模型」字段（见 `stackRowsBinding`）。
+    private var stackModelsSection: some View {
+        ClaudeStackModelsField(rows: stackRowsBinding, strings: strings)
+    }
+
+    /// 编辑态与 `modelOverride`（`ANTHROPIC_MODEL`）的联动绑定：
+    /// 第一行的模型变化时把默认兜底模型字段改成同一个值。
+    /// 对齐 cc-switch `handleClaudeStackRowsChange`（`ProviderForm.tsx:685-691`）——
+    /// 首行是默认模型；删光了不碰（无首行即无默认值可比，见 `ClaudeStackModelsField.defaultModel`）。
+    private var stackRowsBinding: Binding<[ClaudeStackModel]> {
+        Binding(
+            get: { stackRows },
+            set: { newRows in
+                let previous = ClaudeStackModelsField.defaultModel(stackRows)
+                stackRows = newRows
+                if let next = ClaudeStackModelsField.defaultModel(newRows), next != previous {
+                    model = next
+                }
+            }
+        )
     }
 
     private var codexReasoningEffortRow: some View {
@@ -601,6 +651,9 @@ struct ProfileEditorView: View {
                 presetID = first.id
                 applyPreset(first.id)
             }
+            // 新增态同样按模型映射回显发布源（此刻 preset 已带入映射值），
+            // 与「打开既有未配置档案」一致：未配置 = 跟着映射，而不是空列表。
+            stackRows = ClaudeStackModelsField.fromMapping(profile: draftProfile())
             return
         }
         name = profile.name
@@ -608,6 +661,11 @@ struct ProfileEditorView: View {
         token = profile.token
         model = tool == .codex ? "" : (profile.modelOverride ?? "")
         codexModelRows = profile.codexModelList
+        codexDisplayNameRows = Self.alignedCodexSaveRows(
+            models: codexModelRows,
+            displayNames: profile.modelDisplayNames ?? []
+        ).map(\.displayName)
+        syncCodexDisplayNameRows()
         reasoningEffort = profile.reasoningEffort ?? ""
         sonnet = profile.modelMapping?.sonnet ?? ""
         sonnetName = profile.modelMapping?.sonnetName ?? ""
@@ -619,6 +677,8 @@ struct ProfileEditorView: View {
         haikuName = profile.modelMapping?.haikuName ?? ""
         subagent = profile.modelMapping?.subagent ?? ""
         extraEnv = profile.extraEnv
+        // 已存发布源原样回显；未配置（nil）才按模型映射推导（SPEC §4）。
+        stackRows = profile.stackModels ?? ClaudeStackModelsField.fromMapping(profile: profile)
 
         if !sonnetName.isEmpty || !opusName.isEmpty || !fableName.isEmpty || !haikuName.isEmpty {
             showDisplayNames = true
@@ -650,21 +710,44 @@ struct ProfileEditorView: View {
                 name = preset.displayName
                 baseURL = connection.baseURL
                 codexModelRows = [connection.defaultModel]
+                codexDisplayNameRows = [""]
                 reasoningEffort = ""
             }
         }
     }
 
+    /// 由表单当前值构造的草稿档案（仅用于新增态的 stackModels 回显推导）。
+    private func draftProfile() -> ProviderProfile {
+        ProviderProfile(
+            id: "",
+            name: name,
+            tool: tool,
+            baseURL: baseURL,
+            token: token,
+            modelOverride: tool == .codex ? nil : emptyToNil(trimmed(model)),
+            modelMapping: tool == .claudeCode ? makeMapping() : nil
+        )
+    }
+
     private func save() {
+        let codexRows = Self.alignedCodexSaveRows(
+            models: codexModelRows,
+            displayNames: codexDisplayNameRows
+        )
         let profile = makeProfile(
             name: trimmed(name),
             baseURL: trimmed(baseURL),
             token: trimmed(token),
             modelOverride: tool == .codex ? nil : emptyToNil(trimmed(model)),
             reasoningEffort: tool == .codex ? emptyToNil(trimmed(reasoningEffort)) : nil,
-            codexModels: codexModelsForSave,
+            codexModels: tool == .codex ? (codexRows.isEmpty ? nil : codexRows.map(\.model)) : nil,
             modelMapping: tool == .claudeCode ? makeMapping() : nil,
-            extraEnv: tool == .claudeCode ? extraEnv : [:]
+            extraEnv: tool == .claudeCode ? extraEnv : [:],
+            // normalize 后写入；**全空 → `[]`（用户主动清空、什么都不发布）**，
+            // 绝不能折算成 nil（未配置）——否则下次打开又按映射长出模型，删除被静默还原。
+            stackModels: tool == .claudeCode ? ClaudeStackModelsField.normalize(stackRows) : nil,
+            // 与 codexModels 同源过滤 → 按位对齐；一个都没配 → nil（不写键）
+            codexModelDisplayNames: ProfileEditorView.codexDisplayNamesForSave(codexRows)
         )
         do {
             try manager.upsertProfile(profile)
@@ -676,16 +759,67 @@ struct ProfileEditorView: View {
         }
     }
 
+    /// Codex 显示名行的绑定：越界按空串（平行数组的编辑侧容错——不崩、不串到别的行）。
+    private func codexDisplayNameBinding(_ index: Int) -> Binding<String> {
+        Binding(
+            get: { index < codexDisplayNameRows.count ? codexDisplayNameRows[index] : "" },
+            set: { newValue in
+                if index < codexDisplayNameRows.count {
+                    codexDisplayNameRows[index] = newValue
+                }
+            }
+        )
+    }
+
+    /// 显示名编辑态与模型行严格等长（平行数组的编辑侧不变量）。
+    private func syncCodexDisplayNameRows() {
+        if codexDisplayNameRows.count > codexModelRows.count {
+            codexDisplayNameRows = Array(codexDisplayNameRows.prefix(codexModelRows.count))
+        } else if codexDisplayNameRows.count < codexModelRows.count {
+            codexDisplayNameRows.append(
+                contentsOf: Array(repeating: "", count: codexModelRows.count - codexDisplayNameRows.count)
+            )
+        }
+    }
+
+    /// Codex 待保存的（模型, 显示名）行：丢空白行与空行，**显示名与模型同源过滤**——
+    /// 空白模型行被丢掉时它的显示名必须一起丢，否则平行数组整体串位（数据层容错不崩，
+    /// 只会静默显示错的名字）。显示名短于模型（历史档案长度不齐）→ 越界按未配置补空。
+    static func alignedCodexSaveRows(
+        models: [String],
+        displayNames: [String]
+    ) -> [(model: String, displayName: String)] {
+        var rows: [(model: String, displayName: String)] = []
+        for (index, raw) in models.enumerated() {
+            let model = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !model.isEmpty else { continue }
+            let displayName = index < displayNames.count
+                ? displayNames[index].trimmingCharacters(in: .whitespacesAndNewlines)
+                : ""
+            rows.append((model, displayName))
+        }
+        return rows
+    }
+
+    /// 显示名平行数组的落盘值：一个都没配 → nil（不写 `model_display_names` 键，
+    /// 保持新增档案的既有落盘形状）；有任一个非空 → 原样写（含空串占位，保住按位对齐）。
+    static func codexDisplayNamesForSave(_ rows: [(model: String, displayName: String)]) -> [String]? {
+        let names = rows.map(\.displayName)
+        return names.allSatisfy { $0.isEmpty } ? nil : names
+    }
+
     /// 由「表单当前值 + 既有档案」构造待保存档案。
     ///
     /// 入参显式化而非直接读 `@State`：视图状态只在渲染生命周期内有效（未渲染的视图实例上
     /// 写 `@State` 再读回得到的是初值，已实证），单测因此无法直接驱动 `save()`；把构造拆成
     /// 纯函数即可覆盖「保存到底保留了哪些字段、丢了哪些字段」。
     ///
-    /// 身份与来源标记、以及 Codex 成员模型的显示名/窗口平行数组一律取既有档案：
-    /// 后两者在本表单没有编辑 UI（窗口按 SPEC 7 只做数据层），保存路径自身就是唯一的保留点，
-    /// 少了它每次编辑都会把两者抹掉。平行数组与 `codexModels` 可能不等长——读取侧按位 zip、
-    /// 越界即缺省，不会崩，也不会把已删模型之前的显示名串位。
+    /// `stackModels` / `codexModelDisplayNames` 是本表单两个新编辑区的当前值，**必须显式传入**：
+    /// - `stackModels`：Claude 聚合发布源；`[]` = 用户主动清空（什么都不发布），与 nil
+    ///   （未配置、按模型映射推导）语义相反——漏传会把「清空」静默还原成「跟着映射」。
+    /// - `codexModelDisplayNames`：Codex 模型显示名，与 `codexModels` 按位平行（空串 = 未配置）。
+    ///
+    /// 窗口平行数组仍取既有档案（按 SPEC §7 只做数据层、无编辑 UI），保存路径是它唯一的保留点。
     func makeProfile(
         name: String,
         baseURL: String,
@@ -694,7 +828,9 @@ struct ProfileEditorView: View {
         reasoningEffort: String?,
         codexModels: [String]?,
         modelMapping: ProviderModelMapping?,
-        extraEnv: [String: String]
+        extraEnv: [String: String],
+        stackModels: [ClaudeStackModel]?,
+        codexModelDisplayNames: [String]?
     ) -> ProviderProfile {
         ProviderProfile(
             id: self.profile?.id ?? ProviderProfile.slugify(name),
@@ -706,21 +842,13 @@ struct ProfileEditorView: View {
             reasoningEffort: reasoningEffort,
             codexModels: codexModels,
             modelMapping: modelMapping,
-            modelDisplayNames: self.profile?.modelDisplayNames,
+            stackModels: stackModels,
+            modelDisplayNames: codexModelDisplayNames,
             modelContextWindows: self.profile?.modelContextWindows,
             extraEnv: extraEnv,
             // 收编外部文件时保留原来源标记；本 App 新建一律打 omniforge
             managedBy: self.profile?.managedBy ?? ProviderProfile.managedByMarker
         )
-    }
-
-    /// Codex 待保存模型列表：丢空白行与空行，全空 → nil（不指定模型）。
-    private var codexModelsForSave: [String]? {
-        guard tool == .codex else { return nil }
-        let models = codexModelRows
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        return models.isEmpty ? nil : models
     }
 
     /// 汇总角色映射；全部为空 → nil（不写映射字段）。
