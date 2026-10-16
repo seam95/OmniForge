@@ -588,19 +588,20 @@ final class ProviderAggregationManager: ObservableObject {
         }
     }
 
-    /// Codex 侧发布源：profile 的 codexModels 逐条转发布条目（原名直出——
+    /// Codex 侧发布源：profile 的成员模型条目逐条转发布条目（原名直出——
     /// Codex 的 Stack id 不带 1M 标记，还原时用裸模型名）。
+    /// 显示名/窗口取条目值（SPEC 7 / P1-8），未配置回落旧口径：显示名回落模型名、窗口回落 extraEnv 全局值。
     private static func codexPublishedModels(profile: ProviderProfile, key: String) -> [AggregationPublishedModel] {
-        let window = UInt64(profile.extraEnv["model_context_window"] ?? "") ?? 1_000_000
-        return profile.codexModelList.map { model in
+        let fallbackWindow = UInt64(profile.extraEnv["model_context_window"] ?? "") ?? 1_000_000
+        return profile.codexModelEntries.map { entry in
             AggregationPublishedModel(
                 key: key,
                 profileName: profile.name,
-                model: model,
-                upstream: model,
-                displayName: model,
+                model: entry.model,
+                upstream: entry.model,
+                displayName: entry.displayName ?? entry.model,
                 oneM: false,
-                window: window
+                window: entry.contextWindow ?? fallbackWindow
             )
         }
     }

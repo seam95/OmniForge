@@ -210,6 +210,46 @@ final class ProviderAggregationManagerTests: XCTestCase {
         ])
     }
 
+    // MARK: - Codex 成员发布源
+
+    func test_codexPublishedModels_prefersEntryDisplayNameAndWindow() throws {
+        profileStore.stubProfiles = [
+            ProviderProfile(
+                id: "kimi", name: "Kimi", tool: .codex,
+                baseURL: "https://api.kimi.com/v1", token: "sk-kimi",
+                codexModels: ["kimi-k3"],
+                modelDisplayNames: ["Kimi K3"],
+                modelContextWindows: ["400000"],
+                extraEnv: ["model_context_window": "1000000"]
+            )
+        ]
+        manager = makeManager()
+        try manager.enterAggregation(tool: .codex, defaultProfileID: "kimi")
+        let published = manager.publishedModels(tool: .codex)
+        XCTAssertEqual(published.count, 1)
+        XCTAssertEqual(published[0].model, "kimi-k3")
+        XCTAssertEqual(published[0].displayName, "Kimi K3")
+        XCTAssertEqual(published[0].window, 400_000, "条目窗口优先于 extraEnv 全局口径")
+    }
+
+    func test_codexPublishedModels_fallsBackWhenEntryValuesAbsent() throws {
+        profileStore.stubProfiles = [
+            ProviderProfile(
+                id: "kimi", name: "Kimi", tool: .codex,
+                baseURL: "https://api.kimi.com/v1", token: "sk-kimi",
+                codexModels: ["kimi-k3", "kimi-k2"],
+                modelDisplayNames: ["Kimi K3", ""],
+                modelContextWindows: ["", "400000"],
+                extraEnv: ["model_context_window": "1000000"]
+            )
+        ]
+        manager = makeManager()
+        try manager.enterAggregation(tool: .codex, defaultProfileID: "kimi")
+        let published = manager.publishedModels(tool: .codex)
+        XCTAssertEqual(published.map(\.displayName), ["Kimi K3", "kimi-k2"], "空串=未配置 → 回落模型名")
+        XCTAssertEqual(published.map(\.window), [1_000_000, 400_000], "窗口空串 → 回落 extraEnv 全局口径")
+    }
+
     // MARK: - 部分写入与看门狗
 
     func test_partialFailureReportsPartialTrueAfterPublish() throws {

@@ -240,6 +240,15 @@ enum ProviderProfileFileCodec {
             if !models.isEmpty {
                 document.setValue(models, key: "models", table: nil)
             }
+            // 平行数组（与 models 按位对齐，空串是「未配置」的占位）：仅当至少一项非空时才写键。
+            if let displayNames = profile.modelDisplayNames,
+               displayNames.contains(where: { !$0.isEmpty }) {
+                document.setValue(displayNames, key: "model_display_names", table: nil)
+            }
+            if let windows = profile.modelContextWindows,
+               windows.contains(where: { !$0.isEmpty }) {
+                document.setValue(windows, key: "model_context_windows", table: nil)
+            }
             if let effort = profile.reasoningEffort, !effort.isEmpty {
                 document.setValue(effort, key: "reasoning_effort", table: nil)
             }
@@ -364,6 +373,9 @@ enum ProviderProfileFileCodec {
             reasoningEffort: document.stringValue(key: "reasoning_effort", table: nil),
             codexModels: models.isEmpty ? nil : models,
             modelMapping: nil,
+            // 平行数组：缺键 → nil（未配置）；与 models 长度不齐由 `codexModelEntries` 按缺省消化。
+            modelDisplayNames: document.stringArrayValue(key: "model_display_names", table: nil),
+            modelContextWindows: document.stringArrayValue(key: "model_context_windows", table: nil),
             extraEnv: [:],
             managedBy: document.stringValue(key: managedByKey, table: nil)
         )
