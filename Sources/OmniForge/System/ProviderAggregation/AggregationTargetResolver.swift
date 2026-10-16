@@ -6,6 +6,11 @@ struct AggregationProxyTarget: Equatable {
     let profileID: String
     let baseURL: String
     let token: String
+    /// 官方目标：客户端的 `Authorization` 原样透传，不换成 profile 的 token
+    /// （官方账号无静态 token，SPEC 3 契约 4）。
+    /// 置位职责只在 manager 构造 `defaultTarget` 时按 `isOfficial` 判定；名单成员
+    /// 皆第三方（`joinableProfileIDs` 排除官方），故 hit 目标恒 `false`。
+    var passesThroughAuthorization: Bool = false
 }
 
 /// 模型 id 解析结果。
@@ -56,11 +61,13 @@ final class AggregationTargetResolver: AggregationResolving {
             guard let profileID = registry.keys[key] else { return .miss(.unknown) }
             guard let profile = profiles.first(where: { $0.id == profileID }) else { return .miss(.deleted) }
             guard stack.isMember(profileID) else { return .miss(.removed) }
+            // 成员皆第三方（官方账号入不了名单）→ 恒按占位凭证换成真实 token，透传位恒假。
             let target = AggregationProxyTarget(
                 key: key,
                 profileID: profileID,
                 baseURL: profile.baseURL,
-                token: profile.token
+                token: profile.token,
+                passesThroughAuthorization: false
             )
             return .hit(target: target, upstreamModel: upstreamModel(tool: tool, profile: profile, key: key, model: stackModel, oneM: oneM))
         }

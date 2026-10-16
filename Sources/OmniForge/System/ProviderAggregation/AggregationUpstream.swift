@@ -52,13 +52,18 @@ enum AggregationUpstream {
     }
 
     /// 请求头重写：剔逐跳头；按协议形状把占位凭证换成真实凭证。
+    /// - `passthroughAuthorization`：官方目标为真 —— 客户端的凭证头（`authorization` / `x-api-key`）
+    ///   原样透传，一个字节都不换（官方账号走 OAuth `auth.json`，没有静态 token 可换；
+    ///   拿空串覆盖只会把客户端自己的有效凭证打成 401）。只压掉「凭证替换」这一步：
+    ///   逐跳头照剔、Claude 客户端头照补（cc-switch `forwarder.rs:2462-2467`）。
     /// - Anthropic 形状：`x-api-key` 换成本体；客户端若走 `authorization` 则保留原 Scheme 只换本体。
     ///   另补 Claude 客户端头（`anthropic-beta` 含 `claude-code-20250219`、`anthropic-version` 缺失补默认值）。
     /// - OpenAI 形状：`authorization` 恒设为 `Bearer <credential>`；不加 Claude 头（cc-switch 只对 Anthropic 上游补）。
     static func rewrittenHeaders(
         _ headers: [String: String],
         credential: String,
-        protocol: AggregationClientProtocol
+        protocol: AggregationClientProtocol,
+        passthroughAuthorization: Bool = false
     ) -> [String: String] {
         var rewritten = headers
         for key in strippedHeaders {
@@ -66,16 +71,20 @@ enum AggregationUpstream {
         }
         switch `protocol` {
         case .anthropicMessages:
-            if rewritten["x-api-key"] != nil {
-                rewritten["x-api-key"] = credential
-            } else if let authorization = rewritten["authorization"] {
-                rewritten["authorization"] = authorization.hasPrefix("Bearer ")
-                    ? "Bearer \(credential)"
-                    : credential
+            if !passthroughAuthorization {
+                if rewritten["x-api-key"] != nil {
+                    rewritten["x-api-key"] = credential
+                } else if let authorization = rewritten["authorization"] {
+                    rewritten["authorization"] = authorization.hasPrefix("Bearer ")
+                        ? "Bearer \(credential)"
+                        : credential
+                }
             }
             ensureClaudeClientHeaders(&rewritten)
         case .openAIResponses, .openAIChatCompletions, .codexPassthrough:
-            rewritten["authorization"] = "Bearer \(credential)"
+            if !passthroughAuthorization {
+                rewritten["authorization"] = "Bearer \(credential)"
+            }
         case .modelDiscovery, .health, .websocketProbe, .unsupported:
             break // 本地应答的形状，不向上游转发
         }

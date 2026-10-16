@@ -125,4 +125,27 @@ final class AggregationRouteTableTests: XCTestCase {
         let rewritten = AggregationUpstream.rewrittenHeaders(headers, credential: "sk-real", protocol: .openAIResponses)
         XCTAssertEqual(rewritten["authorization"], "Bearer sk-real")
     }
+
+    func test_rewrittenHeaders_officialRoutePassesClientAuthorizationThrough() {
+        let headers = ["authorization": "Bearer codex-oauth-token", "content-type": "application/json"]
+        let rewritten = AggregationUpstream.rewrittenHeaders(headers, credential: "PROXY_MANAGED",
+                                                             protocol: .openAIResponses, passthroughAuthorization: true)
+        XCTAssertEqual(rewritten["authorization"], "Bearer codex-oauth-token", "官方路由的 Authorization 原样透传")
+    }
+
+    /// 透传只压掉「凭证替换」这一步：逐跳头照剔、Claude 客户端头照补，
+    /// 客户端的 `authorization` 与 `x-api-key` 一律不被占位凭证覆盖（cc-switch `forwarder.rs:2462-2467`）。
+    func test_rewrittenHeaders_passthroughSuppressesCredentialSubstitutionOnly() {
+        let headers = ["authorization": "Bearer codex-oauth-token", "x-api-key": "client-own-key",
+                       "content-type": "application/json",
+                       "host": "127.0.0.1:15721", "content-length": "12", "accept-encoding": "gzip, br"]
+        let rewritten = AggregationUpstream.rewrittenHeaders(headers, credential: "PROXY_MANAGED",
+                                                             protocol: .anthropicMessages, passthroughAuthorization: true)
+        XCTAssertEqual(rewritten["authorization"], "Bearer codex-oauth-token", "凭证头原样：Scheme 与本体都不动")
+        XCTAssertEqual(rewritten["x-api-key"], "client-own-key", "凭证头原样：x-api-key 同样不替换")
+        XCTAssertNil(rewritten["host"])
+        XCTAssertNil(rewritten["content-length"])
+        XCTAssertNil(rewritten["accept-encoding"], "逐跳头与透传无关，两种模式都剔")
+        XCTAssertEqual(rewritten["anthropic-version"], "2023-06-01", "Claude 客户端头与凭证无关，照旧补")
+    }
 }

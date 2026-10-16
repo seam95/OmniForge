@@ -195,6 +195,43 @@ final class ProviderAggregationManagerTests: XCTestCase {
         XCTAssertEqual(codexWriter.lastDefaultIsOfficial, true)
     }
 
+    // MARK: - 代理快照的官方透传位
+
+    /// 官方默认：plain 目标带透传位 —— 代理不得把客户端自己的 OAuth `Authorization`
+    /// 覆盖成占位凭证（官方 profile 无静态 token，覆盖即 401；SPEC 3 契约 4）。
+    func test_proxySnapshot_officialDefaultTargetPassesAuthorizationThrough() throws {
+        profileStore.stubProfiles = [officialCodexProfile]
+        manager = makeManager()
+
+        try manager.enterAggregation(tool: .codex, defaultProfileID: "openai-official")
+
+        let target = try XCTUnwrap(manager.proxySnapshot().defaultTargets[.codex])
+        XCTAssertTrue(target.passesThroughAuthorization)
+    }
+
+    /// 第三方默认：不带透传位 —— 仍按占位凭证换成真实 token。
+    func test_proxySnapshot_thirdPartyDefaultTargetKeepsCredentialRewrite() throws {
+        try manager.enterAggregation(tool: .codex, defaultProfileID: "deepseek")
+
+        let target = try XCTUnwrap(manager.proxySnapshot().defaultTargets[.codex])
+        XCTAssertFalse(target.passesThroughAuthorization)
+    }
+
+    /// 聚合中换默认那家 → 透传位跟着翻（与登录收纳态同一条跟随规则）。
+    /// 官方默认进入 → 切第三方默认：必须摘掉透传位，否则第三方路由会把客户端的
+    /// `Authorization` 原样透传给第三方（它的 token 根本不在那里）。
+    func test_proxySnapshot_passthroughBitFollowsDefaultSwitch() throws {
+        profileStore.stubProfiles = [officialCodexProfile, thirdPartyCodexProfile]
+        manager = makeManager()
+
+        try manager.enterAggregation(tool: .codex, defaultProfileID: "openai-official")
+        XCTAssertTrue(manager.proxySnapshot().defaultTargets[.codex]?.passesThroughAuthorization ?? false)
+
+        try manager.addMember("deepseek")
+        try manager.setDefault("deepseek")
+        XCTAssertFalse(manager.proxySnapshot().defaultTargets[.codex]?.passesThroughAuthorization ?? true)
+    }
+
     func test_exitAggregation_restoresLoginAndStopsProxyWhenNoToolAggregates() throws {
         try manager.enterAggregation(tool: .codex, defaultProfileID: "deepseek")
         try manager.exitAggregation(tool: .codex)

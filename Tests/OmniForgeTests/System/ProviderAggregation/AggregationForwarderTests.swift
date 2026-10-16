@@ -106,6 +106,30 @@ final class AggregationForwarderTests: XCTestCase {
         XCTAssertNotEqual(stub.lastAcceptEncodingHeader, "gzip, br")
     }
 
+    /// 官方目标（透传位）：客户端自己的 OAuth `Authorization` 逐字节上网，空 token 不得覆盖它。
+    /// 只有 `rewrittenHeaders` 加参数是不够的——这条断言守的是 forwarder 真的把 target 的位带进了调用。
+    func test_forward_passesClientAuthorizationThroughOnOfficialTarget() throws {
+        let stub = try StubUpstreamServer(
+            responseHead: "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n",
+            chunks: ["{}"],
+            delayBeforeSecondChunk: 0
+        )
+        defer { stub.stop() }
+        let official = AggregationProxyTarget(
+            key: "openai", profileID: "openai-official",
+            baseURL: "http://127.0.0.1:\(stub.port)/v1", token: "",
+            passesThroughAuthorization: true
+        )
+        let request = makeRequest(
+            method: "POST", path: "/v1/responses", body: #"{"model":"gpt-5-codex"}"#,
+            headers: ["content-type": "application/json", "authorization": "Bearer codex-oauth-token"]
+        )
+
+        _ = try awaitForward(request: request, to: official, protocol: .openAIResponses)
+
+        XCTAssertEqual(stub.lastAuthorizationHeader, "Bearer codex-oauth-token")
+    }
+
     func test_forward_dropsUpstreamContentEncodingAndContentLength() throws {
         let stub = try StubUpstreamServer(
             responseHead: "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: 2\r\n\r\n",

@@ -640,7 +640,10 @@ final class ProviderAggregationManager: ObservableObject {
                     key: toolStack.keyOf(profileID: defaultID) ?? "",
                     profileID: defaultID,
                     baseURL: profile.baseURL,
-                    token: profile.token
+                    token: profile.token,
+                    // 官方默认：登录走 auth.json OAuth、没有静态 token，客户端自己的
+                    // Authorization 原样透传（换成空串只会 401；SPEC 3 契约 4）。
+                    passesThroughAuthorization: Self.isOfficial(profile)
                 )
             }
             published[tool] = publishedModels(tool: tool)

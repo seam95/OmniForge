@@ -56,6 +56,33 @@ final class AggregationTargetResolverTests: XCTestCase {
         XCTAssertEqual(resolver.resolve(tool: .claudeCode, model: "claude-sonnet-4-6"), .plain(target: defaultTarget))
     }
 
+    /// 解析器对 plain 目标只做透传：置位职责在 manager 构造 `defaultTarget` 时
+    /// （按 `isOfficial`），resolver 原样带回传入目标身上的位，不自行判定。
+    func test_plainTargetCarriesPassthroughBitFromInjectedDefault() {
+        let passthroughDefault = AggregationProxyTarget(
+            key: "deepseek", profileID: "deepseek",
+            baseURL: "https://api.deepseek.com/anthropic", token: "",
+            passesThroughAuthorization: true
+        )
+        let official = AggregationTargetResolver(
+            stack: .init(enabled: true, members: ["kimi"], keys: ["kimi": "kimi"]),
+            registry: registry,
+            profiles: profiles,
+            defaultTarget: passthroughDefault
+        )
+        XCTAssertEqual(official.resolve(tool: .claudeCode, model: "claude-sonnet-4-6"), .plain(target: passthroughDefault))
+    }
+
+    /// hit 目标恒不带透传位：名单成员皆第三方（`joinableProfileIDs` 排除官方），
+    /// 第三方一律按占位凭证换成真实 token，没有「官方成员」可透传。
+    func test_hitTargetNeverCarriesPassthroughBit() {
+        guard case .hit(let target, _) = resolver.resolve(tool: .claudeCode, model: "ccs-claude-kimi--k3") else {
+            return XCTFail("expected hit")
+        }
+        XCTAssertEqual(target, kimiTarget)
+        XCTAssertFalse(target.passesThroughAuthorization)
+    }
+
     func test_prefixedModelHitsOwningMemberWithUpstreamNameRestored() {
         XCTAssertEqual(resolver.resolve(tool: .claudeCode, model: "ccs-claude-kimi--k3"), .hit(target: kimiTarget, upstreamModel: "k3"))
     }
