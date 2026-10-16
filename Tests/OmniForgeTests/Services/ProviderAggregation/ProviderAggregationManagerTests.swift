@@ -1,8 +1,8 @@
 import XCTest
 @testable import OmniForge
 
-/// 聚合编排管理器：进入先起代理后写配置、代理起不来不写配置、Codex 登录收纳/还原、
-/// 快照进入与恢复、按工具独立、单工具退出不停代理、名单与 key 保留、
+/// 聚合编排管理器：进入先起代理后写配置、代理起不来不写配置、Codex 登录收纳/还原
+/// （官方默认不收纳）、快照进入与恢复、按工具独立、单工具退出不停代理、名单与 key 保留、
 /// 官方账号禁入、默认成员聚合期间禁移、删 profile 摘名单留 key、契约未变不重写、
 /// 部分写入语义、看门狗重启与回落。
 @MainActor
@@ -55,7 +55,7 @@ final class ProviderAggregationManagerTests: XCTestCase {
         try? FileManager.default.removeItem(at: tmpDir)
     }
 
-    private func makeManager() -> ProviderAggregationManager {
+    private func makeManager(withCodexWriter codexWriterOverride: AggregationCodexConfigWriting? = nil) -> ProviderAggregationManager {
         ProviderAggregationManager(
             profileStore: profileStore,
             backupStore: backupStore,
@@ -65,8 +65,21 @@ final class ProviderAggregationManagerTests: XCTestCase {
             staleDetector: staleDetector,
             proxy: proxy,
             claudeWriter: claudeWriter,
-            codexWriter: codexWriter,
+            codexWriter: codexWriterOverride ?? codexWriter,
             profiles: profileStore.stubProfiles
+        )
+    }
+
+    /// 官方 Codex fixture：官方登录走 `auth.json` OAuth，无静态 token；
+    /// 这里的 token 只是为通过「连接完整」校验的占位（`isOfficial` 按宿主判定，与 token 无关）。
+    private var officialCodexProfile: ProviderProfile {
+        ProviderProfile(
+            id: "openai-official",
+            name: "OpenAI",
+            tool: .codex,
+            baseURL: "https://api.openai.com/v1",
+            token: "oauth",
+            codexModels: ["gpt-5-codex"]
         )
     }
 
@@ -89,6 +102,34 @@ final class ProviderAggregationManagerTests: XCTestCase {
     func test_enterAggregation_stashesCodexOfficialLogin() throws {
         try manager.enterAggregation(tool: .codex, defaultProfileID: "deepseek")
         XCTAssertEqual(loginStash.stashCallCount, 1)
+        XCTAssertEqual(loginStash.restoreCallCount, 0, "第三方默认：只收纳，不还原")
+        XCTAssertEqual(codexWriter.lastDefaultIsOfficial, false, "第三方默认仍走 custom 表投影")
+    }
+
+    func test_enterAggregation_skipsLoginStashWhenCodexDefaultIsOfficial() throws {
+        profileStore.stubProfiles = [officialCodexProfile]
+        manager = makeManager()
+        try manager.enterAggregation(tool: .codex, defaultProfileID: "openai-official")
+        XCTAssertEqual(loginStash.stashCallCount, 0, "官方默认：登录走 auth.json，无需收纳（SPEC 3 契约 3）")
+        XCTAssertEqual(loginStash.restoreCallCount, 1, "此前若已收纳 → 还原")
+        XCTAssertEqual(codexWriter.lastDefaultIsOfficial, true, "官方默认投影形状须告知写入侧")
+    }
+
+    func test_enterAggregation_officialCodexDefaultWritesNoCatalogFile() throws {
+        let configURL = tmpDir.appendingPathComponent("config.toml")
+        let catalogURL = tmpDir.appendingPathComponent("cc-switch-model-catalog.json")
+        let realCodexWriter = AggregationCodexConfigWriter(configURL: configURL, catalogURL: catalogURL)
+        profileStore.stubProfiles = [officialCodexProfile]
+        let manager = makeManager(withCodexWriter: realCodexWriter)
+
+        try manager.enterAggregation(tool: .codex, defaultProfileID: "openai-official")
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: catalogURL.path), "官方默认：模型目录整体不写")
+        let doc = try XCTUnwrap(TOMLFile.parse(try String(contentsOf: configURL, encoding: .utf8)))
+        XCTAssertEqual(doc.stringValue(key: "openai_base_url", table: nil), "http://127.0.0.1:15721/v1")
+        XCTAssertNil(doc.stringValue(key: "model_provider", table: nil))
+        XCTAssertNil(doc.stringValue(key: "model_catalog_json", table: nil))
+        XCTAssertEqual(doc.stringValue(key: "model", table: nil), "gpt-5-codex", "选哪个模型与 provider 形状无关，官方默认照写")
     }
 
     func test_exitAggregation_restoresLoginAndStopsProxyWhenNoToolAggregates() throws {
@@ -426,6 +467,7 @@ private final class StubCodexWriter: AggregationCodexConfigWriting {
     var lastAppliedPort: UInt16?
     var lastDefaultProfile: ProviderProfile?
     var lastRequiresOpenAIAuth: Bool?
+    var lastDefaultIsOfficial: Bool?
     var applyCount = 0
     var stubApplyError: Error?
     private var appliedPublished: [AggregationPublishedModel] = []
@@ -434,12 +476,14 @@ private final class StubCodexWriter: AggregationCodexConfigWriting {
         defaultProfile: ProviderProfile,
         published: [AggregationPublishedModel],
         port: UInt16,
-        requiresOpenAIAuth: Bool
+        requiresOpenAIAuth: Bool,
+        defaultIsOfficial: Bool
     ) throws {
         if let stubApplyError { throw stubApplyError }
         lastAppliedPort = port
         lastDefaultProfile = defaultProfile
         lastRequiresOpenAIAuth = requiresOpenAIAuth
+        lastDefaultIsOfficial = defaultIsOfficial
         appliedPublished = published
         applyCount += 1
     }
@@ -454,7 +498,8 @@ private final class StubCodexWriter: AggregationCodexConfigWriting {
         defaultProfile: ProviderProfile,
         published: [AggregationPublishedModel],
         port: UInt16,
-        requiresOpenAIAuth: Bool
+        requiresOpenAIAuth: Bool,
+        defaultIsOfficial: Bool
     ) -> String {
         Self.digest(of: published)
     }

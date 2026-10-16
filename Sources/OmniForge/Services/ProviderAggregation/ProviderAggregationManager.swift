@@ -159,9 +159,13 @@ final class ProviderAggregationManager: ObservableObject {
         guard let port = proxy.resolvedPort else { throw AggregationProxyError.allPortsTaken }
         syncProxyState()
 
-        // 2) Codex 官方登录收纳（仅 Codex）。
-        if tool == .codex {
+        // 2) Codex 官方登录收纳（仅 Codex）。默认那家是官方 → 不收纳：官方登录走
+        // auth.json OAuth，第三方投影的占位 token 用不上它；若此前已收纳则还原
+        // （SPEC 3 / P0-3 契约 3）。
+        if tool == .codex && !Self.isOfficial(defaultProfile) {
             try? loginStashStore.stash()
+        } else if tool == .codex {
+            try? loginStashStore.restore()
         }
 
         // 3) 目标文件快照 — 退出聚合时的直连恢复点。
@@ -484,7 +488,8 @@ final class ProviderAggregationManager: ObservableObject {
             changed = codexWriter.currentContractDigest()
                 != codexWriter.projectedContractDigest(
                     defaultProfile: defaultProfile, published: published, port: port,
-                    requiresOpenAIAuth: loginStashStore.hasNativeLogin
+                    requiresOpenAIAuth: loginStashStore.hasNativeLogin,
+                    defaultIsOfficial: Self.isOfficial(defaultProfile)
                 )
         }
         guard changed else { return }
@@ -503,7 +508,8 @@ final class ProviderAggregationManager: ObservableObject {
         case .codex:
             try codexWriter.applyAggregation(
                 defaultProfile: defaultProfile, published: published, port: port,
-                requiresOpenAIAuth: loginStashStore.hasNativeLogin
+                requiresOpenAIAuth: loginStashStore.hasNativeLogin,
+                defaultIsOfficial: Self.isOfficial(defaultProfile)
             )
         }
     }
