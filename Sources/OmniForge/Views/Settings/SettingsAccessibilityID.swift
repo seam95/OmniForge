@@ -30,8 +30,9 @@ enum SettingsAccessibilityID: String, CaseIterable {
     case providerSwitchPopoverAddProvider = "providerSwitch.popover.addProvider"
     case providerSwitchPopoverEditConfig = "providerSwitch.popover.editConfig"
     case providerSwitchPopoverRestoreBackup = "providerSwitch.popover.restoreBackup"
-    /// 聚合模式分段行（直连 / 聚合）。
-    case providerAggregationModeSegment = "providerAggregation.modeSegment"
+    /// 模式两行：直连行 / 聚合行（替代原「直连 / 聚合」分段行）。
+    case providerModeDirectRow = "providerMode.directRow"
+    case providerModeAggregationRow = "providerMode.aggregationRow"
     /// 进入聚合模式动作。
     case providerAggregationEnter = "providerAggregation.enter"
     /// 回到直连动作。

@@ -1315,6 +1315,12 @@ extension Strings {
         // MARK: - Aggregation (Provider Aggregation)
         providerModeDirect: "Direct",
         providerModeAggregation: "Aggregation",
+        providerModeDirectActiveFormat: "Using %@",
+        providerModeDirectOfficial: "Official account",
+        providerModeDirectPaused: "Paused while aggregation is active",
+        providerModeAggregationOff: "Off",
+        providerModeAggregationOffJoinableFormat: "Off · %ld available to join",
+        providerModeAggregationOnFormat: "%ld providers · default %@",
         providerAggregationStatusLead: "Default provider: ",
         providerAggregationStatusValueFormat: "%@ · %ld members · %ld models",
         providerAggregationEnter: "Switch to aggregation",

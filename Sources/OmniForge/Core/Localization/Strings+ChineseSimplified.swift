@@ -1315,6 +1315,12 @@ extension Strings {
         // MARK: - 聚合模式（Provider Aggregation）
         providerModeDirect: "直连",
         providerModeAggregation: "聚合",
+        providerModeDirectActiveFormat: "使用 %@",
+        providerModeDirectOfficial: "官方账号",
+        providerModeDirectPaused: "聚合生效中 · 已暂停",
+        providerModeAggregationOff: "未开启",
+        providerModeAggregationOffJoinableFormat: "未开启 · %ld 家可加入",
+        providerModeAggregationOnFormat: "%ld 家 · 默认 %@",
         providerAggregationStatusLead: "默认供应商：",
         providerAggregationStatusValueFormat: "%@ · %ld 家成员 · %ld 个模型",
         providerAggregationEnter: "切换到聚合模式",

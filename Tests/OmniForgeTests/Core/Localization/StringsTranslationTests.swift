@@ -98,7 +98,8 @@ final class StringsTranslationTests: XCTestCase {
     }
 
     func test_accessibilityIDs_areDistinct() {
-        let ids: [SettingsAccessibilityID] = [.providerAggregationModeSegment, .providerAggregationEnter,
+        let ids: [SettingsAccessibilityID] = [.providerModeDirectRow, .providerModeAggregationRow,
+                                              .providerAggregationEnter,
                                               .providerAggregationExit, .providerAggregationRestartDaemon]
         XCTAssertEqual(Set(ids.map(\.rawValue)).count, ids.count)
     }

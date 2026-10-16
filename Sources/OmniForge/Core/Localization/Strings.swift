@@ -1456,10 +1456,22 @@ struct Strings: Equatable {
     let providerBackupContentFailed: String
 
     // MARK: - 聚合模式（Provider Aggregation）
-    /// 模式分段行：直连。
+    /// 模式两行：直连行标题。
     let providerModeDirect: String
-    /// 模式分段行：聚合。
+    /// 模式两行：聚合行标题。
     let providerModeAggregation: String
+    /// 直连行摘要：正在使用某家（%@ = 供应商名）。
+    let providerModeDirectActiveFormat: String
+    /// 直连行摘要：当前激活官方账号。
+    let providerModeDirectOfficial: String
+    /// 直连行摘要：聚合生效中，直连操作已暂停。
+    let providerModeDirectPaused: String
+    /// 聚合行摘要：未开启。
+    let providerModeAggregationOff: String
+    /// 聚合行摘要：未开启且有人可加入（%ld = 可加入家数）。
+    let providerModeAggregationOffJoinableFormat: String
+    /// 聚合行摘要：已开启（%ld = 成员家数，%@ = 默认供应商名）。
+    let providerModeAggregationOnFormat: String
     /// 聚合面板状态行引导语。
     let providerAggregationStatusLead: String
     /// 聚合面板状态行取值（%@ = 默认供应商名，%ld = 成员数，%ld = 模型数）。

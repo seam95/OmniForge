@@ -99,7 +99,8 @@ final class AggregationPanelViewTests: XCTestCase {
 
     // MARK: - tests
 
-    func test_modeSegmentRow_existsAndOffersBothModes() throws {
+    /// 模式两行的标题复用既有 `providerMode*` 键（原「直连/聚合」分段行的文案）。
+    func test_modeRowTitles_reuseExistingModeStrings() throws {
         let view = try makeView()
         XCTAssertEqual(view.strings.providerModeDirect, "直连")
         XCTAssertEqual(view.strings.providerModeAggregation, "聚合")

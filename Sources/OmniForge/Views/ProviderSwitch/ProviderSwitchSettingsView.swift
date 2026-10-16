@@ -26,8 +26,8 @@ struct ProviderSwitchSettingsView: View {
     var commandCopier: ProviderLaunchCommandCopying = ProviderLaunchCommandCopier()
 
     @State private var selectedTool: ProviderTool = .claudeCode
-    /// 模式查看态（直连 / 聚合）——仅切换查看内容，不持久化；
-    /// 随 `selectedTool` 变化重置为 .direct（对齐 cc-switch「查看中不持久化」）。
+    /// 模式查看态（直连 / 聚合）——仅切换查看内容，不持久化。
+    /// 初值按「哪个模式真的在生效」推导，切工具时按同一规则重新推导。
     @State private var panelMode: ProviderAggregationManager.AggregationMode = .direct
     /// 齿轮弹层（供应商设置）展示状态。
     @State private var showsSettingsPopover = false
@@ -49,17 +49,30 @@ struct ProviderSwitchSettingsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.controlCenterSizing) private var sizingContext
 
+    init(
+        manager: ProviderSwitchManager,
+        strings: Strings,
+        aggregation: ProviderAggregationManager?,
+        commandCopier: ProviderLaunchCommandCopying = ProviderLaunchCommandCopier()
+    ) {
+        self.manager = manager
+        self.strings = strings
+        self.aggregation = aggregation
+        self.commandCopier = commandCopier
+        // 默认展开哪一行，看哪个模式真的在生效：聚合生效时若默认展开直连，
+        // 用户第一眼看到的是一排被锁死的操作（directActionsDisabled）。
+        _panelMode = State(initialValue: ProviderModeRow.initialMode(
+            isAggregating: aggregation?.isAggregating(.claudeCode) == true
+        ))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             sectionSwitcherRow
 
-            // 模式分段行（直连 / 聚合）：仅聚合管理器已注册时出现。
-            if aggregation != nil {
-                modeSegmentRow
-            }
-
             // Claude Code / Codex 平级切换：按工具分段顺序方向化滑移（SPEC 三期），
             // 不再整树交叉淡化；Provider 状态（展开/编辑 sheet 目标）不随切换重建。
+            // 内容与操作目标一律消费 Host 提供的 displayedTool（SPEC §6.3.1）：
             PageSwitchHost(
                 requestedRoute: selectedTool,
                 semantics: { from, to in
@@ -77,6 +90,12 @@ struct ProviderSwitchSettingsView: View {
                 // exiting 期间旧 tool 内容保持可见，交换点才换成新 tool；
                 // selectedTool 只承担导航请求职责。
                 VStack(alignment: .leading, spacing: 0) {
+                    // 模式两行（直连 / 聚合）：仅聚合管理器已注册时出现；未注册则退化为纯直连页。
+                    // 摘要按当前展示 tool 取——聚合状态与激活供应商都是按工具独立的。
+                    if let aggregation {
+                        modeRows(aggregation: aggregation, tool: tool)
+                    }
+
                     if let aggregation, panelMode == .aggregation {
                         AggregationPanelView(
                             manager: aggregation,
@@ -97,9 +116,10 @@ struct ProviderSwitchSettingsView: View {
         }
         .padding(.top, 12)
         .padding(.bottom, 12)
-        .onChange(of: selectedTool) { _, _ in
-            // 切工具即回到直连查看态（模式选择不跨工具持久化）。
-            panelMode = .direct
+        .onChange(of: selectedTool) { _, newTool in
+            // 切工具即按「哪个模式真的在生效」重新推导展开行（模式选择不跨工具持久化）。
+            // 一律回直连会让聚合生效时的用户落在一排被锁死的操作上。
+            panelMode = ProviderModeRow.initialMode(isAggregating: aggregation?.isAggregating(newTool) == true)
         }
         .onChange(of: manager.profiles) { _, _ in
             // 聚合管理器只在启动时列举过一次 profile（`production()` 的快照）。用户新建/
@@ -176,20 +196,50 @@ struct ProviderSwitchSettingsView: View {
         .padding(.bottom, 6)
     }
 
-    /// 「直连 / 聚合」模式分段行：仅切换查看内容（面板态不持久化，随工具切换重置）。
-    private var modeSegmentRow: some View {
-        PanelSegmentedControl(
-            options: [
-                .init(tag: ProviderAggregationManager.AggregationMode.direct,
-                      title: strings.providerModeDirect),
-                .init(tag: ProviderAggregationManager.AggregationMode.aggregation,
-                      title: strings.providerModeAggregation),
-            ],
-            selection: $panelMode
-        )
+    /// 模式两行（直连 / 聚合）——替代原「直连 / 聚合」分段行。
+    /// 两种模式互斥（同一份配置文件同时只能有一个写入者），所以一行展开时另一行必折叠；
+    /// 折叠行带状态摘要，这是两行相对分段行多出来的信息量。
+    private func modeRows(aggregation: ProviderAggregationManager, tool: ProviderTool) -> some View {
+        let isAggregating = aggregation.isAggregating(tool)
+        let active = manager.active(tool: tool)
+        // 只有解析到具体 profile 才有名字可显示；官方回落「官方账号」，
+        // 未托管取其摘要，配置损坏时由 corruptedBanner 负责（这里不重复报警）。
+        let activeName: String? = switch active {
+        case .profile(let id):
+            manager.profiles(for: tool).first(where: { $0.id == id })?.name
+        case .unmanaged(let summary):
+            summary
+        case .official, .unreadable:
+            nil
+        }
+
+        return VStack(spacing: 0) {
+            ProviderModeRow(
+                title: strings.providerModeDirect,
+                summary: ProviderModeRow.directSummary(
+                    activeName: activeName, isAggregating: isAggregating, strings: strings
+                ),
+                isExpanded: panelMode == .direct,
+                accessibilityID: .providerModeDirectRow
+            ) {
+                panelMode = .direct
+            }
+
+            ProviderModeRow(
+                title: strings.providerModeAggregation,
+                summary: ProviderModeRow.aggregationSummary(
+                    members: aggregation.members(tool: tool),
+                    joinableCount: aggregation.joinableProfileIDs(tool: tool).count,
+                    strings: strings
+                ),
+                isExpanded: panelMode == .aggregation,
+                accessibilityID: .providerModeAggregationRow
+            ) {
+                panelMode = .aggregation
+            }
+        }
         .padding(.horizontal, 12)
         .padding(.bottom, 6)
-        .accessibilityIdentifier(SettingsAccessibilityID.providerAggregationModeSegment.rawValue)
     }
 
     /// 齿轮按钮（「供应商设置」弹层）：新增供应商（菜单栏）、编辑配置文件、恢复备份。

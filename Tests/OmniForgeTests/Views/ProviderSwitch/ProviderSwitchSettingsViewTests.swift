@@ -93,4 +93,84 @@ final class ProviderSwitchSettingsViewTests: XCTestCase {
         ]
         XCTAssertEqual(Set(ids.map(\.rawValue)).count, ids.count)
     }
+
+    // MARK: - 模式两行（直连 / 聚合）
+
+    /// 默认展开哪一行，看哪个模式真的在生效。聚合生效时若默认展开直连，
+    /// 用户第一眼看到的是一排被锁死的操作（`directActionsDisabled`）。
+    func test_initialPanelMode_followsWhatIsActuallyActive() {
+        XCTAssertEqual(ProviderModeRow.initialMode(isAggregating: false), .direct)
+        XCTAssertEqual(ProviderModeRow.initialMode(isAggregating: true), .aggregation)
+    }
+
+    /// 聚合生效时直连行必须说明「已暂停」，不能显示激活供应商——
+    /// 否则用户展开才发现里面全是禁用控件。
+    func test_directRowSummary_explainsPauseWhenAggregating() {
+        XCTAssertEqual(
+            ProviderModeRow.directSummary(activeName: "Kimi", isAggregating: true, strings: .zhHans),
+            Strings.zhHans.providerModeDirectPaused
+        )
+        XCTAssertEqual(
+            ProviderModeRow.directSummary(activeName: "Kimi", isAggregating: false, strings: .zhHans),
+            "使用 Kimi"
+        )
+        // 未托管 / 损坏等匹配不到 profile 的状态 → 回落官方
+        XCTAssertEqual(
+            ProviderModeRow.directSummary(activeName: nil, isAggregating: false, strings: .zhHans),
+            Strings.zhHans.providerModeDirectOfficial
+        )
+        XCTAssertEqual(
+            ProviderModeRow.directSummary(activeName: "", isAggregating: false, strings: .zhHans),
+            Strings.zhHans.providerModeDirectOfficial
+        )
+    }
+
+    /// 聚合行摘要区分三态：未开启且有人可加入 / 未开启且无人可加入 / 已开启。
+    func test_aggregationRowSummary_distinguishesOffJoinableOffAndOn() {
+        let kimi = ProviderAggregationManager.AggregationMemberView(id: "kimi", name: "Kimi", isDefault: true, isOfficial: false,
+                                         publishedCount: 2, modelIDs: ["a", "b"])
+        let glm = ProviderAggregationManager.AggregationMemberView(id: "glm", name: "GLM", isDefault: false, isOfficial: false,
+                                        publishedCount: 1, modelIDs: ["c"])
+
+        XCTAssertEqual(
+            ProviderModeRow.aggregationSummary(members: [], joinableCount: 2, strings: .zhHans),
+            "未开启 · 2 家可加入"
+        )
+        XCTAssertEqual(
+            ProviderModeRow.aggregationSummary(members: [], joinableCount: 0, strings: .zhHans),
+            Strings.zhHans.providerModeAggregationOff
+        )
+        XCTAssertEqual(
+            ProviderModeRow.aggregationSummary(members: [kimi, glm], joinableCount: 1, strings: .zhHans),
+            "2 家 · 默认 Kimi"
+        )
+    }
+
+    /// 模式两行的标题与摘要文案中英齐全（标题复用既有 `providerMode*` 键）。
+    func test_modeRowLocalization_isAvailable() {
+        for strings in [Strings.zhHans, Strings.en] {
+            XCTAssertFalse(strings.providerModeDirect.isEmpty)
+            XCTAssertFalse(strings.providerModeAggregation.isEmpty)
+            XCTAssertFalse(strings.providerModeDirectPaused.isEmpty)
+            XCTAssertFalse(strings.providerModeDirectOfficial.isEmpty)
+            XCTAssertFalse(strings.providerModeDirectActiveFormat.isEmpty)
+            XCTAssertFalse(strings.providerModeAggregationOff.isEmpty)
+            XCTAssertFalse(strings.providerModeAggregationOffJoinableFormat.isEmpty)
+            XCTAssertFalse(strings.providerModeAggregationOnFormat.isEmpty)
+            // 格式串必须真的带占位符，否则 String(format:) 会原样返回
+            XCTAssertTrue(strings.providerModeDirectActiveFormat.contains("%@"))
+            XCTAssertTrue(strings.providerModeAggregationOffJoinableFormat.contains("%ld"))
+            XCTAssertTrue(strings.providerModeAggregationOnFormat.contains("%ld"))
+            XCTAssertTrue(strings.providerModeAggregationOnFormat.contains("%@"))
+        }
+    }
+
+    /// 模式两行的无障碍标识（UI 测试 / 自动化探针定位用），替代原分段行标识。
+    func test_modeRowAccessibilityIDs_areDistinct() {
+        let ids = [
+            SettingsAccessibilityID.providerModeDirectRow,
+            SettingsAccessibilityID.providerModeAggregationRow,
+        ]
+        XCTAssertEqual(Set(ids.map(\.rawValue)).count, ids.count)
+    }
 }
