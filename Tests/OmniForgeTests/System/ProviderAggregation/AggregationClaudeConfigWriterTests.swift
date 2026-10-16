@@ -4,6 +4,7 @@ import XCTest
 /// Claude Code 聚合投影：modelPicker 落顶层、四档别名共享 Stack id（haiku 剥 1M）、
 /// 不写 ANTHROPIC_MODEL/子代理键、代理裸 origin + 占位凭证、MAX 窗口取非 1M 最小值、
 /// 只动拥有键、退出清理、窗口缩写、发布源顺序。
+/// 空发布（用户主动清空 stackModels）时不写 modelPicker，四档别名回落默认那家直连口径。
 final class AggregationClaudeConfigWriterTests: XCTestCase {
     private var tmpDir: URL!
     private var settingsURL: URL!
@@ -110,6 +111,30 @@ final class AggregationClaudeConfigWriterTests: XCTestCase {
         XCTAssertEqual(options[0]["description"] as? String, "k3 · 256K")
         let env = try XCTUnwrap(root["env"] as? [String: Any])
         XCTAssertNil(env["modelPicker"])
+    }
+
+    // MARK: - 空发布（用户主动清空 stackModels）
+
+    func test_applyAggregation_emptyPublishedOmitsModelPickerButKeepsDirectAliases() throws {
+        let ds = ProviderProfile(
+            id: "kimi", name: "Kimi", tool: .claudeCode,
+            baseURL: "https://api.kimi.com/coding", token: "sk-kimi",
+            modelOverride: "k3-main",
+            modelMapping: ProviderModelMapping(sonnet: "k3-sonnet", sonnetName: "Kimi Sonnet"),
+            stackModels: []   // 主动清空 → 空发布
+        )
+        try writeSettings(["modelPicker": ["replaceBuiltInOptions": false, "options": [["model": "mine"]]]])
+        try writer.applyAggregation(defaultProfile: ds, published: [], port: 15721)
+        let root = try readSettings()
+        XCTAssertNil(root["modelPicker"], "空发布不写 modelPicker——选择器保持内置模型（cc-switch controller.rs:226-228）")
+        let env = try XCTUnwrap(root["env"] as? [String: Any])
+        // 空发布时四档别名回落默认那家映射的直连口径（cc-switch claude.rs:257-260 None → proxy_model_fields）
+        XCTAssertEqual(env["ANTHROPIC_MODEL"] as? String, "k3-main")
+        XCTAssertEqual(env["ANTHROPIC_DEFAULT_SONNET_MODEL"] as? String, "k3-sonnet")
+        XCTAssertEqual(env["ANTHROPIC_DEFAULT_SONNET_MODEL_NAME"] as? String, "Kimi Sonnet")
+        XCTAssertEqual(env["ANTHROPIC_BASE_URL"] as? String, "http://127.0.0.1:15721", "代理仍生效")
+        XCTAssertEqual(env["ANTHROPIC_AUTH_TOKEN"] as? String, "PROXY_MANAGED")
+        XCTAssertNil(env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"], "默认那家 extraEnv 无窗口值时不写")
     }
 
     // MARK: - 四档别名同一个 Stack id，haiku 剥 1M

@@ -12,9 +12,10 @@ protocol AggregationClaudeConfigWriting: AnyObject {
 
 /// `~/.claude/settings.json` 聚合投影：裸 origin 指向本机代理、占位凭证、
 /// 四档别名共享首个 Stack id（haiku 剥 1M）、顶层 `modelPicker`、MAX 窗口取非 1M 最小值。
+/// **空发布**（用户主动清空 `stackModels`）时不写 `modelPicker`，四档别名回落默认那家直连口径。
 /// 只动拥有键，用户其余设置原样保留。
-/// `defaultProfile` 参与协议对称（Codex 侧需要）——Claude 投影完全由 `published` 计算，
-/// 默认供应商的职责在代理解析层（Task 11），配置文件里不出现。
+/// `defaultProfile` 参与协议对称（Codex 侧需要）——非空发布的 Claude 投影完全由 `published` 计算；
+/// 空发布时默认供应商的 `modelMapping`/`modelOverride`/`extraEnv` 才进配置文件（直连口径回落）。
 final class AggregationClaudeConfigWriter: AggregationClaudeConfigWriting {
     let settingsURL: URL
     let fileManager: FileManager
@@ -57,23 +58,52 @@ final class AggregationClaudeConfigWriter: AggregationClaudeConfigWriting {
         env["ANTHROPIC_BASE_URL"] = "http://127.0.0.1:\(port)"
         env["ANTHROPIC_AUTH_TOKEN"] = Self.placeholderToken
 
-        // 四档别名共享同一个 Stack id；haiku 剥 1M（小模型档不吃 1M 窗口）。
-        if let first = published.first {
-            env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = first.id
-            env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = first.id
-            env["ANTHROPIC_DEFAULT_FABLE_MODEL"] = first.id
-            env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = AggregationModelID.encode(
-                tool: .claudeCode, key: first.key, model: first.model, oneM: false
-            )
-            env["ANTHROPIC_DEFAULT_SONNET_MODEL_NAME"] = first.displayName
-            env["ANTHROPIC_DEFAULT_OPUS_MODEL_NAME"] = first.displayName
-            env["ANTHROPIC_DEFAULT_FABLE_MODEL_NAME"] = first.displayName
-            env["ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME"] = first.displayName
-        }
+        // 有发布 → 四档别名共享同一个 Stack id（haiku 剥 1M）+ 顶层 modelPicker；
+        // 空发布 → 不写 modelPicker，四档别名回落默认那家直连口径（见 else 分支）。
+        if !published.isEmpty {
+            if let first = published.first {
+                env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = first.id
+                env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = first.id
+                env["ANTHROPIC_DEFAULT_FABLE_MODEL"] = first.id
+                env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = AggregationModelID.encode(
+                    tool: .claudeCode, key: first.key, model: first.model, oneM: false
+                )
+                env["ANTHROPIC_DEFAULT_SONNET_MODEL_NAME"] = first.displayName
+                env["ANTHROPIC_DEFAULT_OPUS_MODEL_NAME"] = first.displayName
+                env["ANTHROPIC_DEFAULT_FABLE_MODEL_NAME"] = first.displayName
+                env["ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME"] = first.displayName
+            }
 
-        // MAX 窗口 = 已发布非 1M 模型窗口最小值；恰为默认 200K 时不写（不额外约束客户端）。
-        if let maxWindow = Self.maxContextTokens(published: published) {
-            env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = String(maxWindow)
+            // MAX 窗口 = 已发布非 1M 模型窗口最小值；恰为默认 200K 时不写（不额外约束客户端）。
+            if let maxWindow = Self.maxContextTokens(published: published) {
+                env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = String(maxWindow)
+            }
+
+            // modelPicker 是 settings.json **顶层**键（不是 env 内）——写错层级 Claude Code 完全看不到。
+            root["modelPicker"] = [
+                "replaceBuiltInOptions": true,
+                "options": published.map { [
+                    "model": $0.id,
+                    "label": $0.label,
+                    "description": $0.description,
+                ] },
+            ]
+        } else {
+            // 空发布（用户主动清空 stackModels）：不写 modelPicker，四档别名回落默认那家直连口径。
+            // 对齐 cc-switch `controller.rs:222-252` 空列表整体 return（`CLAUDE_CODE_MAX_CONTEXT_TOKENS`
+            // 保持默认那家原值）与 `claude.rs:257-260` 路由默认为 None 时回落 `proxy_model_fields`。
+            // modelPicker 是拥有键——用户手写的值一并清掉（否则空 options 会清空内置选择器）。
+            root.removeValue(forKey: "modelPicker")
+            if let model = defaultProfile.modelOverride, !model.isEmpty {
+                env["ANTHROPIC_MODEL"] = model
+            }
+            for (key, value) in defaultProfile.modelMapping?.nonEmptyEntries ?? [] {
+                env[key] = value
+            }
+            // 窗口取默认那家 extraEnv 原值（非 Stack 窗口，200K 判断不适用）；无则上面已清干净。
+            if let window = defaultProfile.extraEnv["CLAUDE_CODE_MAX_CONTEXT_TOKENS"], !window.isEmpty {
+                env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = window
+            }
         }
 
         if env.isEmpty {
@@ -82,15 +112,6 @@ final class AggregationClaudeConfigWriter: AggregationClaudeConfigWriting {
             root["env"] = env
         }
 
-        // modelPicker 是 settings.json **顶层**键（不是 env 内）——写错层级 Claude Code 完全看不到。
-        root["modelPicker"] = [
-            "replaceBuiltInOptions": true,
-            "options": published.map { [
-                "model": $0.id,
-                "label": $0.label,
-                "description": $0.description,
-            ] },
-        ]
         return root
     }
 
