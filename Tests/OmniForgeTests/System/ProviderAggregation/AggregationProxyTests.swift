@@ -159,6 +159,35 @@ final class AggregationProxyTests: XCTestCase {
         XCTAssertEqual(sent?["model"] as? String, "k3")
     }
 
+    func test_passthroughEndpoint_forwardsVerbatimWithoutDecodingPrefixedModel() {
+        // alpha/images 是透明端点（SPEC §9）：体里的 `ccs-` 聚合 id 也不解码，原样转发默认那家。
+        let body = #"{"model":"ccs-kimi/k3","prompt":"cat"}"#
+        let response = proxy.handle(post("/alpha/search", body: body))
+        XCTAssertEqual(response.statusCode, 200)
+        XCTAssertEqual(forwarder.lastProtocol, .codexPassthrough)
+        XCTAssertEqual(forwarder.lastTarget, defaultTarget)
+        XCTAssertEqual(forwarder.lastRequest?.body, Data(body.utf8))
+    }
+
+    func test_passthroughEndpoint_withoutDefaultTarget_returns503Not400() throws {
+        // 无默认目标 → 503（对齐 cc-switch NoProvidersConfigured），不是解码路径的 400。
+        let noDefaultProxy = AggregationProxy(
+            resolver: AggregationTargetResolver(
+                stack: .init(enabled: true, members: ["kimi"], keys: ["kimi": "kimi"]),
+                registry: AggregationKeyRegistry(keys: ["kimi": "kimi"]),
+                profiles: [],
+                defaultTarget: nil
+            ),
+            modelLister: StubModelLister(),
+            forwarder: forwarder
+        )
+        let response = noDefaultProxy.handle(post("/alpha/search", body: #"{"prompt":"cat"}"#))
+        XCTAssertEqual(response.statusCode, 503)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: response.body) as? [String: Any])
+        let error = try XCTUnwrap(json["error"] as? [String: Any])
+        XCTAssertEqual(error["type"] as? String, "invalid_request_error")
+    }
+
     func test_miss_returns400WithAnthropicEnvelope() throws {
         let response = proxy.handle(post("/v1/messages", body: #"{"model":"ccs-claude-nobody--x"}"#))
         XCTAssertEqual(response.statusCode, 400)

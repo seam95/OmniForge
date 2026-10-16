@@ -47,7 +47,7 @@ enum AggregationUpstream {
                     ? "Bearer \(credential)"
                     : credential
             }
-        case .openAIResponses, .openAIChatCompletions:
+        case .openAIResponses, .openAIChatCompletions, .codexPassthrough:
             rewritten["authorization"] = "Bearer \(credential)"
         case .modelDiscovery, .health, .websocketProbe, .unsupported:
             break // 本地应答的形状，不向上游转发

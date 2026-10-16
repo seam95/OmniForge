@@ -14,15 +14,19 @@ enum AggregationClientProtocol: Equatable {
     case health
     /// WebSocket 探测（GET `/responses`）——本地直接回 426，不向上游转发。
     case websocketProbe
+    /// 透明端点（`/alpha/search`、`/images/generations`、`/images/edits` 及别名）——
+    /// 不做 Stack 解码，体原样转发默认那家；凭证头按 Codex 形状（见 `AggregationUpstream`）。
+    case codexPassthrough
     /// 未命中路由表的方法/路径组合。
     case unsupported
 
     /// 该协议形状对应的工具（用于模型 id 解码）；本地应答的形状（发现/探活/WebSocket 探测）无归属。
+    /// 透明端点同样无归属：它刻意不解码模型 id（模型名不属于任何聚合 key）。
     var modelIDTool: ProviderTool? {
         switch self {
         case .anthropicMessages: return .claudeCode
         case .openAIResponses, .openAIChatCompletions: return .codex
-        case .modelDiscovery, .health, .websocketProbe, .unsupported: return nil
+        case .modelDiscovery, .health, .websocketProbe, .codexPassthrough, .unsupported: return nil
         }
     }
 }
@@ -55,6 +59,22 @@ enum AggregationRouteTable {
         case ("POST", "/chat/completions"),
              ("POST", "/v1/v1/chat/completions"):
             return .openAIChatCompletions
+        // 透明端点（SPEC §9）：`/alpha/search` 与 `/images/generations`、`/images/edits`
+        // 各含裸、`/v1/`、`/v1/v1/`、`/codex/v1/` 四前缀形态（对齐 cc-switch `server.rs:299-425`）。
+        // 这些端点体里没有聚合模型选择器，故不做 Stack 解码，原样转发默认那家。
+        case ("POST", "/alpha/search"),
+             ("POST", "/v1/alpha/search"),
+             ("POST", "/v1/v1/alpha/search"),
+             ("POST", "/codex/v1/alpha/search"),
+             ("POST", "/images/generations"),
+             ("POST", "/v1/images/generations"),
+             ("POST", "/v1/v1/images/generations"),
+             ("POST", "/codex/v1/images/generations"),
+             ("POST", "/images/edits"),
+             ("POST", "/v1/images/edits"),
+             ("POST", "/v1/v1/images/edits"),
+             ("POST", "/codex/v1/images/edits"):
+            return .codexPassthrough
         case ("GET", "/health"),
              ("GET", "/status"):
             return .health

@@ -27,6 +27,15 @@ final class AggregationRouteTableTests: XCTestCase {
         }
     }
 
+    func test_protocolOf_alphaAndImagesEndpointsArePassthrough() {
+        XCTAssertEqual(AggregationRouteTable.protocolOf(method: "POST", path: "/alpha/search"), .codexPassthrough)
+        XCTAssertEqual(AggregationRouteTable.protocolOf(method: "POST", path: "/v1/alpha/search"), .codexPassthrough)
+        XCTAssertEqual(AggregationRouteTable.protocolOf(method: "POST", path: "/codex/v1/alpha/search"), .codexPassthrough)
+        XCTAssertEqual(AggregationRouteTable.protocolOf(method: "POST", path: "/images/generations"), .codexPassthrough)
+        XCTAssertEqual(AggregationRouteTable.protocolOf(method: "POST", path: "/v1/v1/images/edits"), .codexPassthrough)
+        XCTAssertEqual(AggregationRouteTable.protocolOf(method: "POST", path: "/codex/v1/images/generations"), .codexPassthrough)
+    }
+
     func test_protocolOf_unknownPathOrMethodIsUnsupported() {
         XCTAssertEqual(AggregationRouteTable.protocolOf(method: "GET", path: "/v1/messages"), .unsupported)
         XCTAssertEqual(AggregationRouteTable.protocolOf(method: "POST", path: "/v1/embeddings"), .unsupported)

@@ -170,6 +170,20 @@ final class AggregationProxy: AggregationProxying {
                 statusCode: 200,
                 body: Self.openAIModelListBody(published: modelLister.publishedModels(tool: .codex))
             ))
+        // 透明端点（SPEC §9 / cc-switch `server.rs:299-425`）：alpha/images 体里没有聚合模型选择器，
+        // 故**不做 Stack 解码**——请求体原样（连 `model` 字段也不看不改），只转发当前默认那家。
+        // 拿默认目标用空模型名解析：`decode("")` 恒为 `.plain`，聚合 id 分支（`.hit`）不可达。
+        // 没有默认目标时按 cc-switch 的 `NoProvidersConfigured` 回 **503**——不复用上面解码路径的 400
+        // （那套信封语义是「模型选错了」，这里是「一家都没配」）。
+        case .codexPassthrough:
+            guard case .plain(let target) = resolver.resolve(tool: .codex, model: "") else {
+                return .respond(Self.missResponse(
+                    statusCode: 503,
+                    message: "OmniForge has no default provider configured for passthrough (NoProvidersConfigured)",
+                    protocol: clientProtocol
+                ))
+            }
+            return .forward(request: request, target: target, protocol: clientProtocol)
         case .anthropicMessages, .openAIResponses, .openAIChatCompletions:
             guard let tool = clientProtocol.modelIDTool else {
                 return .respond(Self.jsonResponse(statusCode: 404, body: ["error": "not_found"]))
@@ -429,7 +443,8 @@ final class AggregationProxy: AggregationProxying {
         switch `protocol` {
         case .anthropicMessages:
             body = ["type": "error", "error": ["type": "invalid_request_error", "message": message]]
-        case .openAIResponses, .openAIChatCompletions:
+        // 透明端点是 Codex 形状的端点（凭证头同口径），错误信封也按 OpenAI 形状给。
+        case .openAIResponses, .openAIChatCompletions, .codexPassthrough:
             body = ["error": ["message": message, "type": "invalid_request_error",
                               "param": "model", "code": "model_not_found"]]
         case .modelDiscovery, .health, .websocketProbe, .unsupported:
