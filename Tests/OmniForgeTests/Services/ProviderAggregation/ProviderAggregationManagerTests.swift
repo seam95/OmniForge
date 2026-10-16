@@ -169,6 +169,47 @@ final class ProviderAggregationManagerTests: XCTestCase {
         XCTAssertEqual(claudeWriter.applyCount, writesBefore)
     }
 
+    // MARK: - 成员兼容开关合并
+
+    func test_enterAggregation_passesOnlyDefaultMemberSwitchesWhenAlone() throws {
+        profileStore.stubProfiles = [
+            ProviderProfile(
+                id: "kimi", name: "Kimi", tool: .claudeCode,
+                baseURL: "https://api.kimi.com/coding", token: "sk-kimi",
+                stackModels: [ClaudeStackModel(model: "k3", displayName: "Kimi K3", oneM: false)],
+                extraEnv: ["ENABLE_TOOL_SEARCH": "1"]
+            )
+        ]
+        manager = makeManager()
+        try manager.enterAggregation(tool: .claudeCode, defaultProfileID: "kimi")
+        // 只有默认一家 → 合并不执行，默认那家的开关原样进投影
+        XCTAssertEqual(claudeWriter.lastMemberSwitches, ["ENABLE_TOOL_SEARCH": "1"])
+    }
+
+    func test_addMember_mergesMemberSwitchesIntoProjection() throws {
+        profileStore.stubProfiles = [
+            ProviderProfile(
+                id: "kimi", name: "Kimi", tool: .claudeCode,
+                baseURL: "https://api.kimi.com/coding", token: "sk-kimi",
+                stackModels: [ClaudeStackModel(model: "k3", displayName: "Kimi K3", oneM: false)],
+                extraEnv: ["ENABLE_TOOL_SEARCH": "1"]
+            ),
+            ProviderProfile(
+                id: "glm", name: "GLM", tool: .claudeCode,
+                baseURL: "https://open.bigmodel.cn/api/anthropic", token: "sk-glm",
+                extraEnv: ["CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "true", "ENABLE_TOOL_SEARCH": "yes"]
+            ),
+        ]
+        manager = makeManager()
+        try manager.enterAggregation(tool: .claudeCode, defaultProfileID: "kimi")
+        try manager.addMember("glm")
+        // ANY 组取第一个"要关"成员的原值；ALL 组保留默认那家的既有值（不是成员的 yes）
+        XCTAssertEqual(claudeWriter.lastMemberSwitches, [
+            "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "true",
+            "ENABLE_TOOL_SEARCH": "1",
+        ])
+    }
+
     // MARK: - 部分写入与看门狗
 
     func test_partialFailureReportsPartialTrueAfterPublish() throws {
@@ -293,35 +334,50 @@ private final class StubStaleDetector: CodexStaleClientDetecting {
     }
 }
 
-/// Claude 写入桩：digest 以「已应用过的发布模型 id 列表」为磁盘现状口径——
-/// 名单不变 → 投影不变 → 跳过重写。
+/// Claude 写入桩：digest 以「已应用过的发布模型 id 列表 + 成员开关」为磁盘现状口径——
+/// 名单/开关不变 → 投影不变 → 跳过重写。
 private final class StubClaudeWriter: AggregationClaudeConfigWriting {
     var lastAppliedPort: UInt16?
     var lastDefaultProfile: ProviderProfile?
+    var lastMemberSwitches: [String: String]?
     var applyCount = 0
     var stubApplyError: Error?
     private var appliedPublished: [AggregationPublishedModel] = []
+    private var appliedSwitches: [String: String] = [:]
 
-    func applyAggregation(defaultProfile: ProviderProfile, published: [AggregationPublishedModel], port: UInt16) throws {
+    func applyAggregation(
+        defaultProfile: ProviderProfile,
+        published: [AggregationPublishedModel],
+        port: UInt16,
+        memberSwitches: [String: String]
+    ) throws {
         if let stubApplyError { throw stubApplyError }
         lastAppliedPort = port
         lastDefaultProfile = defaultProfile
+        lastMemberSwitches = memberSwitches
         appliedPublished = published
+        appliedSwitches = memberSwitches
         applyCount += 1
     }
 
     func clearAggregation() throws {}
 
     func currentContractDigest() -> String {
-        Self.digest(of: appliedPublished)
+        Self.digest(of: appliedPublished, switches: appliedSwitches)
     }
 
-    func projectedContractDigest(defaultProfile: ProviderProfile, published: [AggregationPublishedModel], port: UInt16) -> String {
-        Self.digest(of: published)
+    func projectedContractDigest(
+        defaultProfile: ProviderProfile,
+        published: [AggregationPublishedModel],
+        port: UInt16,
+        memberSwitches: [String: String]
+    ) -> String {
+        Self.digest(of: published, switches: memberSwitches)
     }
 
-    private static func digest(of published: [AggregationPublishedModel]) -> String {
-        published.map(\.id).joined(separator: "|")
+    private static func digest(of published: [AggregationPublishedModel], switches: [String: String]) -> String {
+        published.map(\.id).joined(separator: "|") + "#"
+            + switches.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: "&")
     }
 }
 

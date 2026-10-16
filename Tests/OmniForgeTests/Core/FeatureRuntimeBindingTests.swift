@@ -314,10 +314,20 @@ private final class BindingStubStaleDetector: CodexStaleClientDetecting {
 }
 
 private final class BindingStubClaudeWriter: AggregationClaudeConfigWriting {
-    func applyAggregation(defaultProfile: ProviderProfile, published: [AggregationPublishedModel], port: UInt16) throws {}
+    func applyAggregation(
+        defaultProfile: ProviderProfile,
+        published: [AggregationPublishedModel],
+        port: UInt16,
+        memberSwitches: [String: String]
+    ) throws {}
     func clearAggregation() throws {}
     func currentContractDigest() -> String { "" }
-    func projectedContractDigest(defaultProfile: ProviderProfile, published: [AggregationPublishedModel], port: UInt16) -> String { "" }
+    func projectedContractDigest(
+        defaultProfile: ProviderProfile,
+        published: [AggregationPublishedModel],
+        port: UInt16,
+        memberSwitches: [String: String]
+    ) -> String { "" }
 }
 
 private final class BindingStubCodexWriter: AggregationCodexConfigWriting {

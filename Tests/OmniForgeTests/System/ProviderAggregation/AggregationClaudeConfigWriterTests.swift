@@ -208,6 +208,48 @@ final class AggregationClaudeConfigWriterTests: XCTestCase {
         XCTAssertEqual((root["env"] as? [String: Any])?["SOME_USER_KEY"] as? String, "keep-me")
     }
 
+    // MARK: - 成员兼容开关合并（AggregationSwitchMerger 的结果在拥有键清理后写入）
+
+    func test_applyAggregation_writesMergedMemberSwitchesAfterOwnedKeyClearing() throws {
+        // 直连残留的开关键先被清掉，再由合并结果写入——否则成员自己的开关被静默丢弃。
+        try writeSettings([
+            "env": [
+                "ENABLE_TOOL_SEARCH": "0",
+                "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "false",
+                "SOME_USER_KEY": "keep-me",
+            ]
+        ])
+        try writer.applyAggregation(
+            defaultProfile: kimi, published: [kimiK3], port: 15721,
+            memberSwitches: ["ENABLE_TOOL_SEARCH": "1", "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "true"]
+        )
+        let env = try XCTUnwrap(try readSettings()["env"] as? [String: Any])
+        XCTAssertEqual(env["ENABLE_TOOL_SEARCH"] as? String, "1")
+        XCTAssertEqual(env["CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS"] as? String, "true")
+        XCTAssertEqual(env["SOME_USER_KEY"] as? String, "keep-me", "非拥有键原样保留")
+    }
+
+    func test_applyAggregation_emptyPublishAlsoWritesMemberSwitches() throws {
+        // 空发布路径同样写合并键：开关与发布内容正交（SPEC §2 无空发布豁免）。
+        try writer.applyAggregation(
+            defaultProfile: kimi, published: [], port: 15721,
+            memberSwitches: ["CLAUDE_CODE_AUTO_MODE_SERVER": "false"]
+        )
+        let root = try readSettings()
+        XCTAssertEqual((root["env"] as? [String: Any])?["CLAUDE_CODE_AUTO_MODE_SERVER"] as? String, "false")
+        XCTAssertNil(root["modelPicker"], "空发布仍不写 modelPicker（Task 1 行为不回归）")
+    }
+
+    func test_projectedContractDigest_coversMemberSwitches() {
+        // 「未变更不重写」闸门必须看得见开关变化，否则只改开关的投影会被悄悄跳过。
+        let before = writer.projectedContractDigest(defaultProfile: kimi, published: [kimiK3], port: 15721)
+        let after = writer.projectedContractDigest(
+            defaultProfile: kimi, published: [kimiK3], port: 15721,
+            memberSwitches: ["ENABLE_TOOL_SEARCH": "1"]
+        )
+        XCTAssertNotEqual(before, after)
+    }
+
     // MARK: - 退出清理
 
     func test_clearAggregation_removesModelPickerAndOwnedKeys() throws {

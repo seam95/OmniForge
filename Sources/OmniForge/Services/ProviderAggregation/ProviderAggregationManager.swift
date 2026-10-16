@@ -474,9 +474,11 @@ final class ProviderAggregationManager: ObservableObject {
         let changed: Bool
         switch tool {
         case .claudeCode:
+            let memberSwitches = mergedSwitches(tool: tool, defaultProfile: defaultProfile)
             changed = claudeWriter.currentContractDigest()
                 != claudeWriter.projectedContractDigest(
-                    defaultProfile: defaultProfile, published: published, port: port
+                    defaultProfile: defaultProfile, published: published, port: port,
+                    memberSwitches: memberSwitches
                 )
         case .codex:
             changed = codexWriter.currentContractDigest()
@@ -494,13 +496,25 @@ final class ProviderAggregationManager: ObservableObject {
         let published = publishedModels(tool: tool)
         switch tool {
         case .claudeCode:
-            try claudeWriter.applyAggregation(defaultProfile: defaultProfile, published: published, port: port)
+            try claudeWriter.applyAggregation(
+                defaultProfile: defaultProfile, published: published, port: port,
+                memberSwitches: mergedSwitches(tool: tool, defaultProfile: defaultProfile)
+            )
         case .codex:
             try codexWriter.applyAggregation(
                 defaultProfile: defaultProfile, published: published, port: port,
                 requiresOpenAIAuth: loginStashStore.hasNativeLogin
             )
         }
+    }
+
+    /// 成员兼容开关合并：底子=默认那家，`others`=名单内其余成员（名单序）。
+    /// 合并源 = 名单内该工具全部成员的 `extraEnv`（见 `AggregationSwitchMerger`）。
+    private func mergedSwitches(tool: ProviderTool, defaultProfile: ProviderProfile) -> [String: String] {
+        let others = stack.toolStack(tool).members
+            .filter { $0 != defaultProfile.id }
+            .compactMap { id in profiles.first(where: { $0.id == id }) }
+        return AggregationSwitchMerger.mergedValues(defaultProfile: defaultProfile, others: others)
     }
 
     /// Codex 投影写后记录目录代（陈旧客户端检测的基准）。

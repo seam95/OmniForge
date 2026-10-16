@@ -1,17 +1,24 @@
 import Foundation
 
 /// Claude Code 聚合配置写入边界。
+///
+/// `memberSwitches`：成员兼容开关合并结果（`AggregationSwitchMerger`，ANY/ALL 两组语义）。
+/// 投影先清掉全部拥有 env 键再写聚合键——少了这一步，每个成员自己配的兼容开关
+/// （`CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS`、`ENABLE_TOOL_SEARCH`…）会被静默丢弃。
+/// 该键参与协议对称（Codex 侧无对应开关），并同时进 `projectedContractDigest`——
+/// 否则只改开关的投影变化对「未变更不重写」闸门不可见，重写会被悄悄跳过。
 protocol AggregationClaudeConfigWriting: AnyObject {
-    func applyAggregation(defaultProfile: ProviderProfile, published: [AggregationPublishedModel], port: UInt16) throws
+    func applyAggregation(defaultProfile: ProviderProfile, published: [AggregationPublishedModel], port: UInt16, memberSwitches: [String: String]) throws
     func clearAggregation() throws
     /// 磁盘现状的契约摘要（供「未变更不重写」比对）。
     func currentContractDigest() -> String
     /// 给定投影的契约摘要（不落盘）。
-    func projectedContractDigest(defaultProfile: ProviderProfile, published: [AggregationPublishedModel], port: UInt16) -> String
+    func projectedContractDigest(defaultProfile: ProviderProfile, published: [AggregationPublishedModel], port: UInt16, memberSwitches: [String: String]) -> String
 }
 
 /// `~/.claude/settings.json` 聚合投影：裸 origin 指向本机代理、占位凭证、
-/// 四档别名共享首个 Stack id（haiku 剥 1M）、顶层 `modelPicker`、MAX 窗口取非 1M 最小值。
+/// 四档别名共享首个 Stack id（haiku 剥 1M）、顶层 `modelPicker`、MAX 窗口取非 1M 最小值、
+/// 拥有键清理后写入成员兼容开关合并结果（`memberSwitches`）。
 /// **空发布**（用户主动清空 `stackModels`）时不写 `modelPicker`，四档别名回落默认那家直连口径。
 /// 只动拥有键，用户其余设置原样保留。
 /// `defaultProfile` 参与协议对称（Codex 侧需要）——非空发布的 Claude 投影完全由 `published` 计算；
@@ -28,8 +35,15 @@ final class AggregationClaudeConfigWriter: AggregationClaudeConfigWriting {
         self.fileManager = fileManager
     }
 
-    func applyAggregation(defaultProfile: ProviderProfile, published: [AggregationPublishedModel], port: UInt16) throws {
-        let root = projectedRoot(defaultProfile: defaultProfile, published: published, port: port)
+    func applyAggregation(
+        defaultProfile: ProviderProfile,
+        published: [AggregationPublishedModel],
+        port: UInt16,
+        memberSwitches: [String: String] = [:]
+    ) throws {
+        let root = projectedRoot(
+            defaultProfile: defaultProfile, published: published, port: port, memberSwitches: memberSwitches
+        )
         try SettingsJSONFile.writeRoot(root, to: settingsURL, fileManager: fileManager)
     }
 
@@ -38,20 +52,38 @@ final class AggregationClaudeConfigWriter: AggregationClaudeConfigWriting {
         return AggregationContractDigest.claude(projectedRoot: root)
     }
 
-    func projectedContractDigest(defaultProfile: ProviderProfile, published: [AggregationPublishedModel], port: UInt16) -> String {
+    func projectedContractDigest(
+        defaultProfile: ProviderProfile,
+        published: [AggregationPublishedModel],
+        port: UInt16,
+        memberSwitches: [String: String] = [:]
+    ) -> String {
         AggregationContractDigest.claude(
-            projectedRoot: projectedRoot(defaultProfile: defaultProfile, published: published, port: port)
+            projectedRoot: projectedRoot(
+                defaultProfile: defaultProfile, published: published, port: port, memberSwitches: memberSwitches
+            )
         )
     }
 
     /// 聚合投影（纯合并，不落盘）：当前 root 上合并拥有键与顶层 `modelPicker`。
-    func projectedRoot(defaultProfile: ProviderProfile, published: [AggregationPublishedModel], port: UInt16) -> [String: Any] {
+    func projectedRoot(
+        defaultProfile: ProviderProfile,
+        published: [AggregationPublishedModel],
+        port: UInt16,
+        memberSwitches: [String: String] = [:]
+    ) -> [String: Any] {
         var root = (try? SettingsJSONFile.readRoot(from: settingsURL, fileManager: fileManager)) ?? [:]
         var env = (root["env"] as? [String: Any]) ?? [:]
 
         // 只动拥有键：先清掉全部拥有 env 键（直连模式残留的模型/窗口键），再写聚合投影。
         for key in ProviderTool.claudeOwnedEnvKeys {
             env.removeValue(forKey: key)
+        }
+
+        // 成员兼容开关合并结果在清理后写入（见 `AggregationSwitchMerger`）。
+        // 空/非空发布两条路径都写：开关与发布内容正交（SPEC §2 无空发布豁免）。
+        for (key, value) in memberSwitches {
+            env[key] = value
         }
 
         // 代理裸 origin（无路径后缀）+ 占位凭证。
