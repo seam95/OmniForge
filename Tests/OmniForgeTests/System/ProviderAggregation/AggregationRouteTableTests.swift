@@ -77,6 +77,28 @@ final class AggregationRouteTableTests: XCTestCase {
         XCTAssertNil(rewritten["accept-encoding"])
     }
 
+    func test_rewrittenHeaders_anthropicMergesClaudeCodeBetaAndBackfillsVersion() {
+        // anthropic-beta：客户端已有其他 beta → 合并去重并确保含 claude-code-20250219（cc-switch forwarder.rs:2364-2392）
+        let merged = AggregationUpstream.rewrittenHeaders(
+            ["anthropic-beta": "context-1m-2025-08-07", "content-type": "application/json"],
+            credential: "sk-real", protocol: .anthropicMessages)
+        let betas = Set((merged["anthropic-beta"] ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
+        XCTAssertTrue(betas.contains("claude-code-20250219"))
+        XCTAssertTrue(betas.contains("context-1m-2025-08-07"))
+
+        // anthropic-version：缺失补 2023-06-01（cc-switch forwarder.rs:2629-2635）
+        XCTAssertEqual(merged["anthropic-version"], "2023-06-01")
+
+        // 客户端已有 version → 原样保留
+        let kept = AggregationUpstream.rewrittenHeaders(["anthropic-version": "2024-01-01"],
+            credential: "sk", protocol: .anthropicMessages)
+        XCTAssertEqual(kept["anthropic-version"], "2024-01-01")
+
+        // 无 beta 头 → 仅写 claude-code-20250219
+        let fresh = AggregationUpstream.rewrittenHeaders([:], credential: "sk", protocol: .anthropicMessages)
+        XCTAssertEqual(fresh["anthropic-beta"], "claude-code-20250219")
+    }
+
     func test_rewrittenHeaders_usesBearerForOpenAIProtocols() {
         let headers = ["authorization": "Bearer PROXY_MANAGED"]
         let rewritten = AggregationUpstream.rewrittenHeaders(headers, credential: "sk-real", protocol: .openAIResponses)
