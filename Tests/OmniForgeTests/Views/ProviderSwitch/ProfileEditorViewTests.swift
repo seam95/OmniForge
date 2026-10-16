@@ -261,4 +261,116 @@ final class ProfileEditorViewTests: XCTestCase {
             try? pngData.write(to: outURL)
         }
     }
+
+    /// 回归（Task 6 修复轮）：编辑既有 Codex 档案时，平行数组（显示名/窗口）必须随保存保留。
+    /// 窗口没有编辑 UI（SPEC 7「仅数据层」），保存路径自身就是唯一的保留点——
+    /// 少了它，Task 11 的显示名输入也只能生效一次，下次编辑即静默丢失。
+    ///
+    /// 驱动的是 `save()` 拆出的构造入口 `makeProfile`（`save()` 只是把表单值喂给它）：
+    /// 视图 `@State` 只在渲染生命周期内有效，未渲染的视图实例上写状态再读回得到的是初值
+    /// （已实证），单测无法直接点 `save()`，故覆盖到构造 + 真实落盘往返这一层。
+    @MainActor
+    func test_save_codexProfilePreservesParallelModelArrays() throws {
+        let (manager, profileStore) = try makeEditorHarness()
+
+        let existing = ProviderProfile(
+            id: "kimi",
+            name: "Kimi 月之暗面",
+            tool: .codex,
+            baseURL: "https://api.kimi.com/v1",
+            token: "sk-kimi",
+            codexModels: ["kimi-k3", "kimi-k2"],
+            modelDisplayNames: ["Kimi K3", ""],
+            modelContextWindows: ["400000", ""],
+            extraEnv: [:],
+            managedBy: ProviderProfile.managedByMarker
+        )
+
+        // 打开编辑器 → 不改任何字段直接保存。
+        let view = ProfileEditorView(manager: manager, strings: Strings.zhHans, tool: .codex, profile: existing)
+        let saved = view.makeProfile(
+            name: existing.name,
+            baseURL: existing.baseURL,
+            token: existing.token,
+            modelOverride: nil,
+            reasoningEffort: nil,
+            codexModels: existing.codexModels,
+            modelMapping: nil,
+            extraEnv: [:]
+        )
+
+        XCTAssertEqual(saved.id, "kimi", "编辑既有档案保留原 id")
+        XCTAssertEqual(saved.managedBy, ProviderProfile.managedByMarker)
+        XCTAssertEqual(saved.modelDisplayNames, ["Kimi K3", ""], "显示名平行数组必须随保存保留")
+        XCTAssertEqual(saved.modelContextWindows, ["400000", ""], "窗口平行数组必须随保存保留")
+
+        try manager.upsertProfile(saved)
+        let listed = profileStore.list(for: .codex)
+        XCTAssertEqual(listed.count, 1)
+        XCTAssertEqual(listed[0].codexModels, ["kimi-k3", "kimi-k2"], "模型列表本身不得丢")
+        XCTAssertEqual(listed[0].modelDisplayNames, ["Kimi K3", ""], "落盘往返后显示名仍在")
+        XCTAssertEqual(listed[0].modelContextWindows, ["400000", ""], "落盘往返后窗口仍在")
+        XCTAssertEqual(
+            listed[0].codexModelEntries.map(\.displayName),
+            ["Kimi K3", nil],
+            "保留后条目仍按位取到显示名"
+        )
+    }
+
+    /// 新增档案（无既有 profile）→ 平行数组为 nil，不会凭空造出键。
+    @MainActor
+    func test_save_newCodexProfileHasNoParallelArrays() throws {
+        let (manager, profileStore) = try makeEditorHarness()
+
+        let view = ProfileEditorView(manager: manager, strings: Strings.zhHans, tool: .codex)
+        let saved = view.makeProfile(
+            name: "Kimi 月之暗面",
+            baseURL: "https://api.kimi.com/v1",
+            token: "sk-kimi",
+            modelOverride: nil,
+            reasoningEffort: nil,
+            codexModels: ["kimi-k3"],
+            modelMapping: nil,
+            extraEnv: [:]
+        )
+
+        XCTAssertNil(saved.modelDisplayNames)
+        XCTAssertNil(saved.modelContextWindows)
+
+        try manager.upsertProfile(saved)
+        let text = try String(
+            contentsOf: profileStore.directory(for: .codex)
+                .appendingPathComponent("kimi-yue-zhi-an-mian.config.toml")
+        )
+        XCTAssertFalse(text.contains("model_display_names"))
+        XCTAssertFalse(text.contains("model_context_windows"))
+    }
+
+    /// 编辑器测试共用的落盘harness：临时目录 + 真实 `ProviderProfileStore`（与既有渲染快照测试同一套）。
+    @MainActor
+    private func makeEditorHarness() throws -> (ProviderSwitchManager, ProviderProfileStore) {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ProfileEditorViewTests_\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        let claudeDir = tmp.appendingPathComponent("claude_profiles")
+        let codexDir = tmp.appendingPathComponent("codex_profiles")
+        let backupDir = tmp.appendingPathComponent("backups")
+        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: codexDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: backupDir, withIntermediateDirectories: true)
+
+        let claudeConfigURL = tmp.appendingPathComponent("settings.json")
+        let codexConfigURL = tmp.appendingPathComponent("config.toml")
+
+        let profileStore = ProviderProfileStore(claudeProfileDirectory: claudeDir, codexProfileDirectory: codexDir)
+        let manager = ProviderSwitchManager(
+            claudeStore: ClaudeSettingsStore(settingsURL: claudeConfigURL),
+            codexStore: CodexConfigStore(configURL: codexConfigURL),
+            backupStore: ProviderBackupStore(backupDirectory: backupDir),
+            profileStore: profileStore,
+            claudeConfigURL: claudeConfigURL,
+            codexConfigURL: codexConfigURL
+        )
+        return (manager, profileStore)
+    }
 }

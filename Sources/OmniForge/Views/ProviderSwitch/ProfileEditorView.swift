@@ -656,20 +656,15 @@ struct ProfileEditorView: View {
     }
 
     private func save() {
-        let profileName = trimmed(name)
-        let profile = ProviderProfile(
-            id: self.profile?.id ?? ProviderProfile.slugify(profileName),
-            name: profileName,
-            tool: tool,
+        let profile = makeProfile(
+            name: trimmed(name),
             baseURL: trimmed(baseURL),
             token: trimmed(token),
             modelOverride: tool == .codex ? nil : emptyToNil(trimmed(model)),
             reasoningEffort: tool == .codex ? emptyToNil(trimmed(reasoningEffort)) : nil,
             codexModels: codexModelsForSave,
             modelMapping: tool == .claudeCode ? makeMapping() : nil,
-            extraEnv: tool == .claudeCode ? extraEnv : [:],
-            // 收编外部文件时保留原来源标记；本 App 新建一律打 omniforge
-            managedBy: self.profile?.managedBy ?? ProviderProfile.managedByMarker
+            extraEnv: tool == .claudeCode ? extraEnv : [:]
         )
         do {
             try manager.upsertProfile(profile)
@@ -679,6 +674,44 @@ struct ProfileEditorView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// 由「表单当前值 + 既有档案」构造待保存档案。
+    ///
+    /// 入参显式化而非直接读 `@State`：视图状态只在渲染生命周期内有效（未渲染的视图实例上
+    /// 写 `@State` 再读回得到的是初值，已实证），单测因此无法直接驱动 `save()`；把构造拆成
+    /// 纯函数即可覆盖「保存到底保留了哪些字段、丢了哪些字段」。
+    ///
+    /// 身份与来源标记、以及 Codex 成员模型的显示名/窗口平行数组一律取既有档案：
+    /// 后两者在本表单没有编辑 UI（窗口按 SPEC 7 只做数据层），保存路径自身就是唯一的保留点，
+    /// 少了它每次编辑都会把两者抹掉。平行数组与 `codexModels` 可能不等长——读取侧按位 zip、
+    /// 越界即缺省，不会崩，也不会把已删模型之前的显示名串位。
+    func makeProfile(
+        name: String,
+        baseURL: String,
+        token: String,
+        modelOverride: String?,
+        reasoningEffort: String?,
+        codexModels: [String]?,
+        modelMapping: ProviderModelMapping?,
+        extraEnv: [String: String]
+    ) -> ProviderProfile {
+        ProviderProfile(
+            id: self.profile?.id ?? ProviderProfile.slugify(name),
+            name: name,
+            tool: tool,
+            baseURL: baseURL,
+            token: token,
+            modelOverride: modelOverride,
+            reasoningEffort: reasoningEffort,
+            codexModels: codexModels,
+            modelMapping: modelMapping,
+            modelDisplayNames: self.profile?.modelDisplayNames,
+            modelContextWindows: self.profile?.modelContextWindows,
+            extraEnv: extraEnv,
+            // 收编外部文件时保留原来源标记；本 App 新建一律打 omniforge
+            managedBy: self.profile?.managedBy ?? ProviderProfile.managedByMarker
+        )
     }
 
     /// Codex 待保存模型列表：丢空白行与空行，全空 → nil（不指定模型）。
