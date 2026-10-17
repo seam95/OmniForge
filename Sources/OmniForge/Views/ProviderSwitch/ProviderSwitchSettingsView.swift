@@ -41,8 +41,6 @@ struct ProviderSwitchSettingsView: View {
     /// 发起收编的展示中工具（Host displayedTool，收编确认时使用发起时目标）。
     @State private var adoptingTool: ProviderTool = .claudeCode
     @State private var confirmingRebuildTool: ProviderTool?
-    @State private var confirmingEnterTool: ProviderTool?
-    @State private var confirmingExitTool: ProviderTool?
     @State private var editorTool: ProviderTool?
     @State private var backupTool: ProviderTool?
     @State private var toastMessage: String?
@@ -102,10 +100,11 @@ struct ProviderSwitchSettingsView: View {
                             strings: strings,
                             isTransitioning: isTransitioningMode,
                             onToggleRequest: { wantOn in
+                                // 模式切换无确认框：拨动即执行进入/退出，结果由 toast 反馈。
                                 if wantOn {
-                                    confirmingEnterTool = tool
+                                    enterAggregation(tool: tool)
                                 } else {
-                                    confirmingExitTool = tool
+                                    exitAggregation(tool: tool)
                                 }
                             }
                         )
@@ -199,49 +198,6 @@ struct ProviderSwitchSettingsView: View {
             Button(strings.providerFormCancel, role: .cancel) {}
         } message: {
             Text(strings.providerCorruptedRebuildConfirmMessage)
-        }
-        .confirmationDialog(
-            strings.providerAggregationConfirmTitle,
-            isPresented: Binding(
-                get: { confirmingEnterTool != nil },
-                set: { if !$0 { confirmingEnterTool = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button(strings.providerAggregationEnter) {
-                if let tool = confirmingEnterTool {
-                    enterAggregation(tool: tool)
-                }
-                confirmingEnterTool = nil
-            }
-            .accessibilityIdentifier(SettingsAccessibilityID.providerAggregationEnter.rawValue)
-            Button(strings.providerFormCancel, role: .cancel) {
-                confirmingEnterTool = nil
-            }
-        } message: {
-            if let tool = confirmingEnterTool {
-                enterConfirmMessage(for: tool)
-            }
-        }
-        .confirmationDialog(
-            strings.providerAggregationExit,
-            isPresented: Binding(
-                get: { confirmingExitTool != nil },
-                set: { if !$0 { confirmingExitTool = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button(strings.providerAggregationExit, role: .destructive) {
-                if let tool = confirmingExitTool {
-                    exitAggregation(tool: tool)
-                }
-                confirmingExitTool = nil
-            }
-            Button(strings.providerFormCancel, role: .cancel) {
-                confirmingExitTool = nil
-            }
-        } message: {
-            Text(strings.providerAggregationConfirmDirect)
         }
     }
 
@@ -803,30 +759,6 @@ struct ProviderSwitchSettingsView: View {
             return active
         }
         return manager.profiles(for: tool).first?.id
-    }
-
-    private func defaultCandidateIsOfficial(for tool: ProviderTool) -> Bool {
-        guard let id = defaultCandidateID(for: tool),
-              let profile = manager.profiles(for: tool).first(where: { $0.id == id }) else {
-            return false
-        }
-        return ProviderAggregationManager.isOfficial(profile)
-    }
-
-    @ViewBuilder
-    private func enterConfirmMessage(for tool: ProviderTool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(strings.providerAggregationConfirmStack)
-            Text(strings.providerAggregationConfirmDirect)
-            Text(strings.providerAggregationNoteDefault)
-            Text(strings.providerAggregationNoteNoFailover)
-            if tool == .codex {
-                Text(strings.providerAggregationNoteRestartCodex)
-            }
-            if defaultCandidateIsOfficial(for: tool) {
-                Text(strings.providerAggregationOfficialNote)
-            }
-        }
     }
 
     // MARK: - 弹窗绑定

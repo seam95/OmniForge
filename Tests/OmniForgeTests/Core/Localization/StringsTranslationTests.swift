@@ -63,7 +63,7 @@ final class StringsTranslationTests: XCTestCase {
         let names = Set(Mirror(reflecting: Strings.en).children.compactMap { $0.label })
         for key in ["providerModeDirect", "providerModeAggregation", "providerAggregationStatusLead",
                     "providerAggregationStatusValueFormat", "providerAggregationEnter", "providerAggregationExit",
-                    "providerAggregationConfirmTitle", "providerAggregationConfirmStack", "providerAggregationConfirmDirect",
+                    "providerAggregationConfirmStack", "providerAggregationConfirmDirect",
                     "providerAggregationNoteDefault", "providerAggregationNoteMembersFormat", "providerAggregationNoteEmpty",
                     "providerAggregationNoteNoFailover", "providerAggregationNoteRestartCodex",
                     "providerAggregationOfficialNote", "providerAggregationOfficialReason",
@@ -95,6 +95,13 @@ final class StringsTranslationTests: XCTestCase {
                     "providerCodexModelDisplayNamePlaceholder"] {
             XCTAssertTrue(names.contains(key), "missing \(key)")
         }
+    }
+
+    /// 聚合/直连模式切换已改为无确认框直切（开关与面板按钮点击即执行，结果由 toast 反馈）：
+    /// 确认框标题键必须已移除，防止回退到弹窗确认流程。
+    func test_translations_excludeRetiredAggregationConfirmTitle() {
+        let names = Set(Mirror(reflecting: Strings.en).children.compactMap { $0.label })
+        XCTAssertFalse(names.contains("providerAggregationConfirmTitle"), "残留本地化属性: providerAggregationConfirmTitle")
     }
 
     func test_accessibilityIDs_areDistinct() {

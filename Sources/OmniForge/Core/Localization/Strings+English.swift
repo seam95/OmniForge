@@ -1325,7 +1325,6 @@ extension Strings {
         providerAggregationStatusValueFormat: "%@ · %ld members · %ld models",
         providerAggregationEnter: "Switch to aggregation",
         providerAggregationExit: "Back to direct",
-        providerAggregationConfirmTitle: "Switch to aggregation mode?",
         providerAggregationConfirmStack: "Models from multiple providers appear in one model picker, and each request goes to its own upstream.",
         providerAggregationConfirmDirect: "Your direct configuration is backed up and restored automatically when you exit.",
         providerAggregationNoteDefault: "The default provider handles model names without a prefix.",

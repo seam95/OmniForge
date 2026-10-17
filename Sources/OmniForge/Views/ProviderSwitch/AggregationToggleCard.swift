@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 聚合模式置顶功能开关卡片（替代原第三层直连/聚合 Tab）：
 /// - 展示聚合功能图标、标题与实时运行摘要
-/// - 右端提供原生风格 Toggle 开关，开关操作触发进入/退出聚合确认流程
+/// - 右端提供原生风格 Toggle 开关，拨动即直接进入/退出聚合（无确认框，结果由 toast 反馈）
 /// - 开启时展示运行中绿色指示点与成员/模型数，关闭时展示可加入数量
 struct AggregationToggleCard: View {
     let tool: ProviderTool

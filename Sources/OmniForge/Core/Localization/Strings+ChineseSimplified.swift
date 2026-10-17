@@ -1325,7 +1325,6 @@ extension Strings {
         providerAggregationStatusValueFormat: "%@ · %ld 家成员 · %ld 个模型",
         providerAggregationEnter: "切换到聚合模式",
         providerAggregationExit: "回到直连",
-        providerAggregationConfirmTitle: "切换到聚合模式？",
         providerAggregationConfirmStack: "多家供应商的模型将同列于模型选择器，按所选模型直达对应上游。",
         providerAggregationConfirmDirect: "当前直连配置会先备份，退出聚合时自动还原。",
         providerAggregationNoteDefault: "默认那家承接不带前缀的模型请求。",

@@ -1480,11 +1480,9 @@ struct Strings: Equatable {
     let providerAggregationEnter: String
     /// 退出聚合模式动作。
     let providerAggregationExit: String
-    /// 切换确认框标题。
-    let providerAggregationConfirmTitle: String
-    /// 确认框：聚合形态说明。
+    /// 聚合形态说明（进入区卡片）。
     let providerAggregationConfirmStack: String
-    /// 确认框：直连配置备份说明。
+    /// 退出按钮悬浮提示：直连配置备份说明。
     let providerAggregationConfirmDirect: String
     /// 名单说明：默认那家职责。
     let providerAggregationNoteDefault: String
@@ -1496,7 +1494,7 @@ struct Strings: Equatable {
     let providerAggregationNoteNoFailover: String
     /// 名单说明：Codex 需重启。
     let providerAggregationNoteRestartCodex: String
-    /// 官方账号说明（确认框内）。
+    /// 官方账号说明（进入区特性行）。
     let providerAggregationOfficialNote: String
     /// 官方账号不可加入的原因（行内说明）。
     let providerAggregationOfficialReason: String

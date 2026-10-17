@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// 聚合面板：聚合池成员卡片（默认高亮排首位 + 附属成员）+ 可加入候选卡片 +
-/// 统一 40×40 品牌 Logo 与操作菜单 + 模式动作（进入/退出 + 确认框）+
+/// 统一 40×40 品牌 Logo 与操作菜单 + 模式动作（进入/退出直切，无确认框）+
 /// 代理未运行横幅 + Codex 陈旧客户端横幅 + 缓存提示。
 /// 进入/退出都经 `ProviderAggregationManager` 编排（先起代理后写配置）。
 struct AggregationPanelView: View {
@@ -13,8 +13,6 @@ struct AggregationPanelView: View {
     var onEditProfile: ((ProviderProfile) -> Void)? = nil
     var onDeleteProfile: ((ProviderProfile) -> Void)? = nil
 
-    @State private var confirmingEnter = false
-    @State private var confirmingExit = false
     @State private var confirmingRestartDaemon = false
     /// 刚退出的默认那家 id（「撤销」用——重新进入聚合）。
     @State private var undoDefaultID: String?
@@ -76,26 +74,6 @@ struct AggregationPanelView: View {
         .animation(Theme.Animation.snappy, value: manager.isAggregating(tool))
         .padding(.horizontal, 12)
         .providerToast(message: $toastMessage)
-        .confirmationDialog(
-            strings.providerAggregationConfirmTitle,
-            isPresented: $confirmingEnter,
-            titleVisibility: .visible
-        ) {
-            Button(strings.providerAggregationEnter) { enterAggregation() }
-            Button(strings.providerFormCancel, role: .cancel) {}
-        } message: {
-            enterConfirmMessage
-        }
-        .confirmationDialog(
-            strings.providerAggregationExit,
-            isPresented: $confirmingExit,
-            titleVisibility: .visible
-        ) {
-            Button(strings.providerAggregationExit, role: .destructive) { exitAggregation() }
-            Button(strings.providerFormCancel, role: .cancel) {}
-        } message: {
-            Text(strings.providerAggregationConfirmDirect)
-        }
         .confirmationDialog(
             strings.providerAggregationRestartDaemonConfirmTitle,
             isPresented: $confirmingRestartDaemon,
@@ -494,6 +472,10 @@ struct AggregationPanelView: View {
                     if tool == .codex {
                         featurePointRow(icon: "arrow.clockwise", text: strings.providerAggregationNoteRestartCodex)
                     }
+                    // 默认候选是官方账号时事前说明限制（原确认框内的提示，前移到点击前可见）。
+                    if defaultCandidateIsOfficial {
+                        featurePointRow(icon: "person.crop.circle", text: strings.providerAggregationOfficialNote)
+                    }
                 }
             }
             .padding(12)
@@ -508,7 +490,8 @@ struct AggregationPanelView: View {
             )
 
             Button {
-                confirmingEnter = true
+                // 进入聚合无确认框：点击即执行，结果由 toast 反馈。
+                enterAggregation()
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "bolt.fill")
@@ -540,7 +523,8 @@ struct AggregationPanelView: View {
 
     private var exitAction: some View {
         Button {
-            confirmingExit = true
+            // 退出聚合无确认框：点击即执行，结果由 toast 反馈。
+            exitAggregation()
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "arrow.triangle.swap")
@@ -562,14 +546,17 @@ struct AggregationPanelView: View {
         }
         .buttonStyle(.plain)
         .disabled(isTransitioning)
+        // 「直连配置会先备份、退出时自动还原」原为退出确认框正文，改挂悬浮提示保留该事实。
+        .help(strings.providerAggregationConfirmDirect)
         .padding(.top, 2)
         .accessibilityIdentifier(SettingsAccessibilityID.providerAggregationExit.rawValue)
     }
 
     private func undoAction(defaultID: String) -> some View {
         Button {
-            confirmingEnter = true
+            // 撤销（重新进入聚合）同样无确认框：带上刚退出的默认那家直接进入。
             undoDefaultID = defaultID
+            enterAggregation()
         } label: {
             Text(strings.providerAggregationUndo)
                 .font(.system(size: 11, weight: .medium))
@@ -577,21 +564,6 @@ struct AggregationPanelView: View {
         .buttonStyle(.plain)
         .disabled(isTransitioning)
         .foregroundStyle(Color.accentColor)
-    }
-
-    private var enterConfirmMessage: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(strings.providerAggregationConfirmStack)
-            Text(strings.providerAggregationConfirmDirect)
-            Text(strings.providerAggregationNoteDefault)
-            Text(strings.providerAggregationNoteNoFailover)
-            if tool == .codex {
-                Text(strings.providerAggregationNoteRestartCodex)
-            }
-            if defaultCandidateIsOfficial {
-                Text(strings.providerAggregationOfficialNote)
-            }
-        }
     }
 
     // MARK: - 提示行与缓存
