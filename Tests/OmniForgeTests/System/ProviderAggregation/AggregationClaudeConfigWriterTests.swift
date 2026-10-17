@@ -1,7 +1,7 @@
 import XCTest
 @testable import OmniForge
 
-/// Claude Code 聚合投影：modelPicker 落顶层、四档别名共享 Stack id（haiku 剥 1M）、
+/// Claude Code 聚合投影：modelPicker 落顶层、四档别名共享 Stack id（1M 模型四档都带标记）、
 /// 不写 ANTHROPIC_MODEL/子代理键、代理裸 origin + 占位凭证、MAX 窗口取非 1M 最小值、
 /// 只动拥有键、退出清理、窗口缩写、发布源顺序。
 /// 空发布（用户主动清空 stackModels）时不写 modelPicker，四档别名回落默认那家直连口径。
@@ -137,16 +137,25 @@ final class AggregationClaudeConfigWriterTests: XCTestCase {
         XCTAssertNil(env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"], "默认那家 extraEnv 无窗口值时不写")
     }
 
-    // MARK: - 四档别名同一个 Stack id，haiku 剥 1M
+    // MARK: - 四档别名同一个 Stack id，1M 模型四档都带标记
 
-    func test_applyAggregation_fourRoleAliasesShareOneStackIDAndHaikuStripsOneM() throws {
+    func test_applyAggregation_fourRoleAliasesShareOneStackIDWithOneMMarkerOnAllTiers() throws {
         try writer.applyAggregation(defaultProfile: zhipu1M, published: [zhipuGLM], port: 15721)
         let env = try XCTUnwrap(try readSettings()["env"] as? [String: Any])
         XCTAssertEqual(env["ANTHROPIC_DEFAULT_SONNET_MODEL"] as? String, "om-claude-zhipu--glm-5.2[1M]")
         XCTAssertEqual(env["ANTHROPIC_DEFAULT_OPUS_MODEL"] as? String, "om-claude-zhipu--glm-5.2[1M]")
         XCTAssertEqual(env["ANTHROPIC_DEFAULT_FABLE_MODEL"] as? String, "om-claude-zhipu--glm-5.2[1M]")
-        XCTAssertEqual(env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] as? String, "om-claude-zhipu--glm-5.2")
+        // Haiku 档同样带标记：Stack id 非 claude- 前缀，缺标记会被按 200K 窗口算（cc-switch 3d46e06c）。
+        XCTAssertEqual(env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] as? String, "om-claude-zhipu--glm-5.2[1M]")
         XCTAssertEqual(env["ANTHROPIC_DEFAULT_SONNET_MODEL_NAME"] as? String, "GLM 5.2")
+    }
+
+    /// 非 1M 模型默认时四档都不带标记——oneM 跟随发布源，而非恒定值。
+    func test_applyAggregation_nonOneMDefaultLeavesAllTiersUnmarked() throws {
+        try writer.applyAggregation(defaultProfile: kimi, published: [kimiK3], port: 15721)
+        let env = try XCTUnwrap(try readSettings()["env"] as? [String: Any])
+        XCTAssertEqual(env["ANTHROPIC_DEFAULT_SONNET_MODEL"] as? String, "om-claude-kimi--k3")
+        XCTAssertEqual(env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] as? String, "om-claude-kimi--k3")
     }
 
     // MARK: - 不写的键

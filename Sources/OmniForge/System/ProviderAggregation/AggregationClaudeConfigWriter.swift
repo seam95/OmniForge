@@ -17,7 +17,7 @@ protocol AggregationClaudeConfigWriting: AnyObject {
 }
 
 /// `~/.claude/settings.json` 聚合投影：裸 origin 指向本机代理、占位凭证、
-/// 四档别名共享首个 Stack id（haiku 剥 1M）、顶层 `modelPicker`、MAX 窗口取非 1M 最小值、
+/// 四档别名共享首个 Stack id（1M 模型四档都带 `[1M]` 标记）、顶层 `modelPicker`、MAX 窗口取非 1M 最小值、
 /// 拥有键清理后写入成员兼容开关合并结果（`memberSwitches`）。
 /// **空发布**（用户主动清空 `stackModels`）时不写 `modelPicker`，四档别名回落默认那家直连口径。
 /// 只动拥有键，用户其余设置原样保留。
@@ -91,15 +91,17 @@ final class AggregationClaudeConfigWriter: AggregationClaudeConfigWriting {
         env["ANTHROPIC_BASE_URL"] = "http://127.0.0.1:\(port)"
         env["ANTHROPIC_AUTH_TOKEN"] = AggregationProjectionSignature.placeholderToken
 
-        // 有发布 → 四档别名共享同一个 Stack id（haiku 剥 1M）+ 顶层 modelPicker；
+        // 有发布 → 四档别名共享同一个 Stack id（1M 模型四档都带标记）+ 顶层 modelPicker；
         // 空发布 → 不写 modelPicker，四档别名回落默认那家直连口径（见 else 分支）。
         if !published.isEmpty {
             if let first = published.first {
                 env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = first.id
                 env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = first.id
                 env["ANTHROPIC_DEFAULT_FABLE_MODEL"] = first.id
+                // Haiku 档也带 [1M]：Stack id 非 claude- 前缀，缺标记 Claude Code 会按
+                // 200K 算这一档；2.1.296 起对 Haiku 档同样认标记（cc-switch 3d46e06c 实测口径）。
                 env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = AggregationModelID.encode(
-                    tool: .claudeCode, key: first.key, model: first.model, oneM: false
+                    tool: .claudeCode, key: first.key, model: first.model, oneM: first.oneM
                 )
                 env["ANTHROPIC_DEFAULT_SONNET_MODEL_NAME"] = first.displayName
                 env["ANTHROPIC_DEFAULT_OPUS_MODEL_NAME"] = first.displayName
