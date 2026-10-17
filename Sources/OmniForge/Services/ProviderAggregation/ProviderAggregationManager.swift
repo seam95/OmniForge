@@ -47,6 +47,8 @@ final class ProviderAggregationManager: ObservableObject {
     private let codexWriter: AggregationCodexConfigWriting
     /// 生产装配的迟绑定（单测为 nil）——代理状态变化时喂新快照。
     private let proxyBinding: AggregationProxyBinding?
+    /// 模式切换成功后驱动直连激活态重算（生产装配传入 `ProviderSwitchManager`；nil = 不驱动）。
+    private let activationRefresher: ProviderActivationRefreshing?
     private var profiles: [ProviderProfile]
     private let fileManager: FileManager
 
@@ -62,7 +64,8 @@ final class ProviderAggregationManager: ObservableObject {
         codexWriter: AggregationCodexConfigWriting,
         profiles: [ProviderProfile],
         fileManager: FileManager = .default,
-        proxyBinding: AggregationProxyBinding? = nil
+        proxyBinding: AggregationProxyBinding? = nil,
+        activationRefresher: ProviderActivationRefreshing? = nil
     ) {
         self.profileStore = profileStore
         self.backupStore = backupStore
@@ -76,6 +79,7 @@ final class ProviderAggregationManager: ObservableObject {
         self.profiles = profiles
         self.fileManager = fileManager
         self.proxyBinding = proxyBinding
+        self.activationRefresher = activationRefresher
         stack = stackStore.load()
         isProxyRunning = proxy.isRunning
         resolvedPort = proxy.resolvedPort
@@ -201,6 +205,8 @@ final class ProviderAggregationManager: ObservableObject {
         lastPartialWrite = false
         commit(stack: newStack)
         try? pendingStore.clear()
+        // 与异步路径同一条契约：切换成功即驱动激活态重算。
+        activationRefresher?.refreshActivationState()
     }
 
     /// 异步非阻塞进入聚合（UI 优先使用）：先起代理，再将快照、pending 写盘、配置文件覆盖与
@@ -308,6 +314,9 @@ final class ProviderAggregationManager: ObservableObject {
 
             lastPartialWrite = false
             commit(stack: newStack)
+            // 模式已切换且投影已写盘：驱动直连激活态重算，避免 UI 缓存停留在旧值
+            // （退出不刷旧的根因修复，见 ProviderActivationRefreshing 注释）。
+            activationRefresher?.refreshActivationState()
         } catch let asyncError as AsyncEnterError {
             if asyncError.enteredPublished {
                 lastPartialWrite = true
@@ -341,6 +350,8 @@ final class ProviderAggregationManager: ObservableObject {
         newStack.setToolStack(toolStack, for: tool)
         commit(stack: newStack)
         stopProxyIfIdle(newStack)
+        // 与异步路径同一条契约：恢复直连即驱动激活态重算。
+        activationRefresher?.refreshActivationState()
     }
 
     /// 异步非阻塞退出聚合（UI 优先使用）：将快照恢复与文件写入移至后台线程，
@@ -390,6 +401,9 @@ final class ProviderAggregationManager: ObservableObject {
         newStack.setToolStack(toolStack, for: tool)
         commit(stack: newStack)
         stopProxyIfIdle(newStack)
+        // 配置已从快照恢复为直连态：驱动激活态重算，消除缓存里的投影态残留
+        // （2026-10-17 实测：退出聚合后「未托管配置」横幅常驻至重启）。
+        activationRefresher?.refreshActivationState()
     }
 
     // MARK: - 成员管理
@@ -549,11 +563,14 @@ final class ProviderAggregationManager: ObservableObject {
     // MARK: - 生产装配
 
     /// 生产实现装配（真实路径）。单测绕开它，直接用注入式 `init`。
+    /// `activationRefresher`：模式切换成功后驱动直连激活态重算（`FeatureFactory` 喂
+    /// `ProviderSwitchManager`；缺省 nil = 不驱动，仅单测/降级装配用）。
     static func production(
         homePath: String = FileManager.default.homeDirectoryForCurrentUser.path,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         applicationSupportRoot: URL? = nil,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        activationRefresher: ProviderActivationRefreshing? = nil
     ) -> ProviderAggregationManager {
         let root = applicationSupportRoot
             ?? (try? fileManager.url(
@@ -613,7 +630,8 @@ final class ProviderAggregationManager: ObservableObject {
             ),
             profiles: ProviderTool.allCases.flatMap { profileStore.list(for: $0) },
             fileManager: fileManager,
-            proxyBinding: binding
+            proxyBinding: binding,
+            activationRefresher: activationRefresher
         )
         binding.update(manager.proxySnapshot())
         return manager
@@ -776,6 +794,8 @@ final class ProviderAggregationManager: ObservableObject {
         newStack.setToolStack(toolStack, for: tool)
         commit(stack: newStack)
         stopProxyIfIdle(newStack)
+        // 与退出的两条路径同契约：配置恢复为直连态即驱动激活态重算。
+        activationRefresher?.refreshActivationState()
     }
 
     /// 前滚：按 pending 的新名单幂等补完投影（摘要未变则跳过）。

@@ -10,6 +10,10 @@ enum ActiveProvider: Equatable {
     case profile(profileID: String)
     /// 未托管配置：目标配置文件里存在、但匹配不到任何 profile 的供应商设置（SPEC 2.6）。
     case unmanaged(summary: String)
+    /// 聚合接管中：配置正指向本机聚合代理（回环地址 + 占位凭证投影）。
+    /// 与未托管的区别：这份设置是聚合功能的自有投影，退出聚合即按快照恢复，
+    /// 不该提示用户收编；判定特征见 `AggregationProjectionSignature`。
+    case aggregating
     /// 目标配置文件 JSON/TOML 损坏 → 不硬写，提示「备份并重建」（SPEC 2.8.2）。
     case unreadable
 

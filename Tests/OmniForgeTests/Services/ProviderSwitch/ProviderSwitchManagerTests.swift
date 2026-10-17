@@ -219,6 +219,35 @@ final class ProviderSwitchManagerTests: XCTestCase {
         XCTAssertEqual(manager.active(tool: .claudeCode), .unmanaged(summary: "https://manual.example"))
     }
 
+    /// 聚合投影态（回环地址 + 占位凭证）必须识别为「聚合接管中」而非未托管：
+    /// 否则聚合开启期间任何一次 refresh 都会把代理地址锁进激活态缓存，
+    /// 退出聚合恢复文件后仍显示「未托管配置」横幅（2026-10-17 实测回归）。
+    func test_refresh_detectsAggregatingWhenClaudeProjectionPresent() {
+        claudeStore.env = [
+            "ANTHROPIC_BASE_URL": "http://127.0.0.1:15721",
+            "ANTHROPIC_AUTH_TOKEN": AggregationProjectionSignature.placeholderToken,
+        ]
+        manager.refresh()
+        XCTAssertEqual(manager.active(tool: .claudeCode), .aggregating)
+    }
+
+    func test_refresh_detectsAggregatingWhenCodexProjectionPresent() {
+        codexStore.active = ("custom", "http://127.0.0.1:15721/v1", AggregationProjectionSignature.placeholderToken)
+        manager.refresh()
+        XCTAssertEqual(manager.active(tool: .codex), .aggregating)
+    }
+
+    /// 回环地址但凭证非占位符（用户自建本地 LLM，如 Ollama）仍判未托管——
+    /// 双条件防止把用户自己的本地服务误报成聚合中。
+    func test_refresh_detectsUnmanagedForLoopbackWithoutPlaceholderToken() {
+        claudeStore.env = [
+            "ANTHROPIC_BASE_URL": "http://127.0.0.1:11434",
+            "ANTHROPIC_AUTH_TOKEN": "sk-ollama",
+        ]
+        manager.refresh()
+        XCTAssertEqual(manager.active(tool: .claudeCode), .unmanaged(summary: "http://127.0.0.1:11434"))
+    }
+
     func test_refresh_detectsUnreadableWhenCorrupted() {
         claudeStore.envError = .corrupted(path: "settings.json")
         manager.refresh()

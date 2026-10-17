@@ -136,12 +136,16 @@ struct ProviderModeRow: View {
     }
 
     /// 聚合行摘要。未开启时标注可加入家数——有人可加入才值得点开；已开启时报家数与默认那家。
+    /// 生效态（`isAggregating`）优先于名单：退出聚合按设计保留成员名单（再开开关即恢复），
+    /// 只按名单判定会把「N 家 · 默认 X」留在已关闭的开关卡片上，与开面板时的
+    /// 「未开启 · N 家可加入」不一致。
     static func aggregationSummary(
         members: [ProviderAggregationManager.AggregationMemberView],
         joinableCount: Int,
+        isAggregating: Bool,
         strings: Strings
     ) -> String {
-        guard let defaultMember = members.first(where: { $0.isDefault }) else {
+        guard isAggregating, let defaultMember = members.first(where: { $0.isDefault }) else {
             return joinableCount > 0
                 ? String(format: strings.providerModeAggregationOffJoinableFormat, joinableCount)
                 : strings.providerModeAggregationOff

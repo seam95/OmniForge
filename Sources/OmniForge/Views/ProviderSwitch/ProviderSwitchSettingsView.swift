@@ -237,7 +237,7 @@ struct ProviderSwitchSettingsView: View {
             manager.profiles(for: tool).first(where: { $0.id == id })?.name
         case .unmanaged(let summary):
             summary
-        case .official, .unreadable:
+        case .official, .unreadable, .aggregating:
             nil
         }
 
@@ -260,6 +260,7 @@ struct ProviderSwitchSettingsView: View {
                 summary: ProviderModeRow.aggregationSummary(
                     members: aggregation.members(tool: tool),
                     joinableCount: aggregation.joinableProfileIDs(tool: tool).count,
+                    isAggregating: isAggregating,
                     strings: strings
                 ),
                 isExpanded: panelMode == .aggregation,
@@ -399,7 +400,7 @@ struct ProviderSwitchSettingsView: View {
     private func isOfficialActive(tool: ProviderTool) -> Bool {
         switch manager.active(tool: tool) {
         case .official: return true
-        case .profile, .unmanaged, .unreadable: return false
+        case .profile, .unmanaged, .unreadable, .aggregating: return false
         }
     }
 
@@ -710,6 +711,7 @@ struct ProviderSwitchSettingsView: View {
         ProviderModeRow.aggregationSummary(
             members: aggregation.members(tool: tool),
             joinableCount: aggregation.joinableProfileIDs(tool: tool).count,
+            isAggregating: aggregation.isAggregating(tool),
             strings: strings
         )
     }

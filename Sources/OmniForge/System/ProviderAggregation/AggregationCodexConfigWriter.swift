@@ -41,8 +41,9 @@ final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
     let catalogURL: URL
     let fileManager: FileManager
 
-    /// 占位凭证 — 代理按目标替换为真实凭证；客户端侧只见此值（对齐 cc-switch `PROXY_MANAGED`）。
-    private static let placeholderToken = "PROXY_MANAGED"
+    /// 占位凭证 — 代理按目标替换为真实凭证；客户端侧只见此值。
+    /// 字面量与识别端（`ProviderSwitchManager.detectActive` 的聚合态判定）共用
+    /// `AggregationProjectionSignature.placeholderToken`，两侧不得各写一份。
 
     /// 本模式写入的顶层键（`codexOwnedTopLevelKeys` 中由聚合投影负责的那部分）——
     /// 退出聚合时摘除；窗口键直连模式可能也写，故一并清理。
@@ -182,7 +183,7 @@ final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
         document.setValue("custom", key: "name", table: customTable)
         document.setValue("http://127.0.0.1:\(port)/v1", key: "base_url", table: customTable)
         document.setValue("responses", key: "wire_api", table: customTable)
-        document.setValue(Self.placeholderToken, key: "experimental_bearer_token", table: customTable)
+        document.setValue(AggregationProjectionSignature.placeholderToken, key: "experimental_bearer_token", table: customTable)
         if requiresOpenAIAuth {
             document.setBooleanValue(true, key: "requires_openai_auth", table: customTable)
         } else {

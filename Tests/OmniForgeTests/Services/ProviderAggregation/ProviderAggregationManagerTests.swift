@@ -70,6 +70,22 @@ final class ProviderAggregationManagerTests: XCTestCase {
         )
     }
 
+    private func makeManager(activationRefresher: ProviderActivationRefreshing) -> ProviderAggregationManager {
+        ProviderAggregationManager(
+            profileStore: profileStore,
+            backupStore: backupStore,
+            stackStore: AggregationStackStore(stackURL: tmpDir.appendingPathComponent("stack.json")),
+            pendingStore: AggregationPendingStore(pendingURL: tmpDir.appendingPathComponent("pending.json")),
+            loginStashStore: loginStash,
+            staleDetector: staleDetector,
+            proxy: proxy,
+            claudeWriter: claudeWriter,
+            codexWriter: codexWriter,
+            profiles: profileStore.stubProfiles,
+            activationRefresher: activationRefresher
+        )
+    }
+
     /// 官方 Codex fixture：官方登录走 `auth.json` OAuth，**无静态 token**（`isOfficial`
     /// 按宿主判定、与 token 无关）；`codexModels` 是官方模型名。
     private var officialCodexProfile: ProviderProfile {
@@ -266,6 +282,39 @@ final class ProviderAggregationManagerTests: XCTestCase {
         try await manager.exitAggregationAsync(tool: .claudeCode)
         XCTAssertEqual(manager.mode(tool: .claudeCode), .direct)
         XCTAssertFalse(manager.isProxyRunning)
+    }
+
+    /// 模式切换成功后必须驱动直连激活态重算：聚合投影会把配置指向回环代理地址，
+    /// 若不刷新，`ProviderSwitchManager.activeByTool` 会把代理地址锁成未托管态，
+    /// 退出聚合后「未托管配置」横幅残留（2026-10-17 实测回归）。
+    func test_enterAggregationAsync_notifiesActivationRefresher() async throws {
+        let refresher = StubActivationRefresher()
+        manager = makeManager(activationRefresher: refresher)
+        try await manager.enterAggregationAsync(tool: .claudeCode, defaultProfileID: "kimi")
+        XCTAssertEqual(refresher.refreshCount, 1)
+    }
+
+    func test_exitAggregationAsync_notifiesActivationRefresher() async throws {
+        let refresher = StubActivationRefresher()
+        manager = makeManager(activationRefresher: refresher)
+        try await manager.enterAggregationAsync(tool: .claudeCode, defaultProfileID: "kimi")
+        XCTAssertEqual(refresher.refreshCount, 1)   // 进入即同步一次
+        try await manager.exitAggregationAsync(tool: .claudeCode)
+        XCTAssertEqual(refresher.refreshCount, 2)   // 退出再同步一次
+    }
+
+    /// 代理起不来 = 什么都没写：此时不得触发激活态刷新。
+    func test_enterAggregationAsync_doesNotNotifyActivationRefresherWhenProxyStartFails() async {
+        let refresher = StubActivationRefresher()
+        manager = makeManager(activationRefresher: refresher)
+        proxy.stubStartError = AggregationProxyError.allPortsTaken
+        do {
+            try await manager.enterAggregationAsync(tool: .claudeCode, defaultProfileID: "kimi")
+            XCTFail("代理启动失败应抛错")
+        } catch {
+            // 预期路径：抛错且不驱动刷新
+        }
+        XCTAssertEqual(refresher.refreshCount, 0)
     }
 
     func test_refresh_skipsCommitWhenStackUnchanged() {
@@ -513,6 +562,15 @@ final class ProviderAggregationManagerTests: XCTestCase {
 
 private enum StubError: Error, Equatable {
     case writeFailed
+}
+
+/// 激活态同步替身：记录被驱动重算的次数（模式切换契约）。
+private final class StubActivationRefresher: ProviderActivationRefreshing {
+    var refreshCount = 0
+
+    func refreshActivationState() {
+        refreshCount += 1
+    }
 }
 
 private final class StubProxy: AggregationProxying {

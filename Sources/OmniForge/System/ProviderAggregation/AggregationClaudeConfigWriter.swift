@@ -27,8 +27,9 @@ final class AggregationClaudeConfigWriter: AggregationClaudeConfigWriting {
     let settingsURL: URL
     let fileManager: FileManager
 
-    /// 占位凭证 — 代理按目标替换为真实凭证；客户端侧只见此值（对齐 cc-switch `PROXY_MANAGED`）。
-    private static let placeholderToken = "PROXY_MANAGED"
+    /// 占位凭证 — 代理按目标替换为真实凭证；客户端侧只见此值。
+    /// 字面量与识别端（`ProviderSwitchManager.detectActive` 的聚合态判定）共用
+    /// `AggregationProjectionSignature.placeholderToken`，两侧不得各写一份。
 
     init(settingsURL: URL, fileManager: FileManager = .default) {
         self.settingsURL = settingsURL
@@ -88,7 +89,7 @@ final class AggregationClaudeConfigWriter: AggregationClaudeConfigWriting {
 
         // 代理裸 origin（无路径后缀）+ 占位凭证。
         env["ANTHROPIC_BASE_URL"] = "http://127.0.0.1:\(port)"
-        env["ANTHROPIC_AUTH_TOKEN"] = Self.placeholderToken
+        env["ANTHROPIC_AUTH_TOKEN"] = AggregationProjectionSignature.placeholderToken
 
         // 有发布 → 四档别名共享同一个 Stack id（haiku 剥 1M）+ 顶层 modelPicker；
         // 空发布 → 不写 modelPicker，四档别名回落默认那家直连口径（见 else 分支）。

@@ -133,15 +133,36 @@ final class ProviderSwitchSettingsViewTests: XCTestCase {
                                         publishedCount: 1, modelIDs: ["c"])
 
         XCTAssertEqual(
-            ProviderModeRow.aggregationSummary(members: [], joinableCount: 2, strings: .zhHans),
+            ProviderModeRow.aggregationSummary(members: [], joinableCount: 2, isAggregating: false, strings: .zhHans),
             "未开启 · 2 家可加入"
         )
         XCTAssertEqual(
-            ProviderModeRow.aggregationSummary(members: [], joinableCount: 0, strings: .zhHans),
+            ProviderModeRow.aggregationSummary(members: [], joinableCount: 0, isAggregating: false, strings: .zhHans),
             Strings.zhHans.providerModeAggregationOff
         )
         XCTAssertEqual(
-            ProviderModeRow.aggregationSummary(members: [kimi, glm], joinableCount: 1, strings: .zhHans),
+            ProviderModeRow.aggregationSummary(members: [kimi, glm], joinableCount: 1, isAggregating: true, strings: .zhHans),
+            "2 家 · 默认 Kimi"
+        )
+    }
+
+    /// 退出聚合后名单按设计保留（见 `exitAggregation` 注释）：开关、徽章、绿点已翻关态，
+    /// 摘要不得再显示开启态文案——否则置顶卡片「开关关闭却显示 N 家 · 默认 X」，
+    /// 与刚打开面板时的「未开启 · N 家可加入」不一致，用户误以为聚合还开着。
+    func test_aggregationRowSummary_showsOffAfterExitEvenWhenMembersRetained() {
+        let kimi = ProviderAggregationManager.AggregationMemberView(id: "kimi", name: "Kimi", isDefault: true, isOfficial: false,
+                                         publishedCount: 2, modelIDs: ["a", "b"])
+        let glm = ProviderAggregationManager.AggregationMemberView(id: "glm", name: "GLM", isDefault: false, isOfficial: false,
+                                        publishedCount: 1, modelIDs: ["c"])
+
+        // 退出后：名单非空但无人可加入 → 回落「未开启」
+        XCTAssertEqual(
+            ProviderModeRow.aggregationSummary(members: [kimi, glm], joinableCount: 0, isAggregating: false, strings: .zhHans),
+            Strings.zhHans.providerModeAggregationOff
+        )
+        // 同一份名单，开启态仍报家数与默认那家（行为不回归）
+        XCTAssertEqual(
+            ProviderModeRow.aggregationSummary(members: [kimi, glm], joinableCount: 1, isAggregating: true, strings: .zhHans),
             "2 家 · 默认 Kimi"
         )
     }

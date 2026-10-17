@@ -25,7 +25,7 @@ enum ProviderSwitchManagerError: Error, Equatable {
 
 /// 供应商切换编排管理器 — 串联配置读写 / 备份回滚 / profile 管理 / 进程检测。
 @MainActor
-final class ProviderSwitchManager: ObservableObject {
+final class ProviderSwitchManager: ObservableObject, ProviderActivationRefreshing {
     @Published private(set) var profiles: [ProviderProfile] = []
     /// 每工具的激活态（未读取到时默认 official）。
     @Published private(set) var activeByTool: [ProviderTool: ActiveProvider] = [:]
@@ -135,6 +135,12 @@ final class ProviderSwitchManager: ObservableObject {
         backups = ProviderTool.allCases
             .flatMap { backupStore.list(tool: $0) }
             .sorted { $0.sortDate > $1.sortDate }
+    }
+
+    /// 聚合模式切换成功后由聚合管理器驱动：激活态是纯内存缓存，不重算就会停留在
+    /// 切换前的值（退出聚合恢复文件后界面显示旧态的根因）。
+    func refreshActivationState() {
+        refresh()
     }
 
     // MARK: - 切换（字段所有权合并 + 快照 + 失败回滚）
@@ -256,6 +262,8 @@ final class ProviderSwitchManager: ObservableObject {
     }
 
     /// 激活态识别：按 base URL（Claude）/ provider 键（Codex）匹配 profile（SPEC 2.6）。
+    /// 聚合投影（回环地址 + 占位凭证）优先判为「聚合接管中」——它是聚合功能的自有投影，
+    /// 按未托管处理会把代理地址锁进缓存，退出聚合恢复文件后横幅仍残留。
     private func detectActive(tool: ProviderTool) -> ActiveProvider {
         switch tool {
         case .claudeCode:
@@ -264,6 +272,10 @@ final class ProviderSwitchManager: ObservableObject {
             }
             guard let baseURL = env["ANTHROPIC_BASE_URL"], !baseURL.isEmpty else {
                 return .official
+            }
+            if AggregationProjectionSignature.isProjectedBaseURL(baseURL),
+               env["ANTHROPIC_AUTH_TOKEN"] == AggregationProjectionSignature.placeholderToken {
+                return .aggregating
             }
             if let profile = profiles.first(where: { $0.tool == .claudeCode && $0.baseURL == baseURL }) {
                 return .profile(profileID: profile.id)
@@ -276,6 +288,11 @@ final class ProviderSwitchManager: ObservableObject {
             }
             guard let key = active.key, !key.isEmpty else {
                 return .official
+            }
+            if let baseURL = active.baseURL,
+               AggregationProjectionSignature.isProjectedBaseURL(baseURL),
+               active.token == AggregationProjectionSignature.placeholderToken {
+                return .aggregating
             }
             if let profile = profiles.first(where: { $0.tool == .codex && $0.profileKey == key }) {
                 return .profile(profileID: profile.id)
