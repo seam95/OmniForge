@@ -106,7 +106,7 @@ final class AggregationClaudeConfigWriterTests: XCTestCase {
         XCTAssertEqual(picker["replaceBuiltInOptions"] as? Bool, true)
         let options = try XCTUnwrap(picker["options"] as? [[String: Any]])
         XCTAssertEqual(options.count, 1)
-        XCTAssertEqual(options[0]["model"] as? String, "ccs-claude-kimi--k3")
+        XCTAssertEqual(options[0]["model"] as? String, "om-claude-kimi--k3")
         XCTAssertEqual(options[0]["label"] as? String, "Kimi K3（Kimi For Coding）")
         XCTAssertEqual(options[0]["description"] as? String, "k3 · 256K")
         let env = try XCTUnwrap(root["env"] as? [String: Any])
@@ -142,10 +142,10 @@ final class AggregationClaudeConfigWriterTests: XCTestCase {
     func test_applyAggregation_fourRoleAliasesShareOneStackIDAndHaikuStripsOneM() throws {
         try writer.applyAggregation(defaultProfile: zhipu1M, published: [zhipuGLM], port: 15721)
         let env = try XCTUnwrap(try readSettings()["env"] as? [String: Any])
-        XCTAssertEqual(env["ANTHROPIC_DEFAULT_SONNET_MODEL"] as? String, "ccs-claude-zhipu--glm-5.2[1M]")
-        XCTAssertEqual(env["ANTHROPIC_DEFAULT_OPUS_MODEL"] as? String, "ccs-claude-zhipu--glm-5.2[1M]")
-        XCTAssertEqual(env["ANTHROPIC_DEFAULT_FABLE_MODEL"] as? String, "ccs-claude-zhipu--glm-5.2[1M]")
-        XCTAssertEqual(env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] as? String, "ccs-claude-zhipu--glm-5.2")
+        XCTAssertEqual(env["ANTHROPIC_DEFAULT_SONNET_MODEL"] as? String, "om-claude-zhipu--glm-5.2[1M]")
+        XCTAssertEqual(env["ANTHROPIC_DEFAULT_OPUS_MODEL"] as? String, "om-claude-zhipu--glm-5.2[1M]")
+        XCTAssertEqual(env["ANTHROPIC_DEFAULT_FABLE_MODEL"] as? String, "om-claude-zhipu--glm-5.2[1M]")
+        XCTAssertEqual(env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] as? String, "om-claude-zhipu--glm-5.2")
         XCTAssertEqual(env["ANTHROPIC_DEFAULT_SONNET_MODEL_NAME"] as? String, "GLM 5.2")
     }
 
@@ -283,6 +283,6 @@ final class AggregationClaudeConfigWriterTests: XCTestCase {
 
     func test_published_usesStackModelsThenMappingOrder() {
         XCTAssertEqual(AggregationModelPublisher.published(profile: kimi, key: "kimi").map(\.id),
-                       ["ccs-claude-kimi--k3"])
+                       ["om-claude-kimi--k3"])
     }
 }

@@ -83,7 +83,7 @@ final class AggregationProxyEndToEndTests: XCTestCase {
         defer { proxy.stop() }
         let port = try XCTUnwrap(proxy.resolvedPort)
 
-        let (statusCode, body) = try postThroughProxy(port: port, path: "/v1/messages", body: #"{"model":"ccs-claude-nobody--x"}"#)
+        let (statusCode, body) = try postThroughProxy(port: port, path: "/v1/messages", body: #"{"model":"om-claude-nobody--x"}"#)
         XCTAssertEqual(statusCode, 400)
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
         XCTAssertEqual(json["type"] as? String, "error")

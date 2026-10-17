@@ -24,7 +24,7 @@ final class AggregationRequestParserTests: XCTestCase {
     }
 
     func test_model_readsModelFieldFromBody() throws {
-        XCTAssertEqual(AggregationRequestParser.model(from: Data(#"{"model":"ccs-claude-kimi--k3","max_tokens":1}"#.utf8)), "ccs-claude-kimi--k3")
+        XCTAssertEqual(AggregationRequestParser.model(from: Data(#"{"model":"om-claude-kimi--k3","max_tokens":1}"#.utf8)), "om-claude-kimi--k3")
     }
 
     func test_model_returnsNilForMalformedBody() {

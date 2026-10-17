@@ -76,7 +76,7 @@ final class AggregationTargetResolverTests: XCTestCase {
 
     /// hit 目标随**命中那家**的官方性置位：第三方成员一律按占位凭证换成真实 token。
     func test_hitTargetOnThirdPartyMemberKeepsCredentialRewrite() {
-        guard case .hit(let target, _) = resolver.resolve(tool: .claudeCode, model: "ccs-claude-kimi--k3") else {
+        guard case .hit(let target, _) = resolver.resolve(tool: .claudeCode, model: "om-claude-kimi--k3") else {
             return XCTFail("expected hit")
         }
         XCTAssertEqual(target, kimiTarget)
@@ -105,7 +105,7 @@ final class AggregationTargetResolverTests: XCTestCase {
         )
 
         guard case .hit(let target, let upstreamModel) =
-            officialResolver.resolve(tool: .codex, model: "ccs-openai-official/gpt-5-codex") else {
+            officialResolver.resolve(tool: .codex, model: "om-openai-official/gpt-5-codex") else {
             return XCTFail("expected hit")
         }
         XCTAssertEqual(upstreamModel, "gpt-5-codex")
@@ -134,7 +134,7 @@ final class AggregationTargetResolverTests: XCTestCase {
         )
 
         guard case .hit(let target, let upstreamModel) =
-            officialResolver.resolve(tool: .claudeCode, model: "ccs-claude-anthropic-official--k3") else {
+            officialResolver.resolve(tool: .claudeCode, model: "om-claude-anthropic-official--k3") else {
             return XCTFail("expected hit")
         }
         XCTAssertEqual(upstreamModel, "k3")
@@ -143,45 +143,45 @@ final class AggregationTargetResolverTests: XCTestCase {
     }
 
     func test_prefixedModelHitsOwningMemberWithUpstreamNameRestored() {
-        XCTAssertEqual(resolver.resolve(tool: .claudeCode, model: "ccs-claude-kimi--k3"), .hit(target: kimiTarget, upstreamModel: "k3"))
+        XCTAssertEqual(resolver.resolve(tool: .claudeCode, model: "om-claude-kimi--k3"), .hit(target: kimiTarget, upstreamModel: "k3"))
     }
 
     func test_oneMMarkerIsCarriedIntoUpstreamModelForClaude() {
-        XCTAssertEqual(resolver.resolve(tool: .claudeCode, model: "ccs-claude-zhipu--glm-5.2[1M]"),
+        XCTAssertEqual(resolver.resolve(tool: .claudeCode, model: "om-claude-zhipu--glm-5.2[1M]"),
                        .hit(target: zhipuTarget, upstreamModel: "glm-5.2[1M]"))
     }
 
     func test_codexUpstreamModelIsBareModelName() {
-        XCTAssertEqual(resolver.resolve(tool: .codex, model: "ccs-kimi/kimi-k3"), .hit(target: kimiTarget, upstreamModel: "kimi-k3"))
+        XCTAssertEqual(resolver.resolve(tool: .codex, model: "om-kimi/kimi-k3"), .hit(target: kimiTarget, upstreamModel: "kimi-k3"))
     }
 
     func test_malformedIDMissesAsUnknown() {
-        XCTAssertEqual(resolver.resolve(tool: .claudeCode, model: "ccs-claude---k3"), .miss(.unknown))
+        XCTAssertEqual(resolver.resolve(tool: .claudeCode, model: "om-claude---k3"), .miss(.unknown))
     }
 
     func test_missWhenStackDisabledEvenThoughKeyIsRegistered() {
         let disabled = AggregationTargetResolver(stack: .init(enabled: false, members: ["kimi"], keys: ["kimi": "kimi"]),
                                                  registry: registry, profiles: profiles, defaultTarget: defaultTarget)
-        XCTAssertEqual(disabled.resolve(tool: .claudeCode, model: "ccs-claude-kimi--k3"), .miss(.stackOff))
+        XCTAssertEqual(disabled.resolve(tool: .claudeCode, model: "om-claude-kimi--k3"), .miss(.stackOff))
     }
 
     func test_missWhenKeyUnregistered() {
-        XCTAssertEqual(resolver.resolve(tool: .claudeCode, model: "ccs-claude-nobody--x"), .miss(.unknown))
+        XCTAssertEqual(resolver.resolve(tool: .claudeCode, model: "om-claude-nobody--x"), .miss(.unknown))
     }
 
     func test_missWhenMemberRemovedFromStack() {
         let shrunk = AggregationTargetResolver(stack: .init(enabled: true, members: [], keys: ["kimi": "kimi"]),
                                                registry: registry, profiles: profiles, defaultTarget: defaultTarget)
-        XCTAssertEqual(shrunk.resolve(tool: .claudeCode, model: "ccs-claude-kimi--k3"), .miss(.removed))
+        XCTAssertEqual(shrunk.resolve(tool: .claudeCode, model: "om-claude-kimi--k3"), .miss(.removed))
     }
 
     func test_missWhenProfileDeleted() {
-        XCTAssertEqual(resolver.resolve(tool: .claudeCode, model: "ccs-claude-gone--x"), .miss(.deleted))
+        XCTAssertEqual(resolver.resolve(tool: .claudeCode, model: "om-claude-gone--x"), .miss(.deleted))
     }
 
     func test_missNeverFallsBackToDefault() {
-        for resolution in [resolver.resolve(tool: .claudeCode, model: "ccs-claude-nobody--x"),
-                           resolver.resolve(tool: .claudeCode, model: "ccs-claude-gone--x")] {
+        for resolution in [resolver.resolve(tool: .claudeCode, model: "om-claude-nobody--x"),
+                           resolver.resolve(tool: .claudeCode, model: "om-claude-gone--x")] {
             if case .miss = resolution { continue }
             XCTFail("expected miss, got \(resolution)")
         }
@@ -189,7 +189,7 @@ final class AggregationTargetResolverTests: XCTestCase {
 
     func test_missMessages_areBilingualAndMentionOmniForge() {
         for miss in [AggregationMiss.stackOff, .unknown, .removed, .deleted] {
-            let message = miss.message(model: "ccs-claude-kimi--k3")
+            let message = miss.message(model: "om-claude-kimi--k3")
             XCTAssertTrue(message.contains("聚合的模型"))
             XCTAssertTrue(message.contains("OmniForge"))
             XCTAssertTrue(message.contains("("))

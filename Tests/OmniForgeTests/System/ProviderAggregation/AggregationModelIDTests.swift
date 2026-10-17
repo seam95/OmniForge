@@ -6,17 +6,17 @@ import XCTest
 final class AggregationModelIDTests: XCTestCase {
     func test_encode_claudeShape() {
         XCTAssertEqual(AggregationModelID.encode(tool: .claudeCode, key: "kimi", model: "k3", oneM: false),
-                       "ccs-claude-kimi--k3")
+                       "om-claude-kimi--k3")
     }
 
     func test_encode_claudeAppendsOneMMarkerWhenOneM() {
         XCTAssertEqual(AggregationModelID.encode(tool: .claudeCode, key: "zhipu", model: "glm-5.2", oneM: true),
-                       "ccs-claude-zhipu--glm-5.2[1M]")
+                       "om-claude-zhipu--glm-5.2[1M]")
     }
 
     func test_encode_codexShape() {
         XCTAssertEqual(AggregationModelID.encode(tool: .codex, key: "kimi", model: "kimi-k3", oneM: false),
-                       "ccs-kimi/kimi-k3")
+                       "om-kimi/kimi-k3")
     }
 
     func test_decode_plainModelNameIsNotTouched() {
@@ -25,26 +25,26 @@ final class AggregationModelIDTests: XCTestCase {
     }
 
     func test_decode_splitsAtFirstSeparatorSoModelNameMayContainSeparators() {
-        XCTAssertEqual(AggregationModelID.decode(tool: .claudeCode, id: "ccs-claude-kimi--k3--v2"),
+        XCTAssertEqual(AggregationModelID.decode(tool: .claudeCode, id: "om-claude-kimi--k3--v2"),
                        .stack(key: "kimi", model: "k3--v2", oneM: false))
-        XCTAssertEqual(AggregationModelID.decode(tool: .codex, id: "ccs-ds/openai/deepseek-v4"),
+        XCTAssertEqual(AggregationModelID.decode(tool: .codex, id: "om-ds/openai/deepseek-v4"),
                        .stack(key: "ds", model: "openai/deepseek-v4", oneM: false))
     }
 
     func test_decode_recognizesOneMMarkerCaseInsensitively() {
-        XCTAssertEqual(AggregationModelID.decode(tool: .claudeCode, id: "ccs-claude-zhipu--glm-5.2[1m]"),
+        XCTAssertEqual(AggregationModelID.decode(tool: .claudeCode, id: "om-claude-zhipu--glm-5.2[1m]"),
                        .stack(key: "zhipu", model: "glm-5.2", oneM: true))
-        XCTAssertEqual(AggregationModelID.decode(tool: .claudeCode, id: "ccs-claude-zhipu--glm-5.2[1M]"),
+        XCTAssertEqual(AggregationModelID.decode(tool: .claudeCode, id: "om-claude-zhipu--glm-5.2[1M]"),
                        .stack(key: "zhipu", model: "glm-5.2", oneM: true))
     }
 
     func test_decode_malformedWhenKeyOrModelEmpty() {
-        XCTAssertEqual(AggregationModelID.decode(tool: .claudeCode, id: "ccs-claude---k3"), .malformed)
-        XCTAssertEqual(AggregationModelID.decode(tool: .codex, id: "ccs-/k3"), .malformed)
+        XCTAssertEqual(AggregationModelID.decode(tool: .claudeCode, id: "om-claude---k3"), .malformed)
+        XCTAssertEqual(AggregationModelID.decode(tool: .codex, id: "om-/k3"), .malformed)
     }
 
     func test_decode_codexIdWithoutSlashIsPlain() {
-        XCTAssertEqual(AggregationModelID.decode(tool: .codex, id: "ccs-kimi"), .plain)
+        XCTAssertEqual(AggregationModelID.decode(tool: .codex, id: "om-kimi"), .plain)
     }
 
     func test_claudePrefixContainsClaudeButDoesNotStartWithClaudeDash() {

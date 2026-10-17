@@ -164,7 +164,7 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
     /// - **路由行在前**：默认那家的模型走普通 slug（不带前缀即可达默认供应商）。
     ///   来源优先取 `published` 中该 key 的条目（编排层传的是成员权威模型列表）；
     ///   默认那家未出现在 `published` 时回退 `defaultProfile.codexModelList`。
-    /// - **成员行按 `published` 顺序追加**：Stack slug（`ccs-<key>/<model>`）、
+    /// - **成员行按 `published` 顺序追加**：Stack slug（`om-<key>/<model>`）、
     ///   全角展示名、`comp_hash = "cc-switch"`、`use_responses_lite = false`。
     /// - 全部行写入窗口下沉三键；结尾对整份列表重排 `priority = 1...n`。
     /// - `defaultKey`：默认那家的**登记簿** key（见 `aggregatedCatalogData` 的说明）。

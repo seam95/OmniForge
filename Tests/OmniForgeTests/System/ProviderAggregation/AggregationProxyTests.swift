@@ -153,15 +153,15 @@ final class AggregationProxyTests: XCTestCase {
     }
 
     func test_prefixedModel_rewritesBodyModelToUpstreamNameBeforeForwarding() {
-        _ = proxy.handle(post("/v1/messages", body: #"{"model":"ccs-claude-kimi--k3"}"#))
+        _ = proxy.handle(post("/v1/messages", body: #"{"model":"om-claude-kimi--k3"}"#))
         XCTAssertEqual(forwarder.lastTarget, kimiTarget)
         let sent = try? JSONSerialization.jsonObject(with: forwarder.lastRequest!.body) as? [String: Any]
         XCTAssertEqual(sent?["model"] as? String, "k3")
     }
 
     func test_passthroughEndpoint_forwardsVerbatimWithoutDecodingPrefixedModel() {
-        // alpha/images 是透明端点（SPEC §9）：体里的 `ccs-` 聚合 id 也不解码，原样转发默认那家。
-        let body = #"{"model":"ccs-kimi/k3","prompt":"cat"}"#
+        // alpha/images 是透明端点（SPEC §9）：体里的 `om-` 聚合 id 也不解码，原样转发默认那家。
+        let body = #"{"model":"om-kimi/k3","prompt":"cat"}"#
         let response = proxy.handle(post("/alpha/search", body: body))
         XCTAssertEqual(response.statusCode, 200)
         XCTAssertEqual(forwarder.lastProtocol, .codexPassthrough)
@@ -189,7 +189,7 @@ final class AggregationProxyTests: XCTestCase {
     }
 
     func test_miss_returns400WithAnthropicEnvelope() throws {
-        let response = proxy.handle(post("/v1/messages", body: #"{"model":"ccs-claude-nobody--x"}"#))
+        let response = proxy.handle(post("/v1/messages", body: #"{"model":"om-claude-nobody--x"}"#))
         XCTAssertEqual(response.statusCode, 400)
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: response.body) as? [String: Any])
         XCTAssertEqual(json["type"] as? String, "error")
@@ -199,7 +199,7 @@ final class AggregationProxyTests: XCTestCase {
     }
 
     func test_miss_returns400WithOpenAIEnvelopeForCodex() throws {
-        let response = proxy.handle(post("/v1/responses", body: #"{"model":"ccs-nobody/x"}"#))
+        let response = proxy.handle(post("/v1/responses", body: #"{"model":"om-nobody/x"}"#))
         XCTAssertEqual(response.statusCode, 400)
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: response.body) as? [String: Any])
         let error = try XCTUnwrap(json["error"] as? [String: Any])

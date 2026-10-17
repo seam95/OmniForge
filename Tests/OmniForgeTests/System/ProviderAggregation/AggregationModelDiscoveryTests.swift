@@ -36,7 +36,7 @@ final class AggregationModelDiscoveryTests: XCTestCase {
         XCTAssertEqual(json["has_more"] as? Bool, false)
         let data = try XCTUnwrap(json["data"] as? [[String: Any]])
         XCTAssertEqual(data.map { $0["type"] as? String }, ["model", "model"])
-        XCTAssertEqual(data.map { $0["id"] as? String }, ["ccs-claude-kimi--k3", "ccs-claude-zhipu--glm-5.2"])
+        XCTAssertEqual(data.map { $0["id"] as? String }, ["om-claude-kimi--k3", "om-claude-zhipu--glm-5.2"])
         XCTAssertEqual(data[0]["display_name"] as? String, "Kimi K3（Kimi For Coding）")
         XCTAssertEqual(data[0]["description"] as? String, "k3 · 256K")
     }
