@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import Carbon
 import SwiftUI
 
@@ -510,24 +511,41 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
         uiState.moveSelection(in: entries, direction: direction)
     }
 
-    /// 构造粘贴后的焦点恢复动作：必须在 close（dismiss 会清空状态）之前捕获目标。
-    /// 面板持焦期间本 app 抢占系统键盘焦点，orderOut 后焦点可能滞留自家其他
-    /// keyable 窗口（便签）而不回落原应用；先激活原应用并等其真正拿到焦点，
-    /// 注入的 Cmd+V 才会命中原输入框而不是便签。
-    private func makePasteReactivate() -> (() -> Void)? {
+    /// 构造粘贴后的焦点交还动作：必须在 close（dismiss 会清空状态）之前捕获目标。
+    ///
+    /// 面板 orderOut 后 AppKit 会在本 app 内解析新 key window（便签承接），
+    /// 系统焦点滞留便签会让注入的 Cmd+V 错投。做法：activate 原应用 + 轮询
+    /// AX 系统焦点直至确认落在目标应用，返回 true 并在**同一调用栈**内注入
+    /// （隔一个 runloop 事件焦点可能回弹）。超时后若焦点可确认仍在本 app
+    /// 则返回 false 跳过注入（剪贴板已写入，可手动粘贴），其余情况放行注入。
+    private func makePasteReactivate() -> (() -> Bool)? {
         guard let app = appToReactivate else { return nil }
         return {
             app.activate(options: [])
-            // activate 是异步 IPC：轮询等待「目标 active 且本 app 已让出焦点」，
-            // 上限 250ms 兜底（真机激活通常 1-50ms，超时则维持旧有同步注入行为）。
-            let deadline = Date().addingTimeInterval(0.25)
-            while !(app.isActive && !NSApp.isActive) && Date() < deadline {
+            let deadline = Date().addingTimeInterval(0.3)
+            let myPID = ProcessInfo.processInfo.processIdentifier
+            while Date() < deadline {
+                if Self.axFocusedPID() == app.processIdentifier { return true }
                 RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.002))
             }
+            return Self.axFocusedPID() != myPID
         }
     }
 
-    /// 统一粘贴链路（回车 / 双击共用）：blob 补全 + 写剪贴板 + 关面板 + 焦点恢复 + 注入 Cmd+V。
+    /// AX 系统键盘焦点所在应用的 pid；读不到（无权限/无焦点）返回 nil。
+    private static func axFocusedPID() -> pid_t? {
+        let systemWide = AXUIElementCreateSystemWide()
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(systemWide, kAXFocusedApplicationAttribute as CFString, &ref) == .success,
+              let app = ref else {
+            return nil
+        }
+        var pid: pid_t = 0
+        AXUIElementGetPid(app as! AXUIElement, &pid)
+        return pid
+    }
+
+    /// 统一粘贴链路（回车 / 双击共用）：blob 补全 + 写剪贴板 + 关面板 + 焦点交还 + 注入 Cmd+V。
     private func pasteEntry(_ entry: ClipboardEntry) {
         var entryToPaste = entry
         // blob 类型可能未加载完整内容，先补全再写入
@@ -540,11 +558,16 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
             break
         }
 
+        let reactivate = makePasteReactivate()
+        // 需要交还焦点时，同步抑制便签承接 key window（掐灭 orderOut 后的焦点回弹），
+        // 抑制自愈（0.5s），无焦点交还的路径（光标在自家便签）不抑制。
+        if reactivate != nil {
+            PanelKeySuppression.begin()
+        }
         pasteService.paste(
             entry: entryToPaste,
             close: { [weak self] in self?.hide() },
-            reactivate: makePasteReactivate(),
-            schedule: { work in DispatchQueue.main.async(execute: work) }
+            reactivate: reactivate
         )
     }
 

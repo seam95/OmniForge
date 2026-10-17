@@ -103,18 +103,18 @@ final class ClipboardPasteService {
 
     /// 写入系统剪贴板并注入 Cmd+V 粘贴回原输入框。
     ///
-    /// 前提：剪贴板面板为 nonactivating（呼出期间原应用从未失去键盘焦点），
-    /// 因此 close（面板 orderOut）后立即注入即可命中原输入框，无需任何焦点恢复与等待。
+    /// 无 reactivate 时：面板为 nonactivating 且本 app 无其他可持焦窗口，
+    /// close（面板 orderOut）后同步注入即可命中原输入框。
     ///
-    /// reactivate：面板持焦期间本 app 会抢占系统键盘焦点；若本 app 内还有其他
-    /// 可成为 key 的窗口（便签），orderOut 后系统焦点会滞留其中而不回落原应用，
-    /// 此时先把焦点交还原前台应用，再经 schedule 延后一拍注入（等激活 IPC 完成）。
-    /// 呼出前前台即本 app 时传 nil（焦点本就留在自家窗口，即用户光标所在）。
+    /// reactivate：本 app 内存在其他可成为 key 的窗口（便签）时，面板关闭后
+    /// 系统焦点可能滞留其中。闭包负责把焦点交还原应用（激活 + 等待确认），
+    /// 返回 true 表示可注入；返回 false 表示焦点确认仍在本 app，注入会
+    /// 错投（此时跳过注入，剪贴板已写入，用户可手动 Cmd+V）。
+    /// 注入发生在闭包返回的同一调用栈内——隔一个 runloop 事件焦点可能回弹。
     func paste(
         entry: ClipboardEntry,
         close: (() -> Void)?,
-        reactivate: (() -> Void)? = nil,
-        schedule: (@escaping () -> Void) -> Void = { $0() }
+        reactivate: (() -> Bool)? = nil
     ) {
         guard writeEntry(entry) else { return }
 
@@ -127,8 +127,7 @@ final class ClipboardPasteService {
         }
 
         if let reactivate {
-            reactivate()
-            schedule { [keyPoster] in
+            if reactivate() {
                 keyPoster.postCommandV()
             }
         } else {

@@ -378,7 +378,11 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
 /// 可成为 key 的便签面板：borderless + nonactivating（点工具栏不激活应用）+ 有阴影。
 @MainActor
 final class StickyNoteKeyablePanel: NSPanel {
-    override var canBecomeKey: Bool { true }
+    /// 剪贴板面板粘贴关闭瞬间拒绝承接 key window（PanelKeySuppression）：
+    /// 否则系统键盘焦点滞留便签，注入的 Cmd+V 会错投进便签正文。
+    override var canBecomeKey: Bool {
+        !PanelKeySuppression.isActive
+    }
     override var canBecomeMain: Bool { false }
 
     init(contentRect: NSRect) {
