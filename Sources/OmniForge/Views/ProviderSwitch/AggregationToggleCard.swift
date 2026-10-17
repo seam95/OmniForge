@@ -9,6 +9,7 @@ struct AggregationToggleCard: View {
     let isAggregating: Bool
     let summary: String
     let strings: Strings
+    var isTransitioning: Bool = false
     let onToggleRequest: (Bool) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
@@ -70,6 +71,7 @@ struct AggregationToggleCard: View {
             .toggleStyle(.switch)
             .labelsHidden()
             .controlSize(.small)
+            .disabled(isTransitioning)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)

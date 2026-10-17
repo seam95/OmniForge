@@ -203,6 +203,120 @@ final class ProviderAggregationManager: ObservableObject {
         try? pendingStore.clear()
     }
 
+    /// 异步非阻塞进入聚合（UI 优先使用）：先起代理，再将快照、pending 写盘、配置文件覆盖与
+    /// 清理等耗时磁盘 I/O 移至后台线程执行，完成后切回主线程提交栈态，消除主线程卡顿与掉帧。
+    func enterAggregationAsync(tool: ProviderTool, defaultProfileID: String) async throws {
+        guard let defaultProfile = profiles.first(where: { $0.id == defaultProfileID }) else {
+            throw AggregationManagerError.profileNotFound(id: defaultProfileID)
+        }
+        guard defaultProfile.tool == tool else {
+            throw AggregationManagerError.toolMismatch(id: defaultProfileID, expected: tool)
+        }
+        guard defaultProfile.hasCompleteConnection || Self.isOfficial(defaultProfile) else {
+            throw AggregationManagerError.incompleteConnection(id: defaultProfileID)
+        }
+        if stack.toolStack(tool).enabled {
+            try setDefault(defaultProfileID)
+            return
+        }
+
+        try proxy.start()
+        guard let port = proxy.resolvedPort else { throw AggregationProxyError.allPortsTaken }
+        syncProxyState()
+
+        var newStack = stack
+        var toolStack = newStack.toolStack(tool)
+        toolStack.enabled = true
+        if !toolStack.isMember(defaultProfileID) {
+            toolStack.members.insert(defaultProfileID, at: 0)
+        }
+        let registry = AggregationKeyRegistry(keys: toolStack.keys)
+        let defaultKey = registry.allocate(profile: defaultProfile)
+        toolStack.keys = registry.keys
+        newStack.setToolStack(toolStack, for: tool)
+
+        let backupStore = self.backupStore
+        let pendingStore = self.pendingStore
+        let loginStashStore = self.loginStashStore
+        let staleDetector = self.staleDetector
+        let claudeWriter = self.claudeWriter
+        let codexWriter = self.codexWriter
+        let configURL = Self.configURL(for: tool)
+        let codexCatalogURL = Self.codexAggregationCatalogURL()
+        let codexAuthURL = Self.codexAuthURL()
+        let isDefaultOfficial = Self.isOfficial(defaultProfile)
+        let published = publishedModels(tool: tool)
+        let memberSwitches = mergedSwitches(tool: tool, defaultProfile: defaultProfile)
+
+        struct AsyncEnterError: Error {
+            let error: Error
+            let enteredPublished: Bool
+        }
+
+        do {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    var enteredPublished = false
+                    do {
+                        if tool == .codex {
+                            if isDefaultOfficial {
+                                try? loginStashStore.restore()
+                                staleDetector.observeLogin(authURL: codexAuthURL)
+                            } else {
+                                staleDetector.observeLogin(authURL: codexAuthURL)
+                                try? loginStashStore.stash()
+                            }
+                        }
+
+                        try? backupStore.snapshot(tool: tool, of: configURL)
+
+                        let intent = AggregationPending(tool: tool, stack: newStack, published: false)
+                        try pendingStore.save(intent)
+
+                        var entered = intent
+                        entered.published = true
+                        try pendingStore.save(entered)
+                        enteredPublished = true
+
+                        switch tool {
+                        case .claudeCode:
+                            try claudeWriter.applyAggregation(
+                                defaultProfile: defaultProfile,
+                                published: published,
+                                port: port,
+                                memberSwitches: memberSwitches
+                            )
+                        case .codex:
+                            try codexWriter.applyAggregation(
+                                defaultProfile: defaultProfile,
+                                defaultKey: defaultKey,
+                                published: published,
+                                port: port,
+                                requiresOpenAIAuth: loginStashStore.hasNativeLogin,
+                                defaultIsOfficial: isDefaultOfficial
+                            )
+                            staleDetector.observe(catalogURL: codexCatalogURL, catalogIsOurs: true)
+                        }
+
+                        try? pendingStore.clear()
+                        continuation.resume()
+                    } catch {
+                        continuation.resume(throwing: AsyncEnterError(error: error, enteredPublished: enteredPublished))
+                    }
+                }
+            }
+
+            lastPartialWrite = false
+            commit(stack: newStack)
+        } catch let asyncError as AsyncEnterError {
+            if asyncError.enteredPublished {
+                lastPartialWrite = true
+                commit(stack: newStack)
+            }
+            throw asyncError.error
+        }
+    }
+
     /// 退出聚合：从进入前的快照恢复直连配置 → 还原 Codex 官方登录 →
     /// 摘模式位（保留名单与登记簿）→ 两个工具都退出则停代理。
     func exitAggregation(tool: ProviderTool) throws {
@@ -221,6 +335,55 @@ final class ProviderAggregationManager: ObservableObject {
             // 还原之后记一代登录：auth.json 从无到有/换人都是代次变化（P1-9 挂点）。
             observeCodexLoginGeneration()
         }
+        var newStack = stack
+        var toolStack = newStack.toolStack(tool)
+        toolStack.enabled = false
+        newStack.setToolStack(toolStack, for: tool)
+        commit(stack: newStack)
+        stopProxyIfIdle(newStack)
+    }
+
+    /// 异步非阻塞退出聚合（UI 优先使用）：将快照恢复与文件写入移至后台线程，
+    /// 完成后切回主线程提交栈态并根据需要停止代理。
+    func exitAggregationAsync(tool: ProviderTool) async throws {
+        let backupStore = self.backupStore
+        let claudeWriter = self.claudeWriter
+        let codexWriter = self.codexWriter
+        let loginStashStore = self.loginStashStore
+        let staleDetector = self.staleDetector
+        let configURL = Self.configURL(for: tool)
+        let codexAuthURL = Self.codexAuthURL()
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    if let backup = backupStore.list(tool: tool).first {
+                        try backupStore.restore(backup, to: configURL)
+                    } else {
+                        switch tool {
+                        case .claudeCode: try claudeWriter.clearAggregation()
+                        case .codex: try codexWriter.clearAggregation()
+                        }
+                    }
+                } catch {
+                    do {
+                        switch tool {
+                        case .claudeCode: try claudeWriter.clearAggregation()
+                        case .codex: try codexWriter.clearAggregation()
+                        }
+                    } catch {
+                        continuation.resume(throwing: error)
+                        return
+                    }
+                }
+                if tool == .codex {
+                    try? loginStashStore.restore()
+                    staleDetector.observeLogin(authURL: codexAuthURL)
+                }
+                continuation.resume()
+            }
+        }
+
         var newStack = stack
         var toolStack = newStack.toolStack(tool)
         toolStack.enabled = false
@@ -310,7 +473,11 @@ final class ProviderAggregationManager: ObservableObject {
             toolStack.keys = registry.keys
             newStack.setToolStack(toolStack, for: tool)
         }
-        commit(stack: newStack)
+        if newStack != stack {
+            commit(stack: newStack)
+        } else {
+            proxyBinding?.update(proxySnapshot())
+        }
     }
 
     /// 启动自愈（非 throws——内部吞错置 `lastError`，不阻断启动）：

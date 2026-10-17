@@ -257,6 +257,23 @@ final class ProviderAggregationManagerTests: XCTestCase {
         XCTAssertFalse(manager.isProxyRunning)
     }
 
+    func test_enterAggregationAsync_and_exitAggregationAsync() async throws {
+        try await manager.enterAggregationAsync(tool: .claudeCode, defaultProfileID: "kimi")
+        XCTAssertTrue(manager.isProxyRunning)
+        XCTAssertEqual(manager.mode(tool: .claudeCode), .aggregation)
+        XCTAssertEqual(claudeWriter.lastDefaultProfile?.id, "kimi")
+
+        try await manager.exitAggregationAsync(tool: .claudeCode)
+        XCTAssertEqual(manager.mode(tool: .claudeCode), .direct)
+        XCTAssertFalse(manager.isProxyRunning)
+    }
+
+    func test_refresh_skipsCommitWhenStackUnchanged() {
+        let initialStack = manager.stack
+        manager.refresh()
+        XCTAssertEqual(manager.stack, initialStack)
+    }
+
     func test_exitAggregation_restoresPreAggregationSnapshot() throws {
         try manager.enterAggregation(tool: .claudeCode, defaultProfileID: "kimi")
         XCTAssertEqual(backupStore.snapshotCallCount, 1)   // 进入聚合的写流程以快照开头

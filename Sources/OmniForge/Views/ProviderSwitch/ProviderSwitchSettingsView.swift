@@ -47,6 +47,7 @@ struct ProviderSwitchSettingsView: View {
     @State private var backupTool: ProviderTool?
     @State private var toastMessage: String?
     @State private var toastDismissTask: Task<Void, Never>?
+    @State private var isTransitioningMode = false
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.controlCenterSizing) private var sizingContext
@@ -99,6 +100,7 @@ struct ProviderSwitchSettingsView: View {
                             isAggregating: aggregation.isAggregating(tool),
                             summary: aggregationSummary(aggregation: aggregation, tool: tool),
                             strings: strings,
+                            isTransitioning: isTransitioningMode,
                             onToggleRequest: { wantOn in
                                 if wantOn {
                                     confirmingEnterTool = tool
@@ -125,13 +127,18 @@ struct ProviderSwitchSettingsView: View {
                                 deletePromptPresented = true
                             }
                         )
+                        .transition(.opacity)
                     } else {
-                        providerList(for: tool)
+                        VStack(alignment: .leading, spacing: 10) {
+                            providerList(for: tool)
 
-                        unmanagedBanner(for: tool)
-                        corruptedBanner(for: tool)
+                            unmanagedBanner(for: tool)
+                            corruptedBanner(for: tool)
+                        }
+                        .transition(.opacity)
                     }
                 }
+                .animation(Theme.Animation.snappy, value: aggregation?.isAggregating(tool))
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -754,12 +761,16 @@ struct ProviderSwitchSettingsView: View {
     private func enterAggregation(tool: ProviderTool) {
         guard let aggregation else { return }
         guard let candidate = defaultCandidateID(for: tool) else { return }
+        isTransitioningMode = true
         Task { @MainActor in
+            defer { isTransitioningMode = false }
             do {
-                try aggregation.enterAggregation(tool: tool, defaultProfileID: candidate)
-                showToast(tool == .claudeCode
-                    ? strings.providerAggregationEnteredClaude
-                    : strings.providerAggregationEnteredCodex)
+                try await aggregation.enterAggregationAsync(tool: tool, defaultProfileID: candidate)
+                withAnimation(Theme.Animation.snappy) {
+                    showToast(tool == .claudeCode
+                        ? strings.providerAggregationEnteredClaude
+                        : strings.providerAggregationEnteredCodex)
+                }
             } catch {
                 showToast(String(format: strings.providerSwitchFailedFormat, error.localizedDescription))
             }
@@ -769,13 +780,17 @@ struct ProviderSwitchSettingsView: View {
     private func exitAggregation(tool: ProviderTool) {
         guard let aggregation else { return }
         let defaultID = aggregation.members(tool: tool).first(where: { $0.isDefault })?.id
+        isTransitioningMode = true
         Task { @MainActor in
+            defer { isTransitioningMode = false }
             do {
-                try aggregation.exitAggregation(tool: tool)
+                try await aggregation.exitAggregationAsync(tool: tool)
                 let defaultName = defaultID.flatMap { id in
                     manager.profiles(for: tool).first(where: { $0.id == id })?.name
                 } ?? defaultID ?? ""
-                showToast(String(format: strings.providerAggregationExitedFormat, defaultName))
+                withAnimation(Theme.Animation.snappy) {
+                    showToast(String(format: strings.providerAggregationExitedFormat, defaultName))
+                }
             } catch {
                 showToast(String(format: strings.providerSwitchFailedFormat, error.localizedDescription))
             }

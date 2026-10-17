@@ -20,6 +20,7 @@ struct AggregationPanelView: View {
     @State private var undoDefaultID: String?
     @State private var toastMessage: String?
     @State private var toastDismissTask: Task<Void, Never>?
+    @State private var isTransitioning = false
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -72,6 +73,7 @@ struct AggregationPanelView: View {
 
             cacheHint
         }
+        .animation(Theme.Animation.snappy, value: manager.isAggregating(tool))
         .padding(.horizontal, 12)
         .providerToast(message: $toastMessage)
         .confirmationDialog(
@@ -518,7 +520,7 @@ struct AggregationPanelView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.regular)
-            .disabled(defaultCandidateID == nil)
+            .disabled(defaultCandidateID == nil || isTransitioning)
             .accessibilityIdentifier(SettingsAccessibilityID.providerAggregationEnter.rawValue)
         }
     }
@@ -559,6 +561,7 @@ struct AggregationPanelView: View {
             )
         }
         .buttonStyle(.plain)
+        .disabled(isTransitioning)
         .padding(.top, 2)
         .accessibilityIdentifier(SettingsAccessibilityID.providerAggregationExit.rawValue)
     }
@@ -572,6 +575,7 @@ struct AggregationPanelView: View {
                 .font(.system(size: 11, weight: .medium))
         }
         .buttonStyle(.plain)
+        .disabled(isTransitioning)
         .foregroundStyle(Color.accentColor)
     }
 
@@ -732,12 +736,16 @@ struct AggregationPanelView: View {
         let candidate = undoDefaultID ?? defaultCandidateID
         undoDefaultID = nil
         guard let candidate else { return }
+        isTransitioning = true
         Task { @MainActor in
+            defer { isTransitioning = false }
             do {
-                try manager.enterAggregation(tool: tool, defaultProfileID: candidate)
-                showToast(tool == .claudeCode
-                          ? strings.providerAggregationEnteredClaude
-                          : strings.providerAggregationEnteredCodex)
+                try await manager.enterAggregationAsync(tool: tool, defaultProfileID: candidate)
+                withAnimation(Theme.Animation.snappy) {
+                    showToast(tool == .claudeCode
+                              ? strings.providerAggregationEnteredClaude
+                              : strings.providerAggregationEnteredCodex)
+                }
             } catch {
                 showToast(String(format: strings.providerSwitchFailedFormat, error.localizedDescription))
             }
@@ -746,15 +754,19 @@ struct AggregationPanelView: View {
 
     private func exitAggregation() {
         undoDefaultID = manager.members(tool: tool).first(where: { $0.isDefault })?.id
+        isTransitioning = true
         Task { @MainActor in
+            defer { isTransitioning = false }
             do {
-                try manager.exitAggregation(tool: tool)
-                showToast(String(
-                    format: strings.providerAggregationExitedFormat,
-                    undoDefaultID.map { id in
-                        switchManager.profiles(for: tool).first(where: { $0.id == id })?.name ?? id
-                    } ?? ""
-                ))
+                try await manager.exitAggregationAsync(tool: tool)
+                withAnimation(Theme.Animation.snappy) {
+                    showToast(String(
+                        format: strings.providerAggregationExitedFormat,
+                        undoDefaultID.map { id in
+                            switchManager.profiles(for: tool).first(where: { $0.id == id })?.name ?? id
+                        } ?? ""
+                    ))
+                }
             } catch {
                 showToast(String(format: strings.providerSwitchFailedFormat, error.localizedDescription))
             }
