@@ -228,9 +228,9 @@ final class ProviderSwitchModelsTests: XCTestCase {
 
     // MARK: - 内置 preset 目录
 
-    func test_presetCatalog_hasFiveBuiltins() {
-        XCTAssertEqual(ProviderPresetCatalog.builtins.count, 5)
-        XCTAssertEqual(ProviderPresetCatalog.builtins.map(\.id), ["glm", "kimi", "deepseek", "minimax", "step"])
+    func test_presetCatalog_hasSixBuiltins() {
+        XCTAssertEqual(ProviderPresetCatalog.builtins.count, 6)
+        XCTAssertEqual(ProviderPresetCatalog.builtins.map(\.id), ["glm", "kimi", "deepseek", "minimax", "step", "opencodego"])
     }
 
     func test_presetCatalog_uniqueIDs() {
@@ -308,6 +308,16 @@ final class ProviderSwitchModelsTests: XCTestCase {
         XCTAssertEqual(ProviderPresetCatalog.step.claudeCode?.modelMapping?.haiku, "step-3.5-flash")
         XCTAssertEqual(ProviderPresetCatalog.step.claudeCode?.modelMapping?.sonnet, "step-5-preview")
         XCTAssertEqual(ProviderPresetCatalog.step.claudeCode?.extraEnv, [:])
+    }
+
+    func test_preset_opencodeGo() {
+        XCTAssertEqual(ProviderPresetCatalog.opencodeGo.claudeCode?.baseURL, "https://opencode.ai/inference/go/anthropic")
+        XCTAssertEqual(ProviderPresetCatalog.opencodeGo.codex?.baseURL, "https://opencode.ai/inference/go/openai/v1")
+        XCTAssertEqual(ProviderPresetCatalog.opencodeGo.claudeCode?.defaultModel, "qwen3.8-max")
+        XCTAssertEqual(ProviderPresetCatalog.opencodeGo.codex?.defaultModel, "grok-4.7")
+        XCTAssertEqual(ProviderPresetCatalog.opencodeGo.claudeCode?.modelMapping?.haiku, "claude-haiku-5-5")
+        XCTAssertEqual(ProviderPresetCatalog.opencodeGo.claudeCode?.modelMapping?.sonnet, "qwen3.8-max")
+        XCTAssertEqual(ProviderPresetCatalog.opencodeGo.claudeCode?.extraEnv, [:])
     }
 
     func test_presetCatalog_noKimi256K() {

@@ -21,10 +21,10 @@ struct PresetConnection: Equatable {
     let extraEnv: [String: String]
 }
 
-/// 内置供应商预设目录 — 5 家：GLM / Kimi / DeepSeek / MiniMax / Step。
+/// 内置供应商预设目录 — 6 家：GLM / Kimi / DeepSeek / MiniMax / Step / OpenCode Go。
 /// 连接参数为随版本发布的数据（用户可在表单中修改后另存为自定义 profile）。
 enum ProviderPresetCatalog {
-    static let builtins: [ProviderPreset] = [glm, kimi, deepSeek, miniMax, step]
+    static let builtins: [ProviderPreset] = [glm, kimi, deepSeek, miniMax, step, opencodeGo]
 
     static func preset(id: String) -> ProviderPreset? {
         builtins.first { $0.id == id }
@@ -147,6 +147,36 @@ enum ProviderPresetCatalog {
         codex: PresetConnection(
             baseURL: "https://api.stepfun.com/step_plan/v1",
             defaultModel: "step-5-preview",
+            modelMapping: nil,
+            extraEnv: [:]
+        )
+    )
+
+    /// OpenCode Go — opencode.ai 订阅服务，按协议分组的多端点网关；
+    /// Claude 侧走 Anthropic Messages 组（模型限该组：Qwen / MiniMax / Claude Haiku），Codex 侧走 Responses 组（Grok / GPT Luna）。
+    /// 官方确认 Claude Code 原生 session header 可直连，无需额外 wrapper。
+    static let opencodeGo = ProviderPreset(
+        id: "opencodego",
+        displayName: "OpenCode Go",
+        claudeCode: PresetConnection(
+            baseURL: "https://opencode.ai/inference/go/anthropic",
+            defaultModel: "qwen3.8-max",
+            modelMapping: ProviderModelMapping(
+                sonnet: "qwen3.8-max",
+                sonnetName: nil,
+                opus: "qwen3.8-max",
+                opusName: nil,
+                fable: "qwen3.8-max",
+                fableName: nil,
+                haiku: "claude-haiku-5-5",
+                haikuName: nil,
+                subagent: "qwen3.8-max"
+            ),
+            extraEnv: [:]
+        ),
+        codex: PresetConnection(
+            baseURL: "https://opencode.ai/inference/go/openai/v1",
+            defaultModel: "grok-4.7",
             modelMapping: nil,
             extraEnv: [:]
         )

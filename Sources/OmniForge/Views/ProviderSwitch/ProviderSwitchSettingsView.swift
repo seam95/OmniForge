@@ -900,6 +900,10 @@ enum ProviderBrandVisual {
             // 品牌色与 TokenUsage 侧 stepfun 一致（#0057FF）。
             return Visual(letter: "S", color: Color(red: 0x00 / 255.0, green: 0x57 / 255.0, blue: 0xFF / 255.0), logo: ProviderLogoAssets.stepfun)
         }
+        if nameLower.contains("opencode") || urlLower.contains("opencode.ai") {
+            // 品牌色与 TokenUsage 侧 opencode 一致（#101010）。
+            return Visual(letter: "O", color: Color(red: 0x10 / 255.0, green: 0x10 / 255.0, blue: 0x10 / 255.0), logo: ProviderLogoAssets.opencode)
+        }
         if nameLower.contains("openai") || nameLower.contains("chatgpt") || urlLower.contains("openai") {
             return Visual(letter: "O", color: Color(red: 0x10 / 255.0, green: 0xA3 / 255.0, blue: 0x7F / 255.0), logo: ProviderLogoAssets.openai)
         }
