@@ -93,6 +93,18 @@ enum ProviderSwitchPaths {
     /// 旧版聚合目录文件名（对齐 cc-switch 时期）——投影时顺带删除自愈，勿再写入。
     static let legacyCodexAggregationCatalogFileName = "cc-switch-model-catalog.json"
 
+    /// Codex 官方模型目录缓存文件名（Codex 自己维护，聚合官方行唯一来源）。
+    static let codexModelsCacheFileName = "models_cache.json"
+
+    /// Codex 官方模型目录缓存路径：`~/.codex/models_cache.json`。
+    static func codexModelsCacheURL(
+        homePath: String = FileManager.default.homeDirectoryForCurrentUser.path,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL {
+        codexHome(homePath: homePath, environment: environment)
+            .appendingPathComponent(codexModelsCacheFileName, isDirectory: false)
+    }
+
     // MARK: - 统一入口
 
     /// 目标工具配置文件 URL。

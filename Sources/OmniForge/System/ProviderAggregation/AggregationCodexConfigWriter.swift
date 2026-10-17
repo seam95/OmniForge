@@ -7,8 +7,7 @@ protocol AggregationCodexConfigWriting: AnyObject {
         defaultKey: String,
         published: [AggregationPublishedModel],
         port: UInt16,
-        requiresOpenAIAuth: Bool,
-        defaultIsOfficial: Bool
+        requiresOpenAIAuth: Bool
     ) throws
     func clearAggregation() throws
     /// 磁盘现状的契约摘要（config 文本 + 目录字节）。
@@ -19,8 +18,7 @@ protocol AggregationCodexConfigWriting: AnyObject {
         defaultKey: String,
         published: [AggregationPublishedModel],
         port: UInt16,
-        requiresOpenAIAuth: Bool,
-        defaultIsOfficial: Bool
+        requiresOpenAIAuth: Bool
     ) -> String
 }
 
@@ -29,16 +27,14 @@ protocol AggregationCodexConfigWriting: AnyObject {
 /// `requiresOpenAIAuth` 跟随磁盘登录状态（SPEC 6.4）——不为 true 时摘掉该键，
 /// 避免登录态变化后留下误导性的登录提示。
 ///
-/// 默认那家为官方账号时（`defaultIsOfficial`，SPEC 3 / P0-3）换一种形状：官方登录走
-/// `auth.json` OAuth、无静态 token 可替换，故不写 `custom` 表与占位 token，改指顶层
-/// `openai_base_url`；同时拿不到官方模型行 → 目录整体不写（成员模型因此不进 Codex `/model`）。
-///
-/// `defaultKey` 是默认那家在 `AggregationKeyRegistry` 里的 key（编排层按 `toolStack.keyOf(profileID:)`
-/// 取），目录按它认「哪些 published 行属于默认那家」——与 `ProviderProfile.profileKey` 是两套
-/// 刻意不同的 slug 规则，不能互换（见 `CodexModelCatalogStore.aggregatedCatalogData`）。
+/// 默认那家为官方账号时**与第三方同形状**（SPEC 2026-10-17
+/// 方案 B，推翻 P0-3）：同样写 custom 表指向本机代理 + `requires_openai_auth`
+/// （Codex 用 auth.json 的 OAuth 凭证发请求，代理侧 passthrough 透传）+ 目录
+/// （官方行原样取自 `models_cache.json`，成员行照常）——成员模型可用，官方请求经代理。
 final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
     let configURL: URL
     let catalogURL: URL
+    let modelsCacheURL: URL
     let fileManager: FileManager
 
     /// 占位凭证 — 代理按目标替换为真实凭证；客户端侧只见此值。
@@ -47,8 +43,8 @@ final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
 
     /// 本模式写入的顶层键（`codexOwnedTopLevelKeys` 中由聚合投影负责的那部分）——
     /// 退出聚合时摘除；窗口键直连模式可能也写，故一并清理。
-    /// `openai_base_url` 是官方默认分支写的键，同样在此清单内（否则官方路径退出后
-    /// 残留一个指向已停代理的指针）。
+    /// `openai_base_url` 是 P0-3 旧官方分支写的键（现官方分支与第三方同形状不再写），
+    /// 保留在清理清单内自愈旧形态残留——否则退出后残留指向已停代理的指针。
     private static let writtenTopLevelKeys = [
         "model_provider",
         "model",
@@ -61,16 +57,22 @@ final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
 
     /// 代理契约 custom 表从默认供应商行照搬的 Codex 客户端行为键（对齐 cc-switch
     /// `codex_direct.rs` `PROXY_KEPT_CLIENT_KEYS`，#8265）。重试次数与流空闲超时是
-    /// Codex 自身行为，对本地代理同样生效——行里没配的键照删，防上一家默认的残留。
+    /// Codex 自身行为，对本地代理同样生效——行里没配的键照删不误（防上一家默认的残留）。
     private static let proxyKeptClientKeys = [
         "request_max_retries",
         "stream_max_retries",
         "stream_idle_timeout_ms",
     ]
 
-    init(configURL: URL, catalogURL: URL, fileManager: FileManager = .default) {
+    init(
+        configURL: URL,
+        catalogURL: URL,
+        modelsCacheURL: URL = ProviderSwitchPaths.codexModelsCacheURL(),
+        fileManager: FileManager = .default
+    ) {
         self.configURL = configURL
         self.catalogURL = catalogURL
+        self.modelsCacheURL = modelsCacheURL
         self.fileManager = fileManager
     }
 
@@ -79,32 +81,27 @@ final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
         defaultKey: String,
         published: [AggregationPublishedModel],
         port: UInt16,
-        requiresOpenAIAuth: Bool,
-        defaultIsOfficial: Bool = false
+        requiresOpenAIAuth: Bool
     ) throws {
         let text = projectedConfigText(
             defaultProfile: defaultProfile,
             published: published,
             port: port,
-            requiresOpenAIAuth: requiresOpenAIAuth,
-            defaultIsOfficial: defaultIsOfficial
+            requiresOpenAIAuth: requiresOpenAIAuth
         )
-        if !defaultIsOfficial {
-            // 先写目录文件再写 config——客户端只认「目录在、配置指向它」的完整形态。
-            try CodexModelCatalogStore(catalogURL: catalogURL, fileManager: fileManager)
-                .writeAggregatedCatalog(defaultProfile: defaultProfile, published: published, defaultKey: defaultKey)
-        }
+        // 先写目录文件再写 config——客户端只认「目录在、配置指向它」的完整形态。
+        // 官方与第三方同一形状：目录恒写（官方行 + 成员行）。
+        let officialRows = officialCacheRowsIfDefault(defaultProfile: defaultProfile)
+        try CodexModelCatalogStore(catalogURL: catalogURL, modelsCacheURL: modelsCacheURL, fileManager: fileManager)
+            .writeAggregatedCatalog(
+                defaultProfile: defaultProfile, published: published, defaultKey: defaultKey,
+                officialCacheRows: officialRows
+            )
         try AtomicFileWriter.write(
             text.data(using: .utf8) ?? Data(),
             to: configURL,
             fileManager: fileManager
         )
-        if defaultIsOfficial {
-            // 官方分支不写目录；config 此刻已不指向它，再删掉磁盘上残留的旧目录文件
-            // （第三方→官方切换时它还在，且内容已过期）。反序（先删后写 config）会在
-            // 崩溃窗口留下「指针在、文件无」的坏配置，故放在写完之后。
-            try removeCatalogFile()
-        }
         // 自愈清理：旧版聚合目录（对齐 cc-switch 时期的文件名）已不被 config 指向，
         // 残留只会误导排查；放在投影完整落盘之后删除。
         try removeFileIfPresent(at: legacyCatalogURL)
@@ -121,25 +118,21 @@ final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
         defaultKey: String,
         published: [AggregationPublishedModel],
         port: UInt16,
-        requiresOpenAIAuth: Bool,
-        defaultIsOfficial: Bool = false
+        requiresOpenAIAuth: Bool
     ) -> String {
-        // 官方分支不写目录 → 目录字节按「无」参与摘要，与 `currentContractDigest`
-        // 读到的（文件已删）一致；否则闸门每次都判「变了」而无谓重写。
-        let catalogData = defaultIsOfficial
-            ? nil
-            : CodexModelCatalogStore.aggregatedCatalogData(
-                defaultProfile: defaultProfile,
-                published: published,
-                defaultKey: defaultKey
-            )
+        // 官方行与写盘同源（同一解析函数）——摘要才能在官方/第三方默认间正确判变。
+        let catalogData = CodexModelCatalogStore.aggregatedCatalogData(
+            defaultProfile: defaultProfile,
+            published: published,
+            defaultKey: defaultKey,
+            officialCacheRows: officialCacheRowsIfDefault(defaultProfile: defaultProfile)
+        )
         return AggregationContractDigest.codex(
             configText: projectedConfigText(
                 defaultProfile: defaultProfile,
                 published: published,
                 port: port,
-                requiresOpenAIAuth: requiresOpenAIAuth,
-                defaultIsOfficial: defaultIsOfficial
+                requiresOpenAIAuth: requiresOpenAIAuth
             ),
             catalogData: catalogData
         )
@@ -150,12 +143,11 @@ final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
         defaultProfile: ProviderProfile,
         published: [AggregationPublishedModel],
         port: UInt16,
-        requiresOpenAIAuth: Bool,
-        defaultIsOfficial: Bool = false
+        requiresOpenAIAuth: Bool
     ) -> String {
         var document = Self.loadDocument(configURL: configURL, fileManager: fileManager)
 
-        // 顶层：默认模型 + 思考强度 + 目录文件名（两个分支共用）。
+        // 顶层：默认模型 + 思考强度 + 目录文件名（官方与第三方共用）。
         if let model = defaultProfile.codexModelList.first {
             document.setValue(model, key: "model", table: nil)
         }
@@ -165,22 +157,8 @@ final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
         // 窗口下沉到目录行（逐行自治），顶层窗口键一律摘掉。
         document.remove(key: "model_context_window", table: nil)
         document.remove(key: "model_auto_compact_token_limit", table: nil)
-
-        if defaultIsOfficial {
-            // 官方默认（SPEC 3 / P0-3）：登录走 auth.json OAuth，没有静态 token 可替换，
-            // 故不写 custom 表与占位 token，改指顶层 openai_base_url（cc-switch codex.rs:462-467）。
-            document.setValue("http://127.0.0.1:\(port)/v1", key: "openai_base_url", table: nil)
-            // 拥有键语义：摘掉 provider 指向与目录指针——第三方→官方切换时磁盘上正是
-            // 这两个键的旧值，留着 Codex 会绕过本机代理、继续读旧目录。
-            document.remove(key: "model_provider", table: nil)
-            document.remove(key: "model_catalog_json", table: nil)
-            // custom 表仅当指向本机代理时才删（判据同 clearAggregation）——上轮第三方投影
-            // 写的正是它；用户自建的同名表原样保留。
-            if Self.customTablePointsAtProxy(document) {
-                document.removeTable(path: ["model_providers", "custom"])
-            }
-            return document.serialize()
-        }
+        // P0-3 旧官方分支的指针键：官方现与第三方同形状，此键不再写，投影时摘残留。
+        document.remove(key: "openai_base_url", table: nil)
 
         document.setValue("custom", key: "model_provider", table: nil)
         document.setValue(
@@ -189,7 +167,8 @@ final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
             table: nil
         )
 
-        // 本机代理 provider 表。
+        // 本机代理 provider 表（官方与第三方同形状；官方的 OAuth 凭证经
+        // `requires_openai_auth` 由 Codex 附带，代理 passthrough 透传）。
         let customTable = ["model_providers", "custom"]
         document.ensureTable(path: customTable)
         document.setValue("custom", key: "name", table: customTable)
@@ -252,6 +231,13 @@ final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
     }
 
     // MARK: - private
+
+    /// 官方默认时的官方行来源：读 `models_cache.json` 原样行；非官方默认 → nil；
+    /// 官方默认但缓存缺失/损坏 → 空数组（安全降级：官方行不进目录，Codex 回落内置默认）。
+    private func officialCacheRowsIfDefault(defaultProfile: ProviderProfile) -> [[String: Any]]? {
+        guard defaultProfile.isOfficial else { return nil }
+        return CodexModelCatalogStore.officialCacheRows(modelsCacheURL: modelsCacheURL, fileManager: fileManager) ?? []
+    }
 
     /// 旧版聚合目录文件（与现行目录同目录）。
     private var legacyCatalogURL: URL {

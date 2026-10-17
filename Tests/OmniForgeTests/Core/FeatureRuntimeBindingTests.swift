@@ -339,7 +339,6 @@ private final class BindingStubCodexWriter: AggregationCodexConfigWriting {
         published: [AggregationPublishedModel],
         port: UInt16,
         requiresOpenAIAuth: Bool,
-        defaultIsOfficial: Bool
     ) throws {}
     func clearAggregation() throws {}
     func currentContractDigest() -> String { "" }
@@ -349,7 +348,6 @@ private final class BindingStubCodexWriter: AggregationCodexConfigWriting {
         published: [AggregationPublishedModel],
         port: UInt16,
         requiresOpenAIAuth: Bool,
-        defaultIsOfficial: Bool
     ) -> String { "" }
 }
 

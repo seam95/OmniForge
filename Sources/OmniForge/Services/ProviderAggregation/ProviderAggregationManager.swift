@@ -130,6 +130,13 @@ final class ProviderAggregationManager: ObservableObject {
             .map(\.id)
     }
 
+    /// 聚合上下文里官方卡的 id（仅 Codex 有：合成卡或用户自建官方卡；无 → nil）。
+    /// UI 的默认候选回落用——官方是「系统态」没有 profileID，聚合面板要能看到它。
+    func officialProfileID(tool: ProviderTool) -> String? {
+        guard tool == .codex else { return nil }
+        return profiles.first(where: { $0.tool == .codex && $0.isOfficial })?.id
+    }
+
     /// 某工具全部成员的已发布模型（名单顺序 = 选择器顺序；默认那家在首位）。
     func publishedModels(tool: ProviderTool) -> [AggregationPublishedModel] {
         stack.toolStack(tool).members.flatMap { profileID -> [AggregationPublishedModel] in
@@ -152,6 +159,7 @@ final class ProviderAggregationManager: ObservableObject {
         guard defaultProfile.hasCompleteConnection || Self.isOfficial(defaultProfile) else {
             throw AggregationManagerError.incompleteConnection(id: defaultProfileID)
         }
+        try validateOfficialDefaultLogin(tool: tool, defaultProfile: defaultProfile)
         // 已在聚合 → 视为切换默认那家。
         if stack.toolStack(tool).enabled {
             try setDefault(defaultProfileID)
@@ -221,6 +229,7 @@ final class ProviderAggregationManager: ObservableObject {
         guard defaultProfile.hasCompleteConnection || Self.isOfficial(defaultProfile) else {
             throw AggregationManagerError.incompleteConnection(id: defaultProfileID)
         }
+        try validateOfficialDefaultLogin(tool: tool, defaultProfile: defaultProfile)
         if stack.toolStack(tool).enabled {
             try setDefault(defaultProfileID)
             return
@@ -298,8 +307,7 @@ final class ProviderAggregationManager: ObservableObject {
                                 defaultKey: defaultKey,
                                 published: published,
                                 port: port,
-                                requiresOpenAIAuth: loginStashStore.hasNativeLogin,
-                                defaultIsOfficial: isDefaultOfficial
+                                requiresOpenAIAuth: loginStashStore.hasNativeLogin
                             )
                             staleDetector.observe(catalogURL: codexCatalogURL, catalogIsOurs: true)
                         }
@@ -450,6 +458,7 @@ final class ProviderAggregationManager: ObservableObject {
         guard let profile = profiles.first(where: { $0.id == profileID }) else {
             throw AggregationManagerError.profileNotFound(id: profileID)
         }
+        try validateOfficialDefaultLogin(tool: profile.tool, defaultProfile: profile)
         var newStack = stack
         var toolStack = newStack.toolStack(profile.tool)
         guard toolStack.isMember(profileID) else {
@@ -473,7 +482,11 @@ final class ProviderAggregationManager: ObservableObject {
 
     /// 重新列举 profile；按工具重建登记簿、按名称重绑定 key、摘除已删除的 profile（key 保留）。
     func refresh() {
-        profiles = ProviderTool.allCases.flatMap { profileStore.list(for: $0) }
+        profiles = Self.loadProfilesWithSyntheticOfficial(
+            profileStore: profileStore,
+            modelsCacheURL: ProviderSwitchPaths.codexModelsCacheURL(),
+            fileManager: fileManager
+        )
         var newStack = stack
         for tool in ProviderTool.allCases {
             var toolStack = newStack.toolStack(tool)
@@ -628,7 +641,13 @@ final class ProviderAggregationManager: ObservableObject {
                 catalogURL: ProviderSwitchPaths.codexAggregationCatalogURL(homePath: homePath, environment: environment),
                 fileManager: fileManager
             ),
-            profiles: ProviderTool.allCases.flatMap { profileStore.list(for: $0) },
+            profiles: Self.loadProfilesWithSyntheticOfficial(
+                profileStore: profileStore,
+                modelsCacheURL: ProviderSwitchPaths.codexModelsCacheURL(
+                    homePath: homePath, environment: environment
+                ),
+                fileManager: fileManager
+            ),
             fileManager: fileManager,
             proxyBinding: binding,
             activationRefresher: activationRefresher
@@ -638,6 +657,47 @@ final class ProviderAggregationManager: ObservableObject {
     }
 
     // MARK: - private
+
+    /// 合成内置官方卡的固定 id（仅 Codex；Claude 官方无 OAuth 无凭证形态，不合成）。
+    static let officialCodexProfileID = "official-codex"
+
+    /// 聚合上下文的 profile 快照：磁盘全部卡片 + （Codex 侧无任何官方卡片时）合成的
+    /// 内置「OpenAI 官方」卡——官方否则没有 profile 实体，进不了默认候选，聚合面板里
+    /// 也就看不到官方。合成卡只存在于聚合上下文（直连列表不注入，避免与官方行重复）；
+    /// 用户自建官方卡（baseURL 为官方域）存在时不注入。
+    /// 模型列表取 `models_cache.json` 的 slug 序列——官方行与目录合并同源。
+    static func loadProfilesWithSyntheticOfficial(
+        profileStore: ProviderProfileStoring,
+        modelsCacheURL: URL,
+        fileManager: FileManager
+    ) -> [ProviderProfile] {
+        var all = ProviderTool.allCases.flatMap { profileStore.list(for: $0) }
+        let hasCodexOfficial = all.contains { $0.tool == .codex && $0.isOfficial }
+        if !hasCodexOfficial {
+            let slugs = (CodexModelCatalogStore.officialCacheRows(
+                modelsCacheURL: modelsCacheURL, fileManager: fileManager
+            ) ?? [])
+                .compactMap { $0["slug"] as? String }
+            all.append(ProviderProfile(
+                id: officialCodexProfileID,
+                name: "OpenAI",
+                tool: .codex,
+                baseURL: "https://api.openai.com/v1",
+                token: "",
+                codexModels: slugs
+            ))
+        }
+        return all
+    }
+
+    /// 官方默认的前置登录校验（方案 B 契约）：custom 表 + `requires_openai_auth` 依赖
+    /// auth.json 的 OAuth 凭证在场，缺失时进入只会在官方上游收到 401——事前挡下并指路。
+    private func validateOfficialDefaultLogin(tool: ProviderTool, defaultProfile: ProviderProfile) throws {
+        guard tool == .codex, Self.isOfficial(defaultProfile) else { return }
+        guard loginStashStore.hasNativeLogin else {
+            throw AggregationManagerError.officialLoginRequired
+        }
+    }
 
     /// Codex 官方登录收纳跟随「默认那家是否官方」（SPEC 3 / P0-3 契约 3）：
     /// 第三方默认 → 收纳官方登录（第三方投影写的是占位 token，用不上 OAuth 登录，
@@ -713,8 +773,7 @@ final class ProviderAggregationManager: ObservableObject {
             changed = codexWriter.currentContractDigest()
                 != codexWriter.projectedContractDigest(
                     defaultProfile: defaultProfile, defaultKey: defaultKey, published: published, port: port,
-                    requiresOpenAIAuth: loginStashStore.hasNativeLogin,
-                    defaultIsOfficial: Self.isOfficial(defaultProfile)
+                    requiresOpenAIAuth: loginStashStore.hasNativeLogin
                 )
         }
         guard changed else { return }
@@ -733,8 +792,7 @@ final class ProviderAggregationManager: ObservableObject {
         case .codex:
             try codexWriter.applyAggregation(
                 defaultProfile: defaultProfile, defaultKey: defaultKey, published: published, port: port,
-                requiresOpenAIAuth: loginStashStore.hasNativeLogin,
-                defaultIsOfficial: Self.isOfficial(defaultProfile)
+                requiresOpenAIAuth: loginStashStore.hasNativeLogin
             )
         }
     }
@@ -913,8 +971,32 @@ enum AggregationManagerError: Error, Equatable {
     case toolMismatch(id: String, expected: ProviderTool)
     case incompleteConnection(id: String)
     case officialCannotJoin(id: String)
+    /// 官方做 Codex 聚合默认但官方登录（auth.json）不在场——custom 表 +
+    /// `requires_openai_auth` 依赖 OAuth 凭证，缺失时官方上游只会回 401。
+    case officialLoginRequired
     case defaultMemberLocked(id: String)
     case notMember(id: String)
+}
+
+extension AggregationManagerError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .profileNotFound(let id):
+            return "找不到供应商档案（\(id)），可能已被删除"
+        case .toolMismatch(let id, let expected):
+            return "供应商（\(id)）不属于当前工具（\(expected)）"
+        case .incompleteConnection(let id):
+            return "供应商（\(id)）连接信息不完整，请先补全地址与密钥"
+        case .officialCannotJoin(let id):
+            return "官方账号只能做默认供应商，不能加入聚合（\(id)）"
+        case .officialLoginRequired:
+            return "OpenAI 官方做默认需要 Codex 官方登录：请先在 Codex 登录官方账号，再切换默认"
+        case .defaultMemberLocked(let id):
+            return "默认供应商在聚合开启期间不可移除（\(id)）"
+        case .notMember(let id):
+            return "该供应商不在聚合名单里（\(id)）"
+        }
+    }
 }
 
 // MARK: - 代理侧快照与迟绑定

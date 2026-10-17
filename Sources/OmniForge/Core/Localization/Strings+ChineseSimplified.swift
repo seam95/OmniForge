@@ -1334,7 +1334,7 @@ extension Strings {
         providerAggregationNoteRestartCodex: "Codex 需重启后才会列出新模型。",
         providerAggregationOfficialNote: "官方账号只能做默认，不能加入聚合。",
         providerAggregationOfficialReason: "官方账号只能作为默认供应商",
-        providerAggregationOfficialDefaultCodexHint: "默认那家是 Codex 官方账号，模型目录不写入：成员模型不会出现在 Codex 的 /model 菜单",
+        providerAggregationOfficialDefaultCodexHint: "默认那家是 OpenAI 官方：官方模型取自 Codex 内置目录缓存，请求经本机代理透传官方登录凭证；缓存未就绪时官方模型暂不列出",
         providerAggregationSectionDefault: "默认",
         providerAggregationSectionAddedFormat: "已添加 · %ld",
         providerAggregationSectionAvailableFormat: "可用 · %ld",

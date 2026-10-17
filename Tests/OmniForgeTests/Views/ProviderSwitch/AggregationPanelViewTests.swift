@@ -269,6 +269,36 @@ final class AggregationPanelViewTests: XCTestCase {
 
     // MARK: - 官方默认 Codex 提示（SPEC §3 / P0-3 的 UI 面）
 
+    /// 官方回落规则（方案 B）：激活官方态 → 官方卡；激活第三方 → 第三方；
+    /// 未托管等其余态 → 先第三方首张、无卡再官方兜底。
+    func test_resolveDefaultCandidate_fallsBackToOfficialForOfficialActiveState() {
+        XCTAssertEqual(
+            AggregationPanelView.resolveDefaultCandidate(
+                active: .official, profileIDs: ["deepseek"], officialProfileID: "official-codex"),
+            "official-codex", "激活官方态 → 官方做默认候选"
+        )
+        XCTAssertEqual(
+            AggregationPanelView.resolveDefaultCandidate(
+                active: .profile(profileID: "deepseek"), profileIDs: ["deepseek"], officialProfileID: "official-codex"),
+            "deepseek", "激活第三方 → 第三方优先（现状不变）"
+        )
+        XCTAssertEqual(
+            AggregationPanelView.resolveDefaultCandidate(
+                active: .unmanaged(summary: "x"), profileIDs: ["deepseek"], officialProfileID: "official-codex"),
+            "deepseek", "未托管态 → 有第三方卡用首张"
+        )
+        XCTAssertEqual(
+            AggregationPanelView.resolveDefaultCandidate(
+                active: .official, profileIDs: [], officialProfileID: "official-codex"),
+            "official-codex", "无任何第三方卡 → 官方兜底（Codex 无卡用户的进入入口）"
+        )
+        XCTAssertNil(
+            AggregationPanelView.resolveDefaultCandidate(
+                active: .official, profileIDs: [], officialProfileID: nil),
+            "Claude 侧无官方卡合成 → 无候选"
+        )
+    }
+
     func test_officialDefaultCodexHint_shownOnlyForCodexWithOfficialDefault() throws {
         let official = ProviderProfile(
             id: "openai", name: "OpenAI", tool: .codex,
@@ -640,7 +670,6 @@ private final class StubCodexWriter: AggregationCodexConfigWriting {
         published: [AggregationPublishedModel],
         port: UInt16,
         requiresOpenAIAuth: Bool,
-        defaultIsOfficial: Bool
     ) throws {}
     func clearAggregation() throws {}
     func currentContractDigest() -> String { "" }
@@ -650,6 +679,5 @@ private final class StubCodexWriter: AggregationCodexConfigWriting {
         published: [AggregationPublishedModel],
         port: UInt16,
         requiresOpenAIAuth: Bool,
-        defaultIsOfficial: Bool
     ) -> String { "" }
 }

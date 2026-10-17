@@ -115,9 +115,9 @@ struct AggregationPanelView: View {
         manager.isAggregating(tool)
     }
 
-    /// 官方默认 Codex 提示（SPEC §3 / P0-3 契约第 2 条的 UI 面）：默认那家是 Codex 官方账号时
-    /// 模型目录整体不写，成员模型不会出现在 Codex 的 `/model` 菜单——必须显式告知，
-    /// 否则用户会以为名单里的模型都可用。
+    /// 官方默认 Codex 提示（SPEC 2026-10-17 方案 B 的 UI 面）：默认那家是 Codex 官方时
+    /// 官方行来自 Codex 自维护的内置目录缓存、请求经本机代理透传 OAuth 凭证——
+    /// 说明这条转发路径与「官方缓存未就绪时官方行暂缺」的降级。
     ///
     /// 两个条件都必需：仅 Codex 侧有此行为（Claude 官方默认照走 BASE_URL + token 替换）；
     /// 且只在聚合生效且有默认那家时出现。
@@ -232,7 +232,9 @@ struct AggregationPanelView: View {
                             .background(
                                 Capsule().fill(Theme.accentColor.opacity(0.12))
                             )
-                    } else if !member.isOfficial {
+                    } else {
+                        // 官方成员位（切走默认后留在名单）也提供「设为默认」——
+                        // 官方进聚合只有默认位一条路，没有这个按钮就回不去了。
                         Button {
                             setDefault(member.id)
                         } label: {
@@ -685,13 +687,30 @@ struct AggregationPanelView: View {
         }
     }
 
-    /// 进入聚合的默认那家候选：当前激活的 profile，否则首个可加入的。
+    /// 进入聚合的默认那家候选：当前激活的 profile；激活官方态（`.official`）回落
+    /// 聚合上下文的官方卡（仅 Codex 有——Manager 只对 Codex 合成/识别）；
+    /// 其余态（未托管/不可读/未激活）先第三方首张、再官方兜底。
     private var defaultCandidateID: String? {
-        if let active = switchManager.active(tool: tool).profileID,
-           switchManager.profiles(for: tool).contains(where: { $0.id == active }) {
-            return active
+        Self.resolveDefaultCandidate(
+            active: switchManager.active(tool: tool),
+            profileIDs: switchManager.profiles(for: tool).map(\.id),
+            officialProfileID: manager.officialProfileID(tool: tool)
+        )
+    }
+
+    /// 非 `private`：供单测直接锁定官方回落规则（与 `officialDefaultCodexHint` 同款）。
+    static func resolveDefaultCandidate(
+        active: ActiveProvider,
+        profileIDs: [String],
+        officialProfileID: String?
+    ) -> String? {
+        if let activeID = active.profileID, profileIDs.contains(activeID) {
+            return activeID
         }
-        return switchManager.profiles(for: tool).first?.id
+        if active.isOfficial, let officialProfileID {
+            return officialProfileID
+        }
+        return profileIDs.first ?? officialProfileID
     }
 
     private var defaultCandidateIsOfficial: Bool {

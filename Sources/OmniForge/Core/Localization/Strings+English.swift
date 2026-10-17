@@ -1334,7 +1334,7 @@ extension Strings {
         providerAggregationNoteRestartCodex: "Codex lists new models after a restart.",
         providerAggregationOfficialNote: "Official accounts can only be the default provider, not a member.",
         providerAggregationOfficialReason: "Official accounts can only be the default provider",
-        providerAggregationOfficialDefaultCodexHint: "The default is the official Codex account, so the model catalog isn't written: member models won't show in Codex's /model menu",
+        providerAggregationOfficialDefaultCodexHint: "The default is the official OpenAI account: official models come from Codex's built-in catalog cache and requests relay through the local proxy with your official sign-in; until that cache is ready, official models stay hidden",
         providerAggregationSectionDefault: "Default",
         providerAggregationSectionAddedFormat: "Added · %ld",
         providerAggregationSectionAvailableFormat: "Available · %ld",

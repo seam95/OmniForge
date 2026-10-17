@@ -9,6 +9,7 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
     private var tmpDir: URL!
     private var configURL: URL!
     private var catalogURL: URL!
+    private var modelsCacheURL: URL!
     private var writer: AggregationCodexConfigWriter!
 
     override func setUpWithError() throws {
@@ -17,7 +18,8 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
         configURL = tmpDir.appendingPathComponent("config.toml")
         catalogURL = tmpDir.appendingPathComponent("omniforge-stack-catalog.json")
-        writer = AggregationCodexConfigWriter(configURL: configURL, catalogURL: catalogURL)
+        modelsCacheURL = tmpDir.appendingPathComponent(ProviderSwitchPaths.codexModelsCacheFileName)
+        writer = AggregationCodexConfigWriter(configURL: configURL, catalogURL: catalogURL, modelsCacheURL: modelsCacheURL)
     }
 
     override func tearDownWithError() throws {
@@ -59,14 +61,16 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
         )
     }
 
-    /// 官方 fixture（OpenAI）：登录走 `auth.json` OAuth，无静态 token。
+    /// 官方 fixture（OpenAI）：登录走 `auth.json` OAuth，无静态 token；
+    /// `codexModels` 对齐合成官方卡（来自 models_cache 的 slug 列表）。
     private var officialOpenAI: ProviderProfile {
         ProviderProfile(
             id: "openai",
             name: "OpenAI",
             tool: .codex,
             baseURL: "https://api.openai.com/v1",
-            token: ""
+            token: "",
+            codexModels: ["gpt-5.6-sol"]
         )
     }
 
@@ -210,52 +214,126 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: catalogURL.path))
     }
 
-    func test_applyAggregation_officialDefaultWritesOpenAIBaseURLInsteadOfCustomTable() throws {
-        try writer.applyAggregation(defaultProfile: officialOpenAI, defaultKey: "openai", published: [kimiK3], port: 15721,
-                                    requiresOpenAIAuth: false, defaultIsOfficial: true)
+    // MARK: - 官方默认与第三方同形状（SPEC 2026-10-17 方案 B，推翻 P0-3）
+
+    /// 官方默认：custom 表 + requires_openai_auth + 目录（官方行来自 models_cache 原样行）。
+    func test_applyAggregation_officialDefaultUsesSameProxyShapeAsThirdParty() throws {
+        try writeModelsCache()
+        let officialPublished = AggregationPublishedModel(
+            key: "openai", profileName: "OpenAI",
+            model: "gpt-5.6-sol", upstream: "gpt-5.6-sol",
+            displayName: "GPT 5.6 Sol", oneM: false, window: 272_000
+        )
+        try writer.applyAggregation(
+            defaultProfile: officialOpenAI, defaultKey: "openai",
+            published: [officialPublished, kimiK3], port: 15721, requiresOpenAIAuth: true
+        )
         let doc = try readConfigDocument()
-        XCTAssertEqual(doc.stringValue(key: "openai_base_url", table: nil), "http://127.0.0.1:15721/v1")
-        XCTAssertNil(doc.stringValue(key: "model_provider", table: nil), "官方默认不写 custom 表（cc-switch codex.rs:462-467）")
-        XCTAssertNil(doc.stringValue(key: "name", table: ["model_providers", "custom"]))
-        XCTAssertNil(doc.stringValue(key: "model_catalog_json", table: nil), "官方默认拿不到官方模型行 → 目录整体不写（cc-switch codex_direct.rs:751-764）")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: catalogURL.path))
+        XCTAssertEqual(doc.stringValue(key: "model_provider", table: nil), "custom", "官方与第三方同形状：请求经本机代理")
+        XCTAssertNil(doc.stringValue(key: "openai_base_url", table: nil), "P0-3 旧官方分支的指针键不再写")
+        XCTAssertEqual(doc.stringValue(key: "model_catalog_json", table: nil), ProviderSwitchPaths.codexAggregationCatalogFileName)
+        XCTAssertEqual(doc.stringValue(key: "base_url", table: ["model_providers", "custom"]), "http://127.0.0.1:15721/v1")
+        XCTAssertEqual(doc.booleanValue(key: "requires_openai_auth", table: ["model_providers", "custom"]), true, "OAuth 凭证由 Codex 附带，代理 passthrough 透传")
+        XCTAssertEqual(doc.stringValue(key: "model", table: nil), "gpt-5.6-sol")
+
+        // 目录：官方行原样（保留官方 base_instructions）在前 + 成员行带 om- 前缀在后。
+        let catalog = try JSONSerialization.jsonObject(with: Data(contentsOf: catalogURL)) as? [String: Any]
+        let models = try XCTUnwrap(catalog?["models"] as? [[String: Any]])
+        XCTAssertEqual(models.count, 2)
+        XCTAssertEqual(models[0]["slug"] as? String, "gpt-5.6-sol")
+        XCTAssertEqual(models[0]["base_instructions"] as? String, "OFFICIAL_INSTRUCTIONS", "官方行不套中性模板")
+        XCTAssertEqual(models[1]["slug"] as? String, "om-kimi/kimi-k3")
+        XCTAssertEqual(models[1]["comp_hash"] as? String, "om")
     }
 
-    func test_applyAggregation_switchingToOfficialDefaultDropsStaleCatalogKeyAndFile() throws {
-        // 先按第三方默认写一轮：目录指针 + 目录文件都在盘上。
+    /// 官方缓存缺失 → 安全降级：官方行不进目录，成员行照常，custom 表照写。
+    func test_applyAggregation_officialDefaultWithoutCacheDegradesGracefully() throws {
+        // 不写 models_cache（tmpDir 里本就没有）。
+        let officialPublished = AggregationPublishedModel(
+            key: "openai", profileName: "OpenAI",
+            model: "gpt-5.6-sol", upstream: "gpt-5.6-sol",
+            displayName: "GPT 5.6 Sol", oneM: false, window: 272_000
+        )
+        try writer.applyAggregation(
+            defaultProfile: officialOpenAI, defaultKey: "openai",
+            published: [officialPublished, kimiK3], port: 15721, requiresOpenAIAuth: true
+        )
+        let catalog = try JSONSerialization.jsonObject(with: Data(contentsOf: catalogURL)) as? [String: Any]
+        let models = try XCTUnwrap(catalog?["models"] as? [[String: Any]])
+        XCTAssertEqual(models.count, 1, "官方行缺失只留成员行")
+        XCTAssertEqual(models[0]["slug"] as? String, "om-kimi/kimi-k3")
+    }
+
+    /// 第三方 → 官方默认切换：旧 openai_base_url 残留被摘，目录换成官方行 + 成员行。
+    func test_applyAggregation_switchingToOfficialDefaultRewritesCatalogInPlace() throws {
+        try writeModelsCache()
+        try writeConfig("openai_base_url = \"http://127.0.0.1:99999/v1\"\n")
         try writer.applyAggregation(defaultProfile: deepseek, defaultKey: "deepseek", published: [kimiK3], port: 15721, requiresOpenAIAuth: false)
         XCTAssertTrue(FileManager.default.fileExists(atPath: catalogURL.path))
 
-        try writer.applyAggregation(defaultProfile: officialOpenAI, defaultKey: "openai", published: [kimiK3], port: 15721,
-                                    requiresOpenAIAuth: false, defaultIsOfficial: true)
+        let officialPublished = AggregationPublishedModel(
+            key: "openai", profileName: "OpenAI",
+            model: "gpt-5.6-sol", upstream: "gpt-5.6-sol",
+            displayName: "GPT 5.6 Sol", oneM: false, window: 272_000
+        )
+        try writer.applyAggregation(
+            defaultProfile: officialOpenAI, defaultKey: "openai",
+            published: [officialPublished, kimiK3], port: 15721, requiresOpenAIAuth: true
+        )
         let doc = try readConfigDocument()
-        XCTAssertNil(doc.stringValue(key: "model_catalog_json", table: nil), "拥有键语义：切到官方默认时主动摘掉目录指针")
-        XCTAssertNil(doc.stringValue(key: "model_provider", table: nil), "留着旧 provider 指向会让 Codex 绕过本机代理")
-        XCTAssertNil(doc.stringValue(key: "name", table: ["model_providers", "custom"]))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: catalogURL.path), "旧目录文件一并删除，否则 Codex 仍读旧目录")
+        XCTAssertNil(doc.stringValue(key: "openai_base_url", table: nil), "旧官方形态的指针键随投影自愈摘除")
+        XCTAssertEqual(doc.stringValue(key: "model_provider", table: nil), "custom")
+        let catalog = try JSONSerialization.jsonObject(with: Data(contentsOf: catalogURL)) as? [String: Any]
+        let models = try XCTUnwrap(catalog?["models"] as? [[String: Any]])
+        XCTAssertEqual(models.first?["slug"] as? String, "gpt-5.6-sol", "官方行替换旧目录内容")
     }
 
     func test_clearAggregation_removesOpenAIBaseURL() throws {
-        try writer.applyAggregation(defaultProfile: officialOpenAI, defaultKey: "openai", published: [kimiK3], port: 15721,
-                                    requiresOpenAIAuth: false, defaultIsOfficial: true)
+        try writeConfig("openai_base_url = \"http://127.0.0.1:15721/v1\"\n")
         try writer.clearAggregation()
         let doc = try readConfigDocument()
         XCTAssertNil(doc.stringValue(key: "openai_base_url", table: nil), "官方路径退出后不得残留指向死端口的指针")
     }
 
-    func test_projectedContractDigest_seesOfficialBranchAndMatchesDiskAfterApply() throws {
-        try writer.applyAggregation(defaultProfile: officialOpenAI, defaultKey: "openai", published: [kimiK3], port: 15721,
-                                    requiresOpenAIAuth: false, defaultIsOfficial: true)
-        // 盘上现状固定为官方投影：两个分支的投影摘要必须分居它两侧。
-        let officialDigest = writer.projectedContractDigest(
-            defaultProfile: officialOpenAI, defaultKey: "openai", published: [kimiK3], port: 15721,
-            requiresOpenAIAuth: false, defaultIsOfficial: true
+    func test_projectedContractDigest_matchesDiskAfterOfficialApply() throws {
+        try writeModelsCache()
+        let officialPublished = AggregationPublishedModel(
+            key: "openai", profileName: "OpenAI",
+            model: "gpt-5.6-sol", upstream: "gpt-5.6-sol",
+            displayName: "GPT 5.6 Sol", oneM: false, window: 272_000
         )
-        let thirdPartyDigest = writer.projectedContractDigest(
-            defaultProfile: officialOpenAI, defaultKey: "openai", published: [kimiK3], port: 15721,
-            requiresOpenAIAuth: false, defaultIsOfficial: false
+        try writer.applyAggregation(
+            defaultProfile: officialOpenAI, defaultKey: "openai",
+            published: [officialPublished, kimiK3], port: 15721, requiresOpenAIAuth: true
         )
-        XCTAssertEqual(writer.currentContractDigest(), officialDigest, "官方分支落盘后闸门应判定「未变更」，不触发无谓重写")
-        XCTAssertNotEqual(writer.currentContractDigest(), thirdPartyDigest, "同一份盘上现状，第三方摘要必须判「变了」——否则官方分支的投影变化对写前闸门不可见")
+        let digest = writer.projectedContractDigest(
+            defaultProfile: officialOpenAI, defaultKey: "openai",
+            published: [officialPublished, kimiK3], port: 15721, requiresOpenAIAuth: true
+        )
+        XCTAssertEqual(writer.currentContractDigest(), digest, "官方分支落盘后闸门应判定「未变更」，不触发无谓重写")
+        // 官方行与写盘同源：models_cache 变了 → 摘要必须判「变了」。
+        try writeModelsCache(baseInstructions: "CHANGED_INSTRUCTIONS")
+        let changedDigest = writer.projectedContractDigest(
+            defaultProfile: officialOpenAI, defaultKey: "openai",
+            published: [officialPublished, kimiK3], port: 15721, requiresOpenAIAuth: true
+        )
+        XCTAssertNotEqual(digest, changedDigest, "官方缓存行变化对写前闸门必须可见")
+    }
+
+    /// 写一份最小官方 models_cache（tmpDir 内，不碰真实 ~/.codex）。
+    private func writeModelsCache(baseInstructions: String = "OFFICIAL_INSTRUCTIONS") throws {
+        let root: [String: Any] = [
+            "models": [[
+                "slug": "gpt-5.6-sol",
+                "display_name": "GPT 5.6 Sol",
+                "base_instructions": baseInstructions,
+                "context_window": 272_000,
+                "max_context_window": 272_000,
+                "auto_compact_token_limit": 244_800,
+                "priority": 1,
+            ]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted])
+        try data.write(to: modelsCacheURL)
     }
 }

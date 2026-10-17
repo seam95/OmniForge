@@ -13,13 +13,35 @@ protocol CodexModelCatalogStoring: AnyObject {
 final class CodexModelCatalogStore: CodexModelCatalogStoring {
     let catalogURL: URL
     let fileManager: FileManager
+    /// Codex 官方模型目录缓存路径（聚合官方行的唯一来源；默认 `~/.codex/models_cache.json`）。
+    let modelsCacheURL: URL
 
     init(
         catalogURL: URL = ProviderSwitchPaths.codexModelCatalogURL(),
+        modelsCacheURL: URL = ProviderSwitchPaths.codexModelsCacheURL(),
         fileManager: FileManager = .default
     ) {
         self.catalogURL = catalogURL
+        self.modelsCacheURL = modelsCacheURL
         self.fileManager = fileManager
+    }
+
+    /// 读取官方缓存目录（`models_cache.json`）的模型行：缺失/损坏/形状不符 → nil。
+    /// 行内容原样返回（官方真实 base_instructions、窗口与能力字段都保留），仅
+    /// `priority` 留给聚合合并重排。
+    static func officialCacheRows(modelsCacheURL: URL, fileManager: FileManager = .default) -> [[String: Any]]? {
+        guard fileManager.fileExists(atPath: modelsCacheURL.path),
+              let data = try? Data(contentsOf: modelsCacheURL),
+              let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let models = root["models"] as? [[String: Any]] else {
+            return nil
+        }
+        return models
+    }
+
+    /// 实例便捷读取：供编排层合成官方 profile 的模型列表。
+    func officialCacheRows() -> [[String: Any]]? {
+        Self.officialCacheRows(modelsCacheURL: modelsCacheURL, fileManager: fileManager)
     }
 
     /// 规范化的完整思考等级列表（激活 Desktop 思考强度滑块与下拉选择）。
@@ -137,13 +159,20 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
     ///   `defaultProfile.profileKey` 推导——那是 `ProviderProfile.slugify`（拼音转换、不截断），
     ///   与登记簿的 ASCII-only + 24 位截断是两套刻意不同的规则（见 `AggregationKeyRegistry`），
     ///   名称含汉字时两者必然不同，一错位默认那家的模型就会在 `/model` 菜单里出现两遍。
+    /// - `officialCacheRows`：默认那家是官方时的官方行来源（`models_cache.json` 原样行），
+    ///   由调用方（`AggregationCodexConfigWriter`）统一解析显式传入——写盘与契约摘要
+    ///   两条路径必须同源，否则「未变更不重写」闸门会误判。nil = 非官方默认或缓存缺失。
     static func aggregatedCatalogData(
         defaultProfile: ProviderProfile,
         published: [AggregationPublishedModel],
-        defaultKey: String
+        defaultKey: String,
+        officialCacheRows: [[String: Any]]? = nil
     ) -> Data? {
         let root: [String: Any] = [
-            "models": aggregatedCatalogEntries(defaultProfile: defaultProfile, published: published, defaultKey: defaultKey)
+            "models": aggregatedCatalogEntries(
+                defaultProfile: defaultProfile, published: published, defaultKey: defaultKey,
+                officialCacheRows: officialCacheRows
+            )
         ]
         return try? JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
     }
@@ -152,15 +181,23 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
     func writeAggregatedCatalog(
         defaultProfile: ProviderProfile,
         published: [AggregationPublishedModel],
-        defaultKey: String
+        defaultKey: String,
+        officialCacheRows: [[String: Any]]? = nil
     ) throws {
-        guard let data = Self.aggregatedCatalogData(defaultProfile: defaultProfile, published: published, defaultKey: defaultKey) else {
+        guard let data = Self.aggregatedCatalogData(
+            defaultProfile: defaultProfile, published: published, defaultKey: defaultKey,
+            officialCacheRows: officialCacheRows
+        ) else {
             throw ProviderConfigFileError.writeFailed(path: catalogURL.path)
         }
         try AtomicFileWriter.write(data, to: catalogURL, fileManager: fileManager)
     }
 
     /// 聚合目录行组成：
+    /// - **官方默认**（`defaultProfile.isOfficial`）：默认行改用 `models_cache.json` 的
+    ///   **原样行**（官方真实 base_instructions、窗口、能力字段都保留，不套中性模板——
+    ///   模板的保守值会降级官方体验）。顺序按 `published` 的官方行 slug 对齐；缓存缺失
+    ///   时安全降级为空（官方行不进目录，Codex 回落内置默认模型）。
     /// - **路由行在前**：默认那家的模型走普通 slug（不带前缀即可达默认供应商）。
     ///   来源优先取 `published` 中该 key 的条目（编排层传的是成员权威模型列表）；
     ///   默认那家未出现在 `published` 时回退 `defaultProfile.codexModelList`。
@@ -171,8 +208,15 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
     private static func aggregatedCatalogEntries(
         defaultProfile: ProviderProfile,
         published: [AggregationPublishedModel],
-        defaultKey: String
+        defaultKey: String,
+        officialCacheRows: [[String: Any]]? = nil
     ) -> [[String: Any]] {
+        if defaultProfile.isOfficial {
+            return officialEntries(
+                published: published, defaultKey: defaultKey, officialCacheRows: officialCacheRows ?? []
+            )
+        }
+
         let defaultPublished = published.filter { $0.key == defaultKey }
         let defaultEffort = defaultProfile.reasoningEffort?.isEmpty == false ? defaultProfile.reasoningEffort! : "high"
 
@@ -232,5 +276,63 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
             entry["priority"] = index + 1
             return entry
         }
+    }
+
+    /// 官方默认的目录行：官方缓存原样行在前（顺序对齐 `published` 的官方 slug——
+    /// 即合成官方卡 `codexModels` 的顺序），成员行照常追加，`priority` 统一重排。
+    /// 官方行**不做窗口下沉**——缓存行自带真实窗口三键，重算反而失真。
+    private static func officialEntries(
+        published: [AggregationPublishedModel],
+        defaultKey: String,
+        officialCacheRows: [[String: Any]]
+    ) -> [[String: Any]] {
+        let cacheBySlug = Dictionary(
+            officialCacheRows.compactMap { row -> (String, [String: Any])? in
+                guard let slug = row["slug"] as? String else { return nil }
+                return (slug, row)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        var rows: [[String: Any]] = []
+        var seenSlugs = Set<String>()
+        // 官方默认行：published 的官方行顺序为准（缓存里没有的 slug 跳过——缓存是
+        // 唯一权威来源，不凭空造行）。
+        for entry in published where entry.key == defaultKey {
+            guard let cached = cacheBySlug[entry.model], seenSlugs.insert(entry.model).inserted else { continue }
+            rows.append(cached)
+        }
+        // 成员行：与非官方路径同构（Stack slug + comp_hash + 窗口下沉）。
+        let memberRows: [(entry: [String: Any], window: UInt64)] =
+            published.filter { $0.key != defaultKey }.map { member in
+                (
+                    Self.catalogEntry(
+                        model: AggregationModelID.encode(
+                            tool: .codex, key: member.key, model: member.model, oneM: member.oneM
+                        ),
+                        displayName: member.label,
+                        description: member.description,
+                        defaultReasoningLevel: "high",
+                        priority: 0,
+                        compHash: "om",
+                        useResponsesLite: false
+                    ),
+                    member.window
+                )
+            }
+        for (index, row) in memberRows.enumerated() {
+            var entry = row.entry
+            entry["context_window"] = Int(row.window)
+            entry["max_context_window"] = Int(row.window)
+            entry["auto_compact_token_limit"] = Int(row.window * 9 / 10)
+            rows.append(entry)
+        }
+        // priority 重排：官方行保持缓存原值不覆盖（Codex 对官方行的 priority 语义
+        // 已在其缓存里排好），成员行顺延官方行数之后。
+        let officialCount = rows.count - memberRows.count
+        for index in rows.indices.dropFirst(officialCount) {
+            rows[index]["priority"] = officialCount + (index - officialCount) + 1
+        }
+        return rows
     }
 }
