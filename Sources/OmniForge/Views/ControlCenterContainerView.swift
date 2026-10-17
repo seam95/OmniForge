@@ -74,7 +74,7 @@ struct ControlCenterContainerView: View {
                 if colorScheme == .dark {
                     Color(nsColor: .windowBackgroundColor)
                 } else {
-                    Theme.Stats.panelBackground
+                    Color.white
                 }
             }
         )
@@ -129,9 +129,9 @@ struct ControlCenterContainerView: View {
         .idle
     }
 
-    /// 对齐 macOS 控制中心分段导航：紧凑等分单元 + 柔和背景 + 选中 accent 悬浮底块。
+    /// 顶部 Tab 导航：无外层边框轨道，平面纯白底直接承载，选中以浅蓝药丸滑移指示。
     private func panelNavigation(visiblePanels: [MenuPanel]) -> some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 4) {
             ForEach(visiblePanels) { panel in
                 let isActive = selectedPanel == panel
                 let title = panel.navTitle(in: state.l10n.s)
@@ -140,6 +140,8 @@ struct ControlCenterContainerView: View {
                     title: title,
                     isActive: isActive,
                     activeFill: navigationActiveFill,
+                    activeForeground: navigationActiveForeground,
+                    inactiveForeground: navigationInactiveForeground,
                     colorScheme: colorScheme,
                     indicatorNamespace: navIndicator,
                     indicatorAnimation: PageSwitchMotionToken.selectionIndicator(
@@ -156,15 +158,6 @@ struct ControlCenterContainerView: View {
         .animation(
             PageSwitchMotionToken.selectionIndicator(reduceMotion: reduceMotion),
             value: selectedPanelRawValue
-        )
-        .padding(3)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-                .fill(navigationTrackFill)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-                .strokeBorder(navigationTrackBorder, lineWidth: 0.8)
         )
     }
 
@@ -252,10 +245,10 @@ struct ControlCenterContainerView: View {
         )
     }
 
-    /// 页面表面样式（SPEC §8.2）：平面白底风格面板浅色白底（转场层持有）；
-    /// 监控例外——overview 白底由监控内层 route 持有（层级迁移见阶段 7）。
+    /// 页面表面样式（SPEC §8.2）：浅色模式统一为白底（转场层持有）；
+    /// 消除面板切换时的灰底透出。
     private func panelSurface(_ panel: MenuPanel) -> PageSurface {
-        if panel.usesFlatChrome, panel != .systemMonitor, colorScheme == .light {
+        if colorScheme == .light {
             return PageSurface(background: .white)
         }
         return .clear
@@ -410,20 +403,31 @@ struct ControlCenterContainerView: View {
     }
 
     private var navigationActiveFill: Color {
-        colorScheme == .light ? Color.white : Color.white.opacity(0.14)
+        if colorScheme == .light {
+            return Color(red: 0xEB / 255.0, green: 0xF3 / 255.0, blue: 0xFE / 255.0)
+        } else {
+            return Color(red: 0x0D / 255.0, green: 0x7F / 255.0, blue: 0xFD / 255.0).opacity(0.22)
+        }
     }
 
-    /// 不透明 popover 底上，用 controlFill 比半透明 cardFill 更接近截图胶囊轨。
-    private var navigationTrackFill: Color {
-        colorScheme == .light ? Theme.Stats.cardInset : Color.white.opacity(0.06)
+    private var navigationActiveForeground: Color {
+        if colorScheme == .light {
+            return Color(red: 0x0D / 255.0, green: 0x7F / 255.0, blue: 0xFD / 255.0)
+        } else {
+            return Color(red: 0x5A / 255.0, green: 0x9E / 255.0, blue: 0xFF / 255.0)
+        }
     }
 
-    private var navigationTrackBorder: Color {
-        colorScheme == .light ? Theme.Stats.separator : Color.primary.opacity(0.08)
+    private var navigationInactiveForeground: Color {
+        if colorScheme == .light {
+            return Color(red: 0x4A / 255.0, green: 0x4B / 255.0, blue: 0x56 / 255.0)
+        } else {
+            return Color.white.opacity(0.70)
+        }
     }
 }
 
-private struct ControlCenterNavButton: View {
+struct ControlCenterNavButton: View {
     /// 选中底块 matchedGeometry 标识：同 id 全导航仅一处激活，底块在按钮间平滑滑移。
     private static let activeIndicatorID = "control-center-nav-active"
 
@@ -431,6 +435,8 @@ private struct ControlCenterNavButton: View {
     let title: String
     let isActive: Bool
     let activeFill: Color
+    let activeForeground: Color
+    let inactiveForeground: Color
     let colorScheme: ColorScheme
     let indicatorNamespace: Namespace.ID
     /// 选中底块滑移动画（Reduce Motion 下降级为透明度过渡）。
@@ -446,9 +452,9 @@ private struct ControlCenterNavButton: View {
             // ViewThatFits 降级：等分单元放不下"图标+文字"时隐藏图标仅留文字，
             // 叠加 minimumScaleFactor 兜底，保证窄面板下标题永不折行、尽量不缩放。
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 4) {
+                HStack(spacing: 6) {
                     Image(systemName: panel.symbolName)
-                        .font(.system(size: 11.5, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                     Text(title)
                         .font(Theme.Stats.font12Medium)
                 }
@@ -459,29 +465,33 @@ private struct ControlCenterNavButton: View {
             .minimumScaleFactor(0.85)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 6)
-            .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
         }
         .buttonStyle(.plain)
-        .foregroundStyle(isActive ? (colorScheme == .light ? Theme.Stats.text1 : Color.white) : (isHovered ? (colorScheme == .light ? Theme.Stats.text1 : Color.primary) : (colorScheme == .light ? Theme.Stats.text2 : Color.secondary)))
+        .foregroundStyle(
+            isActive
+                ? activeForeground
+                : (isHovered
+                    ? (colorScheme == .light ? Theme.Stats.text1 : Color.white)
+                    : inactiveForeground)
+        )
         .background(
             ZStack {
                 // 选中底块：matchedGeometry 让矩形从上一个按钮滑移过来，而非就地出现；
                 // Reduce Motion 下就地渲染 + 透明度过渡，无位置插值（SPEC §7.4.3）。
                 if isActive {
                     if reducesIndicatorMotion {
-                        RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous)
+                        RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
                             .fill(activeFill)
-                            .shadow(color: Color.black.opacity(colorScheme == .light ? 0.06 : 0.0), radius: 2, x: 0, y: 1)
                             .transition(.opacity)
                     } else {
-                        RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous)
+                        RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
                             .fill(activeFill)
-                            .shadow(color: Color.black.opacity(colorScheme == .light ? 0.06 : 0.0), radius: 2, x: 0, y: 1)
                             .matchedGeometryEffect(id: Self.activeIndicatorID, in: indicatorNamespace)
                     }
                 } else if isHovered {
-                    RoundedRectangle(cornerRadius: Theme.Radius.micro, style: .continuous)
-                        .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04))
+                    RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                        .fill(colorScheme == .light ? Color.black.opacity(0.04) : Color.white.opacity(0.08))
                         .transition(.opacity)
                 }
             }

@@ -89,9 +89,9 @@ struct MonitorContainerView: View {
         return .peer // 排名与磁盘详情之间无直达路径，防御性兜底
     }
 
-    /// 页面表面：overview 浅色平面白底，其余透明（露面板灰底）。
+    /// 页面表面：浅色模式下统一白底，消除层级切换露灰底。
     private func pageSurface(_ page: MonitorPanelRoute) -> PageSurface {
-        if colorScheme == .light && page == .overview {
+        if colorScheme == .light {
             return PageSurface(background: .white)
         }
         return .clear

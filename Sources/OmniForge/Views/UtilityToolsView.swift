@@ -199,7 +199,7 @@ struct UtilityToolsView: View {
             semantics: { from, to in
                 from == .list ? .forward : (to == .list ? .backward : .peer)
             },
-            surface: { _ in .clear },
+            surface: { _ in colorScheme == .light ? PageSurface(background: .white) : .clear },
             onRouteMountedBarrier: sizingContext.map { context in
                 { route, proceed in
                     context.mountStarted(path: "utility/\(route)", proceed: proceed)
