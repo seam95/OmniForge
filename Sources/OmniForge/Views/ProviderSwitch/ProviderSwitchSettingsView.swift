@@ -896,6 +896,10 @@ enum ProviderBrandVisual {
         if nameLower.contains("minimax") || urlLower.contains("minimax") {
             return Visual(letter: "M", color: Color(red: 0xEA / 255.0, green: 0x58 / 255.0, blue: 0x0C / 255.0), logo: ProviderLogoAssets.miniMax)
         }
+        if nameLower.contains("阶跃") || nameLower.contains("stepfun") || urlLower.contains("stepfun") {
+            // 品牌色与 TokenUsage 侧 stepfun 一致（#0057FF）。
+            return Visual(letter: "S", color: Color(red: 0x00 / 255.0, green: 0x57 / 255.0, blue: 0xFF / 255.0), logo: ProviderLogoAssets.stepfun)
+        }
         if nameLower.contains("openai") || nameLower.contains("chatgpt") || urlLower.contains("openai") {
             return Visual(letter: "O", color: Color(red: 0x10 / 255.0, green: 0xA3 / 255.0, blue: 0x7F / 255.0), logo: ProviderLogoAssets.openai)
         }

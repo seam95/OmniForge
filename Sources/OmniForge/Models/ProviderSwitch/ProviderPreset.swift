@@ -21,10 +21,10 @@ struct PresetConnection: Equatable {
     let extraEnv: [String: String]
 }
 
-/// 内置供应商预设目录 — 首版 4 家：GLM / Kimi / DeepSeek / MiniMax。
+/// 内置供应商预设目录 — 5 家：GLM / Kimi / DeepSeek / MiniMax / Step。
 /// 连接参数为随版本发布的数据（用户可在表单中修改后另存为自定义 profile）。
 enum ProviderPresetCatalog {
-    static let builtins: [ProviderPreset] = [glm, kimi, deepSeek, miniMax]
+    static let builtins: [ProviderPreset] = [glm, kimi, deepSeek, miniMax, step]
 
     static func preset(id: String) -> ProviderPreset? {
         builtins.first { $0.id == id }
@@ -118,6 +118,35 @@ enum ProviderPresetCatalog {
         codex: PresetConnection(
             baseURL: "https://api.minimax.io/v1",
             defaultModel: "MiniMax-M3",
+            modelMapping: nil,
+            extraEnv: [:]
+        )
+    )
+
+    /// Step（阶跃星辰）— Step Plan 订阅；Anthropic 兼容端点 api.stepfun.com/step_plan（不带 /v1，SDK 自动拼 /v1/messages）；
+    /// OpenAI 兼容端点 /step_plan/v1。主力档映射旗舰 step-5-preview，haiku 档映射代码向高速模型 step-3.5-flash。
+    static let step = ProviderPreset(
+        id: "step",
+        displayName: "Step 阶跃星辰",
+        claudeCode: PresetConnection(
+            baseURL: "https://api.stepfun.com/step_plan",
+            defaultModel: "step-5-preview",
+            modelMapping: ProviderModelMapping(
+                sonnet: "step-5-preview",
+                sonnetName: nil,
+                opus: "step-5-preview",
+                opusName: nil,
+                fable: "step-5-preview",
+                fableName: nil,
+                haiku: "step-3.5-flash",
+                haikuName: nil,
+                subagent: "step-5-preview"
+            ),
+            extraEnv: [:]
+        ),
+        codex: PresetConnection(
+            baseURL: "https://api.stepfun.com/step_plan/v1",
+            defaultModel: "step-5-preview",
             modelMapping: nil,
             extraEnv: [:]
         )

@@ -75,6 +75,10 @@ final class ProfileEditorViewTests: XCTestCase {
         XCTAssertEqual(minimax.letter, "M")
         XCTAssertEqual(minimax.logo, ProviderLogoAssets.miniMax)
 
+        let step = ProviderBrandVisual.visual(name: "Step 阶跃星辰", baseURL: "https://api.stepfun.com/step_plan")
+        XCTAssertEqual(step.letter, "S")
+        XCTAssertEqual(step.logo, ProviderLogoAssets.stepfun)
+
         let anthropic = ProviderBrandVisual.visual(name: "My Relay", baseURL: "https://example.com/anthropic")
         XCTAssertEqual(anthropic.logo, ProviderLogoAssets.claude)
 
@@ -83,10 +87,10 @@ final class ProfileEditorViewTests: XCTestCase {
         XCTAssertNil(custom.logo)
     }
 
-    /// 新入库的 GLM / MiniMax logo path 含相对弧线命令，必须能被 SVGPathParser 完整解析；
+    /// 新入库的 GLM / MiniMax / stepfun logo path 含相对命令（m/c），必须能被 SVGPathParser 完整解析；
     /// 并断言全部锚点落在 viewBox 0 0 24 24 附近（flag 解析错误会导致弧线终点大幅漂移出界）。
     func test_brandVisual_newLogoPathsParseIntoCommands() {
-        let assets: [[ProviderLogoLayer]] = [ProviderLogoAssets.glm, ProviderLogoAssets.miniMax]
+        let assets: [[ProviderLogoLayer]] = [ProviderLogoAssets.glm, ProviderLogoAssets.miniMax, ProviderLogoAssets.stepfun]
         for layers in assets {
             for layer in layers {
                 var parser = SVGPathParser(data: layer.pathData)

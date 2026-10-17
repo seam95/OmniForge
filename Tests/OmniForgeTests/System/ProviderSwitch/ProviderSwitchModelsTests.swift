@@ -228,9 +228,9 @@ final class ProviderSwitchModelsTests: XCTestCase {
 
     // MARK: - 内置 preset 目录
 
-    func test_presetCatalog_hasFourBuiltins() {
-        XCTAssertEqual(ProviderPresetCatalog.builtins.count, 4)
-        XCTAssertEqual(ProviderPresetCatalog.builtins.map(\.id), ["glm", "kimi", "deepseek", "minimax"])
+    func test_presetCatalog_hasFiveBuiltins() {
+        XCTAssertEqual(ProviderPresetCatalog.builtins.count, 5)
+        XCTAssertEqual(ProviderPresetCatalog.builtins.map(\.id), ["glm", "kimi", "deepseek", "minimax", "step"])
     }
 
     func test_presetCatalog_uniqueIDs() {
@@ -298,6 +298,16 @@ final class ProviderSwitchModelsTests: XCTestCase {
             ["CLAUDE_CODE_AUTO_COMPACT_WINDOW": "1048576", "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "1048576"]
         )
         XCTAssertNil(ProviderPresetCatalog.kimi.codex)
+    }
+
+    func test_preset_step() {
+        XCTAssertEqual(ProviderPresetCatalog.step.claudeCode?.baseURL, "https://api.stepfun.com/step_plan")
+        XCTAssertEqual(ProviderPresetCatalog.step.codex?.baseURL, "https://api.stepfun.com/step_plan/v1")
+        XCTAssertEqual(ProviderPresetCatalog.step.claudeCode?.defaultModel, "step-5-preview")
+        XCTAssertEqual(ProviderPresetCatalog.step.codex?.defaultModel, "step-5-preview")
+        XCTAssertEqual(ProviderPresetCatalog.step.claudeCode?.modelMapping?.haiku, "step-3.5-flash")
+        XCTAssertEqual(ProviderPresetCatalog.step.claudeCode?.modelMapping?.sonnet, "step-5-preview")
+        XCTAssertEqual(ProviderPresetCatalog.step.claudeCode?.extraEnv, [:])
     }
 
     func test_presetCatalog_noKimi256K() {
