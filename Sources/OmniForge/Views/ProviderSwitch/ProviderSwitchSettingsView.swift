@@ -115,7 +115,15 @@ struct ProviderSwitchSettingsView: View {
                             manager: aggregation,
                             switchManager: manager,
                             tool: tool,
-                            strings: strings
+                            strings: strings,
+                            commandCopier: commandCopier,
+                            onEditProfile: { profile in
+                                editingProfile = profile
+                            },
+                            onDeleteProfile: { profile in
+                                deletingProfile = profile
+                                deletePromptPresented = true
+                            }
                         )
                     } else {
                         providerList(for: tool)

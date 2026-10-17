@@ -1,13 +1,17 @@
 import SwiftUI
 
-/// 聚合面板：状态行 + 三区名单（默认 / 已添加 / 可用）+ 成员卡片（模型 id 预览）+
-/// 加入入口 + 模式动作（进入/退出 + 确认框）+ 代理未运行横幅 + Codex 陈旧客户端横幅 +
-/// 缓存提示。进入/退出都经 `ProviderAggregationManager` 编排（先起代理后写配置）。
+/// 聚合面板：聚合池成员卡片（默认高亮排首位 + 附属成员）+ 可加入候选卡片 +
+/// 统一 40×40 品牌 Logo 与操作菜单 + 模式动作（进入/退出 + 确认框）+
+/// 代理未运行横幅 + Codex 陈旧客户端横幅 + 缓存提示。
+/// 进入/退出都经 `ProviderAggregationManager` 编排（先起代理后写配置）。
 struct AggregationPanelView: View {
     @ObservedObject var manager: ProviderAggregationManager
     @ObservedObject var switchManager: ProviderSwitchManager
     let tool: ProviderTool
     let strings: Strings
+    var commandCopier: ProviderLaunchCommandCopying = ProviderLaunchCommandCopier()
+    var onEditProfile: ((ProviderProfile) -> Void)? = nil
+    var onDeleteProfile: ((ProviderProfile) -> Void)? = nil
 
     @State private var confirmingEnter = false
     @State private var confirmingExit = false
@@ -15,6 +19,7 @@ struct AggregationPanelView: View {
     /// 刚退出的默认那家 id（「撤销」用——重新进入聚合）。
     @State private var undoDefaultID: String?
     @State private var toastMessage: String?
+    @State private var toastDismissTask: Task<Void, Never>?
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -22,40 +27,52 @@ struct AggregationPanelView: View {
         manager: ProviderAggregationManager,
         switchManager: ProviderSwitchManager,
         tool: ProviderTool,
-        strings: Strings
+        strings: Strings,
+        commandCopier: ProviderLaunchCommandCopying = ProviderLaunchCommandCopier(),
+        onEditProfile: ((ProviderProfile) -> Void)? = nil,
+        onDeleteProfile: ((ProviderProfile) -> Void)? = nil
     ) {
         self.manager = manager
         self.switchManager = switchManager
         self.tool = tool
         self.strings = strings
+        self.commandCopier = commandCopier
+        self.onEditProfile = onEditProfile
+        self.onDeleteProfile = onDeleteProfile
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                if manager.isAggregating(tool) {
-                    proxyDownBanner
-                    staleBanner
-                    defaultSection
-                    officialDefaultCodexHint
-                    addedSection
+        VStack(alignment: .leading, spacing: ProviderCardVisual.cardSpacing) {
+            if manager.isAggregating(tool) {
+                proxyDownBanner
+                staleBanner
+
+                // 聚合成员列表（默认排在首位，带高亮描边与「默认」徽章）
+                membersList
+
+                officialDefaultCodexHint
+
+                // 可加入候选列表（若存在候选者）
+                if !joinCandidates.isEmpty {
                     availableSection
-                    exitAction
-                    if let undoDefaultID {
-                        undoAction(defaultID: undoDefaultID)
-                    }
-                } else {
-                    enterSection
-                    if let undoDefaultID {
-                        undoAction(defaultID: undoDefaultID)
-                    }
+                } else if hasOfficialExcluded {
+                    officialExcludedNote
                 }
 
-                cacheHint
+                exitAction
+                if let undoDefaultID {
+                    undoAction(defaultID: undoDefaultID)
+                }
+            } else {
+                enterSection
+                if let undoDefaultID {
+                    undoAction(defaultID: undoDefaultID)
+                }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+
+            cacheHint
         }
+        .padding(.horizontal, 12)
         .providerToast(message: $toastMessage)
         .confirmationDialog(
             strings.providerAggregationConfirmTitle,
@@ -133,47 +150,322 @@ struct AggregationPanelView: View {
         return strings.providerAggregationOfficialDefaultCodexHint
     }
 
-    // MARK: - 状态行
+    // MARK: - 聚合池成员与候选列表
 
-    private var statusLine: some View {
-        let isAgg = manager.isAggregating(tool)
+    private var membersList: some View {
         let members = manager.members(tool: tool)
-        let defaultMember = members.first
-
-        return HStack(spacing: 8) {
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(isAgg ? Color.green : Color.secondary.opacity(0.5))
-                    .frame(width: 7, height: 7)
-                Text(isAgg ? strings.providerModeAggregation : strings.providerModeAggregationOff)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(isAgg ? (colorScheme == .dark ? Color.green.opacity(0.9) : Color(red: 0x16 / 255.0, green: 0x80 / 255.0, blue: 0x3D / 255.0)) : Color.secondary)
+        return VStack(alignment: .leading, spacing: ProviderCardVisual.cardSpacing) {
+            ForEach(members) { member in
+                memberCard(member)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3.5)
-            .background(
-                Capsule()
-                    .fill(isAgg ? Color.green.opacity(0.12) : Color.secondary.opacity(0.1))
-            )
-
-            if isAgg, let defaultMember {
-                Text(String(
-                    format: strings.providerAggregationStatusValueFormat,
-                    defaultMember.name,
-                    members.count,
-                    manager.publishedModels(tool: tool).count
-                ))
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(ProviderCardVisual.secondaryText(colorScheme))
-                .lineLimit(1)
-            }
-
-            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 2)
     }
 
-    // MARK: - 进入 / 退出
+    private var availableSection: some View {
+        let candidates = joinCandidates
+        return VStack(alignment: .leading, spacing: ProviderCardVisual.cardSpacing) {
+            Text(String(format: strings.providerAggregationSectionAvailableFormat, candidates.count))
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(.leading, 2)
+                .padding(.top, 4)
+
+            ForEach(candidates) { profile in
+                candidateCard(profile)
+            }
+
+            if hasOfficialExcluded {
+                officialExcludedNote
+            }
+        }
+    }
+
+    private var officialExcludedNote: some View {
+        HStack(alignment: .top, spacing: 5) {
+            Image(systemName: "info.circle")
+                .font(.system(size: 10))
+            Text(strings.providerAggregationOfficialReason)
+                .font(.system(size: 10.5))
+        }
+        .foregroundStyle(.tertiary)
+        .padding(.leading, 2)
+    }
+
+    // MARK: - 卡片渲染（同构架构）
+
+    private func memberCard(_ member: ProviderAggregationManager.AggregationMemberView) -> some View {
+        let visual = memberVisual(for: member)
+        let profile = switchManager.profiles(for: tool).first(where: { $0.id == member.id })
+        let hostSummary = memberHostSummary(member: member, profile: profile)
+
+        return cardContainer(isDefault: member.isDefault) {
+            HStack(spacing: 12) {
+                ProviderBrandLogoBadge(
+                    visual: visual,
+                    size: ProviderCardVisual.logoSize,
+                    cornerRadius: ProviderCardVisual.logoCornerRadius
+                )
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(member.name)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(ProviderCardVisual.primaryText(colorScheme))
+                        .lineLimit(1)
+
+                    HStack(spacing: 6) {
+                        if !hostSummary.isEmpty {
+                            Text(hostSummary)
+                                .font(.system(size: 12))
+                                .foregroundStyle(ProviderCardVisual.secondaryText(colorScheme))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+
+                        if !member.modelIDs.isEmpty {
+                            if !hostSummary.isEmpty {
+                                Text("·")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Color.secondary.opacity(0.4))
+                            }
+                            HStack(spacing: 3) {
+                                Image(systemName: "cpu")
+                                    .font(.system(size: 8.5))
+                                Text(member.modelIDs.joined(separator: ", "))
+                                    .font(.system(size: 11, design: .monospaced))
+                            }
+                            .foregroundStyle(ProviderCardVisual.secondaryText(colorScheme))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        }
+                    }
+                }
+
+                Spacer(minLength: 0)
+
+                HStack(spacing: 8) {
+                    if member.isDefault {
+                        Text(strings.providerAggregationSectionDefault)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.accentColor)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(
+                                Capsule().fill(Theme.accentColor.opacity(0.12))
+                            )
+                    } else if !member.isOfficial {
+                        Button {
+                            setDefault(member.id)
+                        } label: {
+                            Text(strings.providerAggregationSetDefault)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(Theme.accentColor)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(
+                                    Capsule().fill(Theme.accentColor.opacity(0.10))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    memberMenu(for: member, profile: profile)
+                }
+            }
+            .padding(12)
+        }
+    }
+
+    private func candidateCard(_ profile: ProviderProfile) -> some View {
+        let visual = ProviderBrandVisual.resolve(for: profile)
+        let hostSummary = ProviderURLFormatter.hostOrSummary(from: profile.baseURL)
+
+        return cardContainer(isDefault: false) {
+            HStack(spacing: 12) {
+                ProviderBrandLogoBadge(
+                    visual: visual,
+                    size: ProviderCardVisual.logoSize,
+                    cornerRadius: ProviderCardVisual.logoCornerRadius
+                )
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(profile.name)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(ProviderCardVisual.primaryText(colorScheme))
+                        .lineLimit(1)
+
+                    if !hostSummary.isEmpty {
+                        Text(hostSummary)
+                            .font(.system(size: 12))
+                            .foregroundStyle(ProviderCardVisual.secondaryText(colorScheme))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+
+                Spacer(minLength: 0)
+
+                HStack(spacing: 8) {
+                    Button {
+                        addMember(profile.id)
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 10, weight: .bold))
+                            Text(strings.providerAggregationAdd)
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundStyle(Theme.accentColor)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule().fill(Theme.accentColor.opacity(0.10))
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    candidateMenu(for: profile)
+                }
+            }
+            .padding(12)
+        }
+    }
+
+    private func cardContainer<Content: View>(
+        isDefault: Bool,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        content()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: ProviderCardVisual.cornerRadius, style: .continuous)
+                    .fill(cardFill(isDefault: isDefault))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: ProviderCardVisual.cornerRadius, style: .continuous)
+                            .strokeBorder(cardBorder(isDefault: isDefault), lineWidth: 1)
+                    )
+                    .shadow(
+                        color: isDefault
+                            ? ProviderCardVisual.selectedCardShadow(colorScheme)
+                            : ProviderCardVisual.normalCardShadow(colorScheme),
+                        radius: isDefault ? 10 : 4,
+                        x: 0,
+                        y: isDefault ? 3 : 1
+                    )
+            )
+    }
+
+    private func cardFill(isDefault: Bool) -> Color {
+        colorScheme == .dark
+            ? Color(nsColor: .controlBackgroundColor)
+            : (isDefault ? ProviderCardVisual.selectedCardFill : ProviderCardVisual.normalCardFill)
+    }
+
+    private func cardBorder(isDefault: Bool) -> Color {
+        if isDefault {
+            return ProviderCardVisual.activeBorder(colorScheme)
+        }
+        return colorScheme == .dark ? Color.white.opacity(0.12) : ProviderCardVisual.border
+    }
+
+    // MARK: - 操作菜单（对齐直连）
+
+    private func memberMenu(
+        for member: ProviderAggregationManager.AggregationMemberView,
+        profile: ProviderProfile?
+    ) -> some View {
+        Menu {
+            if !member.isDefault {
+                Button(strings.providerAggregationSetDefault) {
+                    setDefault(member.id)
+                }
+            }
+            if showsRemoveButton(for: member.id) {
+                Button(strings.providerAggregationRemove, role: .destructive) {
+                    removeMember(member.id)
+                }
+            }
+            if let profile {
+                Divider()
+                Button(strings.providerEdit) {
+                    onEditProfile?(profile)
+                }
+                Button(strings.providerCopyLaunchCommand) {
+                    copyLaunchCommand(for: profile)
+                }
+                if !member.isDefault {
+                    Button(strings.providerDelete, role: .destructive) {
+                        onDeleteProfile?(profile)
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.secondary.opacity(0.8))
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+    }
+
+    private func candidateMenu(for profile: ProviderProfile) -> some View {
+        Menu {
+            Button(strings.providerAggregationAdd) {
+                addMember(profile.id)
+            }
+            Divider()
+            Button(strings.providerEdit) {
+                onEditProfile?(profile)
+            }
+            Button(strings.providerCopyLaunchCommand) {
+                copyLaunchCommand(for: profile)
+            }
+            Button(strings.providerDelete, role: .destructive) {
+                onDeleteProfile?(profile)
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.secondary.opacity(0.8))
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+    }
+
+    // MARK: - 视觉与辅助计算
+
+    private func memberVisual(for member: ProviderAggregationManager.AggregationMemberView) -> ProviderBrandVisual.Visual {
+        if member.isOfficial {
+            let logo = ProviderBrandVisual.officialLogo(for: tool)
+            let color = ProviderBrandVisual.officialColor(for: tool)
+            return ProviderBrandVisual.Visual(letter: "", color: color, logo: logo)
+        }
+        if let profile = switchManager.profiles(for: tool).first(where: { $0.id == member.id }) {
+            return ProviderBrandVisual.resolve(for: profile)
+        }
+        return ProviderBrandVisual.visual(name: member.name)
+    }
+
+    private func memberHostSummary(
+        member: ProviderAggregationManager.AggregationMemberView,
+        profile: ProviderProfile?
+    ) -> String {
+        if member.isOfficial {
+            switch tool {
+            case .claudeCode: return strings.providerOfficialClaudeCaption
+            case .codex: return strings.providerOfficialCodexCaption
+            }
+        }
+        guard let profile else { return "" }
+        return ProviderURLFormatter.hostOrSummary(from: profile.baseURL)
+    }
+
+    // MARK: - 进入 / 退出 / 撤销
 
     private var enterSection: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -256,17 +548,18 @@ struct AggregationPanelView: View {
             }
             .foregroundStyle(Color.secondary)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 7)
+            .padding(.vertical, 8)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.03))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .strokeBorder(colorScheme == .dark ? Color.white.opacity(0.1) : ProviderCardVisual.border, lineWidth: 0.8)
                     )
             )
         }
         .buttonStyle(.plain)
+        .padding(.top, 2)
         .accessibilityIdentifier(SettingsAccessibilityID.providerAggregationExit.rawValue)
     }
 
@@ -297,224 +590,7 @@ struct AggregationPanelView: View {
         }
     }
 
-    // MARK: - 三区名单
-
-    private var defaultSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            sectionHeader(strings.providerAggregationSectionDefault)
-            if let member = manager.members(tool: tool).first(where: { $0.isDefault }) {
-                memberCard(member)
-            }
-        }
-    }
-
-    private var addedSection: some View {
-        let others = manager.members(tool: tool).filter { !$0.isDefault }
-        return VStack(alignment: .leading, spacing: 6) {
-            sectionHeader(String(format: strings.providerAggregationSectionAddedFormat, others.count))
-            ForEach(others) { member in
-                memberCard(member)
-            }
-            if others.isEmpty {
-                Text(strings.providerAggregationNoteEmpty)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.tertiary)
-                    .padding(.leading, 2)
-            }
-        }
-    }
-
-    private var availableSection: some View {
-        let candidates = joinCandidates
-        return VStack(alignment: .leading, spacing: 6) {
-            sectionHeader(String(format: strings.providerAggregationSectionAvailableFormat, candidates.count))
-            ForEach(candidates) { profile in
-                let visual = ProviderBrandVisual.resolve(for: profile)
-                let hostSummary = ProviderURLFormatter.hostOrSummary(from: profile.baseURL)
-                HStack(spacing: 10) {
-                    ProviderBrandLogoBadge(visual: visual, size: 30, cornerRadius: 8)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(profile.name)
-                            .font(.system(size: 12.5, weight: .medium))
-                            .foregroundStyle(ProviderCardVisual.primaryText(colorScheme))
-                            .lineLimit(1)
-                        if !hostSummary.isEmpty {
-                            Text(hostSummary)
-                                .font(.system(size: 10.5))
-                                .foregroundStyle(ProviderCardVisual.secondaryText(colorScheme))
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                    }
-
-                    Spacer(minLength: 0)
-
-                    Button {
-                        addMember(profile.id)
-                    } label: {
-                        HStack(spacing: 3) {
-                            Image(systemName: "plus")
-                                .font(.system(size: 10, weight: .bold))
-                            Text(strings.providerAggregationAdd)
-                                .font(.system(size: 11, weight: .medium))
-                        }
-                        .foregroundStyle(Color.accentColor)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 4)
-                        .background(
-                            Capsule()
-                                .fill(Color.accentColor.opacity(0.1))
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(colorScheme == .dark ? Color(nsColor: .controlBackgroundColor) : ProviderCardVisual.normalCardFill)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .strokeBorder(colorScheme == .dark ? Color.white.opacity(0.08) : ProviderCardVisual.border, lineWidth: 1)
-                        )
-                        .shadow(color: ProviderCardVisual.normalCardShadow(colorScheme), radius: 2, x: 0, y: 1)
-                )
-            }
-            if hasOfficialExcluded {
-                HStack(alignment: .top, spacing: 4) {
-                    Image(systemName: "info.circle")
-                        .font(.system(size: 10))
-                    Text(strings.providerAggregationOfficialReason)
-                        .font(.system(size: 10))
-                }
-                .foregroundStyle(.tertiary)
-                .padding(.leading, 2)
-            }
-        }
-    }
-
-    private func memberVisual(for member: ProviderAggregationManager.AggregationMemberView) -> ProviderBrandVisual.Visual {
-        if member.isOfficial {
-            let logo = ProviderBrandVisual.officialLogo(for: tool)
-            let color = ProviderBrandVisual.officialColor(for: tool)
-            return ProviderBrandVisual.Visual(letter: "", color: color, logo: logo)
-        }
-        if let profile = switchManager.profiles(for: tool).first(where: { $0.id == member.id }) {
-            return ProviderBrandVisual.resolve(for: profile)
-        }
-        return ProviderBrandVisual.visual(name: member.name)
-    }
-
-    private func memberCard(_ member: ProviderAggregationManager.AggregationMemberView) -> some View {
-        let visual = memberVisual(for: member)
-        return HStack(spacing: 11) {
-            ProviderBrandLogoBadge(visual: visual, size: 38, cornerRadius: 10)
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(member.name)
-                        .font(.system(size: 13.5, weight: .semibold))
-                        .foregroundStyle(ProviderCardVisual.primaryText(colorScheme))
-                        .lineLimit(1)
-
-                    if member.isDefault {
-                        Text(strings.providerAggregationSectionDefault)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.accentColor)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(Color.accentColor.opacity(0.12)))
-                    }
-
-                    Spacer(minLength: 0)
-
-                    if member.isOfficial {
-                        Text(strings.providerAggregationOfficialReason)
-                            .font(.system(size: 10))
-                            .foregroundStyle(.tertiary)
-                            .lineLimit(1)
-                    } else {
-                        if !member.isDefault {
-                            Button {
-                                setDefault(member.id)
-                            } label: {
-                                Text(strings.providerAggregationSetDefault)
-                                    .font(.system(size: 10.5, weight: .medium))
-                                    .foregroundStyle(Color.accentColor)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 3.5)
-                                    .background(
-                                        Capsule()
-                                            .fill(Color.accentColor.opacity(0.10))
-                                    )
-                            }
-                            .buttonStyle(.plain)
-                        }
-
-                        if showsRemoveButton(for: member.id) {
-                            Button {
-                                removeMember(member.id)
-                            } label: {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 11.5))
-                                    .foregroundStyle(Color.secondary.opacity(0.7))
-                                    .frame(width: 26, height: 26)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .help(strings.providerAggregationRemove)
-                        }
-                    }
-                }
-
-                if !member.modelIDs.isEmpty {
-                    HStack(spacing: 4) {
-                        Image(systemName: "cpu")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.secondary.opacity(0.8))
-                        Text(member.modelIDs.joined(separator: " · "))
-                            .font(.system(size: 10, weight: .regular, design: .monospaced))
-                            .foregroundStyle(ProviderCardVisual.secondaryText(colorScheme))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2.5)
-                    .background(
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.03))
-                    )
-                }
-            }
-        }
-        .padding(11)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: ProviderCardVisual.cornerRadius, style: .continuous)
-                .fill(member.isDefault && colorScheme != .dark ? ProviderCardVisual.selectedCardFill : (colorScheme == .dark ? Color(nsColor: .controlBackgroundColor) : ProviderCardVisual.normalCardFill))
-                .overlay(
-                    RoundedRectangle(cornerRadius: ProviderCardVisual.cornerRadius, style: .continuous)
-                        .strokeBorder(
-                            member.isDefault ? ProviderCardVisual.activeBorder(colorScheme) : (colorScheme == .dark ? Color.white.opacity(0.1) : ProviderCardVisual.border),
-                            lineWidth: 1
-                        )
-                )
-                .shadow(
-                    color: member.isDefault ? ProviderCardVisual.selectedCardShadow(colorScheme) : ProviderCardVisual.normalCardShadow(colorScheme),
-                    radius: member.isDefault ? 6 : 3,
-                    x: 0,
-                    y: 1
-                )
-        )
-    }
-
-    private func sectionHeader(_ title: String) -> some View {
-        Text(title)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.secondary)
-            .padding(.leading, 2)
-    }
+    // MARK: - 提示行与缓存
 
     /// 官方默认 Codex 提示行（见 `officialDefaultCodexHint`）：一行说明，不单独成分区。
     @ViewBuilder
@@ -546,7 +622,7 @@ struct AggregationPanelView: View {
         }
         .foregroundStyle(.tertiary)
         .padding(.horizontal, 2)
-        .padding(.top, 4)
+        .padding(.top, 2)
     }
 
     // MARK: - 横幅
@@ -733,7 +809,20 @@ struct AggregationPanelView: View {
         }
     }
 
-    private func showToast(_ message: String) {
-        toastMessage = message
+    private func copyLaunchCommand(for profile: ProviderProfile) {
+        let message = commandCopier.copyLaunchCommand(for: profile)
+            ? strings.providerLaunchCommandCopied
+            : strings.providerLaunchCommandCopyFailed
+        showToast(message)
+    }
+
+    private func showToast(_ text: String) {
+        withAnimation { toastMessage = text }
+        toastDismissTask?.cancel()
+        toastDismissTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation { toastMessage = nil }
+        }
     }
 }
