@@ -213,7 +213,7 @@ struct ProviderSwitchSettingsView: View {
             nil
         }
 
-        return VStack(spacing: 0) {
+        return HStack(spacing: 8) {
             ProviderModeRow(
                 title: strings.providerModeDirect,
                 summary: ProviderModeRow.directSummary(
@@ -222,7 +222,9 @@ struct ProviderSwitchSettingsView: View {
                 isExpanded: panelMode == .direct,
                 accessibilityID: .providerModeDirectRow
             ) {
-                panelMode = .direct
+                withAnimation(Theme.Animation.snappy) {
+                    panelMode = .direct
+                }
             }
 
             ProviderModeRow(
@@ -235,11 +237,13 @@ struct ProviderSwitchSettingsView: View {
                 isExpanded: panelMode == .aggregation,
                 accessibilityID: .providerModeAggregationRow
             ) {
-                panelMode = .aggregation
+                withAnimation(Theme.Animation.snappy) {
+                    panelMode = .aggregation
+                }
             }
         }
         .padding(.horizontal, 12)
-        .padding(.bottom, 6)
+        .padding(.bottom, 8)
     }
 
     /// 齿轮按钮（「供应商设置」弹层）：新增供应商（菜单栏）、编辑配置文件、恢复备份。

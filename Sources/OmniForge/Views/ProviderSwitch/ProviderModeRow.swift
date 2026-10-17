@@ -1,10 +1,11 @@
 import SwiftUI
 
-/// 模式两行（直连 / 聚合）——替代原「直连 / 聚合」分段行。
+/// 模式双卡片选择器（直连 / 聚合）——替代原带折叠箭头的纯文本行。
 ///
 /// 两种模式**互斥**：`~/.claude/settings.json` 与 Codex `config.toml` 同时只能容一个写入者，
-/// 所以一行展开时另一行必折叠。折叠行带状态摘要，这是两行相对分段行多出来的信息量——
-/// 分段行只有标题，用户停在直连时根本看不出聚合开了没有、有几家。
+/// 因此两张卡片以单选形式呈现。每张卡片展示自身模式下的实时状态摘要：
+/// - 直连：未聚合时展示当前激活 profile（或官方账号），聚合生效时明确标示「已暂停」。
+/// - 聚合：未开启时展示可加入家数，开启时展示成员数与默认供应商。
 ///
 /// 默认展开哪一行不看用户上次选了什么，而看哪个模式**真的在生效**：聚合生效时若默认展开
 /// 直连，用户第一眼看到的是一排被锁死的操作（见 `ProviderSwitchSettingsView.directActionsDisabled`）。
@@ -14,6 +15,9 @@ struct ProviderModeRow: View {
     let isExpanded: Bool
     let accessibilityID: SettingsAccessibilityID
     let onToggle: () -> Void
+
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var isHovered = false
 
     init(
         title: String,
@@ -29,26 +33,91 @@ struct ProviderModeRow: View {
         self.onToggle = onToggle
     }
 
+    private var iconName: String {
+        switch accessibilityID {
+        case .providerModeDirectRow:
+            return "arrow.triangle.swap"
+        case .providerModeAggregationRow:
+            return "square.stack.3d.up.fill"
+        default:
+            return "circle.grid.2x2"
+        }
+    }
+
     var body: some View {
-        // macOS 上 DisclosureGroup 的自定义文本 label 不响应点击（仅左侧箭头可点），
-        // 因此自绘折叠行并显式接管点击，保证整行可切换（同 ProfileEditorView 的显示名折叠行）。
         Button(action: onToggle) {
-            HStack(spacing: 6) {
-                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
-                Text(title)
-                    .font(.system(size: 12, weight: .medium))
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 5) {
+                    Image(systemName: iconName)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(isExpanded ? Theme.accentColor : Color.secondary)
+
+                    Text(title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(isExpanded ? (colorScheme == .dark ? .white : Theme.Stats.text1) : Color.secondary)
+
+                    Spacer(minLength: 0)
+
+                    if isExpanded {
+                        Circle()
+                            .fill(Theme.accentColor)
+                            .frame(width: 5, height: 5)
+                    }
+                }
+
                 Text(summary)
-                    .font(.system(size: 11))
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(isExpanded ? (colorScheme == .dark ? Color.white.opacity(0.85) : Theme.Stats.text2) : Color.secondary.opacity(0.75))
                     .lineLimit(1)
-                Spacer(minLength: 0)
+                    .truncationMode(.tail)
             }
-            .foregroundStyle(isExpanded ? Color.primary : Color.secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(backgroundFill)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(strokeBorder, lineWidth: 1)
+                    )
+                    .shadow(
+                        color: isExpanded ? ProviderCardVisual.selectedCardShadow(colorScheme) : (isHovered ? Color.black.opacity(0.04) : .clear),
+                        radius: isExpanded ? 6 : 2,
+                        x: 0,
+                        y: isExpanded ? 2 : 1
+                    )
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(Theme.Animation.hover) {
+                isHovered = hovering
+            }
+        }
         .accessibilityIdentifier(accessibilityID.rawValue)
+    }
+
+    private var backgroundFill: Color {
+        if colorScheme == .dark {
+            if isExpanded {
+                return Color.white.opacity(0.12)
+            }
+            return isHovered ? Color.white.opacity(0.08) : Color.white.opacity(0.04)
+        } else {
+            if isExpanded {
+                return ProviderCardVisual.selectedCardFill
+            }
+            return isHovered ? Color.white : Color(red: 0xF7 / 255.0, green: 0xF7 / 255.0, blue: 0xF9 / 255.0)
+        }
+    }
+
+    private var strokeBorder: Color {
+        if isExpanded {
+            return ProviderCardVisual.activeBorder(colorScheme)
+        }
+        return colorScheme == .dark ? Color.white.opacity(0.08) : ProviderCardVisual.border
     }
 
     // MARK: - 纯逻辑（可直测；界面测试按 AGENTS.md 缓行）

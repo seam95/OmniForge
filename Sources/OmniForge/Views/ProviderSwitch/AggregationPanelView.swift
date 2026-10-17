@@ -56,7 +56,7 @@ struct AggregationPanelView: View {
                 cacheHint
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.vertical, 8)
         }
         .providerToast(message: $toastMessage)
         .confirmationDialog(
@@ -138,12 +138,27 @@ struct AggregationPanelView: View {
     // MARK: - 状态行
 
     private var statusLine: some View {
-        HStack(spacing: 6) {
-            Text(strings.providerAggregationStatusLead)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-            let members = manager.members(tool: tool)
-            if let defaultMember = members.first {
+        let isAgg = manager.isAggregating(tool)
+        let members = manager.members(tool: tool)
+        let defaultMember = members.first
+
+        return HStack(spacing: 8) {
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(isAgg ? Color.green : Color.secondary.opacity(0.5))
+                    .frame(width: 7, height: 7)
+                Text(isAgg ? strings.providerModeAggregation : strings.providerModeAggregationOff)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(isAgg ? (colorScheme == .dark ? Color.green.opacity(0.9) : Color(red: 0x16 / 255.0, green: 0x80 / 255.0, blue: 0x3D / 255.0)) : Color.secondary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3.5)
+            .background(
+                Capsule()
+                    .fill(isAgg ? Color.green.opacity(0.12) : Color.secondary.opacity(0.1))
+            )
+
+            if isAgg, let defaultMember {
                 Text(String(
                     format: strings.providerAggregationStatusValueFormat,
                     defaultMember.name,
@@ -151,35 +166,83 @@ struct AggregationPanelView: View {
                     manager.publishedModels(tool: tool).count
                 ))
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.primary)
+                .foregroundStyle(ProviderCardVisual.secondaryText(colorScheme))
                 .lineLimit(1)
             }
+
             Spacer(minLength: 0)
         }
+        .padding(.horizontal, 2)
     }
 
     // MARK: - 进入 / 退出
 
     private var enterSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            noteRow(strings.providerAggregationConfirmStack)
-            noteRow(strings.providerAggregationNoteDefault)
-            noteRow(strings.providerAggregationNoteNoFailover)
-            if tool == .codex {
-                noteRow(strings.providerAggregationNoteRestartCodex)
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "square.stack.3d.up.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(Theme.accentColor)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(strings.providerModeAggregation)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(ProviderCardVisual.primaryText(colorScheme))
+                        Text(strings.providerAggregationConfirmStack)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    featurePointRow(icon: "star.fill", text: strings.providerAggregationNoteDefault)
+                    featurePointRow(icon: "shield.fill", text: strings.providerAggregationNoteNoFailover)
+                    if tool == .codex {
+                        featurePointRow(icon: "arrow.clockwise", text: strings.providerAggregationNoteRestartCodex)
+                    }
+                }
             }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: ProviderCardVisual.cornerRadius, style: .continuous)
+                    .fill(colorScheme == .dark ? Color(nsColor: .controlBackgroundColor) : ProviderCardVisual.normalCardFill)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: ProviderCardVisual.cornerRadius, style: .continuous)
+                            .strokeBorder(colorScheme == .dark ? Color.white.opacity(0.1) : ProviderCardVisual.border, lineWidth: 1)
+                    )
+                    .shadow(color: ProviderCardVisual.normalCardShadow(colorScheme), radius: 3, x: 0, y: 1)
+            )
 
             Button {
                 confirmingEnter = true
             } label: {
-                Text(strings.providerAggregationEnter)
-                    .font(.system(size: 12, weight: .semibold))
-                    .frame(maxWidth: .infinity)
+                HStack(spacing: 6) {
+                    Image(systemName: "bolt.fill")
+                    Text(strings.providerAggregationEnter)
+                }
+                .font(.system(size: 12, weight: .semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
             }
             .buttonStyle(.borderedProminent)
-            .controlSize(.small)
+            .controlSize(.regular)
             .disabled(defaultCandidateID == nil)
             .accessibilityIdentifier(SettingsAccessibilityID.providerAggregationEnter.rawValue)
+        }
+    }
+
+    private func featurePointRow(icon: String, text: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.accentColor)
+                .frame(width: 12, height: 14)
+            Text(text)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -187,12 +250,25 @@ struct AggregationPanelView: View {
         Button {
             confirmingExit = true
         } label: {
-            Text(strings.providerAggregationExit)
-                .font(.system(size: 12, weight: .medium))
-                .frame(maxWidth: .infinity)
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.triangle.swap")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(strings.providerAggregationExit)
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .foregroundStyle(Color.secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.03))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(colorScheme == .dark ? Color.white.opacity(0.1) : ProviderCardVisual.border, lineWidth: 0.8)
+                    )
+            )
         }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
+        .buttonStyle(.plain)
         .accessibilityIdentifier(SettingsAccessibilityID.providerAggregationExit.rawValue)
     }
 
@@ -245,6 +321,7 @@ struct AggregationPanelView: View {
                 Text(strings.providerAggregationNoteEmpty)
                     .font(.system(size: 10.5))
                     .foregroundStyle(.tertiary)
+                    .padding(.leading, 2)
             }
         }
     }
@@ -254,98 +331,191 @@ struct AggregationPanelView: View {
         return VStack(alignment: .leading, spacing: 6) {
             sectionHeader(String(format: strings.providerAggregationSectionAvailableFormat, candidates.count))
             ForEach(candidates) { profile in
-                HStack(spacing: 8) {
-                    Text(profile.name)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                    Button(strings.providerAggregationAdd) {
-                        addMember(profile.id)
+                let visual = ProviderBrandVisual.resolve(for: profile)
+                let hostSummary = ProviderURLFormatter.hostOrSummary(from: profile.baseURL)
+                HStack(spacing: 10) {
+                    ProviderBrandLogoBadge(visual: visual, size: 30, cornerRadius: 8)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(profile.name)
+                            .font(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(ProviderCardVisual.primaryText(colorScheme))
+                            .lineLimit(1)
+                        if !hostSummary.isEmpty {
+                            Text(hostSummary)
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(ProviderCardVisual.secondaryText(colorScheme))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
                     }
-                    .font(.system(size: 11, weight: .medium))
+
+                    Spacer(minLength: 0)
+
+                    Button {
+                        addMember(profile.id)
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 10, weight: .bold))
+                            Text(strings.providerAggregationAdd)
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundStyle(Color.accentColor)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule()
+                                .fill(Color.accentColor.opacity(0.1))
+                        )
+                    }
                     .buttonStyle(.plain)
-                    .foregroundStyle(Color.accentColor)
                 }
                 .padding(.horizontal, 10)
-                .padding(.vertical, 7)
+                .padding(.vertical, 8)
                 .background(
-                    RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-                        .fill(ProviderCardVisual.normalCardFill)
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(colorScheme == .dark ? Color(nsColor: .controlBackgroundColor) : ProviderCardVisual.normalCardFill)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(colorScheme == .dark ? Color.white.opacity(0.08) : ProviderCardVisual.border, lineWidth: 1)
+                        )
+                        .shadow(color: ProviderCardVisual.normalCardShadow(colorScheme), radius: 2, x: 0, y: 1)
                 )
             }
             if hasOfficialExcluded {
-                Text(strings.providerAggregationOfficialReason)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
+                HStack(alignment: .top, spacing: 4) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 10))
+                    Text(strings.providerAggregationOfficialReason)
+                        .font(.system(size: 10))
+                }
+                .foregroundStyle(.tertiary)
+                .padding(.leading, 2)
             }
         }
     }
 
-    private func memberCard(_ member: ProviderAggregationManager.AggregationMemberView) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 8) {
-                Text(member.name)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(ProviderCardVisual.primaryText(colorScheme))
-                    .lineLimit(1)
+    private func memberVisual(for member: ProviderAggregationManager.AggregationMemberView) -> ProviderBrandVisual.Visual {
+        if member.isOfficial {
+            let logo = ProviderBrandVisual.officialLogo(for: tool)
+            let color = ProviderBrandVisual.officialColor(for: tool)
+            return ProviderBrandVisual.Visual(letter: "", color: color, logo: logo)
+        }
+        if let profile = switchManager.profiles(for: tool).first(where: { $0.id == member.id }) {
+            return ProviderBrandVisual.resolve(for: profile)
+        }
+        return ProviderBrandVisual.visual(name: member.name)
+    }
 
-                if member.isDefault {
-                    Text(strings.providerAggregationSectionDefault)
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(Color.accentColor.opacity(0.12)))
+    private func memberCard(_ member: ProviderAggregationManager.AggregationMemberView) -> some View {
+        let visual = memberVisual(for: member)
+        return HStack(spacing: 11) {
+            ProviderBrandLogoBadge(visual: visual, size: 38, cornerRadius: 10)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(member.name)
+                        .font(.system(size: 13.5, weight: .semibold))
+                        .foregroundStyle(ProviderCardVisual.primaryText(colorScheme))
+                        .lineLimit(1)
+
+                    if member.isDefault {
+                        Text(strings.providerAggregationSectionDefault)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.accentColor)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.accentColor.opacity(0.12)))
+                    }
+
+                    Spacer(minLength: 0)
+
+                    if member.isOfficial {
+                        Text(strings.providerAggregationOfficialReason)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    } else {
+                        if !member.isDefault {
+                            Button {
+                                setDefault(member.id)
+                            } label: {
+                                Text(strings.providerAggregationSetDefault)
+                                    .font(.system(size: 10.5, weight: .medium))
+                                    .foregroundStyle(Color.accentColor)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3.5)
+                                    .background(
+                                        Capsule()
+                                            .fill(Color.accentColor.opacity(0.10))
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                        if showsRemoveButton(for: member.id) {
+                            Button {
+                                removeMember(member.id)
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 11.5))
+                                    .foregroundStyle(Color.secondary.opacity(0.7))
+                                    .frame(width: 26, height: 26)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .help(strings.providerAggregationRemove)
+                        }
+                    }
                 }
 
-                Spacer(minLength: 0)
-
-                if member.isOfficial {
-                    Text(strings.providerAggregationOfficialReason)
-                        .font(.system(size: 9.5))
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                } else {
-                    if !member.isDefault {
-                        Button(strings.providerAggregationSetDefault) {
-                            setDefault(member.id)
-                        }
-                        .font(.system(size: 10, weight: .medium))
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Color.accentColor)
+                if !member.modelIDs.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "cpu")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary.opacity(0.8))
+                        Text(member.modelIDs.joined(separator: " · "))
+                            .font(.system(size: 10, weight: .regular, design: .monospaced))
+                            .foregroundStyle(ProviderCardVisual.secondaryText(colorScheme))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
                     }
-                    if showsRemoveButton(for: member.id) {
-                        Button(strings.providerAggregationRemove) {
-                            removeMember(member.id)
-                        }
-                        .font(.system(size: 10, weight: .medium))
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2.5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.03))
+                    )
                 }
             }
-
-            // 模型 id 预览：等宽字体 + 中间截断（长 id 不撑卡）。
-            Text(member.modelIDs.joined(separator: "   "))
-                .font(.system(size: 9, weight: .regular, design: .monospaced))
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
-                .truncationMode(.middle)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(11)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-                .fill(ProviderCardVisual.normalCardFill)
+            RoundedRectangle(cornerRadius: ProviderCardVisual.cornerRadius, style: .continuous)
+                .fill(member.isDefault && colorScheme != .dark ? ProviderCardVisual.selectedCardFill : (colorScheme == .dark ? Color(nsColor: .controlBackgroundColor) : ProviderCardVisual.normalCardFill))
+                .overlay(
+                    RoundedRectangle(cornerRadius: ProviderCardVisual.cornerRadius, style: .continuous)
+                        .strokeBorder(
+                            member.isDefault ? ProviderCardVisual.activeBorder(colorScheme) : (colorScheme == .dark ? Color.white.opacity(0.1) : ProviderCardVisual.border),
+                            lineWidth: 1
+                        )
+                )
+                .shadow(
+                    color: member.isDefault ? ProviderCardVisual.selectedCardShadow(colorScheme) : ProviderCardVisual.normalCardShadow(colorScheme),
+                    radius: member.isDefault ? 6 : 3,
+                    x: 0,
+                    y: 1
+                )
         )
     }
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 10.5, weight: .semibold))
+            .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(.secondary)
+            .padding(.leading, 2)
     }
 
     /// 官方默认 Codex 提示行（见 `officialDefaultCodexHint`）：一行说明，不单独成分区。
@@ -357,17 +527,28 @@ struct AggregationPanelView: View {
     }
 
     private func noteRow(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 10.5))
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
+        HStack(alignment: .top, spacing: 5) {
+            Image(systemName: "info.circle")
+                .font(.system(size: 10))
+            Text(text)
+                .font(.system(size: 10.5))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 2)
     }
 
     private var cacheHint: some View {
-        Text(strings.providerAggregationCacheHint)
-            .font(.system(size: 10))
-            .foregroundStyle(.tertiary)
-            .fixedSize(horizontal: false, vertical: true)
+        HStack(alignment: .top, spacing: 5) {
+            Image(systemName: "info.circle")
+                .font(.system(size: 10))
+            Text(strings.providerAggregationCacheHint)
+                .font(.system(size: 10.5))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundStyle(.tertiary)
+        .padding(.horizontal, 2)
+        .padding(.top, 4)
     }
 
     // MARK: - 横幅
