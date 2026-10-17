@@ -228,6 +228,16 @@ struct ClaudeStackModelsField: View {
         trimEnd(model).lowercased().hasSuffix(oneMMarker.lowercased())
     }
 
+    /// 按勾选态写 1M 字面标记（cc-switch `setClaudeOneMMarker` 同款；拼接形态与
+    /// `defaultModel` 一致的无空格 `k3[1M]`，strip 两侧形态都认）：
+    /// 基础名剥标记后 trim；空基础名 → 空串（值空了 1M 无从谈起，不让复选凭空留住标记）。
+    /// 调用方：本视图行复选、直连表单映射行复选（模型映射值同以字面标记承载 1M）。
+    static func setOneMMarker(_ model: String, _ enabled: Bool) -> String {
+        let base = stripOneMMarker(model).model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !base.isEmpty else { return "" }
+        return enabled ? base + oneMMarker : base
+    }
+
     /// 剥掉末尾 1M 字面标记（大小写不敏感）——cc-switch `stripClaudeOneMMarker` 同款：
     /// 先去掉尾空白再判后缀，剥完再去一次尾空白（`k3 [1M]` → `k3`）。
     static func stripOneMMarker(_ model: String) -> (model: String, oneM: Bool) {

@@ -36,7 +36,8 @@ enum ProfileEditorLayout {
 /// - 顶部清晰标题
 /// - 预设供应商下拉（仅新增模式，带品牌色徽章图标与自动填充提示）
 /// - 基础信息（名称、Base URL、带明密文切换的凭证）
-/// - 模型映射（Claude Code 角色网格：默认兜底、Sonnet、Opus、Fable、Haiku、Subagent 及可折叠显示名）
+/// - Claude 按打开时的模式二选一：直连 → 角色映射（含「声明支持 1M」复选）；
+///   聚合 → 发布列表。Codex 恒为模型列表（首行默认）
 /// - 底部取消与高亮保存主按钮
 struct ProfileEditorView: View {
     @ObservedObject var manager: ProviderSwitchManager
@@ -44,6 +45,10 @@ struct ProfileEditorView: View {
     let tool: ProviderTool
     /// nil = 新增；非 nil = 编辑既有档案。
     var profile: ProviderProfile?
+    /// 打开表单时该工具是否处于聚合模式（快照，打开期间不随顶栏开关重算）。
+    /// Claude 分支据此二选一：聚合 → 只显示发布列表；直连 → 只显示角色映射
+    /// （对齐 cc-switch classic/stack 两种表单布局，由打开时所处的模式格决定）。
+    var aggregating: Bool = false
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
@@ -123,11 +128,13 @@ struct ProfileEditorView: View {
 
             sectionDivider
 
-            modelMappingSection
-
-            if tool == .claudeCode {
-                sectionDivider
+            // Claude 按打开时的模式二选一（对齐 cc-switch classic/stack）：
+            // 聚合 → 发布列表（无角色映射）；直连 → 角色映射（无发布列表）。
+            // Codex 恒为模型列表（直连聚合同构，无二选一）。
+            if tool == .claudeCode && aggregating {
                 stackModelsSection
+            } else {
+                modelMappingSection
             }
 
             if let errorMessage {
@@ -340,12 +347,12 @@ struct ProfileEditorView: View {
                 }
 
                 VStack(spacing: 8) {
-                    mappingRow(label: strings.providerModelFallbackLabel, text: $model, placeholder: "glm-5.3")
-                    mappingRow(label: strings.providerSonnetModelLabel, text: $sonnet, placeholder: "glm-5.3")
-                    mappingRow(label: strings.providerOpusModelLabel, text: $opus, placeholder: "glm-5.3")
-                    mappingRow(label: strings.providerFableModelLabel, text: $fable, placeholder: "glm-5.3")
-                    mappingRow(label: strings.providerHaikuModelLabel, text: $haiku, placeholder: "glm-5.3-flash")
-                    mappingRow(label: strings.providerSubagentModelLabel, text: $subagent, placeholder: "glm-5.3")
+                    mappingRowWithOneM(label: strings.providerModelFallbackLabel, text: $model, placeholder: "glm-5.3")
+                    mappingRowWithOneM(label: strings.providerSonnetModelLabel, text: $sonnet, placeholder: "glm-5.3")
+                    mappingRowWithOneM(label: strings.providerOpusModelLabel, text: $opus, placeholder: "glm-5.3")
+                    mappingRowWithOneM(label: strings.providerFableModelLabel, text: $fable, placeholder: "glm-5.3")
+                    mappingRowWithOneM(label: strings.providerHaikuModelLabel, text: $haiku, placeholder: "glm-5.3-flash")
+                    mappingRowWithOneM(label: strings.providerSubagentModelLabel, text: $subagent, placeholder: "glm-5.3")
                 }
 
                 Text(strings.providerModelMappingRoleHint)
@@ -493,14 +500,20 @@ struct ProfileEditorView: View {
     }
 
     /// 保存用的发布源（normalize 后）：
-    /// - 动过 → normalize 编辑态。**`[]` 是非 nil 的空数组**，`??` 不会用推导值顶掉它——
-    ///   用户主动清空必须落成空数组（什么都不发布），回落 nil 会让下次打开又长出推导模型。
-    /// - 没动过 → normalize 推导值：本次保存把「跟着映射」固化成显式列表，值与当前映射一致。
+    /// - **直连模式打开（列表不可见）→ 原值保留**（`existing`；新增档案为 nil = 跟着映射推导）。
+    ///   发布列表没显示给用户，保存不得触碰它——直连改映射就覆盖显式 `stackModels` 是静默偏离。
+    /// - 聚合模式打开：
+    ///   - 动过 → normalize 编辑态。**`[]` 是非 nil 的空数组**，`??` 不会用推导值顶掉它——
+    ///     用户主动清空必须落成空数组（什么都不发布），回落 nil 会让下次打开又长出推导模型。
+    ///   - 没动过 → normalize 推导值：本次保存把「跟着映射」固化成显式列表，值与当前映射一致。
     static func stackModelsForSave(
         _ edited: [ClaudeStackModel]?,
-        profile: ProviderProfile
-    ) -> [ClaudeStackModel] {
-        ClaudeStackModelsField.normalize(edited ?? ClaudeStackModelsField.fromMapping(profile: profile))
+        profile: ProviderProfile,
+        aggregating: Bool = true,
+        existing: [ClaudeStackModel]? = nil
+    ) -> [ClaudeStackModel]? {
+        guard aggregating else { return existing }
+        return ClaudeStackModelsField.normalize(edited ?? ClaudeStackModelsField.fromMapping(profile: profile))
     }
 
     private var codexReasoningEffortRow: some View {
@@ -585,6 +598,57 @@ struct ProfileEditorView: View {
                 .background(mappingInputBackground)
                 .overlay(mappingInputBorder)
         }
+    }
+
+    /// 带「声明支持 1M」复选的映射行（直连表单，对齐 cc-switch classic 映射的 1M 列）：
+    /// 1M 以模型值字面 `[1M]` 后缀承载，直连写入 env 与聚合发布识别同键同源——
+    /// 映射推导的发布条目无需结构变化即被发布方按字面标记认出。
+    private func mappingRowWithOneM(label: String, text: Binding<String>, placeholder: String) -> some View {
+        HStack(spacing: 12) {
+            Text(label)
+                .font(.system(size: 13))
+                .foregroundStyle(Color(red: 0x6E / 255.0, green: 0x6E / 255.0, blue: 0x73 / 255.0))
+                .lineLimit(1)
+                .frame(width: 74, alignment: .leading)
+
+            TextField(placeholder, text: oneMAwareTextBinding(text))
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .padding(.horizontal, 10)
+                .frame(height: 32)
+                .background(mappingInputBackground)
+                .overlay(mappingInputBorder)
+
+            Toggle(isOn: oneMToggleBinding(text)) {
+                Text(strings.providerStackModelsOneM)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color(red: 0x8E / 255.0, green: 0x8E / 255.0, blue: 0x93 / 255.0))
+            }
+            .toggleStyle(.checkbox)
+            .frame(width: 52, alignment: .leading)
+        }
+    }
+
+    /// 1M 感知的映射文本绑定：输入框只显示剥掉 `[1M]` 后的基础名；
+    /// 写回时按当前勾选态补标记——已勾状态下输入新模型名，1M 声明不丢。
+    private func oneMAwareTextBinding(_ text: Binding<String>) -> Binding<String> {
+        Binding(
+            get: { ClaudeStackModelsField.stripOneMMarker(text.wrappedValue).model },
+            set: { newValue in
+                let oneM = ClaudeStackModelsField.hasOneMMarker(text.wrappedValue)
+                text.wrappedValue = ClaudeStackModelsField.setOneMMarker(newValue, oneM)
+            }
+        )
+    }
+
+    /// 映射行 1M 复选绑定：勾选 = 基础名补 `[1M]` 标记；去勾 = 剥标记（值空时两者皆空）。
+    private func oneMToggleBinding(_ text: Binding<String>) -> Binding<Bool> {
+        Binding(
+            get: { ClaudeStackModelsField.hasOneMMarker(text.wrappedValue) },
+            set: { enabled in
+                text.wrappedValue = ClaudeStackModelsField.setOneMMarker(text.wrappedValue, enabled)
+            }
+        )
     }
 
     // MARK: - 底部操作栏
@@ -775,10 +839,17 @@ struct ProfileEditorView: View {
             codexModels: tool == .codex ? (codexRows.isEmpty ? nil : codexRows.map(\.model)) : nil,
             modelMapping: tool == .claudeCode ? makeMapping() : nil,
             extraEnv: tool == .claudeCode ? extraEnv : [:],
-            // normalize 后写入；**全空 → `[]`（用户主动清空、什么都不发布）**，
+            // 聚合模式打开：normalize 后写入，**全空 → `[]`（用户主动清空、什么都不发布）**，
             // 绝不能折算成 nil（未配置）——否则下次打开又按映射长出模型，删除被静默还原。
+            // 直连模式打开：发布列表不可见，保存用既有原值（对齐 cc-switch classic 保存
+            // 不携带列表字段 → meta 原样保留），直连改映射不得覆盖显式配置的发布列表。
             stackModels: tool == .claudeCode
-                ? ProfileEditorView.stackModelsForSave(editedStackRows, profile: draftProfile())
+                ? ProfileEditorView.stackModelsForSave(
+                    editedStackRows,
+                    profile: draftProfile(),
+                    aggregating: aggregating,
+                    existing: self.profile?.stackModels
+                )
                 : nil,
             // 与 codexModels 同源过滤 → 按位对齐；一个都没配 → nil（不写键）
             codexModelDisplayNames: ProfileEditorView.codexDisplayNamesForSave(codexRows),

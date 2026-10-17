@@ -211,6 +211,20 @@ final class AggregationPanelViewTests: XCTestCase {
         XCTAssertNil(ClaudeStackModelsField.defaultModel([]))
     }
 
+    /// 直连映射行复选的写入口径（cc-switch `setClaudeOneMMarker` 对齐）：
+    /// 勾 = 补无空格标记、去勾 = 剥标记；空值 → 空串（值空了 1M 无从谈起）。
+    func test_setOneMMarker_writesAndStripsLiteralMarker() {
+        XCTAssertEqual(ClaudeStackModelsField.setOneMMarker("k3", true), "k3[1M]")
+        XCTAssertEqual(ClaudeStackModelsField.setOneMMarker("k3[1M]", true), "k3[1M]", "已带标记幂等")
+        XCTAssertEqual(ClaudeStackModelsField.setOneMMarker("k3 [1m]", true), "k3[1M]", "大小写与空格形态都收敛到规范标记")
+        XCTAssertEqual(ClaudeStackModelsField.setOneMMarker("k3[1M]", false), "k3")
+        XCTAssertEqual(ClaudeStackModelsField.setOneMMarker("k3", false), "k3")
+        XCTAssertEqual(ClaudeStackModelsField.setOneMMarker("", true), "", "空基础名不产出孤悬标记")
+        XCTAssertEqual(ClaudeStackModelsField.setOneMMarker("  [1M] ", false), "")
+        // 勾选态下输入新模型名（oneMAwareTextBinding 的 set 路径）：1M 声明跟随保留。
+        XCTAssertEqual(ClaudeStackModelsField.setOneMMarker("glm-6", true), "glm-6[1M]")
+    }
+
     /// 未配置（`stackModels == nil`）→ 按 `profile.aggregationModels` 推导序回显：
     /// `ANTHROPIC_MODEL` → opus → sonnet → haiku → fable；空档跳过，subagent 不发布。
     func test_fromMapping_fallsBackToAggregationModelsInDerivationOrder() {
@@ -374,7 +388,7 @@ final class AggregationPanelViewTests: XCTestCase {
         )
         // 注意 normalize 会按模型名去重：modelOverride 与 opus 同为 glm-5.3 → 合并成一行。
         XCTAssertEqual(
-            ProfileEditorView.stackModelsForSave(nil, profile: beforeEdit).map(\.model),
+            (ProfileEditorView.stackModelsForSave(nil, profile: beforeEdit) ?? []).map(\.model),
             ["glm-5.3", "glm-5.3-air"]
         )
 
@@ -386,7 +400,7 @@ final class AggregationPanelViewTests: XCTestCase {
             modelMapping: ProviderModelMapping(sonnet: "glm-5.3-air", opus: "glm-6")
         )
         XCTAssertEqual(
-            ProfileEditorView.stackModelsForSave(nil, profile: afterEdit).map(\.model),
+            (ProfileEditorView.stackModelsForSave(nil, profile: afterEdit) ?? []).map(\.model),
             ["glm-5.3", "glm-6", "glm-5.3-air"],
             "未动过的编辑区必须按当前映射实时推导，不能冻结成打开时的值"
         )
@@ -428,6 +442,34 @@ final class AggregationPanelViewTests: XCTestCase {
         )
         XCTAssertEqual(roundTripped.stackModels, [])
         XCTAssertEqual(roundTripped.aggregationModels, [], "空数组不得被推导值顶掉")
+    }
+
+    /// 直连模式打开（发布列表不可见）的保存口径：原值保留，不按映射推导固化。
+    /// 固化的危害：直连改角色映射就静默覆盖用户显式配置的发布列表。
+    @MainActor
+    func test_stackModelsForSave_directModeKeepsExistingListUntouched() throws {
+        let existing = [ClaudeStackModel(model: "k3", displayName: "Kimi K3", oneM: true)]
+        let profile = ProviderProfile(
+            id: "kimi", name: "Kimi", tool: .claudeCode,
+            baseURL: "https://api.kimi.com/coding", token: "sk",
+            modelOverride: "glm-5.3",
+            modelMapping: ProviderModelMapping(opus: "glm-5.3"),
+            stackModels: existing
+        )
+
+        // 编辑既有档案：即便表单映射已改成与显式列表不同的值，保存也不得动它。
+        XCTAssertEqual(
+            ProfileEditorView.stackModelsForSave(
+                nil, profile: profile, aggregating: false, existing: profile.stackModels
+            ),
+            existing
+        )
+        // 新增档案（existing = nil）：保持「未配置、跟着映射推导」语义，不为空列表固化。
+        XCTAssertNil(
+            ProfileEditorView.stackModelsForSave(
+                nil, profile: profile, aggregating: false, existing: nil
+            )
+        )
     }
 
     /// Codex 显示名平行数组必须与**过滤后**的模型列表同源对齐：空白模型行被丢掉时，

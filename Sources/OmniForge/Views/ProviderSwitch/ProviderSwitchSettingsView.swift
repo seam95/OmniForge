@@ -125,10 +125,23 @@ struct ProviderSwitchSettingsView: View {
         }
         .providerToast(message: $toastMessage)
         .sheet(item: $addingProfileForTool) { tool in
-            ProfileEditorView(manager: manager, strings: strings, tool: tool)
+            ProfileEditorView(
+                manager: manager,
+                strings: strings,
+                tool: tool,
+                aggregating: aggregation?.isAggregating(tool) ?? false
+            )
         }
         .sheet(item: $editingProfile) { profile in
-            ProfileEditorView(manager: manager, strings: strings, tool: profile.tool, profile: profile)
+            ProfileEditorView(
+                manager: manager,
+                strings: strings,
+                tool: profile.tool,
+                profile: profile,
+                // 打开时的模式快照：sheet 内容随 item 重建，聚合开关在模态下不可点，
+                // 表单存续期内模式不会翻转。
+                aggregating: aggregation?.isAggregating(profile.tool) ?? false
+            )
         }
         .sheet(item: $editorTool) { tool in
             ConfigFileEditorView(manager: manager, strings: strings, tool: tool)
