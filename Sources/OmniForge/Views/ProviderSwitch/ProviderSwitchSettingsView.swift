@@ -26,13 +26,8 @@ struct ProviderSwitchSettingsView: View {
     var commandCopier: ProviderLaunchCommandCopying = ProviderLaunchCommandCopier()
 
     @State private var selectedTool: ProviderTool = .claudeCode
-    /// 模式查看态（直连 / 聚合）——仅切换查看内容，不持久化。
-    /// 初值按「哪个模式真的在生效」推导，切工具时按同一规则重新推导。
-    @State private var panelMode: ProviderAggregationManager.AggregationMode = .direct
-    /// 齿轮弹层（供应商设置）展示状态。
-    @State private var showsSettingsPopover = false
-    /// 当前展示 tool 的快照：齿轮位于 Host 外，经 `onDisplayedSurfaceChange`
-    /// 在挂载点（交换点）同步，保持弹层动作目标与内容展示一致（SPEC §6.3.1）。
+    /// 当前展示 tool 的快照：位于 Host 外，经 `onDisplayedSurfaceChange`
+    /// 在挂载点（交换点）同步，保持顶栏操作目标与内容展示一致（SPEC §6.3.1）。
     @State private var displayedTool: ProviderTool = .claudeCode
     @State private var addingProfileForTool: ProviderTool?
     @State private var editingProfile: ProviderProfile?
@@ -60,11 +55,6 @@ struct ProviderSwitchSettingsView: View {
         self.strings = strings
         self.aggregation = aggregation
         self.commandCopier = commandCopier
-        // 默认展开哪一行，看哪个模式真的在生效：聚合生效时若默认展开直连，
-        // 用户第一眼看到的是一排被锁死的操作（directActionsDisabled）。
-        _panelMode = State(initialValue: ProviderModeRow.initialMode(
-            isAggregating: aggregation?.isAggregating(.claudeCode) == true
-        ))
     }
 
     var body: some View {
@@ -91,26 +81,6 @@ struct ProviderSwitchSettingsView: View {
                 // exiting 期间旧 tool 内容保持可见，交换点才换成新 tool；
                 // selectedTool 只承担导航请求职责。
                 VStack(alignment: .leading, spacing: 10) {
-                    // 置顶聚合功能开关卡片：仅聚合管理器已注册时出现；未注册则退化为纯直连页。
-                    if let aggregation {
-                        AggregationToggleCard(
-                            tool: tool,
-                            isAggregating: aggregation.isAggregating(tool),
-                            summary: aggregationSummary(aggregation: aggregation, tool: tool),
-                            strings: strings,
-                            isTransitioning: isTransitioningMode,
-                            onToggleRequest: { wantOn in
-                                // 模式切换无确认框：拨动即执行进入/退出，结果由 toast 反馈。
-                                if wantOn {
-                                    enterAggregation(tool: tool)
-                                } else {
-                                    exitAggregation(tool: tool)
-                                }
-                            }
-                        )
-                        .padding(.horizontal, 12)
-                    }
-
                     if let aggregation, aggregation.isAggregating(tool) {
                         AggregationPanelView(
                             manager: aggregation,
@@ -136,6 +106,8 @@ struct ProviderSwitchSettingsView: View {
                         }
                         .transition(.opacity)
                     }
+
+                    footerLinks(for: tool)
                 }
                 .animation(Theme.Animation.snappy, value: aggregation?.isAggregating(tool))
                 .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -144,11 +116,6 @@ struct ProviderSwitchSettingsView: View {
         }
         .padding(.top, 12)
         .padding(.bottom, 12)
-        .onChange(of: selectedTool) { _, newTool in
-            // 切工具即按「哪个模式真的在生效」重新推导展开行（模式选择不跨工具持久化）。
-            // 一律回直连会让聚合生效时的用户落在一排被锁死的操作上。
-            panelMode = ProviderModeRow.initialMode(isAggregating: aggregation?.isAggregating(newTool) == true)
-        }
         .onChange(of: manager.profiles) { _, _ in
             // 聚合管理器只在启动时列举过一次 profile（`production()` 的快照）。用户新建/
             // 改名/删除供应商后必须重列，否则新 profile 进不了面板的「可加入」名单，
@@ -201,121 +168,126 @@ struct ProviderSwitchSettingsView: View {
         }
     }
 
-    /// 齿轮悬停状态。
-    @State private var isSettingsHovered = false
+    /// 聚合按钮悬停状态。
+    @State private var isAggregationButtonHovered = false
 
-    /// 「Claude Code / Codex」分段行：下划线 Tab + 右端齿轮设置入口
-    /// （与 Token 面板「余额 / 用量」分段行同构）。
+    /// 「Claude Code / Codex」分段行：下划线 Tab + 右端聚合/直连切换按钮
+    /// （分段宽度 85pt / 44pt 与右侧按钮尺寸 26×26 与 Token 面板「余额 / 用量」完全同构对齐）。
     private var sectionSwitcherRow: some View {
         HStack(spacing: 8) {
             PanelSegmentedControl(
-                options: ProviderTool.allCases.map { tool in
-                    .init(tag: tool, title: tool.displayName(in: strings))
-                },
+                options: [
+                    .init(
+                        tag: ProviderTool.claudeCode,
+                        title: ProviderTool.claudeCode.displayName(in: strings),
+                        width: PanelSegmentMetric.primaryTabWidth
+                    ),
+                    .init(
+                        tag: ProviderTool.codex,
+                        title: ProviderTool.codex.displayName(in: strings),
+                        width: PanelSegmentMetric.secondaryTabWidth
+                    ),
+                ],
                 selection: $selectedTool,
                 style: .underline
             )
 
             Spacer()
 
-            settingsButton
+            aggregationSwitchButton
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 6)
     }
 
-    /// 模式两行（直连 / 聚合）——替代原「直连 / 聚合」分段行。
-    /// 两种模式互斥（同一份配置文件同时只能有一个写入者），所以一行展开时另一行必折叠；
-    /// 折叠行带状态摘要，这是两行相对分段行多出来的信息量。
-    private func modeRows(aggregation: ProviderAggregationManager, tool: ProviderTool) -> some View {
-        let isAggregating = aggregation.isAggregating(tool)
-        let active = manager.active(tool: tool)
-        // 只有解析到具体 profile 才有名字可显示；官方回落「官方账号」，
-        // 未托管取其摘要，配置损坏时由 corruptedBanner 负责（这里不重复报警）。
-        let activeName: String? = switch active {
-        case .profile(let id):
-            manager.profiles(for: tool).first(where: { $0.id == id })?.name
-        case .unmanaged(let summary):
-            summary
-        case .official, .unreadable, .aggregating:
-            nil
-        }
-
-        return HStack(spacing: 8) {
-            ProviderModeRow(
-                title: strings.providerModeDirect,
-                summary: ProviderModeRow.directSummary(
-                    activeName: activeName, isAggregating: isAggregating, strings: strings
-                ),
-                isExpanded: panelMode == .direct,
-                accessibilityID: .providerModeDirectRow
-            ) {
-                withAnimation(Theme.Animation.snappy) {
-                    panelMode = .direct
+    /// 聚合与直连切换按钮（位于顶栏右端，与 Token 面板齿轮 26×26 完全同构对齐）：
+    /// - 直连模式（聚合关闭）：展示线条堆叠图标，hover 时加深
+    /// - 聚合模式（聚合开启）：展示填充堆叠图标，带品牌强调蓝高亮背景与色调
+    @ViewBuilder
+    private var aggregationSwitchButton: some View {
+        if let aggregation {
+            let isAggregating = aggregation.isAggregating(displayedTool)
+            Button {
+                guard !isTransitioningMode else { return }
+                if isAggregating {
+                    exitAggregation(tool: displayedTool)
+                } else {
+                    enterAggregation(tool: displayedTool)
+                }
+            } label: {
+                Image(systemName: isAggregating ? "square.stack.3d.up.fill" : "square.stack.3d.up")
+                    .font(.system(size: 13, weight: isAggregating ? .semibold : .regular))
+                    .foregroundStyle(
+                        isAggregating
+                            ? Theme.accentColor
+                            : (isAggregationButtonHovered
+                                ? (colorScheme == .light ? Theme.Stats.text1 : Color.white)
+                                : (colorScheme == .light ? Theme.Stats.text2 : Color.secondary))
+                    )
+                    .frame(width: 26, height: 26)
+                    .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(
+                                isAggregating
+                                    ? Theme.accentColor.opacity(colorScheme == .dark ? 0.20 : 0.12)
+                                    : (isAggregationButtonHovered
+                                        ? (colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.05))
+                                        : Color.clear)
+                            )
+                    )
+            }
+            .buttonStyle(.plain)
+            .disabled(isTransitioningMode)
+            .onHover { hovering in
+                withAnimation(Theme.Animation.hover) {
+                    isAggregationButtonHovered = hovering
                 }
             }
-
-            ProviderModeRow(
-                title: strings.providerModeAggregation,
-                summary: ProviderModeRow.aggregationSummary(
-                    members: aggregation.members(tool: tool),
-                    joinableCount: aggregation.joinableProfileIDs(tool: tool).count,
-                    isAggregating: isAggregating,
-                    strings: strings
-                ),
-                isExpanded: panelMode == .aggregation,
-                accessibilityID: .providerModeAggregationRow
-            ) {
-                withAnimation(Theme.Animation.snappy) {
-                    panelMode = .aggregation
-                }
-            }
+            .help(isAggregating ? strings.providerAggregationExit : strings.providerAggregationEnter)
+            .accessibilityLabel(isAggregating ? strings.providerAggregationExit : strings.providerAggregationEnter)
+            .accessibilityIdentifier(SettingsAccessibilityID.providerModeAggregationRow.rawValue)
         }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 8)
     }
 
-    /// 齿轮按钮（「供应商设置」弹层）：新增供应商（菜单栏）、编辑配置文件、恢复备份。
-    private var settingsButton: some View {
-        Button {
-            showsSettingsPopover.toggle()
-        } label: {
-            Image(systemName: "gearshape")
-                .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(isSettingsHovered ? (colorScheme == .light ? Theme.Stats.text1 : Color.white) : (colorScheme == .light ? Theme.Stats.text2 : Color.secondary))
-                .frame(width: 26, height: 26)
-                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(isSettingsHovered ? (colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.05)) : Color.clear)
-                )
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            withAnimation(Theme.Animation.hover) {
-                isSettingsHovered = hovering
+    // MARK: - 居中辅助链接
+
+    /// 快捷操作行：强调蓝链接 + 3×3 圆点分隔（#D1D1D6），间距 14。
+    /// （对齐历史版本设计：纯蓝色文字，无按钮背景，居于页面最下方，直接点击操作）。
+    private func footerLinks(for tool: ProviderTool) -> some View {
+        HStack(spacing: 14) {
+            Button(strings.providerAddProviderAction) {
+                addProvider(tool: tool)
             }
+            .buttonStyle(ProviderFooterLinkButtonStyle())
+            .accessibilityIdentifier(SettingsAccessibilityID.providerSwitchPopoverAddProvider.rawValue)
+
+            linkDot
+
+            Button(strings.providerEditConfigFile) {
+                editorTool = tool
+            }
+            .buttonStyle(ProviderFooterLinkButtonStyle())
+            .accessibilityIdentifier(SettingsAccessibilityID.providerSwitchPopoverEditConfig.rawValue)
+
+            linkDot
+
+            Button(strings.providerRestoreBackup) {
+                backupTool = tool
+            }
+            .buttonStyle(ProviderFooterLinkButtonStyle())
+            .accessibilityIdentifier(SettingsAccessibilityID.providerSwitchPopoverRestoreBackup.rawValue)
         }
-        .help(strings.providerSettingsPopoverTitle)
-        .accessibilityLabel(strings.providerSettingsPopoverTitle)
-        .accessibilityIdentifier(SettingsAccessibilityID.providerSwitchGearButton.rawValue)
-        .popover(isPresented: $showsSettingsPopover, arrowEdge: .bottom) {
-            ProviderSwitchSettingsPopover(
-                strings: strings,
-                onAddProvider: {
-                    showsSettingsPopover = false
-                    addProvider(tool: displayedTool)
-                },
-                onEditConfigFile: {
-                    showsSettingsPopover = false
-                    editorTool = displayedTool
-                },
-                onRestoreBackup: {
-                    showsSettingsPopover = false
-                    backupTool = displayedTool
-                }
-            )
-        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
+    }
+
+    /// 链接间分隔圆点（3×3，#D1D1D6）。
+    private var linkDot: some View {
+        Circle()
+            .fill(ProviderCardVisual.linkDot)
+            .frame(width: 3, height: 3)
     }
 
     // MARK: - 卡片列表
@@ -842,6 +814,23 @@ enum ProviderCardVisual {
     static let selectedCardFill = Color(red: 0xFB / 255.0, green: 0xFD / 255.0, blue: 0xFF / 255.0)
     static func selectedCardShadow(_ scheme: ColorScheme) -> Color {
         accent(scheme).opacity(scheme == .dark ? 0.16 : 0.10)
+    }
+
+    /// 快捷操作行分隔圆点 #D1D1D6。
+    static let linkDot = Color(red: 0xD1 / 255.0, green: 0xD1 / 255.0, blue: 0xD6 / 255.0)
+}
+
+/// 底部副操作链接按钮样式（强调蓝 12px，无按钮背景，Hover 提亮反馈）
+private struct ProviderFooterLinkButtonStyle: ButtonStyle {
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var isHovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .regular))
+            .foregroundStyle(ProviderCardVisual.accent(colorScheme).opacity(isHovered ? 0.7 : 1.0))
+            .opacity(configuration.isPressed ? 0.6 : 1.0)
+            .onHover { isHovered = $0 }
     }
 }
 

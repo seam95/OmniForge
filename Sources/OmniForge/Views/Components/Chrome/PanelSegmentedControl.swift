@@ -1,5 +1,12 @@
 import SwiftUI
 
+/// 控制中心顶栏 Tab 主次分段标准宽度：
+/// Claude Code / 余额 85pt，Codex / 用量 44pt。
+enum PanelSegmentMetric {
+    static let primaryTabWidth: CGFloat = 85
+    static let secondaryTabWidth: CGFloat = 44
+}
+
 /// 分段选择器组件：
 /// - `.capsule` 样式：轨道 + pill 胶囊分段（全宽等分或自适应紧凑），底块滑移。
 /// - `.underline` 样式：现代极简文字 Tab + 底部 2pt 细指示线滑移，去除底轨与厚滑块。
@@ -15,10 +22,19 @@ struct PanelSegmentedControl<Tag: Hashable>: View {
         case underline
     }
 
+    typealias Metric = PanelSegmentMetric
+
     struct Option: Identifiable {
         let tag: Tag
         let title: String
+        var width: CGFloat?
         var id: Tag { tag }
+
+        init(tag: Tag, title: String, width: CGFloat? = nil) {
+            self.tag = tag
+            self.title = title
+            self.width = width
+        }
     }
 
     let options: [Option]
@@ -85,14 +101,16 @@ struct PanelSegmentedControl<Tag: Hashable>: View {
                             .lineLimit(1)
                             .padding(.horizontal, 2)
                             .padding(.top, 2)
+                            .frame(width: option.width)
 
                         ZStack {
                             if isSelected {
-                                underlineIndicator
+                                underlineIndicator(width: option.width)
                             } else {
                                 Color.clear.frame(height: 2)
                             }
                         }
+                        .frame(width: option.width)
                     }
                     .contentShape(Rectangle())
                 }
@@ -112,16 +130,16 @@ struct PanelSegmentedControl<Tag: Hashable>: View {
     }
 
     @ViewBuilder
-    private var underlineIndicator: some View {
+    private func underlineIndicator(width: CGFloat? = nil) -> some View {
         if reduceMotion {
             Capsule()
                 .fill(underlineColor)
-                .frame(height: 2)
+                .frame(width: width, height: 2)
                 .transition(.opacity)
         } else {
             Capsule()
                 .fill(underlineColor)
-                .frame(height: 2)
+                .frame(width: width, height: 2)
                 .matchedGeometryEffect(id: activeIndicatorID, in: indicator)
         }
     }
