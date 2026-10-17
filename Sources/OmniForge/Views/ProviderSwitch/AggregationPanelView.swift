@@ -33,8 +33,6 @@ struct AggregationPanelView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                statusLine
-
                 if manager.isAggregating(tool) {
                     proxyDownBanner
                     staleBanner
