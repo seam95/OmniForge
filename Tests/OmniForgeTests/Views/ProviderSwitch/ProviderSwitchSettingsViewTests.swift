@@ -94,11 +94,6 @@ final class ProviderSwitchSettingsViewTests: XCTestCase {
         XCTAssertEqual(Set(ids.map(\.rawValue)).count, ids.count)
     }
 
-    /// 验证控制中心顶栏分段宽度（与 Token 面板「余额 / 用量」完全对齐）。
-    func test_headerLayoutMetrics_alignWithTokenUsage() {
-        XCTAssertEqual(PanelSegmentMetric.primaryTabWidth, 85)
-        XCTAssertEqual(PanelSegmentMetric.secondaryTabWidth, 44)
-    }
 
     /// 底部副操作（新增供应商 / 编辑配置文件 / 恢复备份）与分割点视觉常量。
     func test_footerVisualConstants() {

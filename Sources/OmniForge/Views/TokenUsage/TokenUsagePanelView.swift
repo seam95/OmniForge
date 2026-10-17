@@ -112,22 +112,11 @@ struct TokenUsagePanelView: View {
     }
 
     /// 「余额 / 用量」子 tab 分段（下划线滑移与内容淡切同享一套曲线）。
-    /// 分段宽度严格对齐供应商页「Claude Code / Codex」（85pt / 44pt），
-    /// 确保在控制中心切换 Tab 时顶栏分段指示线位置与长度无缝平滑。
     private var sectionSwitcher: some View {
         PanelSegmentedControl(
-            options: [
-                .init(
-                    tag: TokenPanelSection.balance,
-                    title: TokenPanelSection.balance.title(strings),
-                    width: PanelSegmentMetric.primaryTabWidth
-                ),
-                .init(
-                    tag: TokenPanelSection.usage,
-                    title: TokenPanelSection.usage.title(strings),
-                    width: PanelSegmentMetric.secondaryTabWidth
-                ),
-            ],
+            options: TokenPanelSection.allCases.map { option in
+                .init(tag: option, title: option.title(strings))
+            },
             selection: $selectedSection,
             style: .underline
         )

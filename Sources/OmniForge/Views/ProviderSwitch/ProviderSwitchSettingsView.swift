@@ -172,22 +172,13 @@ struct ProviderSwitchSettingsView: View {
     @State private var isAggregationButtonHovered = false
 
     /// 「Claude Code / Codex」分段行：下划线 Tab + 右端聚合/直连切换按钮
-    /// （分段宽度 85pt / 44pt 与右侧按钮尺寸 26×26 与 Token 面板「余额 / 用量」完全同构对齐）。
+    /// （右端切换按钮尺寸 26×26，与 Token 面板齿轮按钮完全对齐）。
     private var sectionSwitcherRow: some View {
         HStack(spacing: 8) {
             PanelSegmentedControl(
-                options: [
-                    .init(
-                        tag: ProviderTool.claudeCode,
-                        title: ProviderTool.claudeCode.displayName(in: strings),
-                        width: PanelSegmentMetric.primaryTabWidth
-                    ),
-                    .init(
-                        tag: ProviderTool.codex,
-                        title: ProviderTool.codex.displayName(in: strings),
-                        width: PanelSegmentMetric.secondaryTabWidth
-                    ),
-                ],
+                options: ProviderTool.allCases.map { tool in
+                    .init(tag: tool, title: tool.displayName(in: strings))
+                },
                 selection: $selectedTool,
                 style: .underline
             )
