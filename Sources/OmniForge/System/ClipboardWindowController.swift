@@ -113,14 +113,15 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
 
         // releaseViewSession 可能把 panel 压成 1×1；show 前/后都恢复记忆 frame 并校正屏外位置。
         ensureValidVisibleFrame()
-        // 记录须早于 makeKey：面板持焦后 frontmost 之外的焦点信号已不可信。
-        rememberPreviousApp()
         if panel.isVisible {
             panel.orderFrontRegardless()
             panel.makeKey()
             requestSearchFocus()
             return
         }
+        // 记录粘贴目标：须早于 makeKey（面板持焦后焦点信号已被污染），
+        // 且仅在首次呼出时记录（面板已可见的分支不覆盖已有会话状态）。
+        rememberPreviousApp()
         installViewIfNeeded()
         // 重新挂 content 后 AppKit 可能再次改写 frame，装载后再校正一次。
         ensureValidVisibleFrame()
@@ -165,9 +166,9 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
     }
 
     /// 「将粘贴到 XXX」显示名与实际注入目标保持一致：
-    /// 呼出前焦点在自家文本输入（便签）时目标是本 app，否则是原前台应用。
+    /// 输入光标在本 app 文本输入（便签）时目标是本 app，否则是原前台应用。
     private func pasteTargetDisplayName() -> String? {
-        if isSelfApp(NSWorkspace.shared.frontmostApplication), appHoldsTextFocus() {
+        if selfHoldsKeyboardFocus() {
             return NSRunningApplication.current.localizedName
         }
         return previousActiveApp?.localizedName ?? NSWorkspace.shared.frontmostApplication?.localizedName
@@ -276,20 +277,35 @@ final class ClipboardWindowController: NSObject, NSWindowDelegate {
     /// 同时决定粘贴后是否要把系统焦点交还原应用。
     private func rememberPreviousApp() {
         let frontmost = NSWorkspace.shared.frontmostApplication
-        if isSelfApp(frontmost) {
+        if selfHoldsKeyboardFocus() {
+            // 输入光标在本 app 的文本输入（便签编辑中）：粘贴目标即该输入，无需交还焦点。
             previousActiveApp = lastNonSelfActiveApp
-            // 呼出前前台即本 app：仅当焦点不在自家文本输入（如便签编辑中）时才恢复，
-            // 否则用户光标就在自家窗口，粘贴目标本就是该窗口。
-            appToReactivate = appHoldsTextFocus() ? nil : lastNonSelfActiveApp
+            appToReactivate = nil
+        } else if isSelfApp(frontmost) {
+            previousActiveApp = lastNonSelfActiveApp
+            appToReactivate = lastNonSelfActiveApp
         } else {
             previousActiveApp = frontmost
             appToReactivate = frontmost
         }
     }
 
-    /// 本 app 当前是否持有文本输入焦点（key window 的 first responder 是文本视图）。
-    private func appHoldsTextFocus() -> Bool {
-        guard let keyWindow = NSApp.keyWindow else { return false }
+    /// 系统键盘焦点是否落在本 app 的文本输入上（输入光标真实所在）。
+    /// 不能只看前台应用：便签是 nonactivating 面板，可持光标输入而前台仍是别家 app；
+    /// 也不能只看 NSApp.keyWindow：后台 app 的 keyWindow 可能残留旧值（假阳性）。
+    /// 双保险：AX 焦点应用是本 app 且 key window 的 first responder 是文本视图。
+    private func selfHoldsKeyboardFocus() -> Bool {
+        Self.holdsKeyboardFocus(
+            axFocusedPID: Self.axFocusedPID(),
+            keyWindow: NSApp.keyWindow,
+            selfPID: ProcessInfo.processInfo.processIdentifier
+        )
+    }
+
+    /// `selfHoldsKeyboardFocus` 的纯函数核心（可单测）。
+    static func holdsKeyboardFocus(axFocusedPID: pid_t?, keyWindow: NSWindow?, selfPID: pid_t) -> Bool {
+        guard axFocusedPID == selfPID else { return false }
+        guard let keyWindow else { return false }
         return keyWindow.firstResponder is NSTextView
     }
 

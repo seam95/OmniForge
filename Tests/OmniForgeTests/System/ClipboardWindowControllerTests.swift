@@ -161,6 +161,70 @@ final class ClipboardWindowControllerTests: XCTestCase {
 
     // MARK: - 粘贴焦点恢复
 
+    /// 判定核心：输入光标在本 app（AX 焦点=本 app 且 key window 是文本编辑）时粘贴目标即自家。
+    /// 关键场景：便签是 nonactivating 面板，持光标输入时前台应用仍是别家——
+    /// 此时也必须判定为「光标在便签」，否则粘贴会被错误交还给原前台应用。
+    func test_holdsKeyboardFocus_trueWhenAXFocusIsSelfAndTextEditing() throws {
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 100, height: 50), styleMask: [.titled], backing: .buffered, defer: false)
+        defer { panel.close() }
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 100, height: 50))
+        panel.contentView = textView
+        panel.makeFirstResponder(textView)
+        let selfPID = ProcessInfo.processInfo.processIdentifier
+
+        // AX 焦点在本 app（便签持光标）→ 判定成立（无论前台是谁）
+        XCTAssertTrue(
+            ClipboardWindowController.holdsKeyboardFocus(
+                axFocusedPID: selfPID, keyWindow: panel, selfPID: selfPID
+            )
+        )
+    }
+
+    func test_holdsKeyboardFocus_falseWhenAXFocusIsOtherApp() throws {
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 100, height: 50), styleMask: [.titled], backing: .buffered, defer: false)
+        defer { panel.close() }
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 100, height: 50))
+        panel.contentView = textView
+        panel.makeFirstResponder(textView)
+        let selfPID = ProcessInfo.processInfo.processIdentifier
+
+        // AX 焦点在别家 app：即使 NSApp.keyWindow 残留自家文本窗（后台 app 假阳性）也不成立
+        XCTAssertFalse(
+            ClipboardWindowController.holdsKeyboardFocus(
+                axFocusedPID: selfPID + 1, keyWindow: panel, selfPID: selfPID
+            )
+        )
+        // AX 读不到（无焦点/无权限）→ 不成立
+        XCTAssertFalse(
+            ClipboardWindowController.holdsKeyboardFocus(
+                axFocusedPID: nil, keyWindow: panel, selfPID: selfPID
+            )
+        )
+    }
+
+    func test_holdsKeyboardFocus_falseWithoutKeyWindowOrTextResponder() {
+        let selfPID = ProcessInfo.processInfo.processIdentifier
+
+        // AX 焦点是本 app 但无 key window → 不成立
+        XCTAssertFalse(
+            ClipboardWindowController.holdsKeyboardFocus(
+                axFocusedPID: selfPID, keyWindow: nil, selfPID: selfPID
+            )
+        )
+
+        // key window 的 first responder 不是文本视图（光标不在文本输入）→ 不成立
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 100, height: 50), styleMask: [.titled], backing: .buffered, defer: false)
+        defer { panel.close() }
+        let button = NSButton(title: "x", target: nil, action: nil)
+        panel.contentView = button
+        panel.makeFirstResponder(button)
+        XCTAssertFalse(
+            ClipboardWindowController.holdsKeyboardFocus(
+                axFocusedPID: selfPID, keyWindow: panel, selfPID: selfPID
+            )
+        )
+    }
+
     func test_showRecordsFrontmostAppAsReactivationTarget() {
         let state = makeState()
         let controller = ClipboardWindowController(state: state)
