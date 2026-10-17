@@ -76,10 +76,11 @@ enum ProviderSwitchPaths {
             .appendingPathComponent(codexModelCatalogFileName, isDirectory: false)
     }
 
-    /// Codex 聚合模式模型目录文件名（对齐 cc-switch 口径，`config.toml` 按此名引用）。
-    static let codexAggregationCatalogFileName = "cc-switch-model-catalog.json"
+    /// Codex 聚合模式模型目录文件名（`config.toml` 的 `model_catalog_json` 键按此名引用；
+    /// Codex 只认路径不认文件名）。
+    static let codexAggregationCatalogFileName = "omniforge-stack-catalog.json"
 
-    /// Codex 聚合模式模型目录路径：`~/.codex/cc-switch-model-catalog.json`。
+    /// Codex 聚合模式模型目录路径：`~/.codex/omniforge-stack-catalog.json`。
     /// 与直连模式的 `omniforge-model-catalog.json` 是两份文件，互不覆盖。
     static func codexAggregationCatalogURL(
         homePath: String = FileManager.default.homeDirectoryForCurrentUser.path,
@@ -88,6 +89,9 @@ enum ProviderSwitchPaths {
         codexHome(homePath: homePath, environment: environment)
             .appendingPathComponent(codexAggregationCatalogFileName, isDirectory: false)
     }
+
+    /// 旧版聚合目录文件名（对齐 cc-switch 时期）——投影时顺带删除自愈，勿再写入。
+    static let legacyCodexAggregationCatalogFileName = "cc-switch-model-catalog.json"
 
     // MARK: - 统一入口
 

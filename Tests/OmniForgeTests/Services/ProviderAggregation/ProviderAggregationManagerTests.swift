@@ -170,7 +170,7 @@ final class ProviderAggregationManagerTests: XCTestCase {
 
     func test_enterAggregation_officialCodexDefaultWritesNoCatalogFile() throws {
         let configURL = tmpDir.appendingPathComponent("config.toml")
-        let catalogURL = tmpDir.appendingPathComponent("cc-switch-model-catalog.json")
+        let catalogURL = tmpDir.appendingPathComponent("omniforge-stack-catalog.json")
         let realCodexWriter = AggregationCodexConfigWriter(configURL: configURL, catalogURL: catalogURL)
         profileStore.stubProfiles = [officialCodexProfile]
         let manager = makeManager(withCodexWriter: realCodexWriter)

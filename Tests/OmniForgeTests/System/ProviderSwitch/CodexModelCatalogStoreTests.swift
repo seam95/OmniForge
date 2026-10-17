@@ -217,7 +217,7 @@ final class CodexModelCatalogStoreTests: XCTestCase {
         try store.writeAggregatedCatalog(defaultProfile: makeProfile(name: "DeepSeek", key: "deepseek"),
                                          published: published, defaultKey: "deepseek")
         let row = try XCTUnwrap(try readModels().first { ($0["slug"] as? String) == "om-kimi/kimi-k3" })
-        XCTAssertEqual(row["comp_hash"] as? String, "cc-switch")
+        XCTAssertEqual(row["comp_hash"] as? String, "om")
         XCTAssertEqual(row["display_name"] as? String, "kimi-k3（Kimi）")
         XCTAssertEqual(row["description"] as? String, "kimi-k3 · 256K")
     }

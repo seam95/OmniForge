@@ -48,7 +48,7 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
     /// `shell_type = "shell_command"` 走 shell 改文件，并清空实验工具表。
     /// - Parameters:
     ///   - priority: 目录内排序位（直连模式恒 1000；聚合模式末尾统一重排为 1...n）。
-    ///   - compHash: 聚合来源标记（仅聚合目录的成员行注入 `"cc-switch"`；nil 不写键）。
+    ///   - compHash: 聚合来源标记（仅聚合目录的成员行注入 `"om"`；Codex 不特判该值，nil 不写键）。
     ///   - useResponsesLite: Responses Lite 形态开关（仅聚合目录成员行显式注入；nil 不写键）。
     static func catalogEntry(
         model: String,
@@ -165,7 +165,7 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
     ///   来源优先取 `published` 中该 key 的条目（编排层传的是成员权威模型列表）；
     ///   默认那家未出现在 `published` 时回退 `defaultProfile.codexModelList`。
     /// - **成员行按 `published` 顺序追加**：Stack slug（`om-<key>/<model>`）、
-    ///   全角展示名、`comp_hash = "cc-switch"`、`use_responses_lite = false`。
+    ///   全角展示名、`comp_hash = "om"`、`use_responses_lite = false`。
     /// - 全部行写入窗口下沉三键；结尾对整份列表重排 `priority = 1...n`。
     /// - `defaultKey`：默认那家的**登记簿** key（见 `aggregatedCatalogData` 的说明）。
     private static func aggregatedCatalogEntries(
@@ -217,7 +217,7 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
                     description: member.description,
                     defaultReasoningLevel: defaultEffort,
                     priority: 0,
-                    compHash: "cc-switch",
+                    compHash: "om",
                     useResponsesLite: false
                 ),
                 member.window

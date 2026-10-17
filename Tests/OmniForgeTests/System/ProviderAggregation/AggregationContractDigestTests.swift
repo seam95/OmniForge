@@ -38,7 +38,7 @@ final class AggregationContractDigestTests: XCTestCase {
     }
 
     func test_codexDigest_changesWhenCatalogContentChanges() {
-        let config = "model_catalog_json = \"cc-switch-model-catalog.json\"\n"
+        let config = "model_catalog_json = \"omniforge-stack-catalog.json\"\n"
         XCTAssertNotEqual(AggregationContractDigest.codex(configText: config, catalogData: Data("v1".utf8)),
                           AggregationContractDigest.codex(configText: config, catalogData: Data("v2".utf8)))
     }

@@ -24,7 +24,7 @@ protocol AggregationCodexConfigWriting: AnyObject {
     ) -> String
 }
 
-/// `~/.codex/config.toml` 聚合投影 + `cc-switch-model-catalog.json` 目录写入。
+/// `~/.codex/config.toml` 聚合投影 + `omniforge-stack-catalog.json` 目录写入。
 /// 只动拥有键与 `[model_providers.custom]` 表；用户自建表（含内置 openai/codex）原样保留。
 /// `requiresOpenAIAuth` 跟随磁盘登录状态（SPEC 6.4）——不为 true 时摘掉该键，
 /// 避免登录态变化后留下误导性的登录提示。
@@ -96,6 +96,9 @@ final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
             // 崩溃窗口留下「指针在、文件无」的坏配置，故放在写完之后。
             try removeCatalogFile()
         }
+        // 自愈清理：旧版聚合目录（对齐 cc-switch 时期的文件名）已不被 config 指向，
+        // 残留只会误导排查；放在投影完整落盘之后删除。
+        try removeFileIfPresent(at: legacyCatalogURL)
     }
 
     func currentContractDigest() -> String {
@@ -211,14 +214,26 @@ final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
         }
         // 目录文件清理（不存在则无事）。
         try removeCatalogFile()
+        try removeFileIfPresent(at: legacyCatalogURL)
     }
 
     // MARK: - private
 
+    /// 旧版聚合目录文件（与现行目录同目录）。
+    private var legacyCatalogURL: URL {
+        catalogURL.deletingLastPathComponent()
+            .appendingPathComponent(ProviderSwitchPaths.legacyCodexAggregationCatalogFileName, isDirectory: false)
+    }
+
     /// 删掉本模式自带的目录文件（不存在则无事）。
     private func removeCatalogFile() throws {
-        guard fileManager.fileExists(atPath: catalogURL.path) else { return }
-        try fileManager.removeItem(at: catalogURL)
+        try removeFileIfPresent(at: catalogURL)
+    }
+
+    /// 文件存在则删除（不存在则无事）。
+    private func removeFileIfPresent(at url: URL) throws {
+        guard fileManager.fileExists(atPath: url.path) else { return }
+        try fileManager.removeItem(at: url)
     }
 
     /// 读取并解析 config.toml；文件缺失当空文档（首次进入聚合时无配置文件可写）。

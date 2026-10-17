@@ -16,7 +16,7 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
             .appendingPathComponent("AggregationCodexConfigWriterTests_\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
         configURL = tmpDir.appendingPathComponent("config.toml")
-        catalogURL = tmpDir.appendingPathComponent("cc-switch-model-catalog.json")
+        catalogURL = tmpDir.appendingPathComponent("omniforge-stack-catalog.json")
         writer = AggregationCodexConfigWriter(configURL: configURL, catalogURL: catalogURL)
     }
 
@@ -75,7 +75,7 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
         let text = try String(contentsOf: configURL, encoding: .utf8)
         XCTAssertTrue(text.contains("model_provider = \"custom\""))
         XCTAssertTrue(text.contains("model = \"deepseek-v4-pro\""))
-        XCTAssertTrue(text.contains("model_catalog_json = \"cc-switch-model-catalog.json\""))
+        XCTAssertTrue(text.contains("model_catalog_json = \"omniforge-stack-catalog.json\""))
         XCTAssertTrue(text.contains("[model_providers.custom]"))
         XCTAssertTrue(text.contains("base_url = \"http://127.0.0.1:15721/v1\""))
         XCTAssertTrue(text.contains("wire_api = \"responses\""))
@@ -87,6 +87,16 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
         try writer.applyAggregation(defaultProfile: deepseek, defaultKey: "deepseek", published: [kimiK3], port: 15721, requiresOpenAIAuth: false)
         let doc = try readConfigDocument()
         XCTAssertNil(doc.booleanValue(key: "requires_openai_auth", table: ["model_providers", "custom"]))
+    }
+
+    /// 旧版聚合目录（对齐 cc-switch 时期的文件名）在投影时自愈删除——config 已不再指向它，
+    /// 残留只会误导排查。
+    func test_applyAggregation_removesLegacyCatalogFile() throws {
+        let legacyURL = tmpDir.appendingPathComponent(ProviderSwitchPaths.legacyCodexAggregationCatalogFileName)
+        try "{}".write(to: legacyURL, atomically: true, encoding: .utf8)
+        try writer.applyAggregation(defaultProfile: deepseek, defaultKey: "deepseek", published: [kimiK3], port: 15721, requiresOpenAIAuth: false)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacyURL.path), "旧版目录文件应被自愈删除")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: catalogURL.path), "现行目录文件应正常写入")
     }
 
     func test_applyAggregation_stripsGlobalWindowKeysFromTopLevel() throws {
@@ -117,7 +127,7 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
         try writeConfig("""
         model_provider = "custom"
         model = "deepseek-v4-pro"
-        model_catalog_json = "cc-switch-model-catalog.json"
+        model_catalog_json = "omniforge-stack-catalog.json"
 
         [model_providers.custom]
         name = "custom"

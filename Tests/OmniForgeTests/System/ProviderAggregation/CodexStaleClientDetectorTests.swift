@@ -16,7 +16,7 @@ final class CodexStaleClientDetectorTests: XCTestCase {
             .appendingPathComponent("CodexStaleClientDetectorTests_\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
         historyURL = tmpDir.appendingPathComponent("codex-catalog-history.json")
-        catalogURL = tmpDir.appendingPathComponent("cc-switch-model-catalog.json")
+        catalogURL = tmpDir.appendingPathComponent("omniforge-stack-catalog.json")
         authURL = tmpDir.appendingPathComponent("auth.json")
         detector = StubDetector(historyURL: historyURL)
     }
