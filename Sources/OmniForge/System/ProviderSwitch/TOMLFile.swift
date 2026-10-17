@@ -228,6 +228,18 @@ struct TOMLFile: Equatable {
         return nil
     }
 
+    /// 读取原始字面量（不解码引号与转义）——键级照搬场景：整值原样拷到另一张表。
+    func rawValue(key: String, table: [String]? = nil) -> String? {
+        entries.last(where: { $0.tablePath == table && $0.key == key })?.value
+    }
+
+    /// 表（含子表）里是否还有键条目——空表清理判定用。
+    func hasEntries(in table: [String]) -> Bool {
+        entries.contains { entry in
+            entry.tablePath.map { $0.starts(with: table) } == true
+        }
+    }
+
     /// 读取单行字符串数组（`["a", "b"]`）。非数组、引号未闭合或跨行 → nil。
     func stringArrayValue(key: String, table: [String]? = nil) -> [String]? {
         guard let raw = stringValue(key: key, table: table) else { return nil }
@@ -392,6 +404,13 @@ struct TOMLFile: Equatable {
         setRawValue(value ? "true" : "false", key: key, table: table)
     }
 
+    /// 键级照搬：把源表某键的原字面量写入目标表（int/bool/string 通用，保留原始写法）。
+    /// 源表无该键时不改动目标表（是否摘除残留由调用方决定）。
+    mutating func copyRawValue(key: String, from sourceTable: [String], to targetTable: [String]) {
+        guard let literal = rawValue(key: key, table: sourceTable) else { return }
+        setRawValue(literal, key: key, table: targetTable)
+    }
+
     /// 确保表存在（缺失时在文档末尾追加表头）。
     mutating func ensureTable(path: [String]) {
         guard !path.isEmpty else { return }
@@ -479,6 +498,8 @@ struct TOMLFile: Equatable {
 
     /// 新条目插入位置：顶层 → 最后一个顶层条目之后（无则首个表头之前/文档末尾）；
     /// 表内 → 该表最后一行（表头/段内键行/段内注释）之后。
+    /// 本表头精确匹配（`==`）——子表头即视为本表段结束：往 `[a.b]` 追加的键若落在
+    /// `[a.b.c]` 子表段内，重解析后会归属子表（`starts(with:)` 的历史行为）。
     private func insertionPosition(for table: [String]?) -> Int {
         guard let table else {
             if let lastTopLevel = entries.last(where: { $0.tablePath == nil }) {
@@ -493,11 +514,11 @@ struct TOMLFile: Equatable {
         var inTable = false
         for (index, line) in lines.enumerated() {
             if let headerPath = Self.tableHeaderPath(of: line) {
-                if headerPath.starts(with: table) {
+                if headerPath == table {
                     inTable = true
                     lastLine = index
                 } else if inTable {
-                    break // 遇到下一张表 → 本表结束
+                    break // 遇到其他表（含本表的子表）→ 本表段结束
                 }
             } else if inTable, !line.trimmingCharacters(in: .whitespaces).isEmpty {
                 lastLine = index // 段内键行/注释行都属于本表

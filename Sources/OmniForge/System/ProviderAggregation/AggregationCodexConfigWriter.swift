@@ -59,6 +59,15 @@ final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
         "openai_base_url",
     ]
 
+    /// 代理契约 custom 表从默认供应商行照搬的 Codex 客户端行为键（对齐 cc-switch
+    /// `codex_direct.rs` `PROXY_KEPT_CLIENT_KEYS`，#8265）。重试次数与流空闲超时是
+    /// Codex 自身行为，对本地代理同样生效——行里没配的键照删，防上一家默认的残留。
+    private static let proxyKeptClientKeys = [
+        "request_max_retries",
+        "stream_max_retries",
+        "stream_idle_timeout_ms",
+    ]
+
     init(configURL: URL, catalogURL: URL, fileManager: FileManager = .default) {
         self.configURL = configURL
         self.catalogURL = catalogURL
@@ -191,6 +200,31 @@ final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
             document.setBooleanValue(true, key: "requires_openai_auth", table: customTable)
         } else {
             document.remove(key: "requires_openai_auth", table: customTable)
+        }
+
+        // Codex 自身行为键从默认供应商行照搬：聚合指向 custom 表后，行里配的重试/超时
+        // 不搬就全部失效（cc-switch #8265：行里配 50 次重试回落 Codex 默认 5 次）。
+        let sourceTable = ["model_providers", defaultProfile.profileKey]
+        for key in Self.proxyKeptClientKeys {
+            if document.rawValue(key: key, table: sourceTable) != nil {
+                document.copyRawValue(key: key, from: sourceTable, to: customTable)
+            } else {
+                document.remove(key: key, table: customTable)
+            }
+        }
+        // 远程压缩偏好单键照搬（cc-switch #8338：丢了会退回本地摘要压缩，带搜索记录的
+        // 会话可能报 response protection is unavailable）。只搬这一个能力键——其余
+        // capabilities 与代理契约无关；行里没有时摘键，表内再无其他键则连表一起摘。
+        let sourceCapabilities = sourceTable + ["capabilities"]
+        let customCapabilities = customTable + ["capabilities"]
+        if document.rawValue(key: "remote_compaction", table: sourceCapabilities) != nil {
+            document.ensureTable(path: customCapabilities)
+            document.copyRawValue(key: "remote_compaction", from: sourceCapabilities, to: customCapabilities)
+        } else {
+            document.remove(key: "remote_compaction", table: customCapabilities)
+            if !document.hasEntries(in: customCapabilities) {
+                document.removeTable(path: customCapabilities)
+            }
         }
         return document.serialize()
     }

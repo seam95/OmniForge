@@ -107,6 +107,56 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
         XCTAssertNil(doc.stringValue(key: "model_auto_compact_token_limit", table: nil))
     }
 
+    // MARK: - Codex 客户端行为键从默认供应商行照搬（cc-switch #8265 / #8338）
+
+    /// 行里配的重试/流超时/远程压缩搬进 custom 表——聚合指向 custom 后不搬就全部失效。
+    func test_applyAggregation_copiesClientBehaviorKeysFromDefaultProviderRow() throws {
+        try writeConfig("""
+        [model_providers.deepseek]
+        name = "DeepSeek"
+        base_url = "https://api.deepseek.com/v1"
+        stream_max_retries = 50
+        stream_idle_timeout_ms = 300000
+        [model_providers.deepseek.capabilities]
+        remote_compaction = "v2"
+        """)
+        try writer.applyAggregation(defaultProfile: deepseek, defaultKey: "deepseek", published: [kimiK3], port: 15721, requiresOpenAIAuth: false)
+        let doc = try readConfigDocument()
+        let custom = ["model_providers", "custom"]
+        XCTAssertEqual(doc.stringValue(key: "stream_max_retries", table: custom), "50")
+        XCTAssertEqual(doc.stringValue(key: "stream_idle_timeout_ms", table: custom), "300000")
+        XCTAssertNil(doc.stringValue(key: "request_max_retries", table: custom), "行里没配的键不凭空出现")
+        XCTAssertEqual(
+            doc.rawValue(key: "remote_compaction", table: custom + ["capabilities"]),
+            "\"v2\"",
+            "远程压缩偏好原字面量照搬（字符串/布尔形态都兼容）"
+        )
+    }
+
+    /// 行里没配这些键 → custom 表的残留照摘（换默认后上一家的配置不得留在共享表里）。
+    func test_applyAggregation_removesStaleClientBehaviorKeysWhenRowHasNone() throws {
+        try writeConfig("""
+        [model_providers.deepseek]
+        name = "DeepSeek"
+        base_url = "https://api.deepseek.com/v1"
+
+        [model_providers.custom]
+        name = "custom"
+        base_url = "http://127.0.0.1:15721/v1"
+        stream_max_retries = 50
+        [model_providers.custom.capabilities]
+        remote_compaction = "v2"
+        """)
+        try writer.applyAggregation(defaultProfile: deepseek, defaultKey: "deepseek", published: [kimiK3], port: 15721, requiresOpenAIAuth: false)
+        let doc = try readConfigDocument()
+        let custom = ["model_providers", "custom"]
+        XCTAssertNil(doc.stringValue(key: "stream_max_retries", table: custom))
+        XCTAssertNil(doc.stringValue(key: "request_max_retries", table: custom))
+        XCTAssertNil(doc.stringValue(key: "stream_idle_timeout_ms", table: custom))
+        XCTAssertNil(doc.stringValue(key: "remote_compaction", table: custom + ["capabilities"]))
+        XCTAssertFalse(doc.hasEntries(in: custom + ["capabilities"]), "摘键后空表应连表头一起摘掉")
+    }
+
     func test_applyAggregation_preservesUserTablesAndBuiltInProviders() throws {
         try writeConfig("""
         [model_providers.ollama_local]
