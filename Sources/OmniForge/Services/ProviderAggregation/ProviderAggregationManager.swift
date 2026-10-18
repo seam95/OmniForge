@@ -109,7 +109,7 @@ final class ProviderAggregationManager: ObservableObject {
     func members(tool: ProviderTool) -> [AggregationMemberView] {
         let toolStack = stack.toolStack(tool)
         return toolStack.members.compactMap { profileID -> AggregationMemberView? in
-            guard let profile = profiles.first(where: { $0.id == profileID }) else { return nil }
+            guard let profile = profile(id: profileID, tool: tool) else { return nil }
             let published = publishedModels(for: profile)
             return AggregationMemberView(
                 id: profileID,
@@ -128,6 +128,13 @@ final class ProviderAggregationManager: ObservableObject {
         return profiles
             .filter { $0.tool == tool && !Self.isOfficial($0) && !toolStack.isMember($0.id) }
             .map(\.id)
+    }
+
+    /// 按 (id, tool) 定位卡片——profile id 只在单工具目录内唯一，跨工具可同名
+    /// （如两侧都建了 DeepSeek 卡，id 同为 "deepseek"）；仅按 id 在全工具数组里查找
+    /// 会命中排在前面的别家卡，报「不属于当前工具」或更隐蔽的错乱。
+    private func profile(id: String, tool: ProviderTool) -> ProviderProfile? {
+        profiles.first { $0.id == id && $0.tool == tool }
     }
 
     /// 聚合上下文里官方卡的 id（仅 Codex 有：合成卡或用户自建官方卡；无 → nil）。
@@ -150,11 +157,8 @@ final class ProviderAggregationManager: ObservableObject {
     /// 进入聚合：先起代理，成功才写配置。任一步失败按 `partial` 语义处理
     /// （发布前失败 → 什么都不动；发布后失败 → 保留 pending 待前滚）。
     func enterAggregation(tool: ProviderTool, defaultProfileID: String) throws {
-        guard let defaultProfile = profiles.first(where: { $0.id == defaultProfileID }) else {
+        guard let defaultProfile = profile(id: defaultProfileID, tool: tool) else {
             throw AggregationManagerError.profileNotFound(id: defaultProfileID)
-        }
-        guard defaultProfile.tool == tool else {
-            throw AggregationManagerError.toolMismatch(id: defaultProfileID, expected: tool)
         }
         guard defaultProfile.hasCompleteConnection || Self.isOfficial(defaultProfile) else {
             throw AggregationManagerError.incompleteConnection(id: defaultProfileID)
@@ -162,7 +166,7 @@ final class ProviderAggregationManager: ObservableObject {
         try validateOfficialDefaultLogin(tool: tool, defaultProfile: defaultProfile)
         // 已在聚合 → 视为切换默认那家。
         if stack.toolStack(tool).enabled {
-            try setDefault(defaultProfileID)
+            try setDefault(defaultProfileID, tool: tool)
             return
         }
 
@@ -220,18 +224,15 @@ final class ProviderAggregationManager: ObservableObject {
     /// 异步非阻塞进入聚合（UI 优先使用）：先起代理，再将快照、pending 写盘、配置文件覆盖与
     /// 清理等耗时磁盘 I/O 移至后台线程执行，完成后切回主线程提交栈态，消除主线程卡顿与掉帧。
     func enterAggregationAsync(tool: ProviderTool, defaultProfileID: String) async throws {
-        guard let defaultProfile = profiles.first(where: { $0.id == defaultProfileID }) else {
+        guard let defaultProfile = profile(id: defaultProfileID, tool: tool) else {
             throw AggregationManagerError.profileNotFound(id: defaultProfileID)
-        }
-        guard defaultProfile.tool == tool else {
-            throw AggregationManagerError.toolMismatch(id: defaultProfileID, expected: tool)
         }
         guard defaultProfile.hasCompleteConnection || Self.isOfficial(defaultProfile) else {
             throw AggregationManagerError.incompleteConnection(id: defaultProfileID)
         }
         try validateOfficialDefaultLogin(tool: tool, defaultProfile: defaultProfile)
         if stack.toolStack(tool).enabled {
-            try setDefault(defaultProfileID)
+            try setDefault(defaultProfileID, tool: tool)
             return
         }
 
@@ -417,65 +418,66 @@ final class ProviderAggregationManager: ObservableObject {
     // MARK: - 成员管理
 
     /// 加入成员：分配永久 key；官方账号不可加入；已在名单里 → 无变化（不重写）。
-    func addMember(_ profileID: String) throws {
-        guard let profile = profiles.first(where: { $0.id == profileID }) else {
+    /// `tool` 必传：同名卡跨工具并存时仅按 id 定位有歧义。
+    func addMember(_ profileID: String, tool: ProviderTool) throws {
+        guard let profile = profile(id: profileID, tool: tool) else {
             throw AggregationManagerError.profileNotFound(id: profileID)
         }
         guard !Self.isOfficial(profile) else {
             throw AggregationManagerError.officialCannotJoin(id: profileID)
         }
         var newStack = stack
-        var toolStack = newStack.toolStack(profile.tool)
+        var toolStack = newStack.toolStack(tool)
         guard !toolStack.isMember(profileID) else { return }   // 无变化
         let registry = AggregationKeyRegistry(keys: toolStack.keys)
         _ = registry.allocate(profile: profile)
         toolStack.keys = registry.keys
         toolStack.members.append(profileID)
-        newStack.setToolStack(toolStack, for: profile.tool)
+        newStack.setToolStack(toolStack, for: tool)
         commit(stack: newStack)
         try rewriteProjectionIfChanged(tool: profile.tool)
     }
 
     /// 移除成员：默认那家在聚合开启期间不可移除；key 永久保留。
-    func removeMember(_ profileID: String) throws {
-        guard let profile = profiles.first(where: { $0.id == profileID }) else {
+    func removeMember(_ profileID: String, tool: ProviderTool) throws {
+        guard profile(id: profileID, tool: tool) != nil else {
             throw AggregationManagerError.profileNotFound(id: profileID)
         }
         var newStack = stack
-        var toolStack = newStack.toolStack(profile.tool)
+        var toolStack = newStack.toolStack(tool)
         guard toolStack.isMember(profileID) else { return }
         if toolStack.enabled, profileID == toolStack.members.first {
             throw AggregationManagerError.defaultMemberLocked(id: profileID)
         }
         toolStack.members.removeAll { $0 == profileID }
-        newStack.setToolStack(toolStack, for: profile.tool)
+        newStack.setToolStack(toolStack, for: tool)
         commit(stack: newStack)
-        try rewriteProjectionIfChanged(tool: profile.tool)
+        try rewriteProjectionIfChanged(tool: tool)
     }
 
     /// 设默认那家：移到名单首位（聚合开启期间同步重写投影）。
-    func setDefault(_ profileID: String) throws {
-        guard let profile = profiles.first(where: { $0.id == profileID }) else {
+    func setDefault(_ profileID: String, tool: ProviderTool) throws {
+        guard let profile = profile(id: profileID, tool: tool) else {
             throw AggregationManagerError.profileNotFound(id: profileID)
         }
-        try validateOfficialDefaultLogin(tool: profile.tool, defaultProfile: profile)
+        try validateOfficialDefaultLogin(tool: tool, defaultProfile: profile)
         var newStack = stack
-        var toolStack = newStack.toolStack(profile.tool)
+        var toolStack = newStack.toolStack(tool)
         guard toolStack.isMember(profileID) else {
             throw AggregationManagerError.notMember(id: profileID)
         }
         toolStack.members.removeAll { $0 == profileID }
         toolStack.members.insert(profileID, at: 0)
-        newStack.setToolStack(toolStack, for: profile.tool)
+        newStack.setToolStack(toolStack, for: tool)
         // 默认那家换了人 → 登录收纳态跟着换（SPEC 3 / P0-3 契约 3）：投影会翻到官方
         // 分支（或不翻），收纳态若停在切换前的样子，官方登录就会被第三方路由抢占用、
         // 或官方分支发现自己依赖的登录还被收着。仅在聚合生效期间有意义——未聚合时
         // 不动用户的登录态。`stash`/`restore` 无事可做时都是无副作用的空操作，重复调用安全。
         if toolStack.enabled {
-            syncCodexLoginStash(tool: profile.tool, defaultProfile: profile)
+            syncCodexLoginStash(tool: tool, defaultProfile: profile)
         }
         commit(stack: newStack)
-        try rewriteProjectionIfChanged(tool: profile.tool)
+        try rewriteProjectionIfChanged(tool: tool)
     }
 
     // MARK: - 生命周期
@@ -490,12 +492,13 @@ final class ProviderAggregationManager: ObservableObject {
         var newStack = stack
         for tool in ProviderTool.allCases {
             var toolStack = newStack.toolStack(tool)
+            let toolProfiles = profiles.filter { $0.tool == tool }
             toolStack.members.removeAll { profileID in
-                !profiles.contains { $0.id == profileID }
+                !toolProfiles.contains { $0.id == profileID }
             }
             let registry = AggregationKeyRegistry(keys: toolStack.keys)
             for key in toolStack.keys.keys {
-                _ = registry.resolve(key: key, candidates: profiles)
+                _ = registry.resolve(key: key, candidates: toolProfiles)
             }
             toolStack.keys = registry.keys
             newStack.setToolStack(toolStack, for: tool)
@@ -754,7 +757,7 @@ final class ProviderAggregationManager: ObservableObject {
     private func rewriteProjectionIfChanged(tool: ProviderTool) throws {
         guard stack.toolStack(tool).enabled, let port = proxy.resolvedPort else { return }
         guard let defaultID = stack.toolStack(tool).members.first,
-              let defaultProfile = profiles.first(where: { $0.id == defaultID }) else {
+              let defaultProfile = profile(id: defaultID, tool: tool) else {
             return
         }
         // 默认那家的登记簿 key：Codex 目录按它认「哪些 published 行属于默认那家」。
@@ -802,7 +805,7 @@ final class ProviderAggregationManager: ObservableObject {
     private func mergedSwitches(tool: ProviderTool, defaultProfile: ProviderProfile) -> [String: String] {
         let others = stack.toolStack(tool).members
             .filter { $0 != defaultProfile.id }
-            .compactMap { id in profiles.first(where: { $0.id == id }) }
+            .compactMap { id in profile(id: id, tool: tool) }
         return AggregationSwitchMerger.mergedValues(defaultProfile: defaultProfile, others: others)
     }
 
@@ -859,7 +862,7 @@ final class ProviderAggregationManager: ObservableObject {
     /// 前滚：按 pending 的新名单幂等补完投影（摘要未变则跳过）。
     private func rollForward(_ pending: AggregationPending) {
         guard let defaultID = pending.stack.toolStack(pending.tool).members.first,
-              let defaultProfile = profiles.first(where: { $0.id == defaultID }),
+              let defaultProfile = profile(id: defaultID, tool: pending.tool),
               proxy.isRunning,
               let port = proxy.resolvedPort else {
             try? pendingStore.clear()
@@ -908,7 +911,7 @@ final class ProviderAggregationManager: ObservableObject {
             let toolStack = stack.toolStack(tool)
             stacks[tool] = toolStack
             if let defaultID = toolStack.members.first,
-               let profile = profiles.first(where: { $0.id == defaultID }) {
+               let profile = profile(id: defaultID, tool: tool) {
                 defaultTargets[tool] = AggregationProxyTarget(
                     key: toolStack.keyOf(profileID: defaultID) ?? "",
                     profileID: defaultID,
@@ -968,7 +971,6 @@ final class ProviderAggregationManager: ObservableObject {
 
 enum AggregationManagerError: Error, Equatable {
     case profileNotFound(id: String)
-    case toolMismatch(id: String, expected: ProviderTool)
     case incompleteConnection(id: String)
     case officialCannotJoin(id: String)
     /// 官方做 Codex 聚合默认但官方登录（auth.json）不在场——custom 表 +
@@ -982,9 +984,7 @@ extension AggregationManagerError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .profileNotFound(let id):
-            return "找不到供应商档案（\(id)），可能已被删除"
-        case .toolMismatch(let id, let expected):
-            return "供应商（\(id)）不属于当前工具（\(expected)）"
+            return "在当前工具下找不到供应商档案（\(id)）：可能已被删除，或属于另一个工具的同名卡"
         case .incompleteConnection(let id):
             return "供应商（\(id)）连接信息不完整，请先补全地址与密钥"
         case .officialCannotJoin(let id):

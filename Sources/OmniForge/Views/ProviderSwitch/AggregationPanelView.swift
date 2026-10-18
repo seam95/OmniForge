@@ -780,7 +780,7 @@ struct AggregationPanelView: View {
     private func addMember(_ profileID: String) {
         Task { @MainActor in
             do {
-                try manager.addMember(profileID)
+                try manager.addMember(profileID, tool: tool)
             } catch {
                 showToast(String(format: strings.providerSwitchFailedFormat, error.localizedDescription))
             }
@@ -790,7 +790,7 @@ struct AggregationPanelView: View {
     private func removeMember(_ profileID: String) {
         Task { @MainActor in
             do {
-                try manager.removeMember(profileID)
+                try manager.removeMember(profileID, tool: tool)
             } catch {
                 showToast(String(format: strings.providerSwitchFailedFormat, error.localizedDescription))
             }
@@ -800,7 +800,7 @@ struct AggregationPanelView: View {
     private func setDefault(_ profileID: String) {
         Task { @MainActor in
             do {
-                try manager.setDefault(profileID)
+                try manager.setDefault(profileID, tool: tool)
             } catch {
                 showToast(String(format: strings.providerSwitchFailedFormat, error.localizedDescription))
             }

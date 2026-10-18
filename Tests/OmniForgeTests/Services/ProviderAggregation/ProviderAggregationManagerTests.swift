@@ -213,13 +213,13 @@ final class ProviderAggregationManagerTests: XCTestCase {
         // 官方分支顺带 restore——首次进入本就没有 stash，是无副作用空操作。
         XCTAssertEqual(loginStash.restoreCallCount, 1)
 
-        try manager.addMember("deepseek")
-        try manager.setDefault("deepseek")
+        try manager.addMember("deepseek", tool: .codex)
+        try manager.setDefault("deepseek", tool: .codex)
         XCTAssertEqual(manager.toolStack(.codex).members.first, "deepseek")
         XCTAssertEqual(loginStash.stashCallCount, 1, "切到第三方默认：收纳官方登录")
         XCTAssertEqual(loginStash.restoreCallCount, 1, "收纳路径不还原")
 
-        try manager.setDefault("openai-official")
+        try manager.setDefault("openai-official", tool: .codex)
         XCTAssertEqual(manager.toolStack(.codex).members.first, "openai-official")
         XCTAssertEqual(loginStash.stashCallCount, 1, "切回官方默认：不再收纳")
         XCTAssertEqual(loginStash.restoreCallCount, 2, "并还原此前收纳的登录")
@@ -277,8 +277,8 @@ final class ProviderAggregationManagerTests: XCTestCase {
         try manager.enterAggregation(tool: .codex, defaultProfileID: "openai-official")
         XCTAssertTrue(manager.proxySnapshot().defaultTargets[.codex]?.passesThroughAuthorization ?? false)
 
-        try manager.addMember("deepseek")
-        try manager.setDefault("deepseek")
+        try manager.addMember("deepseek", tool: .codex)
+        try manager.setDefault("deepseek", tool: .codex)
         XCTAssertFalse(manager.proxySnapshot().defaultTargets[.codex]?.passesThroughAuthorization ?? true)
     }
 
@@ -387,6 +387,30 @@ final class ProviderAggregationManagerTests: XCTestCase {
         XCTAssertTrue(manager.isProxyRunning)
     }
 
+    /// 跨工具同名卡（id 只在单工具目录内唯一）：两侧都建 DeepSeek 卡时，
+    /// Codex 聚合按 (id, tool) 定位，不得误命中 Claude 那张报「不属于当前工具」。
+    func test_enterAggregation_resolvesSameIDCardWithinTool() throws {
+        let claudeDeepseek = ProviderProfile(
+            id: "deepseek", name: "DeepSeek", tool: .claudeCode,
+            baseURL: "https://api.deepseek.com/anthropic", token: "sk-claude"
+        )
+        let codexDeepseek = ProviderProfile(
+            id: "deepseek", name: "DeepSeek", tool: .codex,
+            baseURL: "https://api.deepseek.com/v1", token: "sk-codex",
+            codexModels: ["deepseek-v4-pro"]
+        )
+        profileStore.stubProfiles = [claudeDeepseek, codexDeepseek]   // Claude 在前：旧的仅按 id 查找会命中它
+        manager = makeManager()
+        loginStash.hasNativeLogin = true
+
+        try manager.enterAggregation(tool: .codex, defaultProfileID: "deepseek")
+        XCTAssertEqual(manager.mode(tool: .codex), .aggregation)
+        XCTAssertEqual(codexWriter.lastDefaultProfile?.baseURL, "https://api.deepseek.com/v1",
+                       "命中的必须是 Codex 那张同名卡")
+        // Claude 侧同名卡不受牵连，Claude 栈未被写。
+        XCTAssertFalse(manager.isAggregating(.claudeCode))
+    }
+
     // MARK: - 合成官方卡（方案 B：官方经默认位进聚合）
 
     /// Codex 侧无任何官方卡片 → 聚合上下文注入合成官方卡（模型列表来自官方缓存）。
@@ -432,7 +456,7 @@ final class ProviderAggregationManagerTests: XCTestCase {
 
     func test_exitAggregation_retainsMembersAndKeys() throws {
         try manager.enterAggregation(tool: .claudeCode, defaultProfileID: "kimi")
-        try manager.addMember("glm")
+        try manager.addMember("glm", tool: .claudeCode)
         try manager.exitAggregation(tool: .claudeCode)
         XCTAssertEqual(manager.toolStack(.claudeCode).members, ["kimi", "glm"])
         XCTAssertEqual(manager.toolStack(.claudeCode).keys["glm"], "glm")
@@ -440,32 +464,32 @@ final class ProviderAggregationManagerTests: XCTestCase {
 
     func test_addMember_allocatesPermanentKey() throws {
         try manager.enterAggregation(tool: .claudeCode, defaultProfileID: "kimi")
-        try manager.addMember("glm")
+        try manager.addMember("glm", tool: .claudeCode)
         XCTAssertEqual(manager.toolStack(.claudeCode).keyOf(profileID: "glm"), "glm")
     }
 
     func test_addMember_rejectsOfficialAccount() throws {
         try manager.enterAggregation(tool: .claudeCode, defaultProfileID: "kimi")
-        XCTAssertThrowsError(try manager.addMember("anthropic-official"))
+        XCTAssertThrowsError(try manager.addMember("anthropic-official", tool: .claudeCode))
         XCTAssertFalse(manager.toolStack(.claudeCode).isMember("anthropic-official"))
     }
 
     func test_removeDefaultMemberIsRejectedWhileAggregating() throws {
         try manager.enterAggregation(tool: .claudeCode, defaultProfileID: "kimi")
-        XCTAssertThrowsError(try manager.removeMember("kimi"))
+        XCTAssertThrowsError(try manager.removeMember("kimi", tool: .claudeCode))
     }
 
     func test_removeDefaultMemberIsAllowedOnceAggregationExited() throws {
         try manager.enterAggregation(tool: .claudeCode, defaultProfileID: "kimi")
         try manager.exitAggregation(tool: .claudeCode)
-        try manager.removeMember("kimi")
+        try manager.removeMember("kimi", tool: .claudeCode)
         XCTAssertFalse(manager.toolStack(.claudeCode).isMember("kimi"))
         XCTAssertNotNil(manager.toolStack(.claudeCode).keys["kimi"])   // key 仍保留
     }
 
     func test_deletingProfileRemovesItFromMembersButKeepsKey() throws {
         try manager.enterAggregation(tool: .claudeCode, defaultProfileID: "kimi")
-        try manager.addMember("glm")
+        try manager.addMember("glm", tool: .claudeCode)
         profileStore.stubProfiles.removeAll { $0.id == "glm" }
         manager.refresh()
         XCTAssertFalse(manager.toolStack(.claudeCode).isMember("glm"))
@@ -475,7 +499,7 @@ final class ProviderAggregationManagerTests: XCTestCase {
     func test_addMember_skipsRewriteWhenContractUnchanged() throws {
         try manager.enterAggregation(tool: .claudeCode, defaultProfileID: "kimi")
         let writesBefore = claudeWriter.applyCount
-        try manager.addMember("kimi")   // 已在名单里 → 无变化
+        try manager.addMember("kimi", tool: .claudeCode)   // 已在名单里 → 无变化
         XCTAssertEqual(claudeWriter.applyCount, writesBefore)
     }
 
@@ -512,7 +536,7 @@ final class ProviderAggregationManagerTests: XCTestCase {
         ]
         manager = makeManager()
         try manager.enterAggregation(tool: .claudeCode, defaultProfileID: "kimi")
-        try manager.addMember("glm")
+        try manager.addMember("glm", tool: .claudeCode)
         // ANY 组取第一个"要关"成员的原值；ALL 组保留默认那家的既有值（不是成员的 yes）
         XCTAssertEqual(claudeWriter.lastMemberSwitches, [
             "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "true",
@@ -580,7 +604,7 @@ final class ProviderAggregationManagerTests: XCTestCase {
     /// 刷新同时摘掉已删除的成员（key 永不回收——重新加入拿回原 key，旧会话里的 id 继续有效）。
     func test_refresh_prunesDeletedMembersButKeepsKeys() throws {
         try manager.enterAggregation(tool: .claudeCode, defaultProfileID: "kimi")
-        try manager.addMember("glm")
+        try manager.addMember("glm", tool: .claudeCode)
 
         profileStore.stubProfiles.removeAll { $0.id == "glm" }
         manager.refresh()

@@ -152,7 +152,31 @@ final class AggregationTargetResolverTests: XCTestCase {
     }
 
     func test_codexUpstreamModelIsBareModelName() {
-        XCTAssertEqual(resolver.resolve(tool: .codex, model: "om-kimi/kimi-k3"), .hit(target: kimiTarget, upstreamModel: "kimi-k3"))
+        // Codex 解析必须配 Codex 卡：跨工具同名卡按 (id, tool) 限定后不再互相命中。
+        let codexKimi = ProviderProfile(
+            id: "kimi", name: "Kimi", tool: .codex,
+            baseURL: "https://api.kimi.com/v1", token: "sk-kimi-codex",
+            codexModels: ["kimi-k3"]
+        )
+        let codexResolver = AggregationTargetResolver(
+            stack: .init(enabled: true, members: ["kimi"], keys: ["kimi": "kimi"]),
+            registry: AggregationKeyRegistry(keys: ["kimi": "kimi"]),
+            profiles: [codexKimi],
+            defaultTarget: nil
+        )
+        XCTAssertEqual(
+            codexResolver.resolve(tool: .codex, model: "om-kimi/kimi-k3"),
+            .hit(
+                target: AggregationProxyTarget(
+                    key: "kimi", profileID: "kimi",
+                    baseURL: "https://api.kimi.com/v1", token: "sk-kimi-codex"
+                ),
+                upstreamModel: "kimi-k3"
+            )
+        )
+        // 同名跨工具不串：Claude 形态的 id 在 Codex 侧按 plain 走（无默认目标 → stackOff），
+        // 无论如何不会命中 Claude 那张 kimi 卡。
+        XCTAssertEqual(codexResolver.resolve(tool: .codex, model: "om-claude-kimi--k3"), .miss(.stackOff))
     }
 
     func test_malformedIDMissesAsUnknown() {

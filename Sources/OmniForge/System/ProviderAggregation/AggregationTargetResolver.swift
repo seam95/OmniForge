@@ -65,7 +65,8 @@ final class AggregationTargetResolver: AggregationResolving {
         case .stack(let key, let stackModel, let oneM):
             guard stack.enabled else { return .miss(.stackOff) }
             guard let profileID = registry.keys[key] else { return .miss(.unknown) }
-            guard let profile = profiles.first(where: { $0.id == profileID }) else { return .miss(.deleted) }
+            // 跨工具同名卡（id 只在单工具目录内唯一）必须按工具限定，否则命中别家卡。
+            guard let profile = profiles.first(where: { $0.id == profileID && $0.tool == tool }) else { return .miss(.deleted) }
             guard stack.isMember(profileID) else { return .miss(.removed) }
             // 官方那家也能被命中（它作为默认那家在 members[0]、分到 key、有已发布模型）：
             // 命中官方时同样透传客户端凭证，否则空 token 覆盖 → 401（SPEC 3 契约 4，
