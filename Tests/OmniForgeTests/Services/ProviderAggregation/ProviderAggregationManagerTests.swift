@@ -225,6 +225,34 @@ final class ProviderAggregationManagerTests: XCTestCase {
         XCTAssertEqual(loginStash.restoreCallCount, 2, "并还原此前收纳的登录")
     }
 
+    /// 自锁修复（2026-10-18 实测现场）：第三方默认聚合期间官方登录被收纳——
+    /// auth.json 不在场、只在 stash 里。「设为默认」的登录校验承认 stash 登录，
+    /// 否则本应用自己收走的登录被自己的闸门判为未登录，官方永远无法上位。
+    func test_setDefault_acceptsOfficialDefaultWhenLoginOnlyInStash() throws {
+        profileStore.stubProfiles = [officialCodexProfile, thirdPartyCodexProfile]
+        manager = makeManager()
+        try manager.enterAggregation(tool: .codex, defaultProfileID: "deepseek")
+        // 模拟 stash() 之后的磁盘形态：原生登录已移走、只在 stash 里。
+        loginStash.hasNativeLogin = false
+        loginStash.hasStashedLogin = true
+
+        try manager.setDefault("openai-official", tool: .codex)
+
+        XCTAssertEqual(manager.toolStack(.codex).members.first, "openai-official")
+        XCTAssertEqual(loginStash.restoreCallCount, 1, "校验放行后由官方分支还原收纳的登录")
+    }
+
+    /// 登录彻底不在场（auth.json 与 stash 都没有）→ 仍然事前挡下并指路。
+    func test_setDefault_stillRejectsOfficialDefaultWhenLoginNowhere() throws {
+        profileStore.stubProfiles = [officialCodexProfile, thirdPartyCodexProfile]
+        manager = makeManager()
+        try manager.enterAggregation(tool: .codex, defaultProfileID: "deepseek")
+
+        XCTAssertThrowsError(try manager.setDefault("openai-official", tool: .codex)) { error in
+            XCTAssertEqual(error as? AggregationManagerError, .officialLoginRequired)
+        }
+    }
+
     // MARK: - 代理快照的官方透传位
 
     /// 官方默认：plain 目标带透传位 —— 代理不得把客户端自己的 OAuth `Authorization`
@@ -733,6 +761,7 @@ private final class StubBackupStore: ProviderBackupStoring {
 
 private final class StubLoginStashStore: CodexLoginStashStoring {
     var hasNativeLogin = false
+    var hasStashedLogin = false
     var stashCallCount = 0
     var restoreCallCount = 0
 

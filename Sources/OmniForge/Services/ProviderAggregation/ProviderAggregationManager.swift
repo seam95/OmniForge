@@ -710,9 +710,12 @@ final class ProviderAggregationManager: ObservableObject {
 
     /// 官方默认的前置登录校验（方案 B 契约）：custom 表 + `requires_openai_auth` 依赖
     /// auth.json 的 OAuth 凭证在场，缺失时进入只会在官方上游收到 401——事前挡下并指路。
+    /// 收纳在 stash 里的登录同样算数：放行后 `syncCodexLoginStash` 官方分支会先 `restore()`
+    /// 放回 auth.json，投影读到的就是已还原的登录（第三方默认聚合期间正是这一形态——
+    /// 只认 auth.json 会把本应用自己收走的登录判为未登录，官方永远无法上位）。
     private func validateOfficialDefaultLogin(tool: ProviderTool, defaultProfile: ProviderProfile) throws {
         guard tool == .codex, Self.isOfficial(defaultProfile) else { return }
-        guard loginStashStore.hasNativeLogin else {
+        guard loginStashStore.hasNativeLogin || loginStashStore.hasStashedLogin else {
             throw AggregationManagerError.officialLoginRequired
         }
     }

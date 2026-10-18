@@ -2,7 +2,8 @@ import XCTest
 @testable import OmniForge
 
 /// Codex 官方登录收纳：无登录不收纳、收纳移走原文件、还原放回并清 stash、
-/// 用户重新登录后还原不覆盖、重复收纳覆盖而非失败、discard 清 stash。
+/// 用户重新登录后还原不覆盖、重复收纳覆盖而非失败、discard 清 stash、
+/// `hasStashedLogin` 只认 stash 文件（缺失/损坏为 false）。
 final class CodexLoginStashStoreTests: XCTestCase {
     private var tmpDir: URL!
     private var authURL: URL!
@@ -28,6 +29,24 @@ final class CodexLoginStashStoreTests: XCTestCase {
 
     func test_hasNativeLogin_falseWhenAuthJSONMissing() {
         XCTAssertFalse(store.hasNativeLogin)
+    }
+
+    func test_hasStashedLogin_falseWhenStashMissing() {
+        XCTAssertFalse(store.hasStashedLogin)
+    }
+
+    /// 第三方默认聚合期间的现场形态：auth.json 已被收走（hasNativeLogin=false），
+    /// 登录只在 stash 里——登录校验必须承认这一形态，否则自锁。
+    func test_hasStashedLogin_trueAfterStashWhileNativeLoginGone() throws {
+        try writeAuth(#"{"tokens":{"access_token":"real"}}"#)
+        _ = try store.stash()
+        XCTAssertFalse(store.hasNativeLogin)
+        XCTAssertTrue(store.hasStashedLogin)
+    }
+
+    func test_hasStashedLogin_falseWhenStashCorrupt() throws {
+        try Data(#"{"tokens":{}}"#.utf8).write(to: stashURL)
+        XCTAssertFalse(store.hasStashedLogin, "损坏的 stash 视为无有效登录（与 hasNativeLogin 同口径）")
     }
 
     func test_stash_movesOfficialLoginAsideAndReportsTrue() throws {

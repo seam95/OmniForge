@@ -660,6 +660,7 @@ private final class StubBackupStore: ProviderBackupStoring {
 
 private final class StubLoginStashStore: CodexLoginStashStoring {
     var hasNativeLogin = false
+    var hasStashedLogin = false
     func stash() throws -> Bool { false }
     func restore() throws -> Bool { false }
     func discard() throws {}

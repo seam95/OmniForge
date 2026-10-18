@@ -5,6 +5,10 @@ import Foundation
 protocol CodexLoginStashStoring: AnyObject {
     /// 磁盘上是否有可解析的官方登录。
     var hasNativeLogin: Bool { get }
+    /// stash 里是否有可解析的官方登录——第三方默认聚合期间登录被本应用收走，
+    /// `auth.json` 不在场但登录仍在。登录校验须承认这一形态（否则自锁：
+    /// 自己收走的登录被自己的闸门判为未登录）。
+    var hasStashedLogin: Bool { get }
     /// 收纳：有原生登录 → 移走并返回 true；无 → false（不动任何文件）。
     func stash() throws -> Bool
     /// 还原：无 stash → false；auth.json 已存在（用户重新登录过）→ false 且不动文件；
@@ -32,6 +36,11 @@ final class CodexLoginStashStore: CodexLoginStashStoring {
         guard fileManager.fileExists(atPath: authURL.path) else { return false }
         // 复用只读解析能力，不复制解析逻辑；损坏 → 视为无有效登录。
         return (try? CodexAuthFileCredentialReader(authURL: authURL).readBundle()) != nil
+    }
+
+    var hasStashedLogin: Bool {
+        guard fileManager.fileExists(atPath: stashURL.path) else { return false }
+        return (try? CodexAuthFileCredentialReader(authURL: stashURL).readBundle()) != nil
     }
 
     func stash() throws -> Bool {

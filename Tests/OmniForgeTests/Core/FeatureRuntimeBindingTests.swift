@@ -303,6 +303,7 @@ private final class BindingStubBackupStore: ProviderBackupStoring {
 
 private final class BindingStubLoginStashStore: CodexLoginStashStoring {
     var hasNativeLogin = false
+    var hasStashedLogin = false
     func stash() throws -> Bool { false }
     func restore() throws -> Bool { false }
     func discard() throws {}
