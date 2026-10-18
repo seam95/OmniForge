@@ -278,6 +278,23 @@ final class AggregationPanelViewTests: XCTestCase {
         XCTAssertNil(AggregationPanelView.undoDefaultID(nil, matching: .codex))
     }
 
+    /// 官方入口卡显示条件：聚合中 + 官方卡存在 + 不在名单。
+    func test_showsOfficialEntry_onlyWhenAggregatingAndNotMember() {
+        let official = ProviderProfile(
+            id: "official-codex", name: "OpenAI", tool: .codex,
+            baseURL: "https://api.openai.com/v1", token: ""
+        )
+        XCTAssertNotNil(AggregationPanelView.showsOfficialEntry(
+            isAggregating: true, official: official, isMember: { _ in false }))
+        XCTAssertNil(AggregationPanelView.showsOfficialEntry(
+            isAggregating: false, official: official, isMember: { _ in false }), "未聚合不显示")
+        XCTAssertNil(AggregationPanelView.showsOfficialEntry(
+            isAggregating: true, official: official, isMember: { id in id == "official-codex" }),
+            "官方已在名单（默认位）不显示")
+        XCTAssertNil(AggregationPanelView.showsOfficialEntry(
+            isAggregating: true, official: nil, isMember: { _ in false }), "无官方卡不显示")
+    }
+
     /// 官方回落规则（方案 B）：激活官方态 → 官方卡；激活第三方 → 第三方；
     /// 未托管等其余态 → 先第三方首张、无卡再官方兜底。
     func test_resolveDefaultCandidate_fallsBackToOfficialForOfficialActiveState() {

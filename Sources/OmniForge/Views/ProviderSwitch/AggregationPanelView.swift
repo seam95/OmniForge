@@ -51,6 +51,10 @@ struct AggregationPanelView: View {
                 // 聚合成员列表（默认排在首位，带高亮描边与「默认」徽章）
                 membersList
 
+                // 官方入口卡：官方不在名单时显示——官方进聚合只有默认位一条路，
+                // 没有这个入口就再也切不回官方默认（候选区显式排除官方）。
+                officialEntryCard
+
                 officialDefaultCodexHint
 
                 // 可加入候选列表（若存在候选者）
@@ -160,6 +164,77 @@ struct AggregationPanelView: View {
                 officialExcludedNote
             }
         }
+    }
+
+    /// 聚合中的官方入口卡（官方卡在聚合上下文且不在名单时）。
+    @ViewBuilder
+    private var officialEntryCard: some View {
+        if Self.showsOfficialEntry(
+            isAggregating: manager.isAggregating(tool),
+            official: manager.officialProfile(tool: tool),
+            isMember: { id in manager.toolStack(tool).isMember(id) }
+        ) != nil {
+            officialEntryCardBody
+        }
+    }
+
+    private var officialEntryCardBody: some View {
+        let official = manager.officialProfile(tool: tool)
+        return cardContainer(isDefault: false) {
+            HStack(spacing: 12) {
+                ProviderBrandLogoBadge(
+                    visual: ProviderBrandVisual.Visual(
+                        letter: "",
+                        color: ProviderBrandVisual.officialColor(for: tool),
+                        logo: ProviderBrandVisual.officialLogo(for: tool)
+                    ),
+                    size: ProviderCardVisual.logoSize,
+                    cornerRadius: ProviderCardVisual.logoCornerRadius
+                )
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(official?.name ?? "OpenAI")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(ProviderCardVisual.primaryText(colorScheme))
+                        .lineLimit(1)
+                    Text(tool == .codex
+                         ? strings.providerOfficialCodexCaption
+                         : strings.providerOfficialClaudeCaption)
+                        .font(.system(size: 12))
+                        .foregroundStyle(ProviderCardVisual.secondaryText(colorScheme))
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+
+                Button {
+                    if let id = official?.id {
+                        setDefault(id)
+                    }
+                } label: {
+                    Text(strings.providerAggregationSetDefault)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Theme.accentColor)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule().fill(Theme.accentColor.opacity(0.10))
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(12)
+        }
+    }
+
+    /// 非 `private`：供单测直接锁定官方入口的显示条件。
+    static func showsOfficialEntry(
+        isAggregating: Bool,
+        official: ProviderProfile?,
+        isMember: (String) -> Bool
+    ) -> ProviderProfile? {
+        guard isAggregating, let official, !isMember(official.id) else { return nil }
+        return official
     }
 
     private var officialExcludedNote: some View {

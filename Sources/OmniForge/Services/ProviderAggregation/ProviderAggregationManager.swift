@@ -117,7 +117,14 @@ final class ProviderAggregationManager: ObservableObject {
                 isDefault: profileID == toolStack.members.first,
                 isOfficial: Self.isOfficial(profile),
                 publishedCount: published.count,
-                modelIDs: published.map(\.id)
+                // 选择器 id 按工具编码：Codex 是 `om-<key>/<model>`，Claude 是
+                // `om-claude-<key>--<model>`——`AggregationPublishedModel.id` 恒为
+                // Claude 编码，Codex 成员直接用它会把 Claude 形态显示给用户。
+                modelIDs: published.map { entry in
+                    AggregationModelID.encode(
+                        tool: tool, key: entry.key, model: entry.model, oneM: entry.oneM
+                    )
+                }
             )
         }
     }
@@ -137,11 +144,16 @@ final class ProviderAggregationManager: ObservableObject {
         profiles.first { $0.id == id && $0.tool == tool }
     }
 
-    /// 聚合上下文里官方卡的 id（仅 Codex 有：合成卡或用户自建官方卡；无 → nil）。
-    /// UI 的默认候选回落用——官方是「系统态」没有 profileID，聚合面板要能看到它。
+    /// 聚合上下文里的官方卡实体（Codex 为合成卡或用户自建官方卡；Claude 仅有
+    /// 用户自建官方卡；无 → nil）。UI 官方入口卡与默认候选回落共用。
+    func officialProfile(tool: ProviderTool) -> ProviderProfile? {
+        profiles.first { $0.tool == tool && $0.isOfficial }
+    }
+
+    /// 聚合上下文里官方卡的 id。UI 的默认候选回落用——官方是「系统态」没有
+    /// profileID，聚合面板要能看到它。
     func officialProfileID(tool: ProviderTool) -> String? {
-        guard tool == .codex else { return nil }
-        return profiles.first(where: { $0.tool == .codex && $0.isOfficial })?.id
+        officialProfile(tool: tool)?.id
     }
 
     /// 某工具全部成员的已发布模型（名单顺序 = 选择器顺序；默认那家在首位）。
@@ -456,6 +468,9 @@ final class ProviderAggregationManager: ObservableObject {
     }
 
     /// 设默认那家：移到名单首位（聚合开启期间同步重写投影）。
+    /// 不在名单的卡（典型是官方卡——官方进聚合只有默认位一条路）一并分配 key
+    /// 入座上位，原来的默认留在名单里（对齐 cc-switch「设为默认一家还没添加的：
+    /// 一起加入名单」）。
     func setDefault(_ profileID: String, tool: ProviderTool) throws {
         guard let profile = profile(id: profileID, tool: tool) else {
             throw AggregationManagerError.profileNotFound(id: profileID)
@@ -463,9 +478,9 @@ final class ProviderAggregationManager: ObservableObject {
         try validateOfficialDefaultLogin(tool: tool, defaultProfile: profile)
         var newStack = stack
         var toolStack = newStack.toolStack(tool)
-        guard toolStack.isMember(profileID) else {
-            throw AggregationManagerError.notMember(id: profileID)
-        }
+        var registry = AggregationKeyRegistry(keys: toolStack.keys)
+        _ = registry.allocate(profile: profile)
+        toolStack.keys = registry.keys
         toolStack.members.removeAll { $0 == profileID }
         toolStack.members.insert(profileID, at: 0)
         newStack.setToolStack(toolStack, for: tool)
@@ -977,7 +992,6 @@ enum AggregationManagerError: Error, Equatable {
     /// `requires_openai_auth` 依赖 OAuth 凭证，缺失时官方上游只会回 401。
     case officialLoginRequired
     case defaultMemberLocked(id: String)
-    case notMember(id: String)
 }
 
 extension AggregationManagerError: LocalizedError {
@@ -993,8 +1007,6 @@ extension AggregationManagerError: LocalizedError {
             return "OpenAI 官方做默认需要 Codex 官方登录：请先在 Codex 登录官方账号，再切换默认"
         case .defaultMemberLocked(let id):
             return "默认供应商在聚合开启期间不可移除（\(id)）"
-        case .notMember(let id):
-            return "该供应商不在聚合名单里（\(id)）"
         }
     }
 }

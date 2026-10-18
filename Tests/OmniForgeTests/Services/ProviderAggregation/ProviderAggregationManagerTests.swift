@@ -411,6 +411,22 @@ final class ProviderAggregationManagerTests: XCTestCase {
         XCTAssertFalse(manager.isAggregating(.claudeCode))
     }
 
+    /// 官方卡不在名单时直接「设为默认」→ 分配 key 入座上位，原默认留在名单
+    /// （官方进聚合只有默认位一条路，对齐 cc-switch「设默认一家还没添加的一并入名单」）。
+    func test_setDefault_promotesNonMemberOfficialIntoStack() throws {
+        profileStore.stubProfiles = [officialCodexProfile, thirdPartyCodexProfile]
+        manager = makeManager()
+        loginStash.hasNativeLogin = true
+
+        try manager.enterAggregation(tool: .codex, defaultProfileID: "deepseek")
+        XCTAssertFalse(manager.toolStack(.codex).isMember("openai-official"), "前置：官方不在名单")
+
+        try manager.setDefault("openai-official", tool: .codex)
+        XCTAssertEqual(manager.toolStack(.codex).members.first, "openai-official", "官方上位为默认")
+        XCTAssertEqual(manager.toolStack(.codex).members.contains("deepseek"), true, "原默认留在名单")
+        XCTAssertNotNil(manager.toolStack(.codex).keyOf(profileID: "openai-official"), "官方一并分配 key")
+    }
+
     // MARK: - 合成官方卡（方案 B：官方经默认位进聚合）
 
     /// Codex 侧无任何官方卡片 → 聚合上下文注入合成官方卡（模型列表来自官方缓存）。
