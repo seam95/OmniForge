@@ -11,6 +11,18 @@ enum WhatsNewReleaseCatalog {
     /// 历次版本的更新内容，新版本在前
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            version: "3.17.0",
+            entries: [
+                WhatsNewEntry(type: .added, text: "新增供应商聚合：Claude Code 与 Codex 可将多家供应商合成为一个入口，按模型自动路由；面板内可管理成员、默认模型与模型映射"),
+                WhatsNewEntry(type: .added, text: "聚合支持 OpenAI 官方订阅：官方登录可直接设为 Codex 聚合默认，与第三方模型混用，官方入口在聚合中常驻"),
+                WhatsNewEntry(type: .added, text: "内置供应商新增 Step 阶跃星辰与 OpenCode Go，开箱即用"),
+                WhatsNewEntry(type: .changed, text: "供应商页改版：直连 / 聚合双卡片模式切换，聚合开关移至顶栏，切换即时生效不再弹确认框"),
+                WhatsNewEntry(type: .changed, text: "聚合模式写入的模型 ID 前缀由 ccs- 改为 om-，支持 1M 上下文标记，并与 cc-switch 配置并存不冲突"),
+                WhatsNewEntry(type: .changed, text: "控制中心 Tab 改为极简药丸样式并统一全白背景；磁盘详情页改为卡片化布局"),
+                WhatsNewEntry(type: .fixed, text: "修复便签或剪贴板面板存在时，粘贴误投到便签而非原来的输入框"),
+            ]
+        ),
+        WhatsNewRelease(
             version: "3.16.0",
             entries: [
                 WhatsNewEntry(type: .added, text: "截图晾衣绳新增一键清理：扫帚按钮随晾衣绳显隐，点击即可取下绳上全部截图（文件不动）"),
