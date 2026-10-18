@@ -14,8 +14,10 @@ struct AggregationPanelView: View {
     var onDeleteProfile: ((ProviderProfile) -> Void)? = nil
 
     @State private var confirmingRestartDaemon = false
-    /// 刚退出的默认那家 id（「撤销」用——重新进入聚合）。
-    @State private var undoDefaultID: String?
+    /// 刚退出的默认那家（「撤销」用——重新进入聚合）。与工具绑定：面板挂在
+    /// PageSwitchHost 单树里，切工具不重置 @State，跨工具残留会把 Claude 的默认
+    /// 塞给 Codex（`toolMismatch`）。
+    @State private var undoDefault: (tool: ProviderTool, id: String)?
     @State private var toastMessage: String?
     @State private var toastDismissTask: Task<Void, Never>?
     @State private var isTransitioning = false
@@ -59,13 +61,13 @@ struct AggregationPanelView: View {
                 }
 
                 exitAction
-                if let undoDefaultID {
-                    undoAction(defaultID: undoDefaultID)
+                if let undo = currentUndoDefault {
+                    undoAction(undo)
                 }
             } else {
                 enterSection
-                if let undoDefaultID {
-                    undoAction(defaultID: undoDefaultID)
+                if let undo = currentUndoDefault {
+                    undoAction(undo)
                 }
             }
 
@@ -554,10 +556,10 @@ struct AggregationPanelView: View {
         .accessibilityIdentifier(SettingsAccessibilityID.providerAggregationExit.rawValue)
     }
 
-    private func undoAction(defaultID: String) -> some View {
+    private func undoAction(_ undo: (tool: ProviderTool, id: String)) -> some View {
         Button {
             // 撤销（重新进入聚合）同样无确认框：带上刚退出的默认那家直接进入。
-            undoDefaultID = defaultID
+            undoDefault = undo
             enterAggregation()
         } label: {
             Text(strings.providerAggregationUndo)
@@ -698,6 +700,19 @@ struct AggregationPanelView: View {
         )
     }
 
+    /// 当前工具的撤销目标（其他工具的残留不显示、不参与候选）。
+    private var currentUndoDefault: (tool: ProviderTool, id: String)? {
+        guard Self.undoDefaultID(undoDefault, matching: tool) != nil else { return nil }
+        return undoDefault
+    }
+
+    /// 非 `private`：供单测直接锁定撤销目标的工具匹配规则（单树 Host 下 @State
+    /// 跨工具残留，Claude 退出的默认不得成为 Codex 的进入候选）。
+    static func undoDefaultID(_ undo: (tool: ProviderTool, id: String)?, matching tool: ProviderTool) -> String? {
+        guard let undo, undo.tool == tool else { return nil }
+        return undo.id
+    }
+
     /// 非 `private`：供单测直接锁定官方回落规则（与 `officialDefaultCodexHint` 同款）。
     static func resolveDefaultCandidate(
         active: ActiveProvider,
@@ -724,8 +739,8 @@ struct AggregationPanelView: View {
     // MARK: - 动作
 
     private func enterAggregation() {
-        let candidate = undoDefaultID ?? defaultCandidateID
-        undoDefaultID = nil
+        let candidate = currentUndoDefault?.id ?? defaultCandidateID
+        undoDefault = nil
         guard let candidate else { return }
         isTransitioning = true
         Task { @MainActor in
@@ -744,7 +759,7 @@ struct AggregationPanelView: View {
     }
 
     private func exitAggregation() {
-        undoDefaultID = manager.members(tool: tool).first(where: { $0.isDefault })?.id
+        undoDefault = manager.members(tool: tool).first(where: { $0.isDefault }).map { (tool: tool, id: $0.id) }
         isTransitioning = true
         Task { @MainActor in
             defer { isTransitioning = false }
@@ -753,9 +768,7 @@ struct AggregationPanelView: View {
                 withAnimation(Theme.Animation.snappy) {
                     showToast(String(
                         format: strings.providerAggregationExitedFormat,
-                        undoDefaultID.map { id in
-                            switchManager.profiles(for: tool).first(where: { $0.id == id })?.name ?? id
-                        } ?? ""
+                        manager.members(tool: tool).first(where: { $0.isDefault })?.name ?? ""
                     ))
                 }
             } catch {

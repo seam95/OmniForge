@@ -269,6 +269,15 @@ final class AggregationPanelViewTests: XCTestCase {
 
     // MARK: - 官方默认 Codex 提示（SPEC §3 / P0-3 的 UI 面）
 
+    /// 单树 Host 下 @State 跨工具残留：Claude 退出的默认不得成为 Codex 的候选。
+    func test_undoDefaultID_rejectsCrossToolResidue() {
+        let claudeUndo: (tool: ProviderTool, id: String) = (.claudeCode, "deepseek")
+        XCTAssertNil(AggregationPanelView.undoDefaultID(claudeUndo, matching: .codex),
+                      "跨工具残留（Claude 的 deepseek）不得成为 Codex 的进入候选")
+        XCTAssertEqual(AggregationPanelView.undoDefaultID(claudeUndo, matching: .claudeCode), "deepseek")
+        XCTAssertNil(AggregationPanelView.undoDefaultID(nil, matching: .codex))
+    }
+
     /// 官方回落规则（方案 B）：激活官方态 → 官方卡；激活第三方 → 第三方；
     /// 未托管等其余态 → 先第三方首张、无卡再官方兜底。
     func test_resolveDefaultCandidate_fallsBackToOfficialForOfficialActiveState() {
