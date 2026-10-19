@@ -266,6 +266,11 @@ final class ProviderAggregationManagerTests: XCTestCase {
 
         let target = try XCTUnwrap(manager.proxySnapshot().defaultTargets[.codex])
         XCTAssertTrue(target.passesThroughAuthorization)
+        XCTAssertEqual(
+            target.baseURL,
+            AggregationUpstream.officialOAuthBaseURL,
+            "OAuth token 只在 ChatGPT Codex 后端有效；转去 profile 的 api.openai.com 会 401"
+        )
     }
 
     /// 第三方默认：不带透传位 —— 仍按占位凭证换成真实 token。
@@ -274,6 +279,7 @@ final class ProviderAggregationManagerTests: XCTestCase {
 
         let target = try XCTUnwrap(manager.proxySnapshot().defaultTargets[.codex])
         XCTAssertFalse(target.passesThroughAuthorization)
+        XCTAssertEqual(target.baseURL, "https://api.deepseek.com/v1", "第三方保留 profile 地址，不受官方后端规整影响")
     }
 
     /// Claude 侧官方默认（api.anthropic.com + 静态 API key）**不**透传：

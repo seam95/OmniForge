@@ -12,6 +12,18 @@ enum AggregationUpstream {
     /// Anthropic Messages API 版本：缺失时补默认值。
     private static let defaultAnthropicVersion = "2023-06-01"
 
+    /// ChatGPT 登录（Codex 用 auth.json 的 OAuth 凭证）的推理后端。
+    /// **不是** `https://api.openai.com/v1`：后者只认 `sk-` API key，把 OAuth
+    /// access token 发过去只会 401（2026-10-19 实测 `Unknown error`）。
+    /// 对齐 codex-rs `CHATGPT_CODEX_BASE_URL` 与 cc-switch 的官方账号上游。
+    /// 官方目标构造 `AggregationProxyTarget` 时用它覆盖 profile 里给人看的官方域。
+    static let officialOAuthBaseURL = "https://chatgpt.com/backend-api/codex"
+
+    /// ChatGPT Codex 后端的端点不带版本段（`/responses`，不是 `/v1/responses`）。
+    private static func isChatGPTBackendBase(_ normalizedBase: String) -> Bool {
+        normalizedBase.hasSuffix("/backend-api/codex")
+    }
+
     /// base 归一化：去尾部斜杠后剥掉**单个** `/v1` 后缀。
     /// 各家 profile 的 baseURL 形态不一（`.../api/v1`、`.../`、`.../coding`），
     /// 归一后与客户端路径直接拼接即可还原完整上游 URL。
@@ -46,9 +58,15 @@ enum AggregationUpstream {
     }
 
     /// 上游 URL = 归一化 base + 客户端路径（路径缺 `/` 前缀时补上）。
+    /// ChatGPT Codex 后端特例：客户端按本地代理 base（`.../v1`）发来 `/v1/responses`，
+    /// 但该后端的端点是 `/responses`——不剥版本段会打到不存在的 `/v1/responses`。
     static func upstreamURL(base: String, clientPath: String) -> URL? {
-        let path = clientPath.hasPrefix("/") ? clientPath : "/" + clientPath
-        return URL(string: normalizedBase(base) + path)
+        let normalized = normalizedBase(base)
+        var path = clientPath.hasPrefix("/") ? clientPath : "/" + clientPath
+        if isChatGPTBackendBase(normalized), path.hasPrefix("/v1/") {
+            path = String(path.dropFirst("/v1".count))
+        }
+        return URL(string: normalized + path)
     }
 
     /// 请求头重写：剔逐跳头；按协议形状把占位凭证换成真实凭证。

@@ -940,17 +940,23 @@ final class ProviderAggregationManager: ObservableObject {
             stacks[tool] = toolStack
             if let defaultID = toolStack.members.first,
                let profile = profile(id: defaultID, tool: tool) {
+                // 官方默认（**仅 Codex**）：登录走 auth.json OAuth、没有静态 token，
+                // 客户端自己的 Authorization 原样透传（换成空串只会 401；SPEC 3 契约 4）。
+                // 透传的同时上游必须换成 ChatGPT Codex 后端——OAuth token 只在
+                // chatgpt.com 后端有效，profile 写的 api.openai.com 只认 API key
+                // （2026-10-19 实测：直发后者 = `401 Unknown error`）。
+                // Claude 侧官方 Anthropic 是静态 API key，投影写的又是占位 token，
+                // 必须照常替换（SPEC §3 收尾「Claude 侧不动」）——漏掉工具闸门会让
+                // `Bearer PROXY_MANAGED` 直达 Anthropic，每个请求都 401。
+                let passesThrough = tool == .codex && Self.isOfficial(profile)
                 defaultTargets[tool] = AggregationProxyTarget(
                     key: toolStack.keyOf(profileID: defaultID) ?? "",
                     profileID: defaultID,
-                    baseURL: profile.baseURL,
+                    baseURL: passesThrough
+                        ? AggregationUpstream.officialOAuthBaseURL
+                        : profile.baseURL,
                     token: profile.token,
-                    // 官方默认（**仅 Codex**）：登录走 auth.json OAuth、没有静态 token，
-                    // 客户端自己的 Authorization 原样透传（换成空串只会 401；SPEC 3 契约 4）。
-                    // Claude 侧官方 Anthropic 是静态 API key，投影写的又是占位 token，
-                    // 必须照常替换（SPEC §3 收尾「Claude 侧不动」）——漏掉工具闸门会让
-                    // `Bearer PROXY_MANAGED` 直达 Anthropic，每个请求都 401。
-                    passesThroughAuthorization: tool == .codex && Self.isOfficial(profile)
+                    passesThroughAuthorization: passesThrough
                 )
             }
             published[tool] = publishedModels(tool: tool)

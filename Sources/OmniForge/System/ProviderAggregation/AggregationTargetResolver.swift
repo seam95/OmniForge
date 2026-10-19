@@ -71,14 +71,19 @@ final class AggregationTargetResolver: AggregationResolving {
             // 官方那家也能被命中（它作为默认那家在 members[0]、分到 key、有已发布模型）：
             // 命中官方时同样透传客户端凭证，否则空 token 覆盖 → 401（SPEC 3 契约 4，
             // plain 与 hit 同规则）。判据是 Models 层的纯谓词 `ProviderProfile.isOfficial`。
+            // 透传同时把上游换成 ChatGPT Codex 后端：OAuth token 只在 chatgpt.com 后端
+            // 有效，profile 的 api.openai.com 只认 API key（2026-10-19 实测 401）。
             // 但透传只属于 Codex：Claude 侧官方默认仍按占位凭证替换（SPEC §3 收尾
             // 「Claude 侧不动」），否则 `Bearer PROXY_MANAGED` 直达 Anthropic。
+            let passesThrough = tool == .codex && profile.isOfficial
             let target = AggregationProxyTarget(
                 key: key,
                 profileID: profileID,
-                baseURL: profile.baseURL,
+                baseURL: passesThrough
+                    ? AggregationUpstream.officialOAuthBaseURL
+                    : profile.baseURL,
                 token: profile.token,
-                passesThroughAuthorization: tool == .codex && profile.isOfficial
+                passesThroughAuthorization: passesThrough
             )
             return .hit(target: target, upstreamModel: upstreamModel(tool: tool, profile: profile, key: key, model: stackModel, oneM: oneM))
         }

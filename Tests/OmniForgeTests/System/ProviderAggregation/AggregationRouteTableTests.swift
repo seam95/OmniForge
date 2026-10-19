@@ -66,6 +66,24 @@ final class AggregationRouteTableTests: XCTestCase {
                        "https://api.kimi.com/coding/v1/messages")
     }
 
+    /// ChatGPT Codex 后端的端点是 `/responses`（无版本段）：客户端按本地代理 base
+    /// （`http://127.0.0.1:PORT/v1`）发来 `/v1/responses`，拼到该后端必须剥掉 `/v1`，
+    /// 否则 404/401。其余上游的分支行为不受影响（版本段由 base 吸收）。
+    func test_upstreamURL_stripsV1ForChatGPTBackend() {
+        XCTAssertEqual(AggregationUpstream.upstreamURL(base: "https://chatgpt.com/backend-api/codex", clientPath: "/v1/responses")?.absoluteString,
+                       "https://chatgpt.com/backend-api/codex/responses")
+        XCTAssertEqual(AggregationUpstream.upstreamURL(base: "https://chatgpt.com/backend-api/codex/", clientPath: "/v1/responses/compact")?.absoluteString,
+                       "https://chatgpt.com/backend-api/codex/responses/compact")
+        XCTAssertEqual(AggregationUpstream.upstreamURL(base: "https://chatgpt.com/backend-api/codex", clientPath: "/responses")?.absoluteString,
+                       "https://chatgpt.com/backend-api/codex/responses", "客户端没带 /v1 时原样拼接")
+    }
+
+    /// ChatGPT 订阅的 OAuth token 只在 chatgpt.com 后端有效：官方透传目标的 base
+    /// 必须规整成该后端（api.openai.com 只认 API key，OAuth token 打到那里就是 401）。
+    func test_officialOAuthBaseURL_isChatGPTBackend() {
+        XCTAssertEqual(AggregationUpstream.officialOAuthBaseURL, "https://chatgpt.com/backend-api/codex")
+    }
+
     func test_rewrittenHeaders_replacesPlaceholderWithRealCredential() {
         let headers = ["x-api-key": "PROXY_MANAGED", "anthropic-version": "2023-06-01", "content-type": "application/json",
                        "host": "127.0.0.1:15721", "content-length": "12", "accept-encoding": "gzip, br"]

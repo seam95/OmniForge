@@ -111,6 +111,11 @@ final class AggregationTargetResolverTests: XCTestCase {
         XCTAssertEqual(upstreamModel, "gpt-5-codex")
         XCTAssertEqual(target.token, "", "官方账号无静态 token（OAuth 走 auth.json）")
         XCTAssertTrue(target.passesThroughAuthorization, "命中 Codex 官方：客户端 Authorization 原样透传")
+        XCTAssertEqual(
+            target.baseURL,
+            "https://chatgpt.com/backend-api/codex",
+            "OAuth 凭证只对 ChatGPT Codex 后端有效；转发到 profile 写的 api.openai.com 只会 401"
+        )
     }
 
     /// Claude 侧官方成员（api.anthropic.com）**不**透传：投影写死
