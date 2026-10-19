@@ -2,9 +2,10 @@ import Foundation
 
 /// Codex `config.toml` 读写边界 — 字段所有权合并（SPEC 2.3）。
 protocol CodexConfigStoring: AnyObject {
-    /// 当前激活的第三方 provider：顶层 `model_provider` 指向的键 + 该表的 `base_url` 与凭证。
-    /// 文件缺失 → (nil, nil, nil)；损坏 → 抛 corrupted。
-    func readActiveProvider() throws -> (key: String?, baseURL: String?, token: String?)
+    /// 当前激活的第三方 provider：顶层 `model_provider` 指向的键 + 该表的 `base_url`、凭证，
+    /// 以及顶层 `model_catalog_json` 指向的目录文件名（聚合投影的身份标记）。
+    /// 文件缺失 → (nil, nil, nil, nil)；损坏 → 抛 corrupted。
+    func readActiveProvider() throws -> (key: String?, baseURL: String?, token: String?, catalogFileName: String?)
     /// 字段所有权合并：写顶层 `model_provider` / `model`（仅当 profile 指定模型覆盖时）与
     /// `[model_providers.<key>]` 表（name / base_url / wire_api / experimental_bearer_token）。
     func applyProfile(_ profile: ProviderProfile) throws
@@ -31,13 +32,14 @@ final class CodexConfigStore: CodexConfigStoring {
         self.fileManager = fileManager
     }
 
-    func readActiveProvider() throws -> (key: String?, baseURL: String?, token: String?) {
-        guard let document = try loadDocument() else { return (nil, nil, nil) }
+    func readActiveProvider() throws -> (key: String?, baseURL: String?, token: String?, catalogFileName: String?) {
+        guard let document = try loadDocument() else { return (nil, nil, nil, nil) }
         let key = document.stringValue(key: "model_provider", table: nil)
         let table = key.map { ["model_providers", $0] }
         let baseURL = table.flatMap { document.stringValue(key: "base_url", table: $0) }
         let token = table.flatMap { document.stringValue(key: "experimental_bearer_token", table: $0) }
-        return (key, baseURL, token)
+        let catalogFileName = document.stringValue(key: "model_catalog_json", table: nil)
+        return (key, baseURL, token, catalogFileName)
     }
 
     func applyProfile(_ profile: ProviderProfile) throws {

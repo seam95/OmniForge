@@ -5,6 +5,9 @@ import XCTest
 /// 用户表与内置 provider 保留、退出清理（含只删指向本机代理的 custom 表）、目录文件随写。
 /// 官方默认（SPEC 3 / P0-3）：改写顶层 `openai_base_url`、不写 custom 表与目录、
 /// 切换时摘掉旧的目录指针并删掉旧目录文件、退出时清掉 `openai_base_url`。
+/// 凭证形态随默认那家切换（2026-10-19 401 修复）：第三方写占位 token 供代理替换，
+/// 官方**不写** token——codex-rs 里 `experimental_bearer_token` 优先于
+/// `requires_openai_auth`，写占位符会让 Codex 永不带 auth.json 的 OAuth。
 final class AggregationCodexConfigWriterTests: XCTestCase {
     private var tmpDir: URL!
     private var configURL: URL!
@@ -74,8 +77,10 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
         )
     }
 
+    /// 第三方默认形状：占位 token 由代理按目标替换为真实凭证；登录不在场故不写
+    /// `requires_openai_auth`（写了会让 Codex 回退拿 auth.json 打第三方地址）。
     func test_applyAggregation_writesCustomProviderTableAndTopLevelKeys() throws {
-        try writer.applyAggregation(defaultProfile: deepseek, defaultKey: "deepseek", published: [kimiK3], port: 15721, requiresOpenAIAuth: true)
+        try writer.applyAggregation(defaultProfile: deepseek, defaultKey: "deepseek", published: [kimiK3], port: 15721, requiresOpenAIAuth: false)
         let text = try String(contentsOf: configURL, encoding: .utf8)
         XCTAssertTrue(text.contains("model_provider = \"custom\""))
         XCTAssertTrue(text.contains("model = \"deepseek-v4-pro\""))
@@ -84,7 +89,7 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
         XCTAssertTrue(text.contains("base_url = \"http://127.0.0.1:15721/v1\""))
         XCTAssertTrue(text.contains("wire_api = \"responses\""))
         XCTAssertTrue(text.contains("experimental_bearer_token = \"PROXY_MANAGED\""))
-        XCTAssertTrue(text.contains("requires_openai_auth = true"))
+        XCTAssertFalse(text.contains("requires_openai_auth"), "登录不在场 → 不写 OAuth 回退指令")
     }
 
     func test_applyAggregation_omitsRequiresOpenAIAuthWhenNoLoginOnDisk() throws {
@@ -246,6 +251,56 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
         XCTAssertEqual(models[1]["comp_hash"] as? String, "om")
     }
 
+    /// 官方默认：**不写** `experimental_bearer_token`。codex-rs 的
+    /// `resolve_provider_auth` 里 bearer token 优先于 `requires_openai_auth`，
+    /// 写了占位符 Codex 就永不带 auth.json 的 OAuth，官方上游每个请求都 401
+    /// （2026-10-19 实测：`Incorrect API key provided: PROXY_MA*AGED`）。
+    func test_applyAggregation_officialDefaultOmitsBearerTokenSoCodexAttachesOAuth() throws {
+        try writer.applyAggregation(
+            defaultProfile: officialOpenAI, defaultKey: "openai",
+            published: [kimiK3], port: 15721, requiresOpenAIAuth: true
+        )
+        let doc = try readConfigDocument()
+        let custom = ["model_providers", "custom"]
+        XCTAssertNil(doc.stringValue(key: "experimental_bearer_token", table: custom), "官方默认不得写占位凭证")
+        XCTAssertEqual(doc.booleanValue(key: "requires_openai_auth", table: custom), true, "OAuth 由 Codex 附带")
+        XCTAssertEqual(doc.stringValue(key: "base_url", table: custom), "http://127.0.0.1:15721/v1")
+    }
+
+    /// 第三方 → 官方默认切换：上一家留下的占位 token 必须摘掉。
+    /// 只判「不写」不够——磁盘上已有那个键，投影不显式移除就残留。
+    func test_applyAggregation_switchingToOfficialDefaultRemovesStaleBearerToken() throws {
+        try writer.applyAggregation(defaultProfile: deepseek, defaultKey: "deepseek", published: [kimiK3], port: 15721, requiresOpenAIAuth: false)
+        XCTAssertNotNil(try readConfigDocument().stringValue(key: "experimental_bearer_token", table: ["model_providers", "custom"]))
+
+        let officialPublished = AggregationPublishedModel(
+            key: "openai", profileName: "OpenAI",
+            model: "gpt-5.6-sol", upstream: "gpt-5.6-sol",
+            displayName: "GPT 5.6 Sol", oneM: false, window: 272_000
+        )
+        try writer.applyAggregation(
+            defaultProfile: officialOpenAI, defaultKey: "openai",
+            published: [officialPublished, kimiK3], port: 15721, requiresOpenAIAuth: true
+        )
+        XCTAssertNil(
+            try readConfigDocument().stringValue(key: "experimental_bearer_token", table: ["model_providers", "custom"]),
+            "切换默认后旧占位凭证不得留在共享 custom 表里"
+        )
+    }
+
+    /// 官方 → 第三方默认切换：占位 token 必须补上（代理按目标替换）。
+    func test_applyAggregation_switchingToThirdPartyDefaultWritesBearerToken() throws {
+        try writer.applyAggregation(
+            defaultProfile: officialOpenAI, defaultKey: "openai",
+            published: [kimiK3], port: 15721, requiresOpenAIAuth: true
+        )
+        try writer.applyAggregation(defaultProfile: deepseek, defaultKey: "deepseek", published: [kimiK3], port: 15721, requiresOpenAIAuth: false)
+        XCTAssertEqual(
+            try readConfigDocument().stringValue(key: "experimental_bearer_token", table: ["model_providers", "custom"]),
+            "PROXY_MANAGED"
+        )
+    }
+
     /// 官方缓存缺失 → 安全降级：官方行不进目录，成员行照常，custom 表照写。
     func test_applyAggregation_officialDefaultWithoutCacheDegradesGracefully() throws {
         // 不写 models_cache（tmpDir 里本就没有）。
@@ -318,6 +373,52 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
             published: [officialPublished, kimiK3], port: 15721, requiresOpenAIAuth: true
         )
         XCTAssertNotEqual(digest, changedDigest, "官方缓存行变化对写前闸门必须可见")
+    }
+
+    /// 存量自愈闸门：磁盘上带着占位 token 的官方投影（401 根因形态），
+    /// 与官方投影的摘要必须判「变了」——否则启动自愈不会重写，病态配置永驻。
+    func test_projectedContractDigest_detectsStalePlaceholderTokenOnDisk() throws {
+        try writeModelsCache()
+        let officialPublished = AggregationPublishedModel(
+            key: "openai", profileName: "OpenAI",
+            model: "gpt-5.6-sol", upstream: "gpt-5.6-sol",
+            displayName: "GPT 5.6 Sol", oneM: false, window: 272_000
+        )
+        // 病态磁盘：旧形状（占位 token + requires_openai_auth 同时在场）。
+        try writeConfig("""
+        model_provider = "custom"
+        model_catalog_json = "omniforge-stack-catalog.json"
+
+        [model_providers.custom]
+        name = "custom"
+        base_url = "http://127.0.0.1:15721/v1"
+        wire_api = "responses"
+        experimental_bearer_token = "PROXY_MANAGED"
+        requires_openai_auth = true
+        """)
+        let projected = writer.projectedContractDigest(
+            defaultProfile: officialOpenAI, defaultKey: "openai",
+            published: [officialPublished, kimiK3], port: 15721, requiresOpenAIAuth: true
+        )
+        XCTAssertNotEqual(writer.currentContractDigest(), projected, "病态磁盘必须判「变了」以触发自愈重写")
+        // 重写后落到无占位 token 的形状，摘要随即一致（不会反复重写）。
+        try writer.applyAggregation(
+            defaultProfile: officialOpenAI, defaultKey: "openai",
+            published: [officialPublished, kimiK3], port: 15721, requiresOpenAIAuth: true
+        )
+        XCTAssertEqual(writer.currentContractDigest(), projected)
+    }
+
+    /// 第三方形状同样必须写后摘要一致：`recoverOnLaunch` 每次面板挂载都判变，
+    /// 摘要不稳会反复重写用户配置。带一个用户自有键，顺带验合并保留。
+    func test_projectedContractDigest_matchesDiskAfterThirdPartyApply() throws {
+        try writeConfig("model_verbosity = \"low\"\n")
+        try writer.applyAggregation(defaultProfile: deepseek, defaultKey: "deepseek", published: [kimiK3], port: 15721, requiresOpenAIAuth: false)
+        let digest = writer.projectedContractDigest(
+            defaultProfile: deepseek, defaultKey: "deepseek", published: [kimiK3], port: 15721, requiresOpenAIAuth: false
+        )
+        XCTAssertEqual(writer.currentContractDigest(), digest, "落盘后闸门应判定「未变更」")
+        XCTAssertEqual(try readConfigDocument().stringValue(key: "model_verbosity", table: nil), "low", "用户自有键不受投影影响")
     }
 
     /// 写一份最小官方 models_cache（tmpDir 内，不碰真实 ~/.codex）。

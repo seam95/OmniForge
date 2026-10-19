@@ -36,14 +36,14 @@ final class ProviderSwitchManagerTests: XCTestCase {
     }
 
     private final class StubCodexStore: CodexConfigStoring {
-        var active: (key: String?, baseURL: String?, token: String?) = (nil, nil, nil)
+        var active: (key: String?, baseURL: String?, token: String?, catalogFileName: String?) = (nil, nil, nil, nil)
         var activeError: ProviderConfigFileError?
         var applied: [ProviderProfile] = []
         var applyError: Error?
         var cleared = 0
         var clearError: Error?
 
-        func readActiveProvider() throws -> (key: String?, baseURL: String?, token: String?) {
+        func readActiveProvider() throws -> (key: String?, baseURL: String?, token: String?, catalogFileName: String?) {
             if let activeError { throw activeError }
             return active
         }
@@ -51,13 +51,13 @@ final class ProviderSwitchManagerTests: XCTestCase {
         func applyProfile(_ profile: ProviderProfile) throws {
             if let applyError { throw applyError }
             applied.append(profile)
-            active = (profile.profileKey, profile.baseURL, profile.token)
+            active = (profile.profileKey, profile.baseURL, profile.token, nil)
         }
 
         func clearOverrides() throws {
             if let clearError { throw clearError }
             cleared += 1
-            active = (nil, nil, nil)
+            active = (nil, nil, nil, nil)
         }
     }
 
@@ -231,10 +231,35 @@ final class ProviderSwitchManagerTests: XCTestCase {
         XCTAssertEqual(manager.active(tool: .claudeCode), .aggregating)
     }
 
+    /// 聚合投影识别按「指向本机代理 + 指向聚合目录」判，与凭证形态无关：
+    /// 官方默认（2026-10-19 修复后）不写占位 token，照样必须认成聚合接管中，
+    /// 否则每次 refresh 都把代理地址锁进激活态缓存、退出后横幅常驻。
     func test_refresh_detectsAggregatingWhenCodexProjectionPresent() {
-        codexStore.active = ("custom", "http://127.0.0.1:15721/v1", AggregationProjectionSignature.placeholderToken)
+        codexStore.active = ("custom", "http://127.0.0.1:15721/v1", AggregationProjectionSignature.placeholderToken, ProviderSwitchPaths.codexAggregationCatalogFileName)
         manager.refresh()
         XCTAssertEqual(manager.active(tool: .codex), .aggregating)
+    }
+
+    func test_refresh_detectsAggregatingWhenCodexOfficialProjectionHasNoPlaceholderToken() {
+        codexStore.active = ("custom", "http://127.0.0.1:15721/v1", nil, ProviderSwitchPaths.codexAggregationCatalogFileName)
+        manager.refresh()
+        XCTAssertEqual(manager.active(tool: .codex), .aggregating)
+    }
+
+    /// 用户自建本地 LLM（回环地址 + 直连目录文件名）不得误判成聚合中——
+    /// 直连投影给每家都写 `requires_openai_auth = true`，凭证类判据会全军。
+    func test_refresh_detectsProfileForLoopbackLocalGateway() {
+        seedProfile(name: "Ollama", tool: .codex, baseURL: "http://127.0.0.1:11434/v1")
+        codexStore.active = ("ollama", "http://127.0.0.1:11434/v1", "sk-ollama", ProviderSwitchPaths.codexModelCatalogFileName)
+        manager.refresh()
+        XCTAssertEqual(manager.active(tool: .codex), .profile(profileID: "ollama"))
+    }
+
+    /// 回环地址但目录不是聚合目录：未托管（Codex 内置 openai 被手改 base_url 之类）。
+    func test_refresh_detectsUnmanagedForCodexLoopbackWithoutProjectionSignals() {
+        codexStore.active = ("custom", "http://127.0.0.1:11434/v1", nil, nil)
+        manager.refresh()
+        XCTAssertEqual(manager.active(tool: .codex), .unmanaged(summary: "http://127.0.0.1:11434/v1"))
     }
 
     /// 回环地址但凭证非占位符（用户自建本地 LLM，如 Ollama）仍判未托管——
@@ -256,19 +281,19 @@ final class ProviderSwitchManagerTests: XCTestCase {
 
     func test_refresh_detectsCodexProfileByProviderKey() {
         seedProfile(name: "GLM", tool: .codex, baseURL: "https://open.bigmodel.cn/api/paas/v4")
-        codexStore.active = ("glm", "https://open.bigmodel.cn/api/paas/v4", "sk-x")
+        codexStore.active = ("glm", "https://open.bigmodel.cn/api/paas/v4", "sk-x", nil)
         manager.refresh()
         XCTAssertEqual(manager.active(tool: .codex), .profile(profileID: "glm"))
     }
 
     func test_refresh_detectsCodexBuiltInAsOfficial() {
-        codexStore.active = ("openai", "https://api.openai.com/v1", nil)
+        codexStore.active = ("openai", "https://api.openai.com/v1", nil, nil)
         manager.refresh()
         XCTAssertEqual(manager.active(tool: .codex), .official)
     }
 
     func test_refresh_detectsCodexUnknownKeyAsUnmanaged() {
-        codexStore.active = ("weird", nil, nil)
+        codexStore.active = ("weird", nil, nil, nil)
         manager.refresh()
         XCTAssertEqual(manager.active(tool: .codex), .unmanaged(summary: "weird"))
     }
@@ -358,7 +383,7 @@ final class ProviderSwitchManagerTests: XCTestCase {
 
     func test_switchToOfficial_codexClears() async throws {
         _ = seedProfile(name: "GLM", tool: .codex)
-        codexStore.active = ("glm", "https://open.bigmodel.cn/api/paas/v4", "sk-x")
+        codexStore.active = ("glm", "https://open.bigmodel.cn/api/paas/v4", "sk-x", nil)
         manager.refresh()
         let outcome = try await manager.switchToOfficial(tool: .codex)
         XCTAssertEqual(codexStore.cleared, 1)
@@ -397,7 +422,7 @@ final class ProviderSwitchManagerTests: XCTestCase {
     }
 
     func test_adoptUnmanaged_codexReadsActiveProvider() throws {
-        codexStore.active = ("weird", "https://manual.example", "sk-manual")
+        codexStore.active = ("weird", "https://manual.example", "sk-manual", nil)
         let profile = try manager.adoptUnmanaged(tool: .codex, name: "手改 Codex")
         XCTAssertEqual(profile.baseURL, "https://manual.example")
         XCTAssertEqual(profile.token, "sk-manual")

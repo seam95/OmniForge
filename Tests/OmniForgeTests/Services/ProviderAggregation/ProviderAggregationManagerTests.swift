@@ -682,6 +682,48 @@ final class ProviderAggregationManagerTests: XCTestCase {
     private func pendingStore() -> AggregationPendingStore {
         AggregationPendingStore(pendingURL: tmpDir.appendingPathComponent("pending.json"))
     }
+
+    // MARK: - 启动自愈
+
+    /// 升级后首次启动：磁盘上的旧投影契约与当前口径不一致（官方默认带着占位
+    /// bearer）→ recoverOnLaunch 必须补一次判变重写。缺了这一刀，名单没变时
+    /// digest 闸门永远不触发，Codex 会一直拿占位符打官方上游 401。
+    /// 桩的 `stubCurrentDigest` 模拟「磁盘还是旧契约」。
+    func test_recoverOnLaunch_rewritesProjectionWhenDiskContractIsStale() throws {
+        profileStore.stubProfiles = [officialCodexProfile]
+        manager = makeManager()
+        loginStash.hasNativeLogin = true
+        try manager.enterAggregation(tool: .codex, defaultProfileID: "openai-official")
+        try manager.setDefault("openai-official", tool: .codex)   // 先把契约刷到当前口径
+        let writesBefore = codexWriter.applyCount
+
+        codexWriter.stubCurrentDigest = "stale-old-shape"   // 磁盘仍是旧契约
+        proxy.stop()                                        // 顺带覆盖「代理没在跑」分支
+        manager.recoverOnLaunch()
+
+        XCTAssertGreaterThan(codexWriter.applyCount, writesBefore, "启动自愈必须补一次投影重写")
+        XCTAssertTrue(manager.isProxyRunning, "自愈前先确保代理在跑")
+    }
+
+    /// 契约未变（磁盘与当前口径一致）→ 启动自愈不重写，避免每次开应用都动用户配置。
+    func test_recoverOnLaunch_skipsRewriteWhenContractUnchanged() throws {
+        profileStore.stubProfiles = [thirdPartyCodexProfile]
+        manager = makeManager()
+        try manager.enterAggregation(tool: .codex, defaultProfileID: "deepseek")
+        try manager.setDefault("deepseek", tool: .codex)   // applied 口径刷成当前投影
+        let writesAfterEnter = codexWriter.applyCount
+
+        manager.recoverOnLaunch()
+        XCTAssertEqual(codexWriter.applyCount, writesAfterEnter, "契约未变不重写")
+    }
+
+    /// 聚合未启用的工具不受启动自愈影响（也不该被起代理）。
+    func test_recoverOnLaunch_ignoresToolsWithoutAggregation() {
+        manager.recoverOnLaunch()
+        XCTAssertFalse(manager.isProxyRunning)
+        XCTAssertEqual(codexWriter.applyCount, 0)
+        XCTAssertEqual(claudeWriter.applyCount, 0)
+    }
 }
 
 // MARK: - Stubs
@@ -855,6 +897,8 @@ private final class StubCodexWriter: AggregationCodexConfigWriting {
     var lastRequiresOpenAIAuth: Bool?
     var applyCount = 0
     var stubApplyError: Error?
+    /// 覆盖磁盘契约口径：模拟「磁盘上还是旧形态投影」（如升级前带着占位 bearer）。
+    var stubCurrentDigest: String?
     private var appliedPublished: [AggregationPublishedModel] = []
 
     func applyAggregation(
@@ -875,7 +919,7 @@ private final class StubCodexWriter: AggregationCodexConfigWriting {
     func clearAggregation() throws {}
 
     func currentContractDigest() -> String {
-        Self.digest(of: appliedPublished)
+        stubCurrentDigest ?? Self.digest(of: appliedPublished)
     }
 
     func projectedContractDigest(

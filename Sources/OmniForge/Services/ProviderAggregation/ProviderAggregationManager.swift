@@ -539,13 +539,23 @@ final class ProviderAggregationManager: ObservableObject {
             }
         }
         for tool in ProviderTool.allCases where stack.toolStack(tool).enabled {
-            guard !proxy.isRunning else { continue }
+            guard !proxy.isRunning else {
+                // 代理已在跑（并行启动路径）：投影契约也可能停在旧形态
+                // （2026-10-19：官方默认带着占位 bearer），照样补一次判变重写。
+                try? rewriteProjectionIfChanged(tool: tool)
+                continue
+            }
             do {
                 try proxy.start()
             } catch {
                 fallbackToDirect(tool: tool)
                 lastError = Self.message(for: error)
+                continue
             }
+            // 投影契约判变重写（含存量自愈）：默认那家的凭证形态改过
+            // （官方默认不再写 experimental_bearer_token），升级前落盘的旧投影
+            // 必须在这里补一刀，否则 Codex 一直发占位符 → 官方 401。
+            try? rewriteProjectionIfChanged(tool: tool)
         }
     }
 

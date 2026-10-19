@@ -25,12 +25,14 @@ protocol AggregationCodexConfigWriting: AnyObject {
 /// `~/.codex/config.toml` 聚合投影 + `omniforge-stack-catalog.json` 目录写入。
 /// 只动拥有键与 `[model_providers.custom]` 表；用户自建表（含内置 openai/codex）原样保留。
 /// `requiresOpenAIAuth` 跟随磁盘登录状态（SPEC 6.4）——不为 true 时摘掉该键，
-/// 避免登录态变化后留下误导性的登录提示。
+/// 避免登录态变化后留下误导性的登录提示。它同时决定凭证形态（见下方投影处）。
 ///
 /// 默认那家为官方账号时**与第三方同形状**（SPEC 2026-10-17
-/// 方案 B，推翻 P0-3）：同样写 custom 表指向本机代理 + `requires_openai_auth`
-/// （Codex 用 auth.json 的 OAuth 凭证发请求，代理侧 passthrough 透传）+ 目录
+/// 方案 B，推翻 P0-3）：同样写 custom 表指向本机代理 + 目录
 /// （官方行原样取自 `models_cache.json`，成员行照常）——成员模型可用，官方请求经代理。
+/// 唯一差别在凭证：官方**不写** `experimental_bearer_token`，只写
+/// `requires_openai_auth`（Codex 用 auth.json 的 OAuth 凭证发请求，代理侧 passthrough
+/// 透传）；第三方写占位 token 由代理替换。写占位符会让 Codex 永不带 OAuth → 401。
 final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
     let configURL: URL
     let catalogURL: URL
@@ -174,7 +176,18 @@ final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
         document.setValue("custom", key: "name", table: customTable)
         document.setValue("http://127.0.0.1:\(port)/v1", key: "base_url", table: customTable)
         document.setValue("responses", key: "wire_api", table: customTable)
-        document.setValue(AggregationProjectionSignature.placeholderToken, key: "experimental_bearer_token", table: customTable)
+        // 凭证形态随默认那家切换（2026-10-19 401 修复）。codex-rs 的
+        // `resolve_provider_auth` 先查 `experimental_bearer_token`/`api_key`，命中即采用，
+        // `requires_openai_auth` 那条分支根本走不到——官方默认若也写占位符，Codex 就永不带
+        // auth.json 的 OAuth，`Bearer PROXY_MANAGED` 直达官方上游，每个请求都 401。
+        // 官方默认：只写 OAuth 指令，凭证由 Codex 自己附带给代理透传（对齐 cc-switch
+        // `official_mirror_table`：requires_openai_auth + 无 bearer token）。
+        // 第三方默认：写占位符，代理按目标替换成真实凭证。
+        if requiresOpenAIAuth {
+            document.remove(key: "experimental_bearer_token", table: customTable)
+        } else {
+            document.setValue(AggregationProjectionSignature.placeholderToken, key: "experimental_bearer_token", table: customTable)
+        }
         if requiresOpenAIAuth {
             document.setBooleanValue(true, key: "requires_openai_auth", table: customTable)
         } else {

@@ -202,7 +202,7 @@ final class ProviderSwitchManager: ObservableObject, ProviderActivationRefreshin
             baseURL = env["ANTHROPIC_BASE_URL"] ?? ""
             token = env["ANTHROPIC_AUTH_TOKEN"] ?? ""
         case .codex:
-            let (_, base, tokenValue) = try codexStore.readActiveProvider()
+            let (_, base, tokenValue, _) = try codexStore.readActiveProvider()
             baseURL = base ?? ""
             token = tokenValue ?? ""
         }
@@ -289,9 +289,13 @@ final class ProviderSwitchManager: ObservableObject, ProviderActivationRefreshin
             guard let key = active.key, !key.isEmpty else {
                 return .official
             }
+            // 聚合投影识别（2026-10-19 401 修复后）：凭证形态随默认那家而变
+            // （第三方写占位 token、官方只写 requires_openai_auth），不能拿凭证当判据；
+            // 认「指向本机代理 + 指向聚合目录」这两条写入端独有的身份标记。
+            // 漏认会把代理地址锁进激活态缓存，退出聚合恢复文件后仍显示「未托管配置」横幅。
             if let baseURL = active.baseURL,
                AggregationProjectionSignature.isProjectedBaseURL(baseURL),
-               active.token == AggregationProjectionSignature.placeholderToken {
+               active.catalogFileName == ProviderSwitchPaths.codexAggregationCatalogFileName {
                 return .aggregating
             }
             if let profile = profiles.first(where: { $0.tool == .codex && $0.profileKey == key }) {

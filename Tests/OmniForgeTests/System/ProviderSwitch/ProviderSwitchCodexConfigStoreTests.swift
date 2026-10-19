@@ -119,10 +119,11 @@ final class ProviderSwitchCodexConfigStoreTests: XCTestCase {
         """ + "\n")
 
         // 落盘结果再读回：激活 provider 与凭证一致。
-        let (key, baseURL, token) = try makeStore().readActiveProvider()
+        let (key, baseURL, token, catalogFileName) = try makeStore().readActiveProvider()
         XCTAssertEqual(key, "glm")
         XCTAssertEqual(baseURL, "https://open.bigmodel.cn/api/paas/v4")
         XCTAssertEqual(token, "sk-glm")
+        XCTAssertEqual(catalogFileName, ProviderSwitchPaths.codexModelCatalogFileName)
     }
 
     func test_applyProfile_preservesUnrelatedContent() throws {
@@ -251,6 +252,21 @@ final class ProviderSwitchCodexConfigStoreTests: XCTestCase {
         let active = try makeStore().readActiveProvider()
         XCTAssertEqual(active.key, "glm")
         XCTAssertEqual(active.baseURL, "https://open.bigmodel.cn/api/paas/v4")
+        XCTAssertNil(active.catalogFileName, "没配目录 → 目录文件名为 nil")
+    }
+
+    /// 顶层 `model_catalog_json` 是聚合投影的身份标记（聚合态识别按它 + 回环地址判），
+    /// 必须原样读回，与 provider 表内的凭证解耦。
+    func test_readActiveProvider_returnsCatalogFileName() throws {
+        try writeConfig("""
+        model_provider = "custom"
+        model_catalog_json = "omniforge-stack-catalog.json"
+
+        [model_providers.custom]
+        base_url = "http://127.0.0.1:15721/v1"
+        """)
+        let active = try makeStore().readActiveProvider()
+        XCTAssertEqual(active.catalogFileName, ProviderSwitchPaths.codexAggregationCatalogFileName)
     }
 
     func test_readActiveProvider_builtInOpenAIIsNilBaseURLForTopLevelOnly() throws {
