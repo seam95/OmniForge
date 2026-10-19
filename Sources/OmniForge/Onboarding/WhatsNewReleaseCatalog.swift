@@ -11,6 +11,13 @@ enum WhatsNewReleaseCatalog {
     /// 历次版本的更新内容，新版本在前
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            version: "3.17.1",
+            entries: [
+                WhatsNewEntry(type: .fixed, text: "修复 Codex 聚合将 OpenAI 官方设为默认后，请求因占位凭证返回 401 的问题"),
+                WhatsNewEntry(type: .fixed, text: "修复官方登录请求改走 ChatGPT Codex 后端后仍返回 401 Unknown error 的问题"),
+            ]
+        ),
+        WhatsNewRelease(
             version: "3.17.0",
             entries: [
                 WhatsNewEntry(type: .added, text: "新增供应商聚合：Claude Code 与 Codex 可将多家供应商合成为一个入口，按模型自动路由；面板内可管理成员、默认模型与模型映射"),
