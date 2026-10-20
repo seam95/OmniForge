@@ -329,6 +329,11 @@ final class AggregationProxy: AggregationProxying {
         case .forward(let forwarded, let target, let clientProtocol):
             // 首块前写状态行 + 转发头（剔除 content-length/content-encoding，标 Connection: close），
             // onChunk 逐块写 socket，onComplete 关闭连接（close-delimited，SSE 以连接关闭为结束边界）。
+            //
+            // 关闭前必须等已排队的 send 全部写出：`cancel()` 会丢弃尚未发出的数据，
+            // 最后一块通常含 `response.completed`；丢掉后 Codex 报
+            // 「stream closed before response.completed」并触发 1/5 重连。
+            let drain = AggregationStreamDrain()
             var headWritten = false
             forwarder.stream(
                 request: forwarded,
@@ -336,11 +341,17 @@ final class AggregationProxy: AggregationProxying {
                 protocol: clientProtocol,
                 onHead: { [weak self] statusCode, headers in
                     guard let self else { return }
-                    self.writeForwardHead(statusCode: statusCode, headers: headers, on: connection)
+                    drain.beginSend()
+                    self.writeForwardHead(statusCode: statusCode, headers: headers, on: connection) {
+                        if drain.endSend() { connection.cancel() }
+                    }
                     headWritten = true
                 },
                 onChunk: { chunk in
-                    connection.send(content: chunk, completion: .contentProcessed { _ in })
+                    drain.beginSend()
+                    connection.send(content: chunk, completion: .contentProcessed { _ in
+                        if drain.endSend() { connection.cancel() }
+                    })
                 },
                 onComplete: { [weak self] _ in
                     guard let self else {
@@ -348,7 +359,11 @@ final class AggregationProxy: AggregationProxying {
                         return
                     }
                     if headWritten {
-                        connection.cancel()
+                        if drain.finish() { connection.cancel() }
+                        // 兜底：send 完成回调异常缺失时不得悬挂客户端连接。
+                        DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
+                            connection.cancel()
+                        }
                     } else {
                         // 上游不可达/构造失败：还没写任何字节 → 补 502 信封。
                         self.writeResponse(
@@ -385,14 +400,19 @@ final class AggregationProxy: AggregationProxying {
     }
 
     /// 转发响应头（首块前写）：状态行 + 转发头 + Connection: close；不带 Content-Length（close-delimited）。
-    private func writeForwardHead(statusCode: Int, headers: [String: String], on connection: NWConnection) {
+    private func writeForwardHead(
+        statusCode: Int,
+        headers: [String: String],
+        on connection: NWConnection,
+        completion: @escaping () -> Void = {}
+    ) {
         var payload = Data()
         payload.append(Data("HTTP/1.1 \(statusCode) \(Self.reasonPhrase(statusCode))\r\n".utf8))
         for (key, value) in headers {
             payload.append(Data("\(key): \(value)\r\n".utf8))
         }
         payload.append(Data("Connection: close\r\n\r\n".utf8))
-        connection.send(content: payload, completion: .contentProcessed { _ in })
+        connection.send(content: payload, completion: .contentProcessed { _ in completion() })
     }
 
     private static func reasonPhrase(_ statusCode: Int) -> String {
@@ -481,5 +501,41 @@ final class AggregationProxy: AggregationProxying {
             },
         ]
         return (try? JSONSerialization.data(withJSONObject: root)) ?? Data()
+    }
+}
+
+/// 流式写回排空状态：等所有已排队 send 写出后再关闭客户端连接。
+///
+/// `NWConnection.cancel()` 会丢弃尚未发出的数据；直接关闭可能丢掉最后一块
+/// `response.completed`，Codex 因此报「stream closed before response.completed」并重连。
+/// `onChunk` 与 send 完成回调来自不同队列，计数用锁保护。
+/// 用 internal 可见性以便单测覆盖排空时序。
+final class AggregationStreamDrain {
+    private let lock = NSLock()
+    private var pendingSends = 0
+    private var upstreamFinished = false
+
+    func beginSend() {
+        lock.lock()
+        pendingSends += 1
+        lock.unlock()
+    }
+
+    /// 一次 send 完成；返回 true 表示可以关闭连接。
+    func endSend() -> Bool {
+        lock.lock()
+        pendingSends -= 1
+        let shouldClose = upstreamFinished && pendingSends == 0
+        lock.unlock()
+        return shouldClose
+    }
+
+    /// 上游已结束；返回 true 表示可以立即关闭（无在途发送）。
+    func finish() -> Bool {
+        lock.lock()
+        upstreamFinished = true
+        let shouldClose = pendingSends == 0
+        lock.unlock()
+        return shouldClose
     }
 }

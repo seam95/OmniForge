@@ -38,18 +38,23 @@ final class AggregationProxyEndToEndTests: XCTestCase {
     }
 
     /// 经代理发一次 POST，同步拿回状态码与体。
+    ///
+    /// 每个请求用独立 ephemeral session：代理按设计一连接一请求，
+    /// 共享 session 的 keep-alive 复用会撞上已关闭的连接。
     private func postThroughProxy(port: UInt16, path: String, body: String) throws -> (Int, Data) {
         let semaphore = DispatchSemaphore(value: 0)
         var received: (Int, Data)?
+        let session = URLSession(configuration: .ephemeral)
         var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)\(path)")!)
         request.httpMethod = "POST"
         request.httpBody = Data(body.utf8)
-        URLSession.shared.dataTask(with: request) { data, response, _ in
+        session.dataTask(with: request) { data, response, _ in
             let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
             received = (statusCode, data ?? Data())
             semaphore.signal()
         }.resume()
         XCTAssertEqual(semaphore.wait(timeout: .now() + 10), .success, "代理未在超时内应答")
+        session.invalidateAndCancel()
         return try XCTUnwrap(received)
     }
 
@@ -110,6 +115,7 @@ final class AggregationProxyEndToEndTests: XCTestCase {
         XCTAssertTrue(text.contains("data: one"), "首块必须到达")
         XCTAssertTrue(text.contains("data: two"), "末块必须到达——close-delimited 不得截断")
     }
+
 }
 
 // MARK: - Stub 上游服务
