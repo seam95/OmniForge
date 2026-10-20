@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// 上游请求构造 — base 归一化、URL 拼接、凭证头重写。
@@ -37,6 +38,115 @@ enum AggregationUpstream {
             return false
         }
         return true
+    }
+
+    // MARK: - OpenCode Go 网关要求（cc-switch #7773）
+
+    /// OpenCode Go 网关（`opencode.ai`）要求客户端带稳定会话头；
+    /// 缺 `x-opencode-session` 会返回 400「Request is missing x-opencode-session」。
+    private static let openCodeSessionHeader = "x-opencode-session"
+
+    /// 客户端原生会话头候选（按稳定性排序）：Codex 发 `session_id`，
+    /// Claude Code 发 `x-claude-code-session-id` / `session-id`。
+    private static let openCodeNativeSessionHeaders = [
+        "x-claude-code-session-id", "session-id", "session_id", "x-session-id",
+    ]
+
+    /// 目标是否 OpenCode Go 网关（host 为 `opencode.ai` 或其子域）。
+    static func isOpenCodeUpstream(_ baseURL: String?) -> Bool {
+        guard let baseURL, let host = URL(string: baseURL)?.host?.lowercased() else { return false }
+        return host == "opencode.ai" || host.hasSuffix(".opencode.ai")
+    }
+
+    /// 选择 `x-opencode-session` 值：客户端原生会话头 > 对话指纹。
+    ///
+    /// 必须在剥除 Codex 指纹头**之前**取——`session_id` 属于身份头，剥掉后拿不到。
+    static func openCodeSessionID(headers: [String: String], body: Data?) -> String? {
+        for name in openCodeNativeSessionHeaders {
+            if let value = headers[name]?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !value.isEmpty {
+                return value
+            }
+        }
+        guard let body else { return nil }
+        return conversationFingerprint(body)
+    }
+
+    /// 对话指纹：system/instructions + 首条 user 消息的 SHA-256 前 32 位。
+    ///
+    /// 同一会话跨轮稳定，不同会话可区分；忽略 `cache_control`（客户端会移动该标记）。
+    static func conversationFingerprint(_ body: Data) -> String? {
+        guard let object = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] else {
+            return nil
+        }
+        let system = object["system"] ?? object["instructions"]
+        let firstUser = firstUserMessage(in: object)
+        guard system != nil || firstUser != nil else { return nil }
+
+        var hasher = SHA256()
+        if let system, let data = stableJSONData(withoutCacheControl(system)) {
+            hasher.update(data: data)
+        }
+        if let firstUser, let data = stableJSONData(withoutCacheControl(firstUser)) {
+            hasher.update(data: data)
+        }
+        let hex = hasher.finalize().compactMap { String(format: "%02x", $0) }.joined()
+        return "om-\(hex.prefix(32))"
+    }
+
+    /// 首条 user 消息：兼容 Anthropic/Chat 的 `messages` 与 Responses 的 `input`。
+    private static func firstUserMessage(in object: [String: Any]) -> Any? {
+        if let messages = object["messages"] as? [[String: Any]],
+           let user = messages.first(where: { ($0["role"] as? String) == "user" }) {
+            return user
+        }
+        if let input = object["input"] as? [[String: Any]],
+           let user = input.first(where: { ($0["role"] as? String) == "user" }) {
+            return user
+        }
+        return nil
+    }
+
+    /// 递归移除 `cache_control`，避免客户端移动该标记时指纹变化。
+    private static func withoutCacheControl(_ value: Any) -> Any {
+        if let dict = value as? [String: Any] {
+            var result: [String: Any] = [:]
+            for (key, nested) in dict where key != "cache_control" {
+                result[key] = withoutCacheControl(nested)
+            }
+            return result
+        }
+        if let array = value as? [Any] {
+            return array.map(withoutCacheControl)
+        }
+        return value
+    }
+
+    /// 稳定序列化：顶层字符串直接取 UTF-8，其余用排序键 JSON。
+    private static func stableJSONData(_ value: Any) -> Data? {
+        if let text = value as? String {
+            return Data(text.utf8)
+        }
+        return try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+    }
+
+    /// 注入 OpenCode Go 网关要求的两项头：UA 缺失兜底、会话头缺失补齐。
+    private static func applyOpenCodeGatewayRequirements(
+        _ headers: inout [String: String],
+        upstreamBase: String?,
+        sessionID: String?
+    ) {
+        guard isOpenCodeUpstream(upstreamBase) else { return }
+        if headers["user-agent"]?.isEmpty ?? true {
+            headers["user-agent"] = "OmniForge/\(appVersion)"
+        }
+        if headers[openCodeSessionHeader] == nil {
+            headers[openCodeSessionHeader] = sessionID ?? "om-\(UUID().uuidString.lowercased())"
+        }
+    }
+
+    private static var appVersion: String {
+        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "dev"
     }
 
     /// Claude Code 客户端 beta：Anthropic 形状转发时确保存在，否则认不出的上游会拒。
@@ -112,12 +222,20 @@ enum AggregationUpstream {
     /// - Anthropic 形状：`x-api-key` 换成本体；客户端若走 `authorization` 则保留原 Scheme 只换本体。
     ///   另补 Claude 客户端头（`anthropic-beta` 含 `claude-code-20250219`、`anthropic-version` 缺失补默认值）。
     /// - OpenAI 形状：`authorization` 恒设为 `Bearer <credential>`；不加 Claude 头（cc-switch 只对 Anthropic 上游补）。
+    /// - OpenCode Go 上游（`opencode.ai`）：补齐 `x-opencode-session`（优先复用客户端会话头）
+    ///   与缺失的 `User-Agent`，否则网关返回 400（cc-switch #7773）。
     static func rewrittenHeaders(
         _ headers: [String: String],
         credential: String,
         protocol: AggregationClientProtocol,
-        passthroughAuthorization: Bool = false
+        passthroughAuthorization: Bool = false,
+        upstreamBase: String? = nil,
+        body: Data? = nil
     ) -> [String: String] {
+        // 会话头候选要在剥头前取：`session_id` 属于 Codex 身份头，剥完就没了。
+        let openCodeSession = isOpenCodeUpstream(upstreamBase)
+            ? openCodeSessionID(headers: headers, body: body)
+            : nil
         var rewritten = headers
         for key in strippedHeaders {
             rewritten.removeValue(forKey: key)
@@ -148,6 +266,7 @@ enum AggregationUpstream {
         case .modelDiscovery, .health, .websocketProbe, .unsupported:
             break // 本地应答的形状，不向上游转发
         }
+        applyOpenCodeGatewayRequirements(&rewritten, upstreamBase: upstreamBase, sessionID: openCodeSession)
         return rewritten
     }
 }

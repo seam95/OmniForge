@@ -122,7 +122,9 @@ final class AggregationURLSessionForwarder: NSObject, AggregationForwarding {
             request.head.headers,
             credential: target.token,
             protocol: `protocol`,
-            passthroughAuthorization: target.passesThroughAuthorization
+            passthroughAuthorization: target.passesThroughAuthorization,
+            upstreamBase: target.baseURL,
+            body: request.body
         ) {
             urlRequest.setValue(value, forHTTPHeaderField: key)
         }
