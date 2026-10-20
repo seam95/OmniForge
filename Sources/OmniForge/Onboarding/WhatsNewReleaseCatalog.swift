@@ -11,6 +11,13 @@ enum WhatsNewReleaseCatalog {
     /// 历次版本的更新内容，新版本在前
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            version: "3.17.3",
+            entries: [
+                WhatsNewEntry(type: .fixed, text: "修复聚合模式长任务中频繁出现「正在重新连接」的问题：流式响应会先等最后一块数据写出，再关闭连接"),
+                WhatsNewEntry(type: .fixed, text: "修复聚合模式选择 OpenCode Go 模型后，网关返回「Request is missing x-opencode-session」的问题"),
+            ]
+        ),
+        WhatsNewRelease(
             version: "3.17.2",
             entries: [
                 WhatsNewEntry(type: .fixed, text: "修复 Codex 聚合会话可能卡在上一家供应商反复压缩的问题，切换模型后不再受上一家额度影响"),
