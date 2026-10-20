@@ -166,4 +166,51 @@ final class AggregationRouteTableTests: XCTestCase {
         XCTAssertNil(rewritten["accept-encoding"], "逐跳头与透传无关，两种模式都剔")
         XCTAssertEqual(rewritten["anthropic-version"], "2023-06-01", "Claude 客户端头与凭证无关，照旧补")
     }
+
+    // MARK: - Codex 客户端指纹头（cc-switch `forwarder.rs:2503-2510`）
+
+    func test_rewrittenHeaders_stripsCodexFingerprintHeadersForThirdParty() {
+        let headers = [
+            "authorization": "Bearer PROXY_MANAGED",
+            "originator": "codex_cli_rs",
+            "session_id": "session-1",
+            "chatgpt-account-id": "acct-1",
+            "x-codex-turn-state": "state",
+            "x-oai-attestation": "proof",
+            "x-openai-fedramp": "true",
+            "x-responsesapi-include-timing-metrics": "true",
+            "x-stainless-lang": "swift",
+            "openai-beta": "responses=experimental",
+            "content-type": "application/json",
+        ]
+        let rewritten = AggregationUpstream.rewrittenHeaders(headers, credential: "sk-real", protocol: .openAIResponses)
+        for name in ["originator", "session_id", "chatgpt-account-id", "x-codex-turn-state",
+                     "x-oai-attestation", "x-openai-fedramp", "x-responsesapi-include-timing-metrics",
+                     "x-stainless-lang", "openai-beta"] {
+            XCTAssertNil(rewritten[name], "\(name) 不得发给第三方上游")
+        }
+        XCTAssertEqual(rewritten["content-type"], "application/json", "普通头照常转发")
+    }
+
+    func test_rewrittenHeaders_keepsBetaMarkerForNativeResponsesOnly() {
+        let headers = ["x-codex-beta-features": "remote_compaction_v2", "x-codex-turn-state": "state"]
+        let native = AggregationUpstream.rewrittenHeaders(headers, credential: "sk", protocol: .openAIResponses)
+        XCTAssertEqual(native["x-codex-beta-features"], "remote_compaction_v2")
+        XCTAssertNil(native["x-codex-turn-state"])
+
+        let chat = AggregationUpstream.rewrittenHeaders(headers, credential: "sk", protocol: .openAIChatCompletions)
+        XCTAssertNil(chat["x-codex-beta-features"], "非 native Responses 上游剥掉协议标记")
+
+        let anthropic = AggregationUpstream.rewrittenHeaders(headers, credential: "sk", protocol: .anthropicMessages)
+        XCTAssertNil(anthropic["x-codex-beta-features"])
+    }
+
+    func test_rewrittenHeaders_officialTargetKeepsCodexFingerprintHeaders() {
+        let headers = ["originator": "codex_cli_rs", "session_id": "session-1", "chatgpt-account-id": "acct-1"]
+        let rewritten = AggregationUpstream.rewrittenHeaders(headers, credential: "PROXY_MANAGED",
+                                                             protocol: .openAIResponses, passthroughAuthorization: true)
+        XCTAssertEqual(rewritten["originator"], "codex_cli_rs")
+        XCTAssertEqual(rewritten["session_id"], "session-1")
+        XCTAssertEqual(rewritten["chatgpt-account-id"], "acct-1")
+    }
 }

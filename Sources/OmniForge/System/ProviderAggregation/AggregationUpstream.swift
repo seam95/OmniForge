@@ -6,6 +6,39 @@ enum AggregationUpstream {
     /// 逐跳头：由 URLSession 依连接管理，透传给上游只会添乱（长度对不上会让客户端截断）。
     private static let strippedHeaders: Set<String> = ["host", "content-length", "accept-encoding"]
 
+    /// Codex 客户端指纹头：会话/账号身份与客户端版本信息，只能发往官方上游。
+    /// 清单对齐 cc-switch `forwarder.rs:3581-3604`（2026-10-19 核对）。
+    private static let codexIdentityHeaders: Set<String> = [
+        "originator", "session_id", "session-id", "thread-id", "conversation_id",
+        "chatgpt-account-id", "x-client-request-id", "openai-beta",
+        "openai-organization", "openai-project", "version",
+    ]
+
+    /// Codex 客户端指纹头判定（精确名 + 前缀族）。第三方上游不该看到会话/账号身份。
+    private static func isCodexClientFingerprintHeader(_ key: String) -> Bool {
+        codexIdentityHeaders.contains(key)
+            || key.hasPrefix("x-stainless-")
+            || key.hasPrefix("x-codex-")
+            || key.hasPrefix("x-oai-")
+            || key.hasPrefix("x-openai-")
+            || key.hasPrefix("x-responsesapi-")
+    }
+
+    /// 第三方目标要剥 Codex 指纹头；native Responses 上游保留协议标记
+    /// `x-codex-beta-features`（部分网关靠它识别 Codex 协议，缺了会拒）。
+    /// 官方目标（`passthroughAuthorization`）一个字节都不动：OAuth 请求本来就带这些头。
+    private static func shouldStripCodexFingerprintHeader(
+        _ key: String,
+        protocol: AggregationClientProtocol,
+        passthroughAuthorization: Bool
+    ) -> Bool {
+        guard !passthroughAuthorization, isCodexClientFingerprintHeader(key) else { return false }
+        if key == "x-codex-beta-features", `protocol` == .openAIResponses {
+            return false
+        }
+        return true
+    }
+
     /// Claude Code 客户端 beta：Anthropic 形状转发时确保存在，否则认不出的上游会拒。
     private static let claudeCodeBeta = "claude-code-20250219"
 
@@ -74,6 +107,8 @@ enum AggregationUpstream {
     ///   原样透传，一个字节都不换（官方账号走 OAuth `auth.json`，没有静态 token 可换；
     ///   拿空串覆盖只会把客户端自己的有效凭证打成 401）。只压掉「凭证替换」这一步：
     ///   逐跳头照剔、Claude 客户端头照补（cc-switch `forwarder.rs:2462-2467`）。
+    /// - 第三方目标：额外剥掉 Codex 客户端指纹头（会话/账号身份只发官方），
+    ///   native Responses 上游保留 `x-codex-beta-features`（cc-switch `forwarder.rs:2503-2510`）。
     /// - Anthropic 形状：`x-api-key` 换成本体；客户端若走 `authorization` 则保留原 Scheme 只换本体。
     ///   另补 Claude 客户端头（`anthropic-beta` 含 `claude-code-20250219`、`anthropic-version` 缺失补默认值）。
     /// - OpenAI 形状：`authorization` 恒设为 `Bearer <credential>`；不加 Claude 头（cc-switch 只对 Anthropic 上游补）。
@@ -86,6 +121,13 @@ enum AggregationUpstream {
         var rewritten = headers
         for key in strippedHeaders {
             rewritten.removeValue(forKey: key)
+        }
+        for key in Array(rewritten.keys) {
+            if shouldStripCodexFingerprintHeader(
+                key.lowercased(), protocol: `protocol`, passthroughAuthorization: passthroughAuthorization
+            ) {
+                rewritten.removeValue(forKey: key)
+            }
         }
         switch `protocol` {
         case .anthropicMessages:

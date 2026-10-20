@@ -70,8 +70,9 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
     /// `shell_type = "shell_command"` 走 shell 改文件，并清空实验工具表。
     /// - Parameters:
     ///   - priority: 目录内排序位（直连模式恒 1000；聚合模式末尾统一重排为 1...n）。
-    ///   - compHash: 聚合来源标记（仅聚合目录的成员行注入 `"om"`；Codex 不特判该值，nil 不写键）。
+    ///   - compHash: 聚合来源标记（聚合目录的路由行与成员行都注入 `"om"`；Codex 不特判该值，nil 不写键）。
     ///   - useResponsesLite: Responses Lite 形态开关（仅聚合目录成员行显式注入；nil 不写键）。
+    ///   - inputModalities: 显式声明的输入模态（nil 时按模型名推导，见 `ModelImageCapability`）。
     static func catalogEntry(
         model: String,
         displayName: String,
@@ -79,7 +80,8 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
         defaultReasoningLevel: String,
         priority: Int,
         compHash: String? = nil,
-        useResponsesLite: Bool? = nil
+        useResponsesLite: Bool? = nil,
+        inputModalities: [String]? = nil
     ) -> [String: Any] {
         var entry: [String: Any] = [
             "slug": model,
@@ -104,7 +106,9 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
             "context_window": 1_000_000,
             "max_context_window": 1_000_000,
             "effective_context_window_percent": 95,
-            "input_modalities": ["text"],
+            // 能力判定 fail-open：确认纯文本名单之外一律声明 text+image。
+            // Codex 只按该字段决定是否允许发图；写死 ["text"] 会把多模态模型提前拦死。
+            "input_modalities": inputModalities ?? ModelImageCapability.inputModalities(for: model),
             "supported_in_api": true,
             "visibility": "list",
             "priority": priority,
@@ -201,6 +205,10 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
     /// - **路由行在前**：默认那家的模型走普通 slug（不带前缀即可达默认供应商）。
     ///   来源优先取 `published` 中该 key 的条目（编排层传的是成员权威模型列表）；
     ///   默认那家未出现在 `published` 时回退 `defaultProfile.codexModelList`。
+    ///   路由行与成员行统一写 `comp_hash = "om"`：Codex 在会话恢复时若发现当前行的
+    ///   comp_hash 变化，会先用**上一个模型**做 inline compact；上一家额度用完时压缩失败，
+    ///   自定义供应商不会改用当前模型重试，会话从此每轮卡在上一家（cc-switch #8485）。
+    ///   官方路由行保持原生行不动——官方失败时 Codex 会改用当前模型重试。
     /// - **成员行按 `published` 顺序追加**：Stack slug（`om-<key>/<model>`）、
     ///   全角展示名、`comp_hash = "om"`、`use_responses_lite = false`。
     /// - 全部行写入窗口下沉三键；结尾对整份列表重排 `priority = 1...n`。
@@ -230,7 +238,8 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
                         displayName: "\(defaultProfile.name) (\(entry.model))",
                         description: "OmniForge 托管 · \(defaultProfile.name)",
                         defaultReasoningLevel: defaultEffort,
-                        priority: 0
+                        priority: 0,
+                        compHash: "om"
                     ),
                     entry.window
                 ))
@@ -245,7 +254,8 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
                         displayName: "\(defaultProfile.name) (\(model))",
                         description: "OmniForge 托管 · \(defaultProfile.name)",
                         defaultReasoningLevel: defaultEffort,
-                        priority: 0
+                        priority: 0,
+                        compHash: "om"
                     ),
                     fallbackWindow
                 ))
@@ -262,7 +272,9 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
                     defaultReasoningLevel: defaultEffort,
                     priority: 0,
                     compHash: "om",
-                    useResponsesLite: false
+                    useResponsesLite: false,
+                    // 成员行 slug 带 `om-<key>/` 前缀，按真实模型名推导能力，不依赖 slug 形态。
+                    inputModalities: ModelImageCapability.inputModalities(for: member.model)
                 ),
                 member.window
             ))
@@ -315,7 +327,9 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
                         defaultReasoningLevel: "high",
                         priority: 0,
                         compHash: "om",
-                        useResponsesLite: false
+                        useResponsesLite: false,
+                        // 成员行 slug 带 `om-<key>/` 前缀，按真实模型名推导能力。
+                        inputModalities: ModelImageCapability.inputModalities(for: member.model)
                     ),
                     member.window
                 )

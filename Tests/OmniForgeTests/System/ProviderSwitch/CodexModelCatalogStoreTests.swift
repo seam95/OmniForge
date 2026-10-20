@@ -222,11 +222,13 @@ final class CodexModelCatalogStoreTests: XCTestCase {
         XCTAssertEqual(row["description"] as? String, "kimi-k3 · 256K")
     }
 
-    func test_writeAggregatedCatalog_routeRowKeepsPlainSlugAndNoCompHash() throws {
+    /// 回归（cc-switch 4.0.16 #8485）：第三方路由行与成员行共用 `comp_hash`，
+    /// Codex 在两者间切换时不会先用上一家模型压缩（上一家额度用完会卡死会话）。
+    func test_writeAggregatedCatalog_routeRowSharesStackCompHash() throws {
         try store.writeAggregatedCatalog(defaultProfile: makeProfile(name: "DeepSeek", key: "deepseek"),
                                          published: [], defaultKey: "deepseek")
         let row = try XCTUnwrap(try readModels().first { ($0["slug"] as? String) == "deepseek-reasoner" })
-        XCTAssertNil(row["comp_hash"])
+        XCTAssertEqual(row["comp_hash"] as? String, "om")
     }
 
     func test_writeAggregatedCatalog_forcesUseResponsesLiteFalseOnlyWhenOriginallyTrue() throws {
@@ -270,8 +272,43 @@ final class CodexModelCatalogStoreTests: XCTestCase {
             "默认那家的模型只出现一次（普通 slug 路由行），不得再出一条 om- 成员行"
         )
         let routeRow = try XCTUnwrap(models.first)
-        XCTAssertNil(routeRow["comp_hash"], "路由行不带聚合来源标记")
+        XCTAssertEqual(routeRow["comp_hash"] as? String, "om", "路由行与成员行共用聚合来源标记")
         XCTAssertEqual(routeRow["display_name"] as? String, "GLM 智谱 (glm-5.3)")
         XCTAssertEqual(routeRow["context_window"] as? Int, 200_000, "窗口取发布条目值，不是 extraEnv 全局回落")
+    }
+
+    // MARK: - 图像输入能力（对齐 cc-switch v4.0.16 的 fail-open 口径）
+
+    /// 未确认模型（含新别名/视觉变体）声明 `["text","image"]`，
+    /// 否则 Codex 会在添加图片时直接拦截聚合模式下的多模态模型。
+    func test_writeCatalog_infersInputModalitiesFailOpen() throws {
+        let profile = makeProfile(name: "OpenCode", key: "opencode-go", model: "deepseek-v4.1-flash")
+        try store.writeCatalog(for: profile)
+        let row = try XCTUnwrap(readModels().first)
+        XCTAssertEqual(row["input_modalities"] as? [String], ["text", "image"])
+    }
+
+    func test_writeCatalog_confirmedTextOnlyModelStaysText() throws {
+        let profile = makeProfile(name: "DeepSeek", key: "deepseek", model: "deepseek-chat")
+        try store.writeCatalog(for: profile)
+        let row = try XCTUnwrap(readModels().first)
+        XCTAssertEqual(row["input_modalities"] as? [String], ["text"])
+    }
+
+    /// 成员行 slug 带 `om-<key>/` 前缀，能力必须按真实模型名推导：
+    /// glm-5.3 在确认纯文本名单 → text；kimi-k3 未确认 → text+image。
+    func test_writeAggregatedCatalog_memberRowUsesRealModelForImageCapability() throws {
+        let defaultProfile = makeProfile(name: "GLM", key: "glm", model: "glm-5.3")
+        let published = [
+            makePublished(key: "glm", profileName: "GLM", model: "glm-5.3"),
+            makePublished(key: "kimi", profileName: "Kimi", model: "kimi-k3")
+        ]
+        try store.writeAggregatedCatalog(defaultProfile: defaultProfile, published: published, defaultKey: "glm")
+
+        let models = try readModels()
+        let glmRow = try XCTUnwrap(models.first { ($0["slug"] as? String) == "glm-5.3" })
+        let kimiRow = try XCTUnwrap(models.first { ($0["slug"] as? String) == "om-kimi/kimi-k3" })
+        XCTAssertEqual(glmRow["input_modalities"] as? [String], ["text"])
+        XCTAssertEqual(kimiRow["input_modalities"] as? [String], ["text", "image"])
     }
 }
