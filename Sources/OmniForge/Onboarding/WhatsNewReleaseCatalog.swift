@@ -11,6 +11,14 @@ enum WhatsNewReleaseCatalog {
     /// 历次版本的更新内容，新版本在前
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            version: "3.17.2",
+            entries: [
+                WhatsNewEntry(type: .fixed, text: "修复 Codex 聚合会话可能卡在上一家供应商反复压缩的问题，切换模型后不再受上一家额度影响"),
+                WhatsNewEntry(type: .fixed, text: "修复聚合模式选择多模态模型后，添加图片仍提示「此模型不支持图像输入」的问题"),
+                WhatsNewEntry(type: .fixed, text: "聚合转发不再把 Codex 账号与会话身份头发往第三方上游；原生 Responses 网关保留协议标记，官方目标原样透传"),
+            ]
+        ),
+        WhatsNewRelease(
             version: "3.17.1",
             entries: [
                 WhatsNewEntry(type: .fixed, text: "修复 Codex 聚合将 OpenAI 官方设为默认后，请求因占位凭证返回 401 的问题"),
