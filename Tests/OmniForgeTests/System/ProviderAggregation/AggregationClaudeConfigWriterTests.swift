@@ -177,14 +177,16 @@ final class AggregationClaudeConfigWriterTests: XCTestCase {
         XCTAssertEqual(env["ANTHROPIC_AUTH_TOKEN"] as? String, "PROXY_MANAGED")
     }
 
-    // MARK: - MAX 窗口 = 已发布非 1M 模型最小值，200K 不写
+    // MARK: - MAX 窗口 = 默认发布模型窗口，200K 不写
 
-    func test_applyAggregation_maxContextTokensIsMinOfPublishedNonOneMWindows() throws {
+    /// 回归：小成员不再拖累默认模型。原先取非 1M 最小值，把 400K 的默认模型
+    /// 压到 128K；现在跟随默认发布模型（四档别名共同指向的第一个）。
+    func test_applyAggregation_maxContextTokensUsesDefaultModelWindow() throws {
         let wide = makePublished(key: "a", model: "m-a", window: 400_000)
         let narrow = makePublished(key: "b", model: "m-b", window: 128_000)
         try writer.applyAggregation(defaultProfile: kimi, published: [wide, narrow], port: 15721)
         let env = try XCTUnwrap(try readSettings()["env"] as? [String: Any])
-        XCTAssertEqual(env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] as? String, "128000")
+        XCTAssertEqual(env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] as? String, "400000")
     }
 
     func test_applyAggregation_maxContextTokensOmittedWhenAllWindowsAreDefault() throws {

@@ -170,13 +170,18 @@ final class AggregationClaudeConfigWriter: AggregationClaudeConfigWriting {
 
     // MARK: - private
 
-    /// MAX 窗口规则：已发布**非 1M** 模型窗口最小值；无有效值或恰为默认 200K → nil（不写）。
+    /// MAX 窗口规则：**默认发布模型**（四档别名共同指向的第一个）的窗口。
+    ///
+    /// 原先取“非 1M 模型窗口的最小值”，只要组里有一个 128K 成员，默认的 1M 模型也会被
+    /// 压到 128K（magpie #2224 明确规避的行为）。改为跟随默认模型后，小成员不再拖累
+    /// 默认模型；其他成员仍靠 `[1M]` 标记或 Claude Code 自身的 200K 回落约束。
+    /// 1M 模型由 `[1M]` 标记声明，不写全局窗口；无有效值或恰为默认 200K → nil（不写）。
+    ///
+    /// 限制：`modelPicker` 切到窗口更小的成员时，全局值不会跟着降；逐模型
+    /// `modelSettings.<id>.autoCompactWindow` 留待后续。
     private static func maxContextTokens(published: [AggregationPublishedModel]) -> UInt64? {
-        let windows = published
-            .filter { !$0.oneM }
-            .map(\.window)
-            .filter { $0 > 0 }
-        guard let minimum = windows.min() else { return nil }
-        return minimum == AggregationModelPublisher.defaultWindow ? nil : minimum
+        guard let first = published.first, !first.oneM else { return nil }
+        guard first.window > 0, first.window != AggregationModelPublisher.defaultWindow else { return nil }
+        return first.window
     }
 }

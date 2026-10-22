@@ -247,8 +247,10 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
         XCTAssertEqual(models.count, 2)
         XCTAssertEqual(models[0]["slug"] as? String, "gpt-5.6-sol")
         XCTAssertEqual(models[0]["base_instructions"] as? String, "OFFICIAL_INSTRUCTIONS", "官方行不套中性模板")
+        XCTAssertEqual(models[0]["context_window"] as? Int, 272_000, "官方行窗口下沉到统一工作窗口")
+        XCTAssertNil(models[0]["auto_compact_token_limit"], "压缩点交给 Codex 按工作窗口推导")
         XCTAssertEqual(models[1]["slug"] as? String, "om-kimi/kimi-k3")
-        XCTAssertEqual(models[1]["comp_hash"] as? String, "om")
+        XCTAssertNil(models[1]["comp_hash"], "第三方行不写 comp_hash：跨来源切换不触发预压缩")
     }
 
     /// 官方默认：**不写** `experimental_bearer_token`。codex-rs 的

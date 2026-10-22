@@ -55,6 +55,14 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
         ["effort": "max", "description": "Max Thinking"],
     ]
 
+    /// 聚合目录统一工作窗口（对齐 Codex 官方 GPT 的 272K 与 magpie 的默认）。
+    ///
+    /// 聚合里每个成员原本按自己的真实窗口告诉 Codex：1M 的 DeepSeek 与 272K 的 GPT
+    /// 并存时，长会话从前者切到后者会被 Codex 判为“降窗”（`model_downshift`），
+    /// 在发出下一条用户消息前先用旧模型压缩一次。统一成同一个工作窗口后，
+    /// 供应商切换不再因窗口差异触发压缩；真实上限仍写 `max_context_window`。
+    static let aggregationWorkingWindow: UInt64 = 272_000
+
     /// 中性身份提示词（对齐 cc-switch 的 native responses 模板）。
     ///
     /// **`base_instructions` 是 Codex 目录解析器的必需字段**：缺失时整份
@@ -70,7 +78,6 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
     /// `shell_type = "shell_command"` 走 shell 改文件，并清空实验工具表。
     /// - Parameters:
     ///   - priority: 目录内排序位（直连模式恒 1000；聚合模式末尾统一重排为 1...n）。
-    ///   - compHash: 聚合来源标记（聚合目录的路由行与成员行都注入 `"om"`；Codex 不特判该值，nil 不写键）。
     ///   - useResponsesLite: Responses Lite 形态开关（仅聚合目录成员行显式注入；nil 不写键）。
     ///   - inputModalities: 显式声明的输入模态（nil 时按模型名推导，见 `ModelImageCapability`）。
     static func catalogEntry(
@@ -79,7 +86,6 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
         description: String,
         defaultReasoningLevel: String,
         priority: Int,
-        compHash: String? = nil,
         useResponsesLite: Bool? = nil,
         inputModalities: [String]? = nil
     ) -> [String: Any] {
@@ -113,9 +119,6 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
             "visibility": "list",
             "priority": priority,
         ]
-        if let compHash {
-            entry["comp_hash"] = compHash
-        }
         if let useResponsesLite {
             entry["use_responses_lite"] = useResponsesLite
         }
@@ -205,13 +208,17 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
     /// - **路由行在前**：默认那家的模型走普通 slug（不带前缀即可达默认供应商）。
     ///   来源优先取 `published` 中该 key 的条目（编排层传的是成员权威模型列表）；
     ///   默认那家未出现在 `published` 时回退 `defaultProfile.codexModelList`。
-    ///   路由行与成员行统一写 `comp_hash = "om"`：Codex 在会话恢复时若发现当前行的
-    ///   comp_hash 变化，会先用**上一个模型**做 inline compact；上一家额度用完时压缩失败，
-    ///   自定义供应商不会改用当前模型重试，会话从此每轮卡在上一家（cc-switch #8485）。
-    ///   官方路由行保持原生行不动——官方失败时 Codex 会改用当前模型重试。
+    ///   聚合成员行**不写** `comp_hash`：Codex 只在切换前后两行都声明该值且不同时，
+    ///   才先用**上一个模型**做 inline compact（`comp_hash_changed` 要求两侧都有值）。
+    ///   缺省后，第三方与第三方、第三方与官方之间切换都不会触发这次压缩；上一家额度
+    ///   用完时压缩失败、自定义供应商不会改用当前模型重试的问题（cc-switch #8485）
+    ///   因此一并规避。官方路由行保留原生行（含原生 `comp_hash`）——官方失败时 Codex
+    ///   会改用当前模型重试，官方压缩语义也保持不变。
     /// - **成员行按 `published` 顺序追加**：Stack slug（`om-<key>/<model>`）、
-    ///   全角展示名、`comp_hash = "om"`、`use_responses_lite = false`。
-    /// - 全部行写入窗口下沉三键；结尾对整份列表重排 `priority = 1...n`。
+    ///   全角展示名、`use_responses_lite = false`。
+    /// - 全部行写入统一工作窗口：`context_window = min(真实窗口, 272K)`、
+    ///   `max_context_window = 真实窗口`，并删除 `auto_compact_token_limit`；
+    ///   结尾对整份列表重排 `priority = 1...n`。
     /// - `defaultKey`：默认那家的**登记簿** key（见 `aggregatedCatalogData` 的说明）。
     private static func aggregatedCatalogEntries(
         defaultProfile: ProviderProfile,
@@ -238,8 +245,7 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
                         displayName: "\(defaultProfile.name) (\(entry.model))",
                         description: "OmniForge 托管 · \(defaultProfile.name)",
                         defaultReasoningLevel: defaultEffort,
-                        priority: 0,
-                        compHash: "om"
+                        priority: 0
                     ),
                     entry.window
                 ))
@@ -254,8 +260,7 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
                         displayName: "\(defaultProfile.name) (\(model))",
                         description: "OmniForge 托管 · \(defaultProfile.name)",
                         defaultReasoningLevel: defaultEffort,
-                        priority: 0,
-                        compHash: "om"
+                        priority: 0
                     ),
                     fallbackWindow
                 ))
@@ -271,7 +276,6 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
                     description: member.description,
                     defaultReasoningLevel: defaultEffort,
                     priority: 0,
-                    compHash: "om",
                     useResponsesLite: false,
                     // 成员行 slug 带 `om-<key>/` 前缀，按真实模型名推导能力，不依赖 slug 形态。
                     inputModalities: ModelImageCapability.inputModalities(for: member.model)
@@ -281,18 +285,34 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
         }
         return rows.enumerated().map { index, row in
             var entry = row.entry
-            // 窗口下沉三键：目录行自治，不依赖 config.toml 顶层窗口键。
-            entry["context_window"] = Int(row.window)
-            entry["max_context_window"] = Int(row.window)
-            entry["auto_compact_token_limit"] = Int(row.window * 9 / 10)
+            // 统一工作窗口：目录行自治，不依赖 config.toml 顶层窗口键。
+            Self.sinkWorkingWindow(&entry, contextWindow: row.window)
             entry["priority"] = index + 1
             return entry
         }
     }
 
+    /// 把真实窗口下沉为“工作窗口 + 真实上限”：
+    /// - `context_window = min(真实窗口, 272K)`：Codex 按它计算自动压缩点（90%），
+    ///   不同供应商的切换不再被判定为 `model_downshift`；
+    /// - `max_context_window = 真实窗口`：保留模型实际上限，供 Codex 展示与校验；
+    /// - 删除 `auto_compact_token_limit`：Codex 默认取 `context_window` 的 90%，
+    ///   且该键会被 `min(值, 90%)` 封顶，原写法与默认值相同、没有配置作用。
+    private static func sinkWorkingWindow(
+        _ entry: inout [String: Any],
+        contextWindow: UInt64,
+        maxWindow: UInt64? = nil
+    ) {
+        guard contextWindow > 0 else { return }
+        entry["context_window"] = Int(min(contextWindow, aggregationWorkingWindow))
+        entry["max_context_window"] = Int(max(maxWindow ?? contextWindow, contextWindow))
+        entry.removeValue(forKey: "auto_compact_token_limit")
+    }
+
     /// 官方默认的目录行：官方缓存原样行在前（顺序对齐 `published` 的官方 slug——
     /// 即合成官方卡 `codexModels` 的顺序），成员行照常追加，`priority` 统一重排。
-    /// 官方行**不做窗口下沉**——缓存行自带真实窗口三键，重算反而失真。
+    /// 官方行**只改窗口三键**（其余原生字段与 `comp_hash` 保持缓存原值）：统一工作窗口
+    /// 后，从第三方 1M 模型切到官方 500K 模型也不再被判定为降窗。
     private static func officialEntries(
         published: [AggregationPublishedModel],
         defaultKey: String,
@@ -312,9 +332,18 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
         // 唯一权威来源，不凭空造行）。
         for entry in published where entry.key == defaultKey {
             guard let cached = cacheBySlug[entry.model], seenSlugs.insert(entry.model).inserted else { continue }
-            rows.append(cached)
+            var row = cached
+            // 原生窗口：context 为工作窗口，max 为真实上限；缺 context 时用 max 兜底。
+            let context = (row["context_window"] as? Int) ?? (row["max_context_window"] as? Int) ?? 0
+            let maxWindow = row["max_context_window"] as? Int
+            Self.sinkWorkingWindow(
+                &row,
+                contextWindow: UInt64(max(context, 0)),
+                maxWindow: maxWindow.map { UInt64(max($0, 0)) }
+            )
+            rows.append(row)
         }
-        // 成员行：与非官方路径同构（Stack slug + comp_hash + 窗口下沉）。
+        // 成员行：与非官方路径同构（Stack slug + 窗口下沉，不写 comp_hash）。
         let memberRows: [(entry: [String: Any], window: UInt64)] =
             published.filter { $0.key != defaultKey }.map { member in
                 (
@@ -326,7 +355,6 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
                         description: member.description,
                         defaultReasoningLevel: "high",
                         priority: 0,
-                        compHash: "om",
                         useResponsesLite: false,
                         // 成员行 slug 带 `om-<key>/` 前缀，按真实模型名推导能力。
                         inputModalities: ModelImageCapability.inputModalities(for: member.model)
@@ -334,11 +362,9 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
                     member.window
                 )
             }
-        for (index, row) in memberRows.enumerated() {
+        for row in memberRows {
             var entry = row.entry
-            entry["context_window"] = Int(row.window)
-            entry["max_context_window"] = Int(row.window)
-            entry["auto_compact_token_limit"] = Int(row.window * 9 / 10)
+            Self.sinkWorkingWindow(&entry, contextWindow: row.window)
             rows.append(entry)
         }
         // priority 重排：官方行保持缓存原值不覆盖（Codex 对官方行的 priority 语义

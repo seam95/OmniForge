@@ -212,23 +212,50 @@ final class CodexModelCatalogStoreTests: XCTestCase {
         XCTAssertEqual(models.map { $0["priority"] as? Int }, [1, 2])
     }
 
-    func test_writeAggregatedCatalog_memberRowGetsStackSlugAndCompHash() throws {
+    func test_writeAggregatedCatalog_memberRowGetsStackSlugAndNoCompHash() throws {
         let published = [makePublished(key: "kimi", profileName: "Kimi", model: "kimi-k3")]
         try store.writeAggregatedCatalog(defaultProfile: makeProfile(name: "DeepSeek", key: "deepseek"),
                                          published: published, defaultKey: "deepseek")
         let row = try XCTUnwrap(try readModels().first { ($0["slug"] as? String) == "om-kimi/kimi-k3" })
-        XCTAssertEqual(row["comp_hash"] as? String, "om")
+        XCTAssertNil(row["comp_hash"], "第三方行不写 comp_hash：跨来源切换不再触发预压缩")
         XCTAssertEqual(row["display_name"] as? String, "kimi-k3（Kimi）")
         XCTAssertEqual(row["description"] as? String, "kimi-k3 · 256K")
     }
 
-    /// 回归（cc-switch 4.0.16 #8485）：第三方路由行与成员行共用 `comp_hash`，
-    /// Codex 在两者间切换时不会先用上一家模型压缩（上一家额度用完会卡死会话）。
-    func test_writeAggregatedCatalog_routeRowSharesStackCompHash() throws {
+    /// 回归（cc-switch #8485）：第三方路由行同样不写 `comp_hash`。
+    /// Codex 的 `comp_hash_changed` 要求两侧都有值，缺省后与成员行、官方行之间
+    /// 切换都不会先用上一家模型压缩（上一家额度用完会卡死会话）。
+    func test_writeAggregatedCatalog_routeRowOmitsCompHash() throws {
         try store.writeAggregatedCatalog(defaultProfile: makeProfile(name: "DeepSeek", key: "deepseek"),
                                          published: [], defaultKey: "deepseek")
         let row = try XCTUnwrap(try readModels().first { ($0["slug"] as? String) == "deepseek-reasoner" })
-        XCTAssertEqual(row["comp_hash"] as? String, "om")
+        XCTAssertNil(row["comp_hash"])
+    }
+
+    /// 回归：所有聚合行共用 272K 工作窗口，真实上限仍写 `max_context_window`；
+    /// `auto_compact_token_limit` 不再写入（Codex 默认取工作窗口的 90%）。
+    func test_writeAggregatedCatalog_sinksUnifiedWorkingWindow() throws {
+        let published = [
+            makePublished(key: "kimi", profileName: "Kimi", model: "kimi-k3", window: 400_000),
+            makePublished(key: "ds", profileName: "DeepSeek", model: "deepseek-v4", window: 1_000_000),
+            makePublished(key: "small", profileName: "Small", model: "small-128k", window: 128_000)
+        ]
+        try store.writeAggregatedCatalog(defaultProfile: makeProfile(name: "DeepSeek", key: "deepseek"),
+                                         published: published, defaultKey: "deepseek")
+
+        let models = try readModels()
+        let kimi = try XCTUnwrap(models.first { ($0["slug"] as? String) == "om-kimi/kimi-k3" })
+        XCTAssertEqual(kimi["context_window"] as? Int, 272_000)
+        XCTAssertEqual(kimi["max_context_window"] as? Int, 400_000)
+        XCTAssertNil(kimi["auto_compact_token_limit"])
+
+        let deepseek = try XCTUnwrap(models.first { ($0["slug"] as? String) == "om-ds/deepseek-v4" })
+        XCTAssertEqual(deepseek["context_window"] as? Int, 272_000, "1M 模型也按统一工作窗口压缩")
+        XCTAssertEqual(deepseek["max_context_window"] as? Int, 1_000_000)
+
+        let small = try XCTUnwrap(models.first { ($0["slug"] as? String) == "om-small/small-128k" })
+        XCTAssertEqual(small["context_window"] as? Int, 128_000, "小于工作窗口时保留真实窗口")
+        XCTAssertEqual(small["max_context_window"] as? Int, 128_000)
     }
 
     func test_writeAggregatedCatalog_forcesUseResponsesLiteFalseOnlyWhenOriginallyTrue() throws {
@@ -237,16 +264,6 @@ final class CodexModelCatalogStoreTests: XCTestCase {
                                          published: published, defaultKey: "deepseek")
         let row = try XCTUnwrap(try readModels().first { ($0["slug"] as? String) == "om-kimi/kimi-k3" })
         XCTAssertNotEqual(row["use_responses_lite"] as? Bool, true)
-    }
-
-    func test_writeAggregatedCatalog_sinksWindowKeysIntoEveryRow() throws {
-        let published = [makePublished(key: "kimi", profileName: "Kimi", model: "kimi-k3", window: 400_000)]
-        try store.writeAggregatedCatalog(defaultProfile: makeProfile(name: "DeepSeek", key: "deepseek"),
-                                         published: published, defaultKey: "deepseek")
-        let row = try XCTUnwrap(try readModels().first { ($0["slug"] as? String) == "om-kimi/kimi-k3" })
-        XCTAssertEqual(row["context_window"] as? Int, 400_000)
-        XCTAssertEqual(row["max_context_window"] as? Int, 400_000)
-        XCTAssertEqual(row["auto_compact_token_limit"] as? Int, 360_000)
     }
 
     /// 回归：默认那家的目录行归属必须按**登记簿 key**（`AggregationKeyRegistry.slug`：
@@ -272,9 +289,60 @@ final class CodexModelCatalogStoreTests: XCTestCase {
             "默认那家的模型只出现一次（普通 slug 路由行），不得再出一条 om- 成员行"
         )
         let routeRow = try XCTUnwrap(models.first)
-        XCTAssertEqual(routeRow["comp_hash"] as? String, "om", "路由行与成员行共用聚合来源标记")
+        XCTAssertNil(routeRow["comp_hash"], "聚合成员行不写 comp_hash")
         XCTAssertEqual(routeRow["display_name"] as? String, "GLM 智谱 (glm-5.3)")
         XCTAssertEqual(routeRow["context_window"] as? Int, 200_000, "窗口取发布条目值，不是 extraEnv 全局回落")
+    }
+
+    /// 官方行保留原生 `comp_hash`（Codex 官方压缩语义与失败重试），但窗口同样下沉到
+    /// 统一工作窗口，避免从第三方 1M 成员切到官方 500K 模型时被判为降窗。
+    func test_writeAggregatedCatalog_officialRowsKeepCompHashButShareWorkingWindow() throws {
+        let official = ProviderProfile(
+            id: "openai",
+            name: "OpenAI",
+            tool: .codex,
+            baseURL: "https://api.openai.com/v1",
+            token: "",
+            codexModels: ["gpt-5.6-sol", "gpt-6.1-sol"]
+        )
+        let published = [
+            makePublished(key: "openai", profileName: "OpenAI", model: "gpt-5.6-sol", window: 272_000),
+            makePublished(key: "openai", profileName: "OpenAI", model: "gpt-6.1-sol", window: 500_000),
+            makePublished(key: "kimi", profileName: "Kimi", model: "kimi-k3", window: 1_000_000)
+        ]
+        let cache: [[String: Any]] = [
+            [
+                "slug": "gpt-5.6-sol", "comp_hash": "3000",
+                "context_window": 272_000, "max_context_window": 872_000,
+                "auto_compact_token_limit": 244_800, "base_instructions": "OFFICIAL",
+            ],
+            [
+                "slug": "gpt-6.1-sol", "comp_hash": "3000",
+                "context_window": 500_000, "max_context_window": 872_000,
+                "base_instructions": "OFFICIAL",
+            ],
+        ]
+        try store.writeAggregatedCatalog(
+            defaultProfile: official, published: published, defaultKey: "openai",
+            officialCacheRows: cache
+        )
+
+        let models = try readModels()
+        let sol = try XCTUnwrap(models.first { ($0["slug"] as? String) == "gpt-5.6-sol" })
+        XCTAssertEqual(sol["comp_hash"] as? String, "3000", "官方行保留原生压缩标识")
+        XCTAssertEqual(sol["base_instructions"] as? String, "OFFICIAL", "官方行不套中性模板")
+        XCTAssertEqual(sol["context_window"] as? Int, 272_000)
+        XCTAssertEqual(sol["max_context_window"] as? Int, 872_000)
+        XCTAssertNil(sol["auto_compact_token_limit"])
+
+        let sol61 = try XCTUnwrap(models.first { ($0["slug"] as? String) == "gpt-6.1-sol" })
+        XCTAssertEqual(sol61["context_window"] as? Int, 272_000, "官方 500K 行也按统一工作窗口")
+        XCTAssertEqual(sol61["max_context_window"] as? Int, 872_000)
+
+        let kimi = try XCTUnwrap(models.first { ($0["slug"] as? String) == "om-kimi/kimi-k3" })
+        XCTAssertNil(kimi["comp_hash"])
+        XCTAssertEqual(kimi["context_window"] as? Int, 272_000)
+        XCTAssertEqual(kimi["max_context_window"] as? Int, 1_000_000)
     }
 
     // MARK: - 图像输入能力（对齐 cc-switch v4.0.16 的 fail-open 口径）
