@@ -133,6 +133,11 @@ extension TokenUsageProvider {
         case .arkCodingPlan: return "arkcli"
         case .stepfun: return ""
         case .dsh: return "dsh"
+        case .workbuddy: return "workbuddy"
+        case .pi: return "pi"
+        case .omp: return "omp"
+        case .copilot: return "copilot"
+        case .qoderCN: return "qoder"
         }
     }
 }

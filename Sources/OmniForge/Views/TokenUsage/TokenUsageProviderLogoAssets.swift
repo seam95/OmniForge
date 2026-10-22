@@ -127,6 +127,12 @@ extension TokenUsageProvider {
         case .arkCodingPlan: return ProviderLogoAssets.volcengine
         case .stepfun: return ProviderLogoAssets.stepfun
         case .dsh: return ProviderLogoAssets.deepseek
+        // 2026-10-22 新增来源暂无矢量 logo：先以品牌色底板呈现。
+        case .workbuddy: return nil
+        case .pi: return nil
+        case .omp: return nil
+        case .copilot: return nil
+        case .qoderCN: return ProviderLogoAssets.qoder
         }
     }
 }

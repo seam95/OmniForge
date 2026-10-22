@@ -521,6 +521,12 @@ struct FeatureFactory {
         // 期 6：本地会话/生成库直读 — dsh（zstd 多帧 JSONL）、antigravity（SQLite + protobuf）。
         let dshCollector = DshUsageCollector(store: usageStore)
         let antigravityCollector = AntigravityUsageCollector(store: usageStore)
+        // 期 7：本地来源扩容 — workbuddy / Qoder CN / Pi / Oh My Pi / GitHub Copilot。
+        let workbuddyCollector = WorkbuddyUsageCollector(store: usageStore)
+        let qoderCNCollector = QoderCNUsageCollector(store: usageStore)
+        let piCollector = PiUsageCollector(store: usageStore)
+        let ompCollector = OmpUsageCollector(store: usageStore)
+        let copilotCollector = CopilotUsageCollector(store: usageStore)
         let arkCodingPlan = LimitsCachingFetcher(inner: ArkCodingPlanLimitsFetcher(), cache: cache)
         // 期 5：四家限额 fetcher — opencode（官方 API 档）、grok（OAuth 刷新 + billing）、
         // zcode（凭据解密 + balance）、qoder（本地 IPC credits）。
@@ -560,6 +566,11 @@ struct FeatureFactory {
                 .traeCN: traeCnCollector,
                 .dsh: dshCollector,
                 .antigravity: antigravityCollector,
+                .workbuddy: workbuddyCollector,
+                .qoderCN: qoderCNCollector,
+                .pi: piCollector,
+                .omp: ompCollector,
+                .copilot: copilotCollector,
             ],
             alerts: alerts,
             resetMonitor: resetMonitor

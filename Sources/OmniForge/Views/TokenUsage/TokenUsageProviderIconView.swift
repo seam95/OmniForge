@@ -111,6 +111,11 @@ extension TokenUsageProvider {
         case .arkCodingPlan: return Color(red: 0x3C / 255.0, green: 0x8C / 255.0, blue: 0xFF / 255.0)
         case .stepfun: return Color(red: 0x00 / 255.0, green: 0x57 / 255.0, blue: 0xFF / 255.0)
         case .dsh: return Color(red: 0x4D / 255.0, green: 0x6B / 255.0, blue: 0xFE / 255.0)
+        case .workbuddy: return Color(red: 0x0E / 255.0, green: 0xA5 / 255.0, blue: 0xE9 / 255.0)
+        case .pi: return Color(red: 0x7C / 255.0, green: 0x3A / 255.0, blue: 0xED / 255.0)
+        case .omp: return Color(red: 0xF5 / 255.0, green: 0x9E / 255.0, blue: 0x0B / 255.0)
+        case .copilot: return Color(red: 0x24 / 255.0, green: 0x29 / 255.0, blue: 0x2F / 255.0)
+        case .qoderCN: return Color(red: 0xCA / 255.0, green: 0x8A / 255.0, blue: 0x04 / 255.0)
         }
     }
 }
