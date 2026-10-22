@@ -1241,6 +1241,8 @@ struct Strings: Equatable {
     let tokenSettingsConfigureHintCursor: String
     let tokenSettingsConfigureHintAntigravity: String
     let tokenSettingsConfigureHintTraeCn: String
+    /// DSH：本地会话日志自动采集，无需登录。
+    let tokenSettingsConfigureHintDsh: String
     let tokenAlertSessionTitle: String
     let tokenAlertSessionBodyFormat: String
     let tokenAlertPaceTitle: String

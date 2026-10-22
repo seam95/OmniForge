@@ -1152,6 +1152,7 @@ extension Strings {
         tokenSettingsConfigureHintCursor: "在 Cursor 应用内登录后自动识别",
         tokenSettingsConfigureHintAntigravity: "启动 Antigravity 后，IDE 运行期间自动读取限额",
         tokenSettingsConfigureHintTraeCn: "在下方设置中粘贴 Trae CN 的 JWT，仅保存到 macOS 钥匙串",
+        tokenSettingsConfigureHintDsh: "启动 DSH 后自动读取 ~/.dsh 本地会话日志，无需登录",
         tokenAlertSessionTitle: "Token 用量告警",
         tokenAlertSessionBodyFormat: "%@ 会话窗用量已达 %d%%，可能提前耗尽。",
         tokenAlertPaceTitle: "Token 用量步速超前",

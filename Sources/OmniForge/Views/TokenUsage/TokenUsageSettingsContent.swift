@@ -102,6 +102,9 @@ enum TokenUsageProviderStatusBuilder {
         if provider == .stepfun {
             return strings.stepfunSettingsConfigureHint
         }
+        if provider == .dsh {
+            return strings.tokenSettingsConfigureHintDsh
+        }
         return String(
             format: strings.tokenSettingsConfigureHintFormat,
             provider.setupCLICommand
@@ -129,6 +132,7 @@ extension TokenUsageProvider {
         case .qoder: return "qoder"
         case .arkCodingPlan: return "arkcli"
         case .stepfun: return ""
+        case .dsh: return "dsh"
         }
     }
 }

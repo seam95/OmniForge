@@ -518,6 +518,9 @@ struct FeatureFactory {
         let qoderCollector = QoderUsageCollector(store: usageStore)
         // 期 4：trae-cn 云端采集（opt-in + 手动 JWT）；ark-coding-plan 纯限额（arkcli 子进程）。
         let traeCnCollector = TraeCnUsageCollector(store: usageStore, preferences: preferences)
+        // 期 6：本地会话/生成库直读 — dsh（zstd 多帧 JSONL）、antigravity（SQLite + protobuf）。
+        let dshCollector = DshUsageCollector(store: usageStore)
+        let antigravityCollector = AntigravityUsageCollector(store: usageStore)
         let arkCodingPlan = LimitsCachingFetcher(inner: ArkCodingPlanLimitsFetcher(), cache: cache)
         // 期 5：四家限额 fetcher — opencode（官方 API 档）、grok（OAuth 刷新 + billing）、
         // zcode（凭据解密 + balance）、qoder（本地 IPC credits）。
@@ -555,6 +558,8 @@ struct FeatureFactory {
                 .zcode: zcodeCollector,
                 .qoder: qoderCollector,
                 .traeCN: traeCnCollector,
+                .dsh: dshCollector,
+                .antigravity: antigravityCollector,
             ],
             alerts: alerts,
             resetMonitor: resetMonitor

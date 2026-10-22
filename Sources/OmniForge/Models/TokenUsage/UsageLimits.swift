@@ -17,6 +17,8 @@ enum TokenUsageProvider: String, Codable, CaseIterable, Identifiable {
     case qoder
     case arkCodingPlan = "ark-coding-plan"
     case stepfun
+    /// DeepSeek Harness（订阅用量来自本地会话日志，无独立限额接口）。
+    case dsh
 
     var id: String { rawValue }
 
@@ -37,6 +39,7 @@ enum TokenUsageProvider: String, Codable, CaseIterable, Identifiable {
         case .qoder: return "Qoder"
         case .arkCodingPlan: return "方舟 Coding Plan"
         case .stepfun: return "StepFun"
+        case .dsh: return "DSH"
         }
     }
 }

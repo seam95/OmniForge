@@ -15,6 +15,8 @@ let package = Package(
         .package(url: "https://github.com/zats/Vortex", revision: "ef5392088d4aeb255c4eee83157dbdafcd31bf07"),
         // 自动更新框架：binaryTarget 形式，附 EdDSA 工具与 Sparkle.framework（非沙盒应用，无需启用 XPC 服务）。
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.10.0"),
+        // DSH 会话日志为 zstd 多帧压缩；macOS 系统库不支持 zstd，使用官方 SwiftPM 包（纯 C，无外部依赖）。
+        .package(url: "https://github.com/facebook/zstd", exact: "1.5.7"),
     ],
     targets: [
         .target(
@@ -41,6 +43,7 @@ let package = Package(
                 .product(name: "GRDB", package: "GRDB.swift"),
                 .product(name: "Vortex", package: "Vortex"),
                 .product(name: "Sparkle", package: "Sparkle"),
+                .product(name: "libzstd", package: "zstd"),
             ],
             path: "Sources/OmniForge",
             swiftSettings: [
@@ -54,6 +57,7 @@ let package = Package(
                 "OmniForgeSMC",
                 .product(name: "GRDB", package: "GRDB.swift"),
                 .product(name: "Vortex", package: "Vortex"),
+                .product(name: "libzstd", package: "zstd"),
             ],
             path: "Tests/OmniForgeTests",
             swiftSettings: [

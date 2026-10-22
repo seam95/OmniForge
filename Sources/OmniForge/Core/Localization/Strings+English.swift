@@ -1152,6 +1152,7 @@ extension Strings {
         tokenSettingsConfigureHintCursor: "Sign in inside the Cursor app; it will be detected automatically.",
         tokenSettingsConfigureHintAntigravity: "Launch Antigravity; usage limits are read while the IDE is running.",
         tokenSettingsConfigureHintTraeCn: "Enter your Trae CN JWT in the settings below; it is stored only in the macOS Keychain.",
+        tokenSettingsConfigureHintDsh: "DSH usage is read automatically from local session logs under ~/.dsh.",
         tokenAlertSessionTitle: "Token usage alert",
         tokenAlertSessionBodyFormat: "%@ session usage reached %d%% — consider slowing down.",
         tokenAlertPaceTitle: "Token usage ahead of pace",

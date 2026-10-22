@@ -369,6 +369,7 @@ extension TokenUsageProvider {
         case .qoder: return Color(red: 0xEA / 255, green: 0xB3 / 255, blue: 0x08 / 255)
         case .arkCodingPlan: return Color(red: 0x63 / 255, green: 0x66 / 255, blue: 0xF1 / 255)
         case .stepfun: return Color(red: 0x00 / 255, green: 0x57 / 255, blue: 0xFF / 255)
+        case .dsh: return Color(red: 0x4D / 255, green: 0x6B / 255, blue: 0xFE / 255)
         }
     }
 }

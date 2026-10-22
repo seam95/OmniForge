@@ -126,6 +126,7 @@ extension TokenUsageProvider {
         case .qoder: return ProviderLogoAssets.qoder
         case .arkCodingPlan: return ProviderLogoAssets.volcengine
         case .stepfun: return ProviderLogoAssets.stepfun
+        case .dsh: return ProviderLogoAssets.deepseek
         }
     }
 }
