@@ -19,6 +19,8 @@ struct TranslationTextEditor: NSViewRepresentable {
     let onEscape: () -> Void
     /// 输入法组合态变化：外层据此隐藏占位符，避免拼音与占位文字重叠。
     let onMarkedTextChange: (Bool) -> Void
+    /// 焦点变化：外层据此给原文卡片加高亮描边。
+    let onFocusChange: (Bool) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -31,6 +33,7 @@ struct TranslationTextEditor: NSViewRepresentable {
         textView.onSubmit = onSubmit
         textView.onEscape = onEscape
         textView.onMarkedStateChanged = onMarkedTextChange
+        textView.onFocusStateChanged = onFocusChange
 
         textView.isRichText = false
         textView.allowsUndo = true
@@ -41,7 +44,7 @@ struct TranslationTextEditor: NSViewRepresentable {
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
-        textView.textContainerInset = NSSize(width: 10, height: 10)
+        textView.textContainerInset = NSSize(width: 12, height: 12)
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.lineFragmentPadding = 0
         textView.textContainer?.containerSize = NSSize(
@@ -65,6 +68,7 @@ struct TranslationTextEditor: NSViewRepresentable {
         textView.onSubmit = onSubmit
         textView.onEscape = onEscape
         textView.onMarkedStateChanged = onMarkedTextChange
+        textView.onFocusStateChanged = onFocusChange
 
         // 外部文本回写：组合态期间绝不回写——此时 textView.string 含未确认拼音，
         // 回写等于清空组合文字并打断输入法会话；差异在组合结束后的下一拍补齐。
@@ -113,6 +117,7 @@ final class TranslationInputTextView: NSTextView {
     var onSubmit: (() -> Void)?
     var onEscape: (() -> Void)?
     var onMarkedStateChanged: ((Bool) -> Void)?
+    var onFocusStateChanged: ((Bool) -> Void)?
 
     // 测试钩子：生产为 nil，分别回落到当前事件修饰符与 hasMarkedText()。
     // 自动化测试无法稳定构造真实输入法会话与 keyDown 事件，故留这些注入点。
@@ -169,6 +174,24 @@ final class TranslationInputTextView: NSTextView {
         }
 
         super.doCommand(by: selector)
+    }
+
+    // 焦点上报：焦点可能来自点击、Tab 或窗口层 makeFirstResponder，
+    // 因此以 responder 链回调为准，不依赖 SwiftUI 的焦点事件。
+    override func becomeFirstResponder() -> Bool {
+        let accepted = super.becomeFirstResponder()
+        if accepted {
+            onFocusStateChanged?(true)
+        }
+        return accepted
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned {
+            onFocusStateChanged?(false)
+        }
+        return resigned
     }
 
     // 组合态进入 / 更新（setMarkedText）、结束（unmarkText / insertText 确认上屏）

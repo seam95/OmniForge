@@ -208,6 +208,9 @@ final class TranslationManagerTests: XCTestCase {
             reader: reader,
             pasteboard: pasteboard,
             isFeatureAvailable: { [weak self] in self?.isFeatureAvailable ?? false },
+            // 既有用例手动 submit，关闭防抖自动翻译以保持请求次数断言稳定；
+            // 自动翻译由 TranslationAutoTranslateTests 单独覆盖。
+            autoTranslateDelay: nil,
             engineFactory: { [weak self] _ in
                 guard let self else { throw TranslationError.configurationIncomplete }
                 return self.engine

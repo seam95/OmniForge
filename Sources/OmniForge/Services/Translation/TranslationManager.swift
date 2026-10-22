@@ -37,6 +37,8 @@ final class TranslationManager: ObservableObject {
     private let isFeatureAvailable: () -> Bool
     private let historyLimit: Int
     private let now: () -> Date
+    /// 输入停顿后自动翻译的延迟；nil 表示只由按钮 / ⌘↩ 触发（测试与特殊场景）。
+    private let autoTranslateDelay: TimeInterval?
 
     /// 快捷键管理器；由 factory 装配后注入，避免 manager 反向构造。
     weak var hotkeyManager: TranslationHotkeyManager?
@@ -69,6 +71,8 @@ final class TranslationManager: ObservableObject {
     private var activeEngine: (any TranslationEngine)?
     private var activeRequestID: UUID?
     private var translationTask: Task<Void, Never>?
+    /// 待执行的防抖自动翻译；任何显式提交或取消都会终止它。
+    private var pendingAutoTranslate: Task<Void, Never>?
     /// 程序化改写原文（新会话 / 打开历史）时抑制编辑失效逻辑。
     private var isSuppressingTextEdit = false
 
@@ -81,6 +85,7 @@ final class TranslationManager: ObservableObject {
         isFeatureAvailable: @escaping () -> Bool = { true },
         historyLimit: Int = TranslationPreferences.defaultHistoryLimit,
         now: @escaping () -> Date = Date.init,
+        autoTranslateDelay: TimeInterval? = 0.6,
         engineFactory: @escaping (TranslationEngineID) throws -> any TranslationEngine
     ) {
         self.preferences = preferences
@@ -91,6 +96,7 @@ final class TranslationManager: ObservableObject {
         self.isFeatureAvailable = isFeatureAvailable
         self.historyLimit = historyLimit
         self.now = now
+        self.autoTranslateDelay = autoTranslateDelay
         self.engineFactory = engineFactory
     }
 
@@ -221,6 +227,7 @@ final class TranslationManager: ObservableObject {
 
     func updateText(_ text: String) {
         sourceText = text
+        scheduleAutoTranslateIfNeeded()
     }
 
     func selectSourceLanguage(_ language: String?) {
@@ -228,6 +235,7 @@ final class TranslationManager: ObservableObject {
         cancel()
         preferences.sourceLanguage = language
         invalidateResultForSettingsChange()
+        scheduleAutoTranslateIfNeeded()
     }
 
     func selectTarget(_ target: TranslationTarget) {
@@ -235,6 +243,7 @@ final class TranslationManager: ObservableObject {
         cancel()
         preferences.target = target
         invalidateResultForSettingsChange()
+        scheduleAutoTranslateIfNeeded()
     }
 
     func selectEngine(_ engine: TranslationEngineID) {
@@ -242,9 +251,10 @@ final class TranslationManager: ObservableObject {
         cancel()
         preferences.engine = engine
         invalidateResultForSettingsChange()
+        scheduleAutoTranslateIfNeeded()
     }
 
-    /// 交换源与目标语言；只在源语言明确时可用，交换后不自动提交。
+    /// 交换源与目标语言；只在源语言明确时可用，交换后自动重译。
     func swapLanguages() {
         guard let source = preferences.sourceLanguage else { return }
         let targetCode: String
@@ -259,9 +269,30 @@ final class TranslationManager: ObservableObject {
         preferences.sourceLanguage = targetCode
         preferences.target = .language(source)
         invalidateResultForSettingsChange()
+        scheduleAutoTranslateIfNeeded()
     }
 
     // MARK: - 提交
+
+    /// 输入停顿后自动翻译：只在非空、未超限且引擎可用时排队。
+    /// 每次文本或语言设置变化都会重置计时，避免逐字请求与 AI 重复计费。
+    private func scheduleAutoTranslateIfNeeded() {
+        pendingAutoTranslate?.cancel()
+        pendingAutoTranslate = nil
+
+        guard let autoTranslateDelay else { return }
+        guard !sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard sourceText.count <= TranslationTextValidator.defaultMaxLength else { return }
+        // AI 未配置时自动提交只会反复弹配置错误；保留按钮让用户主动查看原因。
+        if preferences.effectiveEngine() == .ai && !preferences.isAIConfigured { return }
+
+        pendingAutoTranslate = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(autoTranslateDelay * 1_000_000_000))
+            guard !Task.isCancelled, let self, self.pendingAutoTranslate != nil else { return }
+            self.pendingAutoTranslate = nil
+            self.submit()
+        }
+    }
 
     func submit() {
         cancel()
@@ -322,6 +353,8 @@ final class TranslationManager: ObservableObject {
 
     /// 取消当前翻译；迟到响应不得更新界面或写入历史。
     func cancel() {
+        pendingAutoTranslate?.cancel()
+        pendingAutoTranslate = nil
         translationTask?.cancel()
         translationTask = nil
         activeEngine?.cancel()

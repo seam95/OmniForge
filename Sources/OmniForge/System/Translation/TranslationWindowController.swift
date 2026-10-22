@@ -186,6 +186,10 @@ final class TranslationWindowController: NSObject, NSWindowDelegate, Translation
         )
         panel.title = stringsProvider().translationTitle
         panel.titleVisibility = .hidden
+        // 与剪贴板面板同一配方：内容延伸到标题栏，红绿灯浮在自绘标题行上，
+        // 避免系统标题栏与视图内标题重复；顶部 38pt 仍保留系统拖动区域。
+        panel.titlebarAppearsTransparent = true
+        panel.styleMask.insert(.fullSizeContentView)
         panel.isReleasedWhenClosed = false
         panel.isFloatingPanel = true
         // 点击其他应用不自动关闭（SPEC §4）：NSPanel 默认会在 app 失活时隐藏。
