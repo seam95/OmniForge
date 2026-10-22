@@ -378,6 +378,40 @@ final class TranslationManagerTests: XCTestCase {
         XCTAssertTrue(store.entries.isEmpty, "取消后排队的历史写入不得落库")
     }
 
+    func test_engineInitiatedCancellationClearsRunningState() async {
+        // 引擎自身取消（系统宿主任务终止、URLSession 取消）不经过 manager.cancel()。
+        engine.autoError = CancellationError()
+        manager.updateText("hello")
+        manager.submit()
+
+        await waitUntil { !manager.isTranslating }
+
+        XCTAssertEqual(manager.phase, .idle, "取消后必须退出翻译中，否则按钮永久禁用")
+        XCTAssertNil(manager.result)
+        XCTAssertFalse(manager.canCopyResult)
+    }
+
+    func test_swapLanguagesFromTraditionalChineseAutoUsesEnglishSource() {
+        preferences.sourceLanguage = "zh-Hant"
+        preferences.target = .automatic
+
+        manager.swapLanguages()
+
+        // 自动方向规则：繁体中文也应按「中文 → 英语」；交换后源语言必须是英语。
+        XCTAssertEqual(preferences.sourceLanguage, TranslationLanguage.english)
+        XCTAssertEqual(preferences.target, .language("zh-Hant"))
+    }
+
+    func test_swapLanguagesFromSimplifiedChineseUsesEnglishSource() {
+        preferences.sourceLanguage = "zh-Hans"
+        preferences.target = .automatic
+
+        manager.swapLanguages()
+
+        XCTAssertEqual(preferences.sourceLanguage, TranslationLanguage.english)
+        XCTAssertEqual(preferences.target, .language("zh-Hans"))
+    }
+
     func test_editingInvalidatesCopyUntilNextSuccess() async {
         engine.autoResult = makeResult(text: "初次译文")
         manager.updateText("hello")

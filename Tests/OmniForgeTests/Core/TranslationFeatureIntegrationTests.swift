@@ -71,16 +71,22 @@ final class TranslationFeatureIntegrationTests: XCTestCase {
     }
 
     func test_terminationCancelsTranslationAndPreservesHistoryAndDraft() async {
-        let root = AppCompositionRoot.compose(userDefaults: defaults)
-        guard let manager = FeatureRuntime.shared.manager(
+        // 走组合根退出时调用的同一条清理路径（manager.teardown）。
+        // 刻意不调用 AppCompositionRoot.compose：既有组合根会触发 Token 用量读取真实
+        // Keychain，测试进程会出现系统授权阻塞（与本功能无关，见验证记录）。
+        let runtime = FeatureRuntime.shared
+        let factory = FeatureFactory(userDefaults: defaults)
+        runtime.configureFactory(factory)
+        factory.install(.translation, into: runtime)
+        guard let manager = runtime.manager(
             for: .translation,
             as: TranslationManager.self
         ) else {
-            return XCTFail("组合根启动后必须装载 TranslationManager")
+            return XCTFail("工厂安装后必须注册 TranslationManager")
         }
 
         manager.updateText("退出前的草稿")
-        _ = await root.prepareForApplicationTermination()
+        manager.teardown()
 
         // 退出清理只取消请求、隐藏窗口，不清空会话、不删除历史。
         if case .translating = manager.phase {

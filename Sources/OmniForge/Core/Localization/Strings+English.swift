@@ -1514,6 +1514,7 @@ extension Strings {
         utilityTranslationHistoryEmptyHint: "Press %@ to translate selected text",
         translationTitle: "Translation",
         translationHotkeyUnset: "Not Set",
+        translationHotkeyDisable: "Disable Shortcut",
 
         // MARK: - Translation window
         translationEngineLabel: "Engine",

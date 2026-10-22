@@ -37,6 +37,9 @@ private final class FakeAvailabilityProvider: AppleTranslationAvailabilityProvid
 /// 仅在测试的串行 await 流程中使用，因此用 @unchecked Sendable 关闭并发检查。
 @available(macOS 15.0, *)
 private final class FakeSessionDriver: AppleTranslationSessionDriving, @unchecked Sendable {
+    /// 会话语言对：模拟宿主会话创建时的语言；nil 表示未知（不参与校验）。
+    var sourceLanguage: String?
+    var targetLanguage: String?
     var prepareError: Error?
     var translateError: Error?
     var outcome: AppleTranslationSessionOutcome
@@ -190,6 +193,44 @@ final class AppleTranslationBridgeTests: XCTestCase {
         XCTAssertEqual(result.sourceLanguage, "en")
         XCTAssertEqual(result.targetLanguage, "zh-Hans")
         XCTAssertEqual(driver.translateCallCount, 1)
+    }
+
+    // MARK: - 迟到旧会话
+
+    @available(macOS 15.0, *)
+    func test_staleSessionWithDifferentLanguagePairDoesNotStealNewRequest() async throws {
+        let bridge = AppleTranslationBridge(availability: FakeAvailabilityProvider())
+
+        // 旧会话（德语→中文）在配置切换后才被调度：不得领取新的英译中请求。
+        let staleDriver = FakeSessionDriver()
+        staleDriver.sourceLanguage = "de"
+        staleDriver.targetLanguage = "zh-Hans"
+        let request = Self.makeRequest(source: "en", target: "zh-Hans")
+
+        let task = Task { try await bridge.translate(request) }
+        guard await requirePendingCall(on: bridge, task: task) else { return }
+
+        await bridge.runSession(staleDriver)
+        XCTAssertEqual(staleDriver.prepareCallCount, 0, "旧会话不得处理新请求")
+        XCTAssertEqual(staleDriver.translateCallCount, 0)
+        XCTAssertNotNil(bridge.pendingRequest, "请求应继续等待匹配的会话")
+
+        // 正确语言对的会话随后处理并成功。
+        let freshDriver = FakeSessionDriver(
+            outcome: AppleTranslationSessionOutcome(
+                text: "你好",
+                sourceLanguage: nil,
+                targetLanguage: nil
+            )
+        )
+        freshDriver.sourceLanguage = "en"
+        freshDriver.targetLanguage = "zh"
+        await bridge.runSession(freshDriver)
+
+        let result = try await task.value
+        XCTAssertEqual(result.text, "你好")
+        XCTAssertEqual(freshDriver.translateCallCount, 1)
+        XCTAssertEqual(freshDriver.translatedTexts, ["hello"])
     }
 
     // MARK: - 取消语义

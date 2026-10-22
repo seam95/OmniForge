@@ -250,9 +250,8 @@ final class TranslationManager: ObservableObject {
         let targetCode: String
         switch preferences.target {
         case .automatic:
-            targetCode = TranslationLanguage.isSimplifiedChinese(source)
-                ? TranslationLanguage.english
-                : TranslationLanguage.simplifiedChinese
+            // 与语言解析器共用同一自动方向规则：繁体中文也应按「中文 → 英语」交换。
+            targetCode = TranslationLanguage.automaticTarget(for: source)
         case .language(let code):
             targetCode = code
         }
@@ -412,7 +411,13 @@ final class TranslationManager: ObservableObject {
                 historyError = .historyWriteFailed
             }
         } catch is CancellationError {
-            // 取消由新任务 / 隐藏 / 卸载触发，不显示成错误。
+            // 取消也可能由引擎自身发起（系统宿主任务终止、URLSession 取消），
+            // 此时不会经过 manager.cancel()。请求仍是当前任务时必须清理运行态，
+            // 否则界面会永久停在「翻译中」且翻译按钮一直禁用。
+            guard activeRequestID == request.id else { return }
+            activeEngine = nil
+            activeRequestID = nil
+            phase = .idle
         } catch let error as TranslationError {
             guard !Task.isCancelled, activeRequestID == request.id else { return }
             phase = .failed(error)

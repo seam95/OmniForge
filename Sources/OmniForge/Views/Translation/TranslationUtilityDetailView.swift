@@ -356,6 +356,14 @@ struct TranslationUtilityDetailView: View {
                         l10n: l10n,
                         style: .keycaps
                     )
+                    if preferences.hotkey != nil {
+                        Button(strings.translationHotkeyDisable) {
+                            disableHotkey()
+                        }
+                        .buttonStyle(.link)
+                        .controlSize(.small)
+                        .help(strings.translationHotkeyDisable)
+                    }
                 }
                 .padding(.vertical, 8)
 
@@ -431,6 +439,21 @@ struct TranslationUtilityDetailView: View {
             get: { preferences.engine },
             set: { manager.selectEngine($0) }
         )
+    }
+
+    /// 显式禁用快捷键：保留功能与已录入键位，只关闭全局注册；录键可随时重新启用。
+    private func disableHotkey() {
+        hotkeyError = nil
+        do {
+            if let hotkeyManager {
+                try hotkeyManager.setHotkey(nil)
+            } else {
+                preferences.setHotkey(nil)
+            }
+            onHotkeyChanged()
+        } catch {
+            hotkeyError = TranslationPresentation.hotkeyErrorText(for: error, strings: strings)
+        }
     }
 
     /// 录键回调：冲突时不写偏好，保留上一份有效绑定并给出冲突提示。

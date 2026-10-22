@@ -50,7 +50,13 @@ final class AITranslationService: TranslationEngine {
     func translate(_ request: TranslationRequest) async throws -> TranslationResult {
         // 指令放在 system 消息；原文只作为 user 消息的待翻译数据。
         let messages: [[String: Any]] = [
-            ["role": "system", "content": Self.systemPrompt(targetLanguage: request.targetLanguage)],
+            [
+                "role": "system",
+                "content": Self.systemPrompt(
+                    sourceLanguage: request.sourceLanguage,
+                    targetLanguage: request.targetLanguage
+                ),
+            ],
             ["role": "user", "content": request.text],
         ]
         let translatedText = try await send(messages: messages)
@@ -128,9 +134,12 @@ final class AITranslationService: TranslationEngine {
     }
 
     /// 系统提示：约束只返回目标语言译文并保留段落；原文只作为待翻译数据处理。
-    static func systemPrompt(targetLanguage: String) -> String {
+    ///
+    /// 源语言同样写入指令：用户手动指定源语言或自动检测结果都应参与消歧，
+    /// 不能只用于回填结果语言。
+    static func systemPrompt(sourceLanguage: String, targetLanguage: String) -> String {
         """
-        You are a professional translation engine. Translate the text in the user message into the target language (BCP 47 code: \(targetLanguage)).
+        You are a professional translation engine. Translate the text in the user message from the source language (BCP 47 code: \(sourceLanguage)) into the target language (BCP 47 code: \(targetLanguage)).
         Rules:
         1. Return only the translated text. Do not add explanations, notes, quotes, or the source text.
         2. Preserve the paragraph breaks and line structure of the source text.

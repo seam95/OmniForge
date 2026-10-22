@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 
 // MARK: - 原文编辑区
@@ -114,13 +115,39 @@ final class TranslationInputTextView: NSTextView {
     var onMarkedStateChanged: ((Bool) -> Void)?
 
     // 测试钩子：生产为 nil，分别回落到当前事件修饰符与 hasMarkedText()。
-    // 自动化测试无法稳定构造真实输入法会话与 keyDown 事件，故留这两个注入点。
+    // 自动化测试无法稳定构造真实输入法会话与 keyDown 事件，故留这些注入点。
     var modifierFlagsProvider: (() -> NSEvent.ModifierFlags)?
     var markedTextProvider: (() -> Bool)?
+    /// 测试钩子：抑制 super.keyDown，避免测试进程内真实事件分发影响后续用例。
+    /// 生产恒为 false，组合态仍交回系统输入法。
+    var suppressesSuperKeyDownForTesting = false
 
     /// AppKit 的文本命令入口：`NSResponder.doCommand(by:)` 由输入法上下文在
     /// 解释按键后调用；覆盖它并在需要时**不调用 super** 即可拦截命令执行。
     /// 返回值型拦截不可用，因此「未处理」的路径显式交回 super。
+    override func keyDown(with event: NSEvent) {
+        // macOS 标准键绑定把 ⌘Return 解释为 noop，`doCommand(by:)` 收不到 insertNewline；
+        // 因此在 keyDown 早段识别提交键。组合态优先交给输入法会话，不抢候选确认。
+        if !(markedTextProvider?() ?? hasMarkedText()), Self.isCommandReturn(event) {
+            onSubmit?()
+            return
+        }
+        if suppressesSuperKeyDownForTesting { return }
+        super.keyDown(with: event)
+    }
+
+    /// ⌘Return / ⌘小键盘 Enter：按 keyCode 判定，不依赖字符内容。
+    private static func isCommandReturn(_ event: NSEvent) -> Bool {
+        let returnKeyCodes: Set<UInt16> = [
+            UInt16(kVK_Return),
+            UInt16(kVK_ANSI_KeypadEnter),
+        ]
+        guard returnKeyCodes.contains(event.keyCode) else { return false }
+        return event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .contains(.command)
+    }
+
     override func doCommand(by selector: Selector) {
         // 组合态（marked text）下按键属于输入法会话，全部交回系统。
         if markedTextProvider?() ?? hasMarkedText() {

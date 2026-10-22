@@ -54,11 +54,9 @@ struct TranslationLanguageResolver: TranslationLanguageResolving {
         return ResolvedTranslationLanguages(source: resolvedSource, target: resolvedTarget)
     }
 
-    /// 自动目标语言：中文（含简体与繁体）译英语，其他已识别语言译简体中文。
+    /// 自动目标语言：与 `TranslationLanguage.automaticTarget(for:)` 单点同源。
     private static func automaticTarget(for source: String) -> String {
-        TranslationLanguage.primaryLanguage(of: source) == "zh"
-            ? TranslationLanguage.english
-            : TranslationLanguage.simplifiedChinese
+        TranslationLanguage.automaticTarget(for: source)
     }
 
     /// 手动源语言规范化：去首尾空白；空白视为未指定，回退到自动检测。

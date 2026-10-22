@@ -290,6 +290,13 @@ enum TranslationLanguage {
         primaryLanguage(of: code) == "zh" && script(of: code) == "hant"
     }
 
+    /// 自动目标语言：中文（简体与繁体）译英语，其他已识别语言译简体中文。
+    ///
+    /// 语言解析与「交换语言」共用这一规则，避免两处方向判断不一致。
+    static func automaticTarget(for source: String) -> String {
+        primaryLanguage(of: source) == "zh" ? english : simplifiedChinese
+    }
+
     /// 同语言判定：主语言不同即不同；中文简繁按书写系统区分；其余同主语言视为同一语言。
     ///
     /// 地区变体（`en-US` / `en-GB`）视为同一语言，避免用户被要求翻译同一种语言。

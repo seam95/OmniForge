@@ -137,6 +137,24 @@ final class TranslationHotkeyManagerTests: XCTestCase {
         XCTAssertEqual(client.shortcuts.count, shortcutsBefore, "冲突不得替换当前绑定")
     }
 
+    func test_disableThenReenableRestoresBinding() throws {
+        let manager = makeManager()
+        manager.start()
+
+        try manager.setHotkey(nil)
+        XCTAssertNil(preferences.hotkey, "禁用后偏好为 nil")
+        XCTAssertEqual(client.shortcuts.last ?? nil, nil, "禁用后注销全局快捷键")
+
+        // 录键可再次启用：功能保留，只恢复全局快捷键。
+        let custom = HotkeyDefinition(
+            keyCode: HotkeyDefinition.defaultTranslation.keyCode,
+            modifiers: [.option, .command]
+        )
+        try manager.setHotkey(custom)
+        XCTAssertEqual(preferences.hotkey, custom)
+        XCTAssertEqual(client.shortcuts.last ?? nil, custom.keyboardShortcut)
+    }
+
     func test_validHotkeyIsPersistedAndApplied() throws {
         let custom = HotkeyDefinition(
             keyCode: HotkeyDefinition.defaultTranslation.keyCode,

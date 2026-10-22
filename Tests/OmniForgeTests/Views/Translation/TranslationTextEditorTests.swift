@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import XCTest
 @testable import OmniForge
 
@@ -25,6 +26,8 @@ final class TranslationTextEditorTests: XCTestCase {
         textView.onMarkedStateChanged = { counter.markedText.append($0) }
         textView.modifierFlagsProvider = { modifiers }
         textView.markedTextProvider = marked
+        // 测试进程内不触发真实事件分发：会干扰同一进程后续 UI 布局测试。
+        textView.suppressesSuperKeyDownForTesting = true
         return textView
     }
 
@@ -69,6 +72,56 @@ final class TranslationTextEditorTests: XCTestCase {
         isMarked = true
         textView.doCommand(by: selector)
         XCTAssertEqual(counter.escape, 1, "组合态 Esc 优先关闭候选窗，不关浮窗")
+    }
+
+    /// 构造真实 keyDown 事件：系统把 ⌘Return 解释为 noop，不能只测 doCommand 路径。
+    private func makeKeyEvent(
+        keyCode: UInt16,
+        modifiers: NSEvent.ModifierFlags
+    ) -> NSEvent {
+        NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: modifiers,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "\r",
+            charactersIgnoringModifiers: "\r",
+            isARepeat: false,
+            keyCode: keyCode
+        )!
+    }
+
+    func test_commandReturnKeyDownSubmitsThroughRealKeyPath() {
+        let counter = CallCounter()
+        let textView = makeTextView(counter: counter)
+
+        textView.keyDown(with: makeKeyEvent(keyCode: UInt16(kVK_Return), modifiers: .command))
+
+        XCTAssertEqual(counter.submit, 1, "真实 ⌘Return 按键必须提交")
+    }
+
+    func test_commandReturnKeyDownDefersDuringMarkedText() {
+        let counter = CallCounter()
+        var isMarked = true
+        let textView = makeTextView(marked: { isMarked }, counter: counter)
+
+        textView.keyDown(with: makeKeyEvent(keyCode: UInt16(kVK_Return), modifiers: .command))
+        XCTAssertEqual(counter.submit, 0, "组合态中 ⌘Return 交给输入法")
+
+        isMarked = false
+        textView.keyDown(with: makeKeyEvent(keyCode: UInt16(kVK_Return), modifiers: .command))
+        XCTAssertEqual(counter.submit, 1)
+    }
+
+    func test_plainReturnKeyDownDoesNotSubmit() {
+        let counter = CallCounter()
+        let textView = makeTextView(counter: counter)
+
+        textView.keyDown(with: makeKeyEvent(keyCode: UInt16(kVK_Return), modifiers: []))
+
+        XCTAssertEqual(counter.submit, 0, "普通 Return 只换行")
     }
 
     func test_unhandledCommandsPassThrough() {

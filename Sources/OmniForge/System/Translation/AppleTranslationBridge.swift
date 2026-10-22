@@ -75,6 +75,11 @@ struct AppleTranslationSessionOutcome: Equatable, Sendable {
 /// 测试注入假实现，不依赖真实系统会话与模型下载。
 @available(macOS 15.0, *)
 protocol AppleTranslationSessionDriving: Sendable {
+    /// 会话创建时的源语言标识；nil 表示未知（测试假实现或系统未提供）。
+    var sourceLanguage: String? { get }
+    /// 会话创建时的目标语言标识；nil 表示未知。
+    var targetLanguage: String? { get }
+
     /// 触发系统语言准备；用户拒绝下载或系统内部失败时抛错。
     func prepareTranslation() async throws
 
@@ -90,6 +95,10 @@ final class SystemTranslationSessionDriver: AppleTranslationSessionDriving, @unc
     init(session: TranslationSession) {
         self.session = session
     }
+
+    /// 会话语言对：宿主用它校验会话是否仍对应当前请求，防止迟到的旧会话领取新请求。
+    var sourceLanguage: String? { session.sourceLanguage?.minimalIdentifier }
+    var targetLanguage: String? { session.targetLanguage?.minimalIdentifier }
 
     func prepareTranslation() async throws {
         try await session.prepareTranslation()
@@ -191,7 +200,12 @@ final class AppleTranslationBridge: ObservableObject, TranslationEngine {
     ///
     /// 调用时若无待执行请求（迟到或重复触发的任务），直接返回。
     func runSession(_ driver: any AppleTranslationSessionDriving) async {
+        // 配置变化后 SwiftUI 会取消旧任务并重建；旧闭包仍可能被调度。
+        // 已取消的宿主任务不得领取新请求（否则新正文会被旧会话处理）。
+        guard !Task.isCancelled else { return }
         guard let call = pendingCall else { return }
+        // 会话语言对必须与当前请求一致：迟到的旧会话不能跨语言对翻译新正文。
+        guard Self.session(driver, matches: call.request) else { return }
         let token = call.token
         let request = call.request
 
@@ -301,6 +315,27 @@ final class AppleTranslationBridge: ObservableObject, TranslationEngine {
 
     private func isCurrent(_ token: UUID) -> Bool {
         pendingCall?.token == token
+    }
+
+    /// 宿主会话的语言对是否仍对应当前请求。
+    ///
+    /// 按主语言比较：系统 `minimalIdentifier` 会丢弃书写系统（zh-Hans → zh），
+    /// 因此简繁差异在此放宽为匹配；不同主语言则明确拒绝，交由正确会话处理。
+    private static func session(
+        _ driver: any AppleTranslationSessionDriving,
+        matches request: TranslationRequest
+    ) -> Bool {
+        if let source = driver.sourceLanguage,
+           TranslationLanguage.primaryLanguage(of: source)
+            != TranslationLanguage.primaryLanguage(of: request.sourceLanguage) {
+            return false
+        }
+        if let target = driver.targetLanguage,
+           TranslationLanguage.primaryLanguage(of: target)
+            != TranslationLanguage.primaryLanguage(of: request.targetLanguage) {
+            return false
+        }
+        return true
     }
 
     /// 系统错误映射。

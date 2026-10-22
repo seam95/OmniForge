@@ -155,6 +155,28 @@ final class AITranslationServiceTests: XCTestCase {
 
     // MARK: - 构造工具
 
+    // MARK: - 源语言进入翻译指令
+
+    func test_systemPromptIncludesResolvedSourceLanguage() {
+        let prompt = AITranslationService.systemPrompt(sourceLanguage: "de", targetLanguage: "en")
+        XCTAssertTrue(prompt.contains("source language"))
+        XCTAssertTrue(prompt.contains("BCP 47 code: de"))
+        XCTAssertTrue(prompt.contains("BCP 47 code: en"))
+    }
+
+    func test_requestBodyCarriesManualSourceLanguage() async throws {
+        let (session, state) = stubSession(data: successBody("gift"))
+        let service = makeService(session: session)
+        let request = TranslationRequest(text: "Gift", sourceLanguage: "de", targetLanguage: "en")
+
+        _ = try await service.translate(request)
+
+        let body = try XCTUnwrap(state.recordedBodies.first)
+        let text = String(decoding: body, as: UTF8.self)
+        XCTAssertTrue(text.contains("BCP 47 code: de"), "手动源语言必须进入指令")
+        XCTAssertTrue(text.contains("BCP 47 code: en"))
+    }
+
     private func makeService(
         baseURL: String = "https://api.example.com/v1",
         model: String = "test-model",

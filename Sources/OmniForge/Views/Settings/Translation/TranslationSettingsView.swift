@@ -291,6 +291,11 @@ struct TranslationSettingsView: View {
                     },
                     l10n: l10n
                 )
+                if preferences.hotkey != nil {
+                    Button(strings.translationHotkeyDisable) {
+                        disableHotkey()
+                    }
+                }
             }
 
             if let hotkeyError {
@@ -298,6 +303,20 @@ struct TranslationSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.red)
             }
+        }
+    }
+
+    /// 显式禁用快捷键：保留翻译功能，只关闭全局快捷键；录键可重新启用。
+    private func disableHotkey() {
+        hotkeyError = nil
+        do {
+            if let hotkeyManager {
+                try hotkeyManager.setHotkey(nil)
+            } else {
+                preferences.setHotkey(nil)
+            }
+        } catch {
+            hotkeyError = TranslationPresentation.hotkeyErrorText(for: error, strings: strings)
         }
     }
 

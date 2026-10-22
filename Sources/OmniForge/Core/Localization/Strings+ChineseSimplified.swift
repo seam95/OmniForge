@@ -1514,6 +1514,7 @@ extension Strings {
         utilityTranslationHistoryEmptyHint: "按 %@ 读取选中文本并翻译",
         translationTitle: "翻译",
         translationHotkeyUnset: "未设置",
+        translationHotkeyDisable: "禁用快捷键",
 
         // MARK: - Translation 浮窗
         translationEngineLabel: "引擎",

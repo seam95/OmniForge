@@ -1727,6 +1727,8 @@ struct Strings: Equatable {
     let utilityTranslationHistoryEmptyHint: String
     let translationTitle: String
     let translationHotkeyUnset: String
+    /// 管理页/设置页的「禁用快捷键」操作（保留功能、关闭全局快捷键）。
+    let translationHotkeyDisable: String
 
     // MARK: - Translation 浮窗
     let translationEngineLabel: String
