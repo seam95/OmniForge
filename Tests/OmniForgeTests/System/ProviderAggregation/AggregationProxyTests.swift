@@ -152,6 +152,26 @@ final class AggregationProxyTests: XCTestCase {
         XCTAssertEqual(forwarder.lastTarget, defaultTarget)
     }
 
+    /// 回归：从第三方切到官方 GPT 后，历史里的 bare reasoning item 会让官方后端回
+    /// 404 "Item with id 'rs_…' not found"；转发前必须清掉，并校正 content-length。
+    func test_openAIResponses_dropsBareReasoningBeforeForwarding() throws {
+        let body = #"{"model":"deepseek-reasoner","store":false,"input":[{"type":"reasoning","id":"rs_old","summary":[]},{"type":"message","role":"user"}]}"#
+        let response = proxy.handle(post("/v1/responses", body: body))
+        XCTAssertEqual(response.statusCode, 200)
+        let sent = try XCTUnwrap(forwarder.lastRequest)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: sent.body) as? [String: Any])
+        let items = try XCTUnwrap(object["input"] as? [[String: Any]])
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items.first?["type"] as? String, "message")
+        XCTAssertEqual(sent.head.contentLength, sent.body.count)
+    }
+
+    func test_openAIResponses_keepsReasoningWhenStoreIsTrue() {
+        let body = #"{"model":"deepseek-reasoner","store":true,"input":[{"type":"reasoning","id":"rs_old","summary":[]}]}"#
+        _ = proxy.handle(post("/v1/responses", body: body))
+        XCTAssertEqual(forwarder.lastRequest?.body, Data(body.utf8))
+    }
+
     func test_prefixedModel_rewritesBodyModelToUpstreamNameBeforeForwarding() {
         _ = proxy.handle(post("/v1/messages", body: #"{"model":"om-claude-kimi--k3"}"#))
         XCTAssertEqual(forwarder.lastTarget, kimiTarget)

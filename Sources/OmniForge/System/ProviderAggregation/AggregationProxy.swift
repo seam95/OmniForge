@@ -188,14 +188,23 @@ final class AggregationProxy: AggregationProxying {
             guard let tool = clientProtocol.modelIDTool else {
                 return .respond(Self.jsonResponse(statusCode: 404, body: ["error": "not_found"]))
             }
+            // Responses 转发前清掉跨供应商残留的 bare reasoning item（见
+            // `removingBareReasoningItems`）：store=false 时官方后端按 id 查不到
+            // 上一家的 item，会回 404 "Item with id 'rs_…' not found"。
+            let sanitized = clientProtocol == .openAIResponses
+                ? Self.requestWithBody(
+                    request,
+                    body: AggregationRequestParser.removingBareReasoningItems(from: request.body)
+                )
+                : request
             // 无 model 字段或体非 JSON → 按空模型名解析（命中 .plain → 默认那家），体原样转发。
-            let model = AggregationRequestParser.model(from: request.body) ?? ""
+            let model = AggregationRequestParser.model(from: sanitized.body) ?? ""
             switch resolver.resolve(tool: tool, model: model) {
             case .plain(let target):
-                return .forward(request: request, target: target, protocol: clientProtocol)
+                return .forward(request: sanitized, target: target, protocol: clientProtocol)
             case .hit(let target, let upstreamModel):
                 return .forward(
-                    request: Self.requestWithModel(request, model: upstreamModel),
+                    request: Self.requestWithModel(sanitized, model: upstreamModel),
                     target: target,
                     protocol: clientProtocol
                 )
@@ -442,7 +451,12 @@ final class AggregationProxy: AggregationProxying {
                 body = rewritten
             }
         }
-        // content-length 随新体校正（头字典里的 content-length 由 forwarder 剔除重算）。
+        return requestWithBody(request, body: body)
+    }
+
+    /// 替换请求体并校正 `content-length`（头字典里的该键由 forwarder 剔除重算）。
+    private static func requestWithBody(_ request: AggregationHTTPRequest, body: Data) -> AggregationHTTPRequest {
+        guard body != request.body else { return request }
         let head = AggregationRequestHead(
             method: request.head.method,
             path: request.head.path,

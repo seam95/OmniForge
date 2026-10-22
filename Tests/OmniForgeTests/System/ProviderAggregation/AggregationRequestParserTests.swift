@@ -31,4 +31,44 @@ final class AggregationRequestParserTests: XCTestCase {
         XCTAssertNil(AggregationRequestParser.model(from: Data("not json".utf8)))
         XCTAssertNil(AggregationRequestParser.model(from: Data(#"{"max_tokens":1}"#.utf8)))
     }
+
+    // MARK: - 跨供应商 bare reasoning 清洗
+
+    private func inputItems(_ body: Data) throws -> [[String: Any]] {
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        return try XCTUnwrap(object["input"] as? [[String: Any]])
+    }
+
+    /// 回归：store=false 时上一家的 reasoning item 只有 id + summary，
+    /// 官方后端按 id 查不到会回 404 "Item with id 'rs_…' not found"。
+    func test_removingBareReasoningItems_dropsUnpersistedReasoning() throws {
+        let body = Data(#"""
+        {"model":"gpt-5.6-sol","store":false,"input":[
+          {"type":"message","role":"user","content":[]},
+          {"type":"reasoning","id":"rs_old","summary":[]},
+          {"type":"reasoning","id":"rs_sealed","summary":[],"encrypted_content":"sealed"},
+          {"type":"function_call","call_id":"c1","name":"shell","arguments":"{}"}
+        ]}
+        """#.utf8)
+        let items = try inputItems(AggregationRequestParser.removingBareReasoningItems(from: body))
+        XCTAssertEqual(items.compactMap { $0["id"] as? String }, ["rs_sealed"])
+        XCTAssertEqual(items.first?["type"] as? String, "message")
+        XCTAssertEqual(items.last?["type"] as? String, "function_call")
+    }
+
+    func test_removingBareReasoningItems_dropsWhenStoreMissing() throws {
+        let body = Data(#"{"input":[{"type":"reasoning","id":"rs_old","summary":[]},{"type":"message","role":"user"}]}"#.utf8)
+        let items = try inputItems(AggregationRequestParser.removingBareReasoningItems(from: body))
+        XCTAssertEqual(items.count, 1)
+    }
+
+    func test_removingBareReasoningItems_keepsEverythingWhenStoreTrue() throws {
+        let body = Data(#"{"store":true,"input":[{"type":"reasoning","id":"rs_old","summary":[]}]}"#.utf8)
+        XCTAssertEqual(AggregationRequestParser.removingBareReasoningItems(from: body), body)
+    }
+
+    func test_removingBareReasoningItems_ignoresNonArrayInput() {
+        let body = Data(#"{"store":false,"input":"hello"}"#.utf8)
+        XCTAssertEqual(AggregationRequestParser.removingBareReasoningItems(from: body), body)
+    }
 }
