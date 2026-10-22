@@ -22,6 +22,8 @@ enum AppFeature: String, CaseIterable {
     case stickyNotes
     case cleaningMode
     case rightClickEnhancement
+    /// 翻译工具：全局快捷键取词 + 独立浮窗，支持系统翻译与 AI 翻译。
+    case translation
 }
 
 /// 使用形态（信息架构四象）：决定功能目录页与设置侧栏的分组先后。
@@ -97,6 +99,7 @@ extension AppFeature {
         case .keepAwake: return .energy
         case .screenshot: return .capture
         case .providerSwitch, .promptOptimizer: return .ai
+        case .translation: return .productivity
         }
     }
 
@@ -104,7 +107,8 @@ extension AppFeature {
     /// 判定看主用法而非附属快捷方式——便签虽可用 ⌘⇧N 新建，但本体是常驻桌面的窗口，归动作工具型。
     var usageForm: FeatureUsageForm {
         switch self {
-        case .clipboardHistory, .quickPhrase, .shelf, .screenshot, .promptOptimizer:
+        case .clipboardHistory, .quickPhrase, .shelf, .screenshot, .promptOptimizer,
+             .translation:
             return .hotkey
         case .inputLock, .mouse, .rightClickEnhancement:
             return .configuration
@@ -147,6 +151,7 @@ extension AppFeature {
         case .stickyNotes: return []
         case .cleaningMode: return []
         case .rightClickEnhancement: return []
+        case .translation: return []
         }
     }
 
@@ -171,6 +176,7 @@ extension AppFeature {
         case .stickyNotes: return [.notifications]
         case .cleaningMode: return [.accessibility]
         case .rightClickEnhancement: return []
+        case .translation: return [.accessibility]
         }
     }
 
@@ -218,6 +224,9 @@ extension AppFeature {
             return nil
         case .rightClickEnhancement:
             return nil
+        case .translation:
+            // 手动输入与粘贴不要求辅助功能；仅全局快捷键取词需要，故为可选。
+            return permission == .accessibility ? .optional : nil
         }
     }
 
@@ -247,6 +256,7 @@ extension AppFeature {
         case .stickyNotes: return "note.text"
         case .cleaningMode: return "bubbles.and.sparkles"
         case .rightClickEnhancement: return "cursorarrow.click.2"
+        case .translation: return "character.bubble"
         }
     }
 
@@ -271,6 +281,7 @@ extension AppFeature {
         case .stickyNotes: return strings.featureHubNameStickyNotes
         case .cleaningMode: return strings.featureHubNameCleaningMode
         case .rightClickEnhancement: return strings.featureHubNameRightClickEnhancement
+        case .translation: return strings.featureHubNameTranslation
         }
     }
 
@@ -295,6 +306,7 @@ extension AppFeature {
         case .stickyNotes: return strings.featureHubDescStickyNotes
         case .cleaningMode: return strings.featureHubDescCleaningMode
         case .rightClickEnhancement: return strings.featureHubDescRightClickEnhancement
+        case .translation: return strings.featureHubDescTranslation
         }
     }
 

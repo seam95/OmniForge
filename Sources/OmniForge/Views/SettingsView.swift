@@ -120,6 +120,26 @@ struct SettingsView: View {
         case .promptOptimizer:
             PromptOptimizerSettingsView(state: state)
                 .navigationTitle(tab.title(in: state.l10n.s))
+        case .translation:
+            if let manager = FeatureRuntime.shared.manager(
+                for: .translation,
+                as: TranslationManager.self
+            ), let preferences = FeatureRuntime.shared.manager(
+                for: .translation,
+                as: TranslationPreferences.self
+            ) {
+                TranslationSettingsView(
+                    preferences: preferences,
+                    manager: manager,
+                    keychain: TranslationKeychainStore(),
+                    strings: state.l10n.s,
+                    hotkeyManager: FeatureRuntime.shared.manager(
+                        for: .translation,
+                        as: TranslationHotkeyManager.self
+                    )
+                )
+                .navigationTitle(tab.title(in: state.l10n.s))
+            }
         case .features:
             FeatureHubView(l10n: state.l10n)
                 .navigationTitle(tab.title(in: state.l10n.s))

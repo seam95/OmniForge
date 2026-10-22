@@ -3,6 +3,7 @@ import SwiftUI
 enum UtilityTool: String, CaseIterable, Identifiable {
     // case 声明顺序即实用工具列表的展示顺序。
     case stickyNotes
+    case translation
     case networkDiagnostics
     case colorPicker
     case uninstaller
@@ -17,6 +18,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
             switch tool {
             case .stickyNotes:
                 return isAvailable(.stickyNotes)
+            case .translation:
+                return isAvailable(.translation)
             case .networkDiagnostics:
                 return isAvailable(.networkDiagnostics)
             case .colorPicker:
@@ -46,6 +49,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
         switch self {
         case .stickyNotes:
             return strings.featureHubNameStickyNotes
+        case .translation:
+            return strings.featureHubNameTranslation
         case .networkDiagnostics:
             return strings.featureHubNameNetworkDiagnostics
         case .colorPicker:
@@ -66,6 +71,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
         switch self {
         case .stickyNotes:
             return .stickyNotes
+        case .translation:
+            return .translation
         case .networkDiagnostics:
             return .networkDiagnostics
         case .colorPicker:
@@ -86,6 +93,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
         switch self {
         case .stickyNotes:
             return "note.text"
+        case .translation:
+            return "character.bubble"
         case .networkDiagnostics:
             return "globe"
         case .colorPicker:
@@ -106,6 +115,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
         switch self {
         case .stickyNotes:
             return .yellow
+        case .translation:
+            return .teal
         case .networkDiagnostics:
             return .green
         case .colorPicker:
@@ -129,6 +140,8 @@ enum UtilityTool: String, CaseIterable, Identifiable {
         switch self {
         case .stickyNotes:
             return strings.utilityStickyNotesSubtitle
+        case .translation:
+            return strings.utilityTranslationSubtitle
         case .networkDiagnostics:
             return strings.utilityNetworkDiagnosticsSubtitle
         case .colorPicker:

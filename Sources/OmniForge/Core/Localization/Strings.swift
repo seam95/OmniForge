@@ -1716,4 +1716,125 @@ struct Strings: Equatable {
     let rightClickExtensionOpenSettingsButton: String
     /// 「新建文件」生成的空白文件基名（访达原生为「未命名文件」）
     let rightClickNewFileBaseName: String
+    // MARK: - Translation（翻译）
+    // 功能目录 / 实用工具 / 设置侧栏接线位（Lead 接线引用这些固定名字）。
+    let featureHubNameTranslation: String
+    let featureHubDescTranslation: String
+    let settingsTabTranslation: String
+    let utilityTranslationSubtitle: String
+    let utilityTranslationNew: String
+    let utilityTranslationHistoryEmpty: String
+    let utilityTranslationHistoryEmptyHint: String
+    let translationTitle: String
+    let translationHotkeyUnset: String
+
+    // MARK: - Translation 浮窗
+    let translationEngineLabel: String
+    let translationEngineSystem: String
+    let translationEngineAI: String
+    let translationEngineSystemUnavailable: String
+    let translationEngineDowngradedHint: String
+    let translationSourceLanguage: String
+    let translationTargetLanguage: String
+    let translationLanguageAuto: String
+    let translationTargetAuto: String
+    let translationSwapLanguages: String
+    let translationPin: String
+    let translationUnpin: String
+    let translationSourcePlaceholder: String
+    let translationTranslate: String
+    let translationTranslating: String
+    let translationResultPlaceholder: String
+    let translationCopy: String
+    let translationCopied: String
+    let translationResultStale: String
+    let translationCharacterCountFormat: String
+    let translationRetry: String
+    let translationOpenSettings: String
+    let translationNoticeAccessibility: String
+    let translationNoticeNoSelection: String
+    let translationAIConfigurationHint: String
+
+    // MARK: - Translation 语言名与历史行
+    let translationLanguageChineseSimplified: String
+    let translationLanguageChineseTraditional: String
+    let translationLanguageEnglish: String
+    let translationLanguageJapanese: String
+    let translationLanguageKorean: String
+    let translationLanguageFrench: String
+    let translationLanguageGerman: String
+    let translationLanguageSpanish: String
+    let translationLanguageRussian: String
+    let translationLanguageDirectionFormat: String
+    let translationMetaFormat: String
+
+    // MARK: - Translation 错误与提示
+    let translationErrorEmptyInput: String
+    let translationErrorTextTooLongFormat: String
+    let translationErrorSourceLanguageUncertain: String
+    let translationErrorSameLanguageFormat: String
+    let translationErrorSystemUnavailable: String
+    let translationErrorUnsupportedLanguagePair: String
+    let translationErrorModelNotPrepared: String
+    let translationErrorConfigurationIncomplete: String
+    let translationErrorCredentialReadFailed: String
+    let translationErrorNetwork: String
+    let translationErrorTimedOut: String
+    let translationErrorUnauthorized: String
+    let translationErrorRateLimited: String
+    let translationErrorServerFormat: String
+    let translationErrorInvalidResponse: String
+    let translationErrorHistoryNotSaved: String
+
+    // MARK: - Translation 管理页
+    let translationHistorySection: String
+    let translationHistoryCountFormat: String
+    let translationHistoryClear: String
+    let translationHistoryClearConfirmTitle: String
+    let translationHistoryClearConfirmMessageFormat: String
+    let translationHistoryDelete: String
+    let translationHistoryDeleteConfirmTitle: String
+    let translationHistoryDeleteConfirmMessage: String
+    let translationCancel: String
+    let translationSettingsSection: String
+    let translationHotkeyTitle: String
+    let translationDefaultEngine: String
+    let translationSaveHistory: String
+    let translationMoreSettings: String
+    let translationEmptyHintNoHotkey: String
+    let translationOpenHistory: String
+
+    // MARK: - Translation 设置页
+    let translationSettingsEngineSection: String
+    let translationSettingsEngineSystemHint: String
+    let translationSettingsEngineAIHint: String
+    let translationSettingsModelSection: String
+    let translationSettingsBaseURL: String
+    let translationSettingsBaseURLPlaceholder: String
+    let translationSettingsModel: String
+    let translationSettingsModelPlaceholder: String
+    let translationSettingsAPIKey: String
+    let translationSettingsAPIKeyPlaceholder: String
+    let translationSettingsKeySavedPlaceholder: String
+    let translationSettingsKeySaved: String
+    let translationSettingsKeyMissing: String
+    let translationSettingsSave: String
+    let translationSettingsClear: String
+    let translationSettingsPrivacyHint: String
+    let translationSettingsKeySaveFailed: String
+    let translationSettingsTestConnection: String
+    let translationSettingsTesting: String
+    let translationSettingsTestSuccess: String
+    let translationSettingsTestFailed: String
+    let translationSettingsLanguageSection: String
+    let translationSettingsSourceLanguage: String
+    let translationSettingsTargetLanguage: String
+    let translationSettingsHotkeySection: String
+    let translationHotkeyConflictFormat: String
+
+    // MARK: - Translation 浮窗区块标题（追加在末尾，构造器同名参数同步追加）
+    let translationSourceTextLabel: String
+    let translationResultLabel: String
+    let translationHotkeyUpdateFailed: String
+    let translationHistoryUnavailable: String
 }

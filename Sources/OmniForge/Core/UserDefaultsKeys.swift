@@ -121,4 +121,16 @@ enum UserDefaultsKeys {
     static let promptOptimizerAutoReplace = "promptOptimizer.autoReplace"
     static let promptOptimizerHotkeyKeyCode = "promptOptimizer.hotkey.keyCode"
     static let promptOptimizerHotkeyModifiers = "promptOptimizer.hotkey.modifiers"
+    // Translation — 翻译工具（持久化字符串必须稳定，不得重命名）
+    static let translationEngine = "translation.engine"
+    static let translationSourceLanguage = "translation.sourceLanguage"
+    static let translationTargetLanguage = "translation.targetLanguage"
+    static let translationSaveHistory = "translation.saveHistory"
+    static let translationBaseURL = "translation.baseURL"
+    static let translationModel = "translation.model"
+    // 独立的 hotkeyEnabled 键：区分「未设置」与「显式禁用」，禁用后仍保留已录入键位。
+    static let translationHotkeyEnabled = "translation.hotkeyEnabled"
+    static let translationHotkeyKeyCode = "translation.hotkey.keyCode"
+    static let translationHotkeyModifiers = "translation.hotkey.modifiers"
+    static let translationWindowFrame = "translation.windowFrame"
 }

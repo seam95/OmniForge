@@ -95,6 +95,8 @@ final class AppCompositionRoot {
         FeatureRuntime.shared.manager(for: .stickyNotes, as: StickyNoteManager.self)?.teardown()
         // 截图：teardown 链含 clothesline → inbox.restore，退出前还原系统截图落点。
         FeatureRuntime.shared.manager(for: .screenshot, as: ScreenshotFeatureManager.self)?.teardown()
+        // 翻译：退出时取消请求、清除未保存草稿；历史与偏好保留。
+        FeatureRuntime.shared.manager(for: .translation, as: TranslationManager.self)?.teardown()
         if let manager = FeatureRuntime.shared.manager(for: .keepAwake, as: KeepAwakeManager.self) {
             await manager.shutdown(reason: .applicationTermination)
             if case .cleanupRequired = manager.state {
@@ -251,6 +253,8 @@ final class AppCompositionRoot {
         FeatureRuntime.shared.manager(for: .stickyNotes, as: StickyNoteManager.self)?.appearance = appearance
         FeatureRuntime.shared.manager(for: .screenshot, as: ScreenshotFeatureManager.self)?
             .pinnedScreenshotRegistry?.appearance = appearance
+        FeatureRuntime.shared.manager(for: .translation, as: TranslationManager.self)?
+            .appearance = appearance
     }
 
     private func wireClipboardHotkey() {

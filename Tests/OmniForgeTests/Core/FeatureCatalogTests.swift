@@ -284,8 +284,8 @@ final class FeatureCatalogTests: XCTestCase {
 
     /// 分组均衡契约（信息架构：长列表靠分组定位，单组过大会让分组失去导航意义）。
     func test_groupsStayBalanced_soLongListRemainsNavigable() {
-        // 生产力组收敛为暂存架（其余成员按语义迁往维护/桌面常驻）。
-        XCTAssertEqual(FeatureGroup.features(in: .productivity), [.shelf])
+        // 生产力组：暂存架 + 翻译（均为热键直达型，翻译按 SPEC §8 归入生产力组）。
+        XCTAssertEqual(FeatureGroup.features(in: .productivity), [.shelf, .translation])
 
         // 系统维护：对系统做一次性操作的诊断/清理/卸载类工具。
         XCTAssertEqual(
@@ -345,10 +345,10 @@ final class FeatureCatalogTests: XCTestCase {
 
     /// 全部特性都必须有明确的使用形态归属（穷尽 switch 的语义保障）。
     func test_everyFeatureHasUsageForm() {
-        XCTAssertEqual(AppFeature.allCases.count, 18)
+        XCTAssertEqual(AppFeature.allCases.count, 19)
         XCTAssertEqual(
-            AppFeature.allCases.filter { $0.usageForm == .hotkey }.count, 5,
-            "热键直达型：剪贴板历史/快捷短语/暂存架/截图/提示词优化"
+            AppFeature.allCases.filter { $0.usageForm == .hotkey }.count, 6,
+            "热键直达型：剪贴板历史/快捷短语/暂存架/截图/提示词优化/翻译"
         )
         XCTAssertEqual(
             AppFeature.allCases.filter { $0.usageForm == .configuration }.count, 3,
@@ -361,6 +361,29 @@ final class FeatureCatalogTests: XCTestCase {
         XCTAssertEqual(
             AppFeature.allCases.filter { $0.usageForm == .tool }.count, 7,
             "动作工具型：网诊/清理/卸载/取色/唤醒/便签/清洁模式"
+        )
+    }
+
+    func test_translation_catalogIsProductivityHotkeyWithOptionalAccessibility() {
+        // SPEC §8：归属生产力组，使用形态为快捷键直达；手动输入不需要权限，取词权限为可选。
+        XCTAssertEqual(AppFeature.translation.group, .productivity)
+        XCTAssertEqual(AppFeature.translation.usageForm, .hotkey)
+        XCTAssertTrue(AppFeature.translation.enabledKeys.isEmpty)
+        XCTAssertEqual(AppFeature.translation.possiblePermissions, [.accessibility])
+        XCTAssertEqual(
+            AppFeature.translation.permissionUsage(for: .accessibility),
+            .optional
+        )
+        XCTAssertNil(AppFeature.translation.permissionUsage(for: .screenRecording))
+        XCTAssertEqual(AppFeature.translation.symbolName, "character.bubble")
+        XCTAssertFalse(AppFeature.translation.hubName(in: .en).isEmpty)
+        XCTAssertFalse(AppFeature.translation.hubName(in: .zhHans).isEmpty)
+        XCTAssertFalse(AppFeature.translation.hubDescription(in: .en).isEmpty)
+        XCTAssertFalse(AppFeature.translation.hubDescription(in: .zhHans).isEmpty)
+        // 生产力组内热键直达型排前：暂存架先于翻译（同形态按声明顺序）。
+        XCTAssertEqual(
+            FeatureGroup.features(in: .productivity),
+            [.shelf, .translation]
         )
     }
 

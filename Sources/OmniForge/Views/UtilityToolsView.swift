@@ -151,6 +151,8 @@ struct UtilityToolsView: View {
     var keepAwakeManager: KeepAwakeManager?
     var clamshellRecoveryCoordinator: ClamshellRecoveryCoordinator?
     var onOpenSettings: (SettingsToolbarTab?) -> Void = { _ in }
+    /// 打开翻译浮窗等外部窗口前收起控制中心，避免两个入口争抢键盘焦点。
+    var onDismissControlCenter: () -> Void = {}
     @AppStorage(UserDefaultsKeys.lastUtilityTool) private var storedTool = UtilityTool.cleaner.rawValue
 
     init(strings: Strings, route: Binding<UtilityToolsRoute>) {
@@ -170,7 +172,8 @@ struct UtilityToolsView: View {
         runtime: FeatureRuntime = .shared,
         keepAwakeManager: KeepAwakeManager?,
         clamshellRecoveryCoordinator: ClamshellRecoveryCoordinator?,
-        onOpenSettings: @escaping (SettingsToolbarTab?) -> Void
+        onOpenSettings: @escaping (SettingsToolbarTab?) -> Void,
+        onDismissControlCenter: @escaping () -> Void = {}
     ) {
         self.strings = strings
         self._route = route
@@ -178,6 +181,7 @@ struct UtilityToolsView: View {
         self.keepAwakeManager = keepAwakeManager
         self.clamshellRecoveryCoordinator = clamshellRecoveryCoordinator
         self.onOpenSettings = onOpenSettings
+        self.onDismissControlCenter = onDismissControlCenter
     }
 
     private var visibleTools: [UtilityTool] {
@@ -287,6 +291,27 @@ struct UtilityToolsView: View {
             NetworkDiagnosticsView(strings: strings)
         case .stickyNotes:
             StickyNotesView(strings: strings)
+        case .translation:
+            if let translationManager = runtime.manager(
+                for: .translation,
+                as: TranslationManager.self
+            ), let translationPreferences = runtime.manager(
+                for: .translation,
+                as: TranslationPreferences.self
+            ) {
+                TranslationUtilityDetailView(
+                    manager: translationManager,
+                    preferences: translationPreferences,
+                    strings: strings,
+                    hotkeyManager: runtime.manager(
+                        for: .translation,
+                        as: TranslationHotkeyManager.self
+                    ),
+                    // 打开翻译浮窗后由宿主收起控制中心，避免两个入口争抢键盘焦点。
+                    onNewTranslation: onDismissControlCenter,
+                    onOpenSettings: { onOpenSettings(.translation) }
+                )
+            }
         case .cleaningMode:
             CleaningModeView(strings: strings)
         case .keepAwake:

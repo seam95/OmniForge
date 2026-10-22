@@ -26,6 +26,7 @@ enum Defaults {
             .merging(screenshotDefaults, uniquingKeysWith: { _, new in new })
             .merging(networkDiagnosticsDefaults, uniquingKeysWith: { _, new in new })
             .merging(promptOptimizerDefaults, uniquingKeysWith: { _, new in new })
+            .merging(translationDefaults, uniquingKeysWith: { _, new in new })
     }
 
     /// Onboarding 相关默认值
@@ -158,6 +159,20 @@ enum Defaults {
             UserDefaultsKeys.promptOptimizerAutoReplace: false,
             UserDefaultsKeys.promptOptimizerHotkeyKeyCode: HotkeyDefinition.defaultPromptOptimizer.keyCode,
             UserDefaultsKeys.promptOptimizerHotkeyModifiers: HotkeyDefinition.defaultPromptOptimizer.modifiers.rawValue,
+        ]
+    }
+
+    /// 翻译工具偏好默认值：默认系统翻译（macOS 14 上运行时降级为 AI，不覆盖存储偏好）。
+    private static var translationDefaults: [String: Any] {
+        [
+            UserDefaultsKeys.translationEngine: TranslationEngineID.system.rawValue,
+            UserDefaultsKeys.translationTargetLanguage: TranslationTarget.automaticStorageValue,
+            UserDefaultsKeys.translationSaveHistory: true,
+            UserDefaultsKeys.translationBaseURL: "",
+            UserDefaultsKeys.translationModel: "",
+            UserDefaultsKeys.translationHotkeyEnabled: true,
+            UserDefaultsKeys.translationHotkeyKeyCode: HotkeyDefinition.defaultTranslation.keyCode,
+            UserDefaultsKeys.translationHotkeyModifiers: HotkeyDefinition.defaultTranslation.modifiers.rawValue,
         ]
     }
 

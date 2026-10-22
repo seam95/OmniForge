@@ -1006,6 +1006,9 @@ final class StatusBarController: NSObject, NSWindowDelegate {
                     onOpenSettings: { [onOpenSettings] tab in
                         onOpenSettings(tab)
                     },
+                    onDismissControlCenter: { [weak self] in
+                        self?.closePanel()
+                    },
                     sizingContext: context
                 )
             )

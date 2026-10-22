@@ -14,6 +14,7 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
     case tokenUsage
     case keepAwake
     case promptOptimizer
+    case translation
 
     static func visibleCases(isAvailable: (AppFeature) -> Bool) -> [SettingsToolbarTab] {
         allCases.filter { tab in
@@ -40,6 +41,8 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
                 return isAvailable(.keepAwake)
             case .promptOptimizer:
                 return isAvailable(.promptOptimizer)
+            case .translation:
+                return isAvailable(.translation)
             }
         }
     }
@@ -84,6 +87,8 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
             return .energy
         case .promptOptimizer:
             return .ai
+        case .translation:
+            return .productivity
         }
     }
 
@@ -100,6 +105,7 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
         case .tokenUsage: return "chart.line.uptrend.xyaxis"
         case .keepAwake: return "moon.zzz.fill"
         case .promptOptimizer: return "wand.and.stars"
+        case .translation: return "character.bubble"
         case .features: return "puzzlepiece.extension"
         }
     }
@@ -119,6 +125,7 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
         case .tokenUsage: return .orange
         case .keepAwake: return .purple
         case .promptOptimizer: return .purple
+        case .translation: return .teal
         }
     }
 
@@ -135,6 +142,7 @@ enum SettingsToolbarTab: String, CaseIterable, Identifiable {
         case .tokenUsage: return strings.settingsTabTokenUsage
         case .keepAwake: return strings.featureHubNameKeepAwake
         case .promptOptimizer: return strings.settingsTabPromptOptimizer
+        case .translation: return strings.settingsTabTranslation
         case .features: return strings.settingsTabFeatures
         }
     }

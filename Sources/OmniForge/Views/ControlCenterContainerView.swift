@@ -17,6 +17,8 @@ struct ControlCenterContainerView: View {
     @ObservedObject var state: AppState
     @ObservedObject private var runtime = FeatureRuntime.shared
     var onOpenSettings: (SettingsToolbarTab?) -> Void = { _ in }
+    /// 子页需要前置外部窗口（如翻译浮窗）时收起面板；生产由 StatusBarController 注入。
+    var onDismissControlCenter: () -> Void = {}
     /// 控制中心尺寸上下文（默认实例 = 无 popover 适配器的降级路径，
     /// viewport 固定 580pt；生产由 StatusBarController 注入真实上下文）。
     @ObservedObject var sizingContext: ControlCenterSizingContext = ControlCenterSizingContext()
@@ -313,7 +315,8 @@ struct ControlCenterContainerView: View {
                     route: $utilityRoute,
                     keepAwakeManager: state.keepAwakeManager,
                     clamshellRecoveryCoordinator: state.clamshellRecoveryCoordinator,
-                    onOpenSettings: onOpenSettings
+                    onOpenSettings: onOpenSettings,
+                    onDismissControlCenter: onDismissControlCenter
                 )
             case .providerSwitch:
                 if let manager = state.providerSwitchManager,

@@ -160,13 +160,14 @@ final class NavigationRoutesTests: XCTestCase {
     }
 
     func test_settingsTabs_followFeatureAvailabilityAndStableOrder() {
-        // 终态 12 项：清理/卸载全页壳移除（功能本体在工具详情页），供应商切换设置页移除；
-        // 访达右键增强接入后追加 rightClick（位于 mouse 之后）。
+        // 终态 13 项：清理/卸载全页壳移除（功能本体在工具详情页），供应商切换设置页移除；
+        // 访达右键增强接入后追加 rightClick（位于 mouse 之后），翻译工具接入后追加 translation。
         XCTAssertEqual(
             SettingsToolbarTab.visibleCases(isAvailable: { _ in true }),
             [
                 .general, .features, .inputMethod, .clipboard, .shelf, .screenshot, .mouse,
-                .rightClick, .performance, .tokenUsage, .keepAwake, .promptOptimizer
+                .rightClick, .performance, .tokenUsage, .keepAwake, .promptOptimizer,
+                .translation
             ]
         )
 
@@ -246,7 +247,10 @@ final class NavigationRoutesTests: XCTestCase {
     func test_utilityTools_followFeatureAvailabilityAndStableOrder() {
         XCTAssertEqual(
             UtilityTool.visibleCases(isAvailable: { _ in true }),
-            [.stickyNotes, .networkDiagnostics, .colorPicker, .uninstaller, .cleaner, .cleaningMode, .keepAwake]
+            [
+                .stickyNotes, .translation, .networkDiagnostics, .colorPicker,
+                .uninstaller, .cleaner, .cleaningMode, .keepAwake
+            ]
         )
         XCTAssertEqual(
             UtilityTool.visibleCases(isAvailable: { $0 == .cleaningMode }),

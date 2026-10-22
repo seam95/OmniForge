@@ -88,6 +88,11 @@ struct HotkeyDefinition: Equatable, Codable {
         keyCode: Int(kVK_ANSI_P),
         modifiers: [.option, .command]
     )
+    /// 翻译工具默认快捷键：⌥⌘T（与现有默认键位无冲突）
+    static let defaultTranslation = HotkeyDefinition(
+        keyCode: Int(kVK_ANSI_T),
+        modifiers: [.option, .command]
+    )
 
     // 截图默认快捷键：统一 ⌃⌥⌘ + 数字，避开 clipboard(⌘⇧V) / shelf(⌃⌥⌘D) / keepAwake(⌃⌥⌘K)
     // 顺序：全能1 / 复制2 / 贴图3 / 全屏4 / 录屏5（仅影响未自定义用户的注册默认）

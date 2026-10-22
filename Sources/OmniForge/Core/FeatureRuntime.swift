@@ -364,6 +364,10 @@ final class FeatureRuntime: ObservableObject {
                 RightClickService.shared.stop()
             }
         },
+        .translation: {
+            // availability 即启用：快捷键跟随可用性注册 / 注销（历史与偏好保留）。
+            shared.manager(for: .translation, as: TranslationManager.self)?.syncWithPreferences()
+        },
     ]
 
     // MARK: - 测试支持

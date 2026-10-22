@@ -1,7 +1,9 @@
+import AppKit
 import ApplicationServices
 import OmniForgeSMC
 import CoreGraphics
 import Foundation
+import SwiftUI
 
 /// 按需创建特性依赖。只在 install 时分配对象，避免启动全量 new。
 @MainActor
@@ -395,6 +397,89 @@ struct FeatureFactory {
                 runtime.register(.rightClickEnhancement, manager: service)
                 service.start()
             }
+        case .translation:
+            // 翻译：单会话编排 + 全局快捷键 + 独立浮窗；安装不打开浮窗。
+            if runtime.manager(for: .translation, as: TranslationManager.self) == nil {
+                let appSupport = FileManager.default.urls(
+                    for: .applicationSupportDirectory,
+                    in: .userDomainMask
+                ).first!
+                let historyStore = GRDBTranslationHistoryStore(
+                    databaseURL: appSupport.appendingPathComponent("OmniForge/Translation/history.sqlite")
+                )
+                let preferences = TranslationPreferences(userDefaults: userDefaults)
+                let keychain = TranslationKeychainStore()
+                let stringsProvider: () -> Strings = { L10n(userDefaults: userDefaults).s }
+
+                // 系统翻译桥接只在 macOS 15+ 创建；类型不得泄漏到 macOS 14 路径。
+                var systemBridge: (any TranslationEngine)?
+                if #available(macOS 15.0, *) {
+                    systemBridge = AppleTranslationBridge()
+                }
+
+                let manager = TranslationManager(
+                    preferences: preferences,
+                    historyStore: historyStore,
+                    resolver: TranslationLanguageResolver(),
+                    isFeatureAvailable: { FeatureRuntime.shared.isAvailable(.translation) },
+                    engineFactory: { engineID in
+                        switch engineID {
+                        case .ai:
+                            let apiKey: String?
+                            do {
+                                apiKey = try keychain.readAPIKey()
+                            } catch {
+                                // 读取失败与「未配置 Key」不同：直接提示，不当作匿名配置继续。
+                                throw TranslationError.credentialReadFailed
+                            }
+                            guard preferences.isAIConfigured else {
+                                throw TranslationError.configurationIncomplete
+                            }
+                            return AITranslationService(
+                                configuration: preferences.aiConfiguration(apiKey: apiKey)
+                            )
+                        case .system:
+                            guard let systemBridge else {
+                                throw TranslationError.systemTranslationUnavailable
+                            }
+                            return systemBridge
+                        }
+                    }
+                )
+
+                // 浮窗里的会话挂载点必须与引擎工厂使用同一 bridge 实例。
+                var translationTaskHost: (() -> AnyView)?
+                if #available(macOS 15.0, *), let bridge = systemBridge as? AppleTranslationBridge {
+                    translationTaskHost = { AnyView(AppleTranslationTaskHost(bridge: bridge)) }
+                }
+
+                let windowController = TranslationWindowController(
+                    manager: manager,
+                    preferences: preferences,
+                    stringsProvider: stringsProvider,
+                    translationTaskHost: translationTaskHost,
+                    onOpenSettings: {
+                        (NSApp.delegate as? AppDelegate)?.openSettings(tab: .translation)
+                    }
+                )
+                manager.windowPresenter = windowController
+
+                let hotkeyManager = TranslationHotkeyManager(
+                    preferences: preferences,
+                    isFeatureAvailable: { FeatureRuntime.shared.isAvailable(.translation) },
+                    onTrigger: { [weak manager] in
+                        manager?.handleHotkeyTrigger()
+                    }
+                )
+                manager.hotkeyManager = hotkeyManager
+
+                runtime.register(.translation, manager: preferences)
+                runtime.register(.translation, manager: manager)
+                runtime.register(.translation, manager: hotkeyManager)
+                runtime.register(.translation, manager: windowController)
+                // bootstrap 读取历史并注册快捷键，不打开浮窗。
+                manager.bootstrap()
+            }
         }
     }
 
@@ -457,6 +542,9 @@ struct FeatureFactory {
             runtime.manager(for: .cleaningMode, as: CleaningModeManager.self)?.stop()
         case .rightClickEnhancement:
             runtime.manager(for: .rightClickEnhancement, as: RightClickService.self)?.stop()
+        case .translation:
+            // 注销快捷键、取消请求、隐藏浮窗；历史与用户偏好保留。
+            runtime.manager(for: .translation, as: TranslationManager.self)?.teardown()
         }
         runtime.unregisterAll(for: feature)
     }
