@@ -331,6 +331,16 @@ final class AggregationProxy: AggregationProxying {
     private func dispatchAndWrite(_ request: AggregationHTTPRequest, on connection: NWConnection) {
         switch dispatch(request) {
         case .respond(let response):
+            // 本地应答只记录失败形态（miss/404/413/426）；健康检查等成功探活不记，避免噪音。
+            if response.statusCode >= 400 {
+                AggregationRequestTrace.shared.recordLocal(
+                    request: request,
+                    protocol: AggregationRouteTable.protocolOf(
+                        method: request.head.method, path: request.head.path
+                    ),
+                    statusCode: response.statusCode
+                )
+            }
             // 不做 keep-alive 复用：每个请求一条连接，响应恒带 Connection: close。
             writeResponse(response, on: connection) {
                 connection.cancel()
@@ -344,11 +354,15 @@ final class AggregationProxy: AggregationProxying {
             // 「stream closed before response.completed」并触发 1/5 重连。
             let drain = AggregationStreamDrain()
             var headWritten = false
+            let trace = AggregationRequestTrace.shared.begin(
+                request: forwarded, target: target, protocol: clientProtocol
+            )
             forwarder.stream(
                 request: forwarded,
                 to: target,
                 protocol: clientProtocol,
                 onHead: { [weak self] statusCode, headers in
+                    trace.setStatus(statusCode)
                     guard let self else { return }
                     drain.beginSend()
                     self.writeForwardHead(statusCode: statusCode, headers: headers, on: connection) {
@@ -357,12 +371,14 @@ final class AggregationProxy: AggregationProxying {
                     headWritten = true
                 },
                 onChunk: { chunk in
+                    trace.addResponseBytes(chunk.count)
                     drain.beginSend()
                     connection.send(content: chunk, completion: .contentProcessed { _ in
                         if drain.endSend() { connection.cancel() }
                     })
                 },
-                onComplete: { [weak self] _ in
+                onComplete: { [weak self] error in
+                    AggregationRequestTrace.shared.finish(trace, error: error)
                     guard let self else {
                         connection.cancel()
                         return
