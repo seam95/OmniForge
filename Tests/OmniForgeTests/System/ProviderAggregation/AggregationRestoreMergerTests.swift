@@ -78,6 +78,34 @@ final class AggregationRestoreMergerTests: XCTestCase {
         )
     }
 
+    func test_codex_emptyBackupIsRejected() {
+        XCTAssertNil(
+            AggregationRestoreMerger.codex(currentText: aggregateConfig, backupText: "  \n"),
+            "空快照不能当成合法空文档，否则会静默删掉用户配置"
+        )
+    }
+
+    func test_codex_restoresNestedCustomTables() throws {
+        let backup = """
+        model = "user-model"
+
+        [model_providers.custom]
+        name = "my-relay"
+        base_url = "https://relay.example.com/v1"
+
+        [model_providers.custom.http_headers]
+        X-User = "me"
+        """
+        let merged = try XCTUnwrap(AggregationRestoreMerger.codex(
+            currentText: aggregateConfig, backupText: backup
+        ))
+        let doc = try XCTUnwrap(TOMLFile.parse(merged))
+        XCTAssertEqual(
+            doc.stringValue(key: "X-User", table: ["model_providers", "custom", "http_headers"]),
+            "me"
+        )
+    }
+
     func test_codex_keepsUserOwnedCustomTableWhenBackupHadNone() throws {
         let current = """
         model = "aggregate-model"
