@@ -352,7 +352,13 @@ final class ProviderAggregationManager: ObservableObject {
     func exitAggregation(tool: ProviderTool) throws {
         do {
             if let backup = backupStore.list(tool: tool).first {
-                try backupStore.restore(backup, to: Self.configURL(for: tool))
+                // 优先按聚合拥有的键恢复：保留用户在聚合期间对 MCP、项目配置等
+                // 非聚合段落的修改。键级恢复失败才整份回滚。
+                do {
+                    try restoreOwnedKeys(tool: tool, backup: backup)
+                } catch {
+                    try backupStore.restore(backup, to: Self.configURL(for: tool))
+                }
             } else {
                 // 快照不可用 → 退化为仅清聚合键。
                 try clearAggregationKeys(tool: tool)
@@ -390,7 +396,11 @@ final class ProviderAggregationManager: ObservableObject {
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
                     if let backup = backupStore.list(tool: tool).first {
-                        try backupStore.restore(backup, to: configURL)
+                        do {
+                            try self.restoreOwnedKeys(tool: tool, backup: backup)
+                        } catch {
+                            try backupStore.restore(backup, to: configURL)
+                        }
                     } else {
                         switch tool {
                         case .claudeCode: try claudeWriter.clearAggregation()
@@ -843,6 +853,32 @@ final class ProviderAggregationManager: ObservableObject {
         staleDetector.observe(catalogURL: Self.codexAggregationCatalogURL(), catalogIsOurs: true)
     }
 
+    /// 按聚合拥有的键恢复当前配置，保留其他段落；失败抛错，由调用方整份回滚。
+    private func restoreOwnedKeys(tool: ProviderTool, backup: ProviderBackup) throws {
+        let configURL = Self.configURL(for: tool)
+        let currentText = try String(contentsOf: configURL, encoding: .utf8)
+        let backupText = try backupStore.content(of: backup)
+        switch tool {
+        case .codex:
+            guard let merged = AggregationRestoreMerger.codex(
+                currentText: currentText, backupText: backupText
+            ) else {
+                throw ProviderConfigFileError.corrupted(path: configURL.path)
+            }
+            try AtomicFileWriter.write(Data(merged.utf8), to: configURL, fileManager: fileManager)
+        case .claudeCode:
+            guard let current = try SettingsJSONFile.readRoot(from: configURL, fileManager: fileManager),
+                  let backupRoot = (try? JSONSerialization.jsonObject(with: Data(backupText.utf8))) as? [String: Any] else {
+                throw ProviderConfigFileError.corrupted(path: configURL.path)
+            }
+            try SettingsJSONFile.writeRoot(
+                AggregationRestoreMerger.claude(current: current, backup: backupRoot),
+                to: configURL,
+                fileManager: fileManager
+            )
+        }
+    }
+
     private func clearAggregationKeys(tool: ProviderTool) throws {
         switch tool {
         case .claudeCode: try claudeWriter.clearAggregation()
@@ -868,7 +904,11 @@ final class ProviderAggregationManager: ObservableObject {
     /// 摘模式位（保留名单与登记簿）→ 无工具聚合则停代理。
     private func fallbackToDirect(tool: ProviderTool) {
         if let backup = backupStore.list(tool: tool).first {
-            try? backupStore.restore(backup, to: Self.configURL(for: tool))
+            do {
+                try restoreOwnedKeys(tool: tool, backup: backup)
+            } catch {
+                try? backupStore.restore(backup, to: Self.configURL(for: tool))
+            }
         } else {
             try? clearAggregationKeys(tool: tool)
         }

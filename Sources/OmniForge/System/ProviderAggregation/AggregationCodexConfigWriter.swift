@@ -47,7 +47,7 @@ final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
     /// 退出聚合时摘除；窗口键直连模式可能也写，故一并清理。
     /// `openai_base_url` 是 P0-3 旧官方分支写的键（现官方分支与第三方同形状不再写），
     /// 保留在清理清单内自愈旧形态残留——否则退出后残留指向已停代理的指针。
-    private static let writtenTopLevelKeys = [
+    static let writtenTopLevelKeys = [
         "model_provider",
         "model",
         "model_reasoning_effort",
@@ -280,7 +280,7 @@ final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
     }
 
     /// `[model_providers.custom]` 的 base_url 是否指向本机代理。
-    private static func customTablePointsAtProxy(_ document: TOMLFile) -> Bool {
+    static func customTablePointsAtProxy(_ document: TOMLFile) -> Bool {
         guard let baseURL = document.stringValue(key: "base_url", table: ["model_providers", "custom"]) else {
             return false
         }

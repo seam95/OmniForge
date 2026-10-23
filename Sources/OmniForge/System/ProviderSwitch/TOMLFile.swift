@@ -378,7 +378,7 @@ struct TOMLFile: Equatable {
     }
 
     /// 按字面量原文写入：目标键已存在 → 原地替换（保留行尾注释）；否则追加到所在段末尾。
-    private mutating func setRawValue(_ literal: String, key: String, table: [String]?) {
+    mutating func setRawValue(_ literal: String, key: String, table: [String]?) {
         if let entryIndex = validEntryIndex(key: key, table: table) {
             let entry = entries[entryIndex]
             lines[entry.lineIndex] = entry.prefix + literal + entry.suffix
