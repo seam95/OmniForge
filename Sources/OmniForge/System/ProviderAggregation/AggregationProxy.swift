@@ -250,8 +250,13 @@ final class AggregationProxy: AggregationProxying {
         to target: AggregationProxyTarget,
         protocol clientProtocol: AggregationClientProtocol
     ) -> AggregationDispatch {
-        let body = sealStore.removingRefused(from: request.body, targetKey: target.key)
-            ?? request.body
+        // 官方目标不接受 reasoning.content（第三方留下的明文推理），先摘掉再转发。
+        var sanitized = request.body
+        if target.passesThroughAuthorization {
+            sanitized = AggregationRequestParser.removingReasoningContent(from: sanitized)
+        }
+        let body = sealStore.removingRefused(from: sanitized, targetKey: target.key)
+            ?? sanitized
         return .forward(
             request: Self.requestWithBody(request, body: body),
             target: target,

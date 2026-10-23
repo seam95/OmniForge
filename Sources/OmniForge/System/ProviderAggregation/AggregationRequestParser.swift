@@ -85,6 +85,38 @@ enum AggregationRequestParser {
         return (try? JSONSerialization.data(withJSONObject: root)) ?? body
     }
 
+    /// 删除 Responses `input` 中 reasoning item 的 `content` 数组。
+    ///
+    /// 第三方（DeepSeek 等）返回明文推理后，Codex 会把它存进 reasoning 的
+    /// `content: [{"type":"reasoning_text", ...}]`。官方 Responses 后端不接受该字段：
+    ///
+    ///     Invalid 'input[6].content': array too long.
+    ///     Expected an array with maximum length 0, but got an array with length 1
+    ///
+    /// 跨供应商切到官方时整轮请求会被 400 拒绝。`summary` 与 `encrypted_content`
+    /// 保留：前者官方照常读，后者读不了时由 sealed 重试兜底。
+    static func removingReasoningContent(from body: Data) -> Data {
+        guard let object = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any],
+              let items = object["input"] as? [[String: Any]] else {
+            return body
+        }
+        var changed = false
+        let cleaned = items.map { item -> [String: Any] in
+            guard item["type"] as? String == "reasoning",
+                  item["content"] != nil else {
+                return item
+            }
+            changed = true
+            var copy = item
+            copy.removeValue(forKey: "content")
+            return copy
+        }
+        guard changed else { return body }
+        var root = object
+        root["input"] = cleaned
+        return (try? JSONSerialization.data(withJSONObject: root)) ?? body
+    }
+
     /// target 在第一个 `?` 处切开（query 可含后续任意字符）。
     private static func splitTarget(_ target: String) -> (path: String, query: String) {
         guard let questionMark = target.firstIndex(of: "?") else {

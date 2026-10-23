@@ -71,4 +71,35 @@ final class AggregationRequestParserTests: XCTestCase {
         let body = Data(#"{"store":false,"input":"hello"}"#.utf8)
         XCTAssertEqual(AggregationRequestParser.removingBareReasoningItems(from: body), body)
     }
+
+    // MARK: - 跨供应商 reasoning content 清洗
+
+    /// 回归：第三方返回的明文推理被 Codex 存进 reasoning.content，
+    /// 官方后端回 400 "Expected an array with maximum length 0"。
+    func test_removingReasoningContent_dropsContentButKeepsSummaryAndSeal() throws {
+        let body = Data(#"""
+        {"model":"gpt-6.1-sol","input":[
+          {"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]},
+          {"type":"reasoning","id":"rs_ds","summary":[{"type":"summary_text","text":"s"}],"content":[{"type":"reasoning_text","text":"raw"}],"encrypted_content":"sealed"},
+          {"type":"function_call","call_id":"c1","name":"shell","arguments":"{}"}
+        ]}
+        """#.utf8)
+        let items = try inputItems(AggregationRequestParser.removingReasoningContent(from: body))
+        XCTAssertEqual(items.count, 3)
+        XCTAssertNil(items[1]["content"])
+        XCTAssertEqual(items[1]["encrypted_content"] as? String, "sealed")
+        XCTAssertNotNil(items[1]["summary"])
+        XCTAssertEqual(items[0]["type"] as? String, "message")
+        XCTAssertEqual(items[2]["type"] as? String, "function_call")
+    }
+
+    func test_removingReasoningContent_isNoopWithoutReasoningContent() {
+        let body = Data(#"{"input":[{"type":"reasoning","id":"rs","summary":[]},{"type":"message","role":"user","content":[]}]}"#.utf8)
+        XCTAssertEqual(AggregationRequestParser.removingReasoningContent(from: body), body)
+    }
+
+    func test_removingReasoningContent_ignoresNonArrayInput() {
+        let body = Data(#"{"input":"hello"}"#.utf8)
+        XCTAssertEqual(AggregationRequestParser.removingReasoningContent(from: body), body)
+    }
 }

@@ -176,6 +176,35 @@ final class AggregationProxyTests: XCTestCase {
         XCTAssertEqual(forwarder.lastRequest?.body, Data(body.utf8))
     }
 
+    /// 回归：第三方明文推理的 `content` 发给官方后端会被 400 拒绝
+    /// （`Expected an array with maximum length 0`），官方目标转发前必须摘掉。
+    func test_openAIResponses_officialTargetDropsReasoningContent() throws {
+        let official = AggregationProxyTarget(
+            key: "openai", profileID: "official",
+            baseURL: "https://chatgpt.com/backend-api/codex",
+            token: "", passesThroughAuthorization: true
+        )
+        let officialProxy = AggregationProxy(
+            resolver: AggregationTargetResolver(
+                stack: .init(enabled: true, members: [], keys: [:]),
+                registry: AggregationKeyRegistry(keys: [:]),
+                profiles: [],
+                defaultTarget: official
+            ),
+            modelLister: StubModelLister(),
+            forwarder: forwarder,
+            sealStore: sealStore
+        )
+        let body = #"{"model":"gpt-6.1-sol","input":[{"type":"reasoning","id":"rs_ds","summary":[],"content":[{"type":"reasoning_text","text":"raw"}],"encrypted_content":"sealed"},{"type":"message","role":"user"}]}"#
+        _ = officialProxy.handle(post("/v1/responses", body: body))
+        let sent = try XCTUnwrap(forwarder.lastRequest)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: sent.body) as? [String: Any])
+        let items = try XCTUnwrap(object["input"] as? [[String: Any]])
+        XCTAssertNil(items[0]["content"])
+        XCTAssertEqual(items[0]["encrypted_content"] as? String, "sealed")
+        XCTAssertEqual(sent.head.contentLength, sent.body.count)
+    }
+
     /// 该目标此前拒绝过别家的 sealed reasoning：后续请求转发前直接去掉，不再每轮失败。
     func test_openAIResponses_precleansSealRefusedByTarget() throws {
         let body = #"{"model":"deepseek-reasoner","input":[{"type":"reasoning","id":"rs_1","encrypted_content":"sealed-x"},{"type":"message","role":"user"}]}"#
