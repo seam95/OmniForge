@@ -86,9 +86,11 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
         description: String,
         defaultReasoningLevel: String,
         priority: Int,
+        contextWindow: UInt64? = nil,
         useResponsesLite: Bool? = nil,
         inputModalities: [String]? = nil
     ) -> [String: Any] {
+        let window = Int(contextWindow ?? 1_000_000)
         var entry: [String: Any] = [
             "slug": model,
             "display_name": displayName,
@@ -109,8 +111,8 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
             "additional_speed_tiers": [],
             "availability_nux": NSNull(),
             "upgrade": NSNull(),
-            "context_window": 1_000_000,
-            "max_context_window": 1_000_000,
+            "context_window": window,
+            "max_context_window": window,
             "effective_context_window_percent": 95,
             // 能力判定 fail-open：确认纯文本名单之外一律声明 text+image。
             // Codex 只按该字段决定是否允许发图；写死 ["text"] 会把多模态模型提前拦死。
@@ -126,21 +128,25 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
     }
 
     func writeCatalog(for profile: ProviderProfile) throws {
-        let models = profile.codexModelList
+        let entries = profile.codexModelEntries
         // 没有模型时不生成目录
-        guard !models.isEmpty else {
+        guard !entries.isEmpty else {
             try? removeCatalog()
             return
         }
 
         let defaultEffort = profile.reasoningEffort?.isEmpty == false ? profile.reasoningEffort! : "high"
-        let modelEntries: [[String: Any]] = models.map { model in
+        // 未按模型配置窗口时回落到供应商级 `model_context_window`；再缺省才用 1M。
+        // 逐模型窗口必须写进目录：Codex 只按目录行决定发送与压缩，表单里的值不写就无效。
+        let fallbackWindow = UInt64(profile.extraEnv["model_context_window"] ?? "") ?? 1_000_000
+        let modelEntries: [[String: Any]] = entries.map { entry in
             Self.catalogEntry(
-                model: model,
-                displayName: "\(profile.name) (\(model))",
+                model: entry.model,
+                displayName: entry.displayName ?? "\(profile.name) (\(entry.model))",
                 description: "OmniForge 托管 · \(profile.name)",
                 defaultReasoningLevel: defaultEffort,
-                priority: 1000
+                priority: 1000,
+                contextWindow: entry.contextWindow ?? fallbackWindow
             )
         }
 

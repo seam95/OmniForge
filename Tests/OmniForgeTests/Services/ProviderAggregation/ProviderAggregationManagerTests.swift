@@ -634,6 +634,22 @@ final class ProviderAggregationManagerTests: XCTestCase {
         XCTAssertEqual(published.map(\.window), [1_000_000, 400_000], "窗口空串 → 回落 extraEnv 全局口径")
     }
 
+    /// 回归：逐模型窗口与供应商级窗口都没配时，默认用 272K 工作窗口，
+    /// 不再按 1M 发送；否则 128K/272K 的第三方模型会一直请求到上游拒绝。
+    func test_codexPublishedModels_defaultsToWorkingWindow() throws {
+        profileStore.stubProfiles = [
+            ProviderProfile(
+                id: "kimi", name: "Kimi", tool: .codex,
+                baseURL: "https://api.kimi.com/v1", token: "sk-kimi",
+                codexModels: ["kimi-k3"]
+            )
+        ]
+        manager = makeManager()
+        try manager.enterAggregation(tool: .codex, defaultProfileID: "kimi")
+        let published = manager.publishedModels(tool: .codex)
+        XCTAssertEqual(published.first?.window, CodexModelCatalogStore.aggregationWorkingWindow)
+    }
+
     // MARK: - 快照刷新（面板挂载时补列）
 
     /// 面板 `.task` 靠 `refresh()` 把启动期那份 profile 快照刷成当前的：`production()`

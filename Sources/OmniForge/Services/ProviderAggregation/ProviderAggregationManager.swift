@@ -916,7 +916,11 @@ final class ProviderAggregationManager: ObservableObject {
     /// Codex 的 Stack id 不带 1M 标记，还原时用裸模型名）。
     /// 显示名/窗口取条目值（SPEC 7 / P1-8），未配置回落旧口径：显示名回落模型名、窗口回落 extraEnv 全局值。
     private static func codexPublishedModels(profile: ProviderProfile, key: String) -> [AggregationPublishedModel] {
-        let fallbackWindow = UInt64(profile.extraEnv["model_context_window"] ?? "") ?? 1_000_000
+        // 未按模型配置窗口时回落供应商级 `model_context_window`；再缺省用 272K
+        // （Codex 官方 GPT 的工作窗口，也是聚合目录统一后的压缩基准）。
+        // 1M 默认会让 128K/272K 的第三方模型按 1M 发送，直到上游拒绝。
+        let fallbackWindow = UInt64(profile.extraEnv["model_context_window"] ?? "")
+            ?? CodexModelCatalogStore.aggregationWorkingWindow
         return profile.codexModelEntries.map { entry in
             AggregationPublishedModel(
                 key: key,

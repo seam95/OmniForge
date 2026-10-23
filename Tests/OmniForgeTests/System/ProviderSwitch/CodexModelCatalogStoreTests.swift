@@ -349,6 +349,48 @@ final class CodexModelCatalogStoreTests: XCTestCase {
 
     /// 未确认模型（含新别名/视觉变体）声明 `["text","image"]`，
     /// 否则 Codex 会在添加图片时直接拦截聚合模式下的多模态模型。
+    /// 回归：直连目录必须使用表单里的逐模型窗口。此前统一写 1M，
+    /// 128K/256K 模型会被 Codex 按 1M 发送，直到上游拒绝。
+    func test_writeCatalog_usesPerModelContextWindows() throws {
+        let profile = ProviderProfile(
+            id: "relay",
+            name: "Relay",
+            tool: .codex,
+            baseURL: "https://relay.example.com/v1",
+            token: "sk-test",
+            reasoningEffort: "high",
+            codexModels: ["small-128k", "big-1m"],
+            modelDisplayNames: ["Small", ""],
+            modelContextWindows: ["128000", "1000000"],
+            managedBy: ProviderProfile.managedByMarker
+        )
+        try store.writeCatalog(for: profile)
+
+        let models = try readModels()
+        XCTAssertEqual(models.count, 2)
+        XCTAssertEqual(models[0]["context_window"] as? Int, 128_000)
+        XCTAssertEqual(models[0]["max_context_window"] as? Int, 128_000)
+        XCTAssertEqual(models[0]["display_name"] as? String, "Small", "逐模型显示名生效")
+        XCTAssertEqual(models[1]["context_window"] as? Int, 1_000_000)
+    }
+
+    func test_writeCatalog_fallsBackToProviderWindowWhenModelWindowMissing() throws {
+        let profile = ProviderProfile(
+            id: "relay",
+            name: "Relay",
+            tool: .codex,
+            baseURL: "https://relay.example.com/v1",
+            token: "sk-test",
+            codexModels: ["m"],
+            extraEnv: ["model_context_window": "256000"],
+            managedBy: ProviderProfile.managedByMarker
+        )
+        try store.writeCatalog(for: profile)
+        let row = try XCTUnwrap(try readModels().first)
+        XCTAssertEqual(row["context_window"] as? Int, 256_000)
+        XCTAssertEqual(row["max_context_window"] as? Int, 256_000)
+    }
+
     func test_writeCatalog_infersInputModalitiesFailOpen() throws {
         let profile = makeProfile(name: "OpenCode", key: "opencode-go", model: "deepseek-v4.1-flash")
         try store.writeCatalog(for: profile)
