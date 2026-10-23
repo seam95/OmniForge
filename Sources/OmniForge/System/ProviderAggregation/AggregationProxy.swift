@@ -60,6 +60,7 @@ final class AggregationProxy: AggregationProxying {
     private let resolver: AggregationResolving
     private let modelLister: AggregationProxyModelListing
     private let forwarder: AggregationForwarding
+    private let sealStore: AggregationRefusedSealStore
     private let defaults: UserDefaults
     /// 连接数据面队列。每连接一个独立状态机，无共享可变状态。
     private let connectionQueue = DispatchQueue(label: "AggregationProxy.connections")
@@ -74,11 +75,13 @@ final class AggregationProxy: AggregationProxying {
         resolver: AggregationResolving,
         modelLister: AggregationProxyModelListing,
         forwarder: AggregationForwarding,
+        sealStore: AggregationRefusedSealStore = .shared,
         defaults: UserDefaults = .standard
     ) {
         self.resolver = resolver
         self.modelLister = modelLister
         self.forwarder = forwarder
+        self.sealStore = sealStore
         self.defaults = defaults
     }
 
@@ -183,7 +186,7 @@ final class AggregationProxy: AggregationProxying {
                     protocol: clientProtocol
                 ))
             }
-            return .forward(request: request, target: target, protocol: clientProtocol)
+            return forwardRequest(request, to: target, protocol: clientProtocol)
         case .anthropicMessages, .openAIResponses, .openAIChatCompletions:
             guard let tool = clientProtocol.modelIDTool else {
                 return .respond(Self.jsonResponse(statusCode: 404, body: ["error": "not_found"]))
@@ -201,11 +204,11 @@ final class AggregationProxy: AggregationProxying {
             let model = AggregationRequestParser.model(from: sanitized.body) ?? ""
             switch resolver.resolve(tool: tool, model: model) {
             case .plain(let target):
-                return .forward(request: sanitized, target: target, protocol: clientProtocol)
+                return forwardRequest(sanitized, to: target, protocol: clientProtocol)
             case .hit(let target, let upstreamModel):
-                return .forward(
-                    request: Self.requestWithModel(sanitized, model: upstreamModel),
-                    target: target,
+                return forwardRequest(
+                    Self.requestWithModel(sanitized, model: upstreamModel),
+                    to: target,
                     protocol: clientProtocol
                 )
             case .miss(let miss):
@@ -216,6 +219,21 @@ final class AggregationProxy: AggregationProxying {
                 ))
             }
         }
+    }
+
+    /// 转发前按目标预清洗：该目标此前拒绝过的 sealed reasoning/compaction 不再发送。
+    private func forwardRequest(
+        _ request: AggregationHTTPRequest,
+        to target: AggregationProxyTarget,
+        protocol clientProtocol: AggregationClientProtocol
+    ) -> AggregationDispatch {
+        let body = sealStore.removingRefused(from: request.body, targetKey: target.key)
+            ?? request.body
+        return .forward(
+            request: Self.requestWithBody(request, body: body),
+            target: target,
+            protocol: clientProtocol
+        )
     }
 
     // MARK: - 聚合式搬运（仅供单测/冒烟）
@@ -346,61 +364,132 @@ final class AggregationProxy: AggregationProxying {
                 connection.cancel()
             }
         case .forward(let forwarded, let target, let clientProtocol):
-            // 首块前写状态行 + 转发头（剔除 content-length/content-encoding，标 Connection: close），
-            // onChunk 逐块写 socket，onComplete 关闭连接（close-delimited，SSE 以连接关闭为结束边界）。
-            //
-            // 关闭前必须等已排队的 send 全部写出：`cancel()` 会丢弃尚未发出的数据，
-            // 最后一块通常含 `response.completed`；丢掉后 Codex 报
-            // 「stream closed before response.completed」并触发 1/5 重连。
-            let drain = AggregationStreamDrain()
-            var headWritten = false
-            let trace = AggregationRequestTrace.shared.begin(
-                request: forwarded, target: target, protocol: clientProtocol
+            forwardWithSealRetry(
+                forwarded, to: target, protocol: clientProtocol, on: connection
             )
-            forwarder.stream(
-                request: forwarded,
-                to: target,
-                protocol: clientProtocol,
-                onHead: { [weak self] statusCode, headers in
-                    trace.setStatus(statusCode)
-                    guard let self else { return }
-                    drain.beginSend()
-                    self.writeForwardHead(statusCode: statusCode, headers: headers, on: connection) {
-                        if drain.endSend() { connection.cancel() }
-                    }
-                    headWritten = true
-                },
-                onChunk: { chunk in
-                    trace.addResponseBytes(chunk.count)
+        }
+    }
+
+    /// 转发并处理跨供应商 sealed reasoning（对齐 magpie 的 `foreignReasoning` 重试）。
+    ///
+    /// 2xx 行为不变：收到响应头立即写回并逐块转发。4xx 先缓冲错误体：
+    /// - 命中“别家密封内容读不了” → 记录被拒的 seal，去掉 reasoning 重试一次；
+    ///   仍失败且还有 compaction → 去掉 compaction 再试一次；
+    /// - 其他错误 → 原样写回。
+    /// 只有确认不需要重试才向客户端写第一个字节，所以重试对客户端透明。
+    private func forwardWithSealRetry(
+        _ original: AggregationHTTPRequest,
+        to target: AggregationProxyTarget,
+        protocol clientProtocol: AggregationClientProtocol,
+        on connection: NWConnection,
+        attempt: Int = 0,
+        body: Data? = nil
+    ) {
+        let request = Self.requestWithBody(original, body: body ?? original.body)
+        let trace = AggregationRequestTrace.shared.begin(
+            request: request, target: target, protocol: clientProtocol
+        )
+        let drain = AggregationStreamDrain()
+        var headWritten = false
+        var pendingHead: (Int, [String: String])?
+        var pendingBody = Data()
+        let bufferLimit = 64 * 1024
+
+        forwarder.stream(
+            request: request,
+            to: target,
+            protocol: clientProtocol,
+            onHead: { [weak self] statusCode, headers in
+                trace.setStatus(statusCode)
+                guard let self else { return }
+                // 4xx 且不是事件流：先缓冲，等 body 判断是否是可重试的 seal 错误。
+                if statusCode >= 400,
+                   headers["content-type"]?.contains("text/event-stream") != true {
+                    pendingHead = (statusCode, headers)
+                    return
+                }
+                headWritten = true
+                drain.beginSend()
+                self.writeForwardHead(statusCode: statusCode, headers: headers, on: connection) {
+                    if drain.endSend() { connection.cancel() }
+                }
+            },
+            onChunk: { [weak self] chunk in
+                trace.addResponseBytes(chunk.count)
+                guard let self else {
+                    connection.cancel()
+                    return
+                }
+                if headWritten {
                     drain.beginSend()
                     connection.send(content: chunk, completion: .contentProcessed { _ in
                         if drain.endSend() { connection.cancel() }
                     })
-                },
-                onComplete: { [weak self] error in
+                    return
+                }
+                pendingBody.append(chunk)
+                guard pendingBody.count > bufferLimit, let head = pendingHead else { return }
+                // 错误体过大：不再重试，直接写头 + 已缓冲内容，后续块恢复流式。
+                headWritten = true
+                pendingHead = nil
+                self.writeForwardHead(statusCode: head.0, headers: head.1, on: connection) {
+                    drain.beginSend()
+                    connection.send(content: pendingBody, completion: .contentProcessed { _ in
+                        if drain.endSend() { connection.cancel() }
+                    })
+                }
+                pendingBody.removeAll()
+            },
+            onComplete: { [weak self] error in
+                guard let self else {
+                    connection.cancel()
+                    return
+                }
+                if headWritten {
                     AggregationRequestTrace.shared.finish(trace, error: error)
-                    guard let self else {
+                    if drain.finish() { connection.cancel() }
+                    // 兜底：send 完成回调异常缺失时不得悬挂客户端连接。
+                    DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
                         connection.cancel()
+                    }
+                    return
+                }
+                if let head = pendingHead {
+                    if let retry = AggregationSealSanitizer.retryBody(
+                        after: request.body, errorBody: pendingBody, attempt: attempt
+                    ) {
+                        self.sealStore.record(targetKey: target.key, seals: retry.seals)
+                        trace.noteRetry()
+                        AggregationRequestTrace.shared.finish(trace, error: error)
+                        self.forwardWithSealRetry(
+                            original, to: target, protocol: clientProtocol,
+                            on: connection, attempt: attempt + 1, body: retry.body
+                        )
                         return
                     }
-                    if headWritten {
-                        if drain.finish() { connection.cancel() }
-                        // 兜底：send 完成回调异常缺失时不得悬挂客户端连接。
-                        DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
+                    // 不可重试：原样写回缓冲的 4xx。
+                    AggregationRequestTrace.shared.finish(trace, error: error)
+                    self.writeForwardHead(statusCode: head.0, headers: head.1, on: connection) {
+                        guard !pendingBody.isEmpty else {
                             connection.cancel()
+                            return
                         }
-                    } else {
-                        // 上游不可达/构造失败：还没写任何字节 → 补 502 信封。
-                        self.writeResponse(
-                            Self.missResponse(statusCode: 502, message: "upstream unreachable", protocol: clientProtocol),
-                            on: connection
-                        ) {
+                        connection.send(content: pendingBody, completion: .contentProcessed { _ in
                             connection.cancel()
-                        }
+                        })
                     }
+                    return
                 }
-            )
-        }
+                // 上游不可达/构造失败：还没写任何字节 → 补 502 信封。
+                AggregationRequestTrace.shared.finish(trace, error: error)
+                self.writeResponse(
+                    Self.missResponse(statusCode: 502, message: "upstream unreachable", protocol: clientProtocol),
+                    on: connection
+                ) {
+                    connection.cancel()
+                }
+            }
+        )
     }
 
     /// 本地应答：状态行 + 头（含 Content-Length）+ 体。恒带 Connection: close。

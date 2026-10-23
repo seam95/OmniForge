@@ -6,6 +6,7 @@ import XCTest
 final class AggregationProxyTests: XCTestCase {
     private var proxy: AggregationProxy!
     private var forwarder: StubForwarder!
+    private var sealStore: AggregationRefusedSealStore!
     private var defaultTarget: AggregationProxyTarget!
     private var kimiTarget: AggregationProxyTarget!
 
@@ -27,6 +28,8 @@ final class AggregationProxyTests: XCTestCase {
             stackModels: [ClaudeStackModel(model: "k3", displayName: "Kimi K3", oneM: false)]
         )
         forwarder = StubForwarder()
+        sealStore = AggregationRefusedSealStore()
+        sealStore.reset()
         proxy = AggregationProxy(
             resolver: AggregationTargetResolver(
                 stack: .init(enabled: true, members: ["kimi"], keys: ["kimi": "kimi"]),
@@ -35,7 +38,8 @@ final class AggregationProxyTests: XCTestCase {
                 defaultTarget: defaultTarget
             ),
             modelLister: StubModelLister(),
-            forwarder: forwarder
+            forwarder: forwarder,
+            sealStore: sealStore
         )
     }
 
@@ -170,6 +174,22 @@ final class AggregationProxyTests: XCTestCase {
         let body = #"{"model":"deepseek-reasoner","store":true,"input":[{"type":"reasoning","id":"rs_old","summary":[]}]}"#
         _ = proxy.handle(post("/v1/responses", body: body))
         XCTAssertEqual(forwarder.lastRequest?.body, Data(body.utf8))
+    }
+
+    /// 该目标此前拒绝过别家的 sealed reasoning：后续请求转发前直接去掉，不再每轮失败。
+    func test_openAIResponses_precleansSealRefusedByTarget() throws {
+        let body = #"{"model":"deepseek-reasoner","input":[{"type":"reasoning","id":"rs_1","encrypted_content":"sealed-x"},{"type":"message","role":"user"}]}"#
+        sealStore.record(
+            targetKey: "deepseek",
+            seals: AggregationSealSanitizer.seals(in: Data(body.utf8))
+        )
+
+        _ = proxy.handle(post("/v1/responses", body: body))
+        let sent = try XCTUnwrap(forwarder.lastRequest)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: sent.body) as? [String: Any])
+        let items = try XCTUnwrap(object["input"] as? [[String: Any]])
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items.first?["type"] as? String, "message")
     }
 
     func test_prefixedModel_rewritesBodyModelToUpstreamNameBeforeForwarding() {
