@@ -16,6 +16,7 @@ final class AggregationRouteTableTests: XCTestCase {
         XCTAssertEqual(AggregationRouteTable.protocolOf(method: "POST", path: "/v1/responses/compact"), .openAIResponses)
         XCTAssertEqual(AggregationRouteTable.protocolOf(method: "POST", path: "/codex/v1/responses/compact"), .openAIResponses)
         XCTAssertEqual(AggregationRouteTable.protocolOf(method: "POST", path: "/chat/completions"), .openAIChatCompletions)
+        XCTAssertEqual(AggregationRouteTable.protocolOf(method: "POST", path: "/v1/chat/completions"), .openAIChatCompletions)
         XCTAssertEqual(AggregationRouteTable.protocolOf(method: "POST", path: "/v1/v1/chat/completions"), .openAIChatCompletions)
         XCTAssertEqual(AggregationRouteTable.protocolOf(method: "GET", path: "/health"), .health)
         XCTAssertEqual(AggregationRouteTable.protocolOf(method: "GET", path: "/status"), .health)

@@ -57,6 +57,7 @@ enum AggregationRouteTable {
              ("GET", "/codex/v1/responses"):
             return .websocketProbe
         case ("POST", "/chat/completions"),
+             ("POST", "/v1/chat/completions"),
              ("POST", "/v1/v1/chat/completions"):
             return .openAIChatCompletions
         // 透明端点（SPEC §9）：`/alpha/search` 与 `/images/generations`、`/images/edits`
