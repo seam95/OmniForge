@@ -430,15 +430,17 @@ final class AggregationProxy: AggregationProxying {
                 pendingBody.append(chunk)
                 guard pendingBody.count > bufferLimit, let head = pendingHead else { return }
                 // 错误体过大：不再重试，直接写头 + 已缓冲内容，后续块恢复流式。
+                // 必须先取快照：completion 异步执行，届时 pendingBody 已被后续块复用。
+                let buffered = pendingBody
                 headWritten = true
                 pendingHead = nil
+                pendingBody.removeAll()
                 self.writeForwardHead(statusCode: head.0, headers: head.1, on: connection) {
                     drain.beginSend()
-                    connection.send(content: pendingBody, completion: .contentProcessed { _ in
+                    connection.send(content: buffered, completion: .contentProcessed { _ in
                         if drain.endSend() { connection.cancel() }
                     })
                 }
-                pendingBody.removeAll()
             },
             onComplete: { [weak self] error in
                 guard let self else {

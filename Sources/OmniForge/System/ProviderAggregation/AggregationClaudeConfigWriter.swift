@@ -109,7 +109,7 @@ final class AggregationClaudeConfigWriter: AggregationClaudeConfigWriting {
                 env["ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME"] = first.displayName
             }
 
-            // MAX 窗口 = 已发布非 1M 模型窗口最小值；恰为默认 200K 时不写（不额外约束客户端）。
+            // MAX 窗口 = 默认发布模型（四档别名共同指向的第一个）的窗口；恰为默认 200K 时不写。
             if let maxWindow = Self.maxContextTokens(published: published) {
                 env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = String(maxWindow)
             }

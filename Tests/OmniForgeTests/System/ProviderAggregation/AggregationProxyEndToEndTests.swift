@@ -117,6 +117,25 @@ final class AggregationProxyEndToEndTests: XCTestCase {
         XCTAssertTrue(text.contains("data: two"), "末块必须到达——close-delimited 不得截断")
     }
 
+    /// 4xx 错误体超过缓冲上限时也要完整写回，不能因为提前清空 pendingBody 丢体。
+    func test_endToEnd_large4xxBodyIsNotDropped() throws {
+        let big = String(repeating: "x", count: 70 * 1024)
+        let errorBody = #"{"error":{"message":"\#(big)"}}"#
+        let head = "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: \(errorBody.utf8.count)\r\n\r\n"
+        let stub = try StubUpstreamServer(responseHead: head, chunks: [errorBody], delayBeforeSecondChunk: 0)
+        defer { stub.stop() }
+        let proxy = makeProxy(defaultTarget: stubTarget(stub))
+        try proxy.start()
+        defer { proxy.stop() }
+        let port = try XCTUnwrap(proxy.resolvedPort)
+
+        let (statusCode, data) = try postThroughProxy(
+            port: port, path: "/v1/responses", body: #"{"model":"m","input":[]}"#
+        )
+        XCTAssertEqual(statusCode, 400)
+        XCTAssertEqual(data.count, errorBody.utf8.count, "超限错误体必须完整转发")
+    }
+
     /// 跨供应商 sealed reasoning：上游 400 报 `invalid_encrypted_content` 时，
     /// 代理去掉 reasoning 重试；客户端只看到最终 200，不看到第一次失败。
     func test_endToEnd_foreignSealRetriesWithoutReasoning() throws {
