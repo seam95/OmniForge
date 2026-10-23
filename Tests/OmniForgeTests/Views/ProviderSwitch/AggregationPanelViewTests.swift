@@ -3,8 +3,7 @@ import XCTest
 
 /// 聚合面板可测成员：模式分段字符串、默认卡片无移除钮、官方账号不入可选名单、
 /// 直连互斥判定、双语言非空；外加二期 UI 面的两个纯函数入口——
-/// `ClaudeStackModelsField.normalize`/`fromMapping`（SPEC §4 / P1-5 stackModels 编辑区）与
-/// `AggregationPanelView.officialDefaultCodexHint`（SPEC §3 / P0-3 官方默认 Codex 提示），
+/// `ClaudeStackModelsField.normalize`/`fromMapping`（SPEC §4 / P1-5 stackModels 编辑区），
 /// 以及 `ProfileEditorView` 保存路径对三组新字段（stackModels / Codex 显示名平行数组）的承载。
 @MainActor
 final class AggregationPanelViewTests: XCTestCase {
@@ -144,7 +143,6 @@ final class AggregationPanelViewTests: XCTestCase {
             XCTAssertFalse(strings.providerMissUnknown.isEmpty)
             XCTAssertFalse(strings.providerMissRemoved.isEmpty)
             XCTAssertFalse(strings.providerMissDeleted.isEmpty)
-            XCTAssertFalse(strings.providerAggregationOfficialDefaultCodexHint.isEmpty)
             XCTAssertFalse(strings.providerStackModelsSectionTitle.isEmpty)
             XCTAssertFalse(strings.providerStackModelsAdd.isEmpty)
             XCTAssertFalse(strings.providerStackModelsDelete.isEmpty)
@@ -323,50 +321,6 @@ final class AggregationPanelViewTests: XCTestCase {
                 active: .official, profileIDs: [], officialProfileID: nil),
             "Claude 侧无官方卡合成 → 无候选"
         )
-    }
-
-    func test_officialDefaultCodexHint_shownOnlyForCodexWithOfficialDefault() throws {
-        let official = ProviderProfile(
-            id: "openai", name: "OpenAI", tool: .codex,
-            baseURL: "https://api.openai.com/v1", token: ""
-        )
-        let thirdParty = ProviderProfile(
-            id: "kimi-codex", name: "Kimi", tool: .codex,
-            baseURL: "https://api.kimi.com/v1", token: "sk"
-        )
-
-        let codexOfficial = AggregationPanelView(
-            manager: makeManager(inAggregation: true, defaultID: "openai", members: ["openai"],
-                                 tool: .codex, profiles: [official]),
-            switchManager: makeSwitchManager(), tool: .codex, strings: .zhHans
-        )
-        XCTAssertEqual(
-            codexOfficial.officialDefaultCodexHint(manager: codexOfficial.manager),
-            Strings.zhHans.providerAggregationOfficialDefaultCodexHint
-        )
-
-        let codexThirdParty = AggregationPanelView(
-            manager: makeManager(inAggregation: true, defaultID: "kimi-codex", members: ["kimi-codex"],
-                                 tool: .codex, profiles: [thirdParty]),
-            switchManager: makeSwitchManager(), tool: .codex, strings: .zhHans
-        )
-        XCTAssertNil(codexThirdParty.officialDefaultCodexHint(manager: codexThirdParty.manager))
-
-        // Claude 侧恒不显示：官方 Anthropic 默认走既有 BASE_URL + token 替换路径（SPEC §3）。
-        let claudeOfficial = AggregationPanelView(
-            manager: makeManager(inAggregation: true, defaultID: "openai", members: ["openai"],
-                                 tool: .claudeCode, profiles: [official]),
-            switchManager: makeSwitchManager(), tool: .claudeCode, strings: .zhHans
-        )
-        XCTAssertNil(claudeOfficial.officialDefaultCodexHint(manager: claudeOfficial.manager))
-
-        // 未进入聚合 → 无默认那家，不显示。
-        let exited = AggregationPanelView(
-            manager: makeManager(inAggregation: false, defaultID: "openai", members: ["openai"],
-                                 tool: .codex, profiles: [official]),
-            switchManager: makeSwitchManager(), tool: .codex, strings: .zhHans
-        )
-        XCTAssertNil(exited.officialDefaultCodexHint(manager: exited.manager))
     }
 
     /// 陈旧横幅正文与标题不得互相矛盾：`unverified`（进程表不可得）时 `others` 只表示

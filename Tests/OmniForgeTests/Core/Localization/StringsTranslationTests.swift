@@ -67,7 +67,6 @@ final class StringsTranslationTests: XCTestCase {
                     "providerAggregationNoteDefault", "providerAggregationNoteMembersFormat", "providerAggregationNoteEmpty",
                     "providerAggregationNoteNoFailover", "providerAggregationNoteRestartCodex",
                     "providerAggregationOfficialNote", "providerAggregationOfficialReason",
-                    "providerAggregationOfficialDefaultCodexHint",
                     "providerAggregationSectionDefault", "providerAggregationSectionAddedFormat",
                     "providerAggregationSectionAvailableFormat", "providerAggregationAdd", "providerAggregationRemove",
                     "providerAggregationSetDefault", "providerAggregationEnteredClaude", "providerAggregationEnteredCodex",

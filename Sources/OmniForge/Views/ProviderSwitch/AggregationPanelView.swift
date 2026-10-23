@@ -55,8 +55,6 @@ struct AggregationPanelView: View {
                 // 没有这个入口就再也切不回官方默认（候选区显式排除官方）。
                 officialEntryCard
 
-                officialDefaultCodexHint
-
                 // 可加入候选列表（若存在候选者）
                 if !joinCandidates.isEmpty {
                     availableSection
@@ -119,21 +117,6 @@ struct AggregationPanelView: View {
     /// 直连互斥判定：该工具聚合生效时直连动作禁用（SPEC 6.10）。
     var directActionsDisabled: Bool {
         manager.isAggregating(tool)
-    }
-
-    /// 官方默认 Codex 提示（SPEC 2026-10-17 方案 B 的 UI 面）：默认那家是 Codex 官方时
-    /// 官方行来自 Codex 自维护的内置目录缓存、请求经本机代理透传 OAuth 凭证——
-    /// 说明这条转发路径与「官方缓存未就绪时官方行暂缺」的降级。
-    ///
-    /// 两个条件都必需：仅 Codex 侧有此行为（Claude 官方默认照走 BASE_URL + token 替换）；
-    /// 且只在聚合生效且有默认那家时出现。
-    func officialDefaultCodexHint(manager: ProviderAggregationManager) -> String? {
-        guard tool == .codex,
-              let member = manager.members(tool: tool).first(where: { $0.isDefault }),
-              member.isOfficial else {
-            return nil
-        }
-        return strings.providerAggregationOfficialDefaultCodexHint
     }
 
     // MARK: - 聚合池成员与候选列表
@@ -647,26 +630,6 @@ struct AggregationPanelView: View {
 
     // MARK: - 提示行与缓存
 
-    /// 官方默认 Codex 提示行（见 `officialDefaultCodexHint`）：一行说明，不单独成分区。
-    @ViewBuilder
-    private var officialDefaultCodexHint: some View {
-        if let hint = officialDefaultCodexHint(manager: manager) {
-            noteRow(hint)
-        }
-    }
-
-    private func noteRow(_ text: String) -> some View {
-        HStack(alignment: .top, spacing: 5) {
-            Image(systemName: "info.circle")
-                .font(.system(size: 10))
-            Text(text)
-                .font(.system(size: 10.5))
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 2)
-    }
-
     private var cacheHint: some View {
         HStack(alignment: .top, spacing: 5) {
             Image(systemName: "info.circle")
@@ -738,7 +701,7 @@ struct AggregationPanelView: View {
     /// `unverified`（进程表读不出来）时不发正文：那一态下 `others` 只表示「你上次确认后
     /// 目录或登录变了」（`CodexStaleClientDetector`），并不等于「有客户端还在用旧目录」——
     /// 配 `providerAggregationStaleOthersBody` 会自相矛盾（标题才说不知道有谁在跑）。
-    /// 非 `private`：与 `officialDefaultCodexHint` 同款，供单测直接锁定这条互斥规则。
+    /// 非 `private`：与官方默认判定同款，供单测直接锁定这条互斥规则。
     func staleMessage(_ stale: CodexStaleClients) -> String? {
         if stale.daemon {
             return strings.providerAggregationStaleDaemonBody
@@ -788,7 +751,7 @@ struct AggregationPanelView: View {
         return undo.id
     }
 
-    /// 非 `private`：供单测直接锁定官方回落规则（与 `officialDefaultCodexHint` 同款）。
+    /// 非 `private`：供单测直接锁定官方回落规则。
     static func resolveDefaultCandidate(
         active: ActiveProvider,
         profileIDs: [String],

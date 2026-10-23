@@ -1500,8 +1500,6 @@ struct Strings: Equatable {
     let providerAggregationOfficialNote: String
     /// 官方账号不可加入的原因（行内说明）。
     let providerAggregationOfficialReason: String
-    /// 官方账号做 Codex 默认时目录不写的提示（成员模型不进 /model）。
-    let providerAggregationOfficialDefaultCodexHint: String
     /// 名单分区标题：默认。
     let providerAggregationSectionDefault: String
     /// 名单分区标题：已添加（%ld = 数量）。
