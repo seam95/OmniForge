@@ -15,6 +15,12 @@ enum AggregationSealSanitizer {
         options: [.caseInsensitive]
     )
 
+    /// OpenAI 对“按 id 查不到 item”的拒绝；item 可能是别家生成的 sealed reasoning。
+    private static let unreadableItemPattern = try! NSRegularExpression(
+        pattern: #"item with id '?([A-Za-z]+_[A-Za-z0-9_-]+)'? not found"#,
+        options: [.caseInsensitive]
+    )
+
     /// Responses 里由供应商密封的 item 类型。
     static let sealedTypes: Set<String> = ["reasoning", "compaction", "compaction_summary"]
     static let compactionTypes: Set<String> = ["compaction", "compaction_summary"]
@@ -24,6 +30,31 @@ enum AggregationSealSanitizer {
         guard let text = String(data: body, encoding: .utf8), !text.isEmpty else { return false }
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
         return foreignSealPattern.firstMatch(in: text, range: range) != nil
+    }
+
+    /// 错误体里被点名、按 id 查不到的 item（如 `Item with id 'rs_…' not found`）。
+    static func unreadableItemID(in body: Data) -> String? {
+        guard let text = String(data: body, encoding: .utf8), !text.isEmpty else { return nil }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = unreadableItemPattern.firstMatch(in: text, range: range),
+              match.numberOfRanges > 1,
+              let idRange = Range(match.range(at: 1), in: text) else {
+            return nil
+        }
+        return String(text[idRange])
+    }
+
+    /// 按 id 删除单个 input item。
+    static func removingItem(id: String, from body: Data) -> Data? {
+        guard let object = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any],
+              let items = object["input"] as? [[String: Any]] else {
+            return nil
+        }
+        let kept = items.filter { ($0["id"] as? String) != id }
+        guard kept.count != items.count else { return nil }
+        var root = object
+        root["input"] = kept
+        return (try? JSONSerialization.data(withJSONObject: root)) ?? nil
     }
 
     /// 去掉所有 reasoning item（无论是否带密封内容）。
@@ -59,9 +90,16 @@ enum AggregationSealSanitizer {
     /// 根据错误体决定下一次重试的请求体（magpie 的顺序：先 reasoning，再 compaction）。
     /// `attempt` 0 = 第一次失败；1 = 去掉 reasoning 后仍失败；>=2 不再重试。
     static func retryBody(after body: Data, errorBody: Data, attempt: Int) -> Retry? {
-        guard attempt <= 1, isForeignSealError(errorBody) else { return nil }
+        guard attempt <= 1 else { return nil }
+        let namedID = unreadableItemID(in: errorBody)
+        guard isForeignSealError(errorBody) || namedID != nil else { return nil }
+
+        // 错误体点名了具体 item：先只删它（magpie 的 `withoutUnreadable`）。
         var next: Data?
-        if attempt == 0 {
+        if let namedID {
+            next = removingItem(id: namedID, from: body)
+        }
+        if next == nil, attempt == 0 {
             next = removingReasoning(from: body)
         }
         if next == nil {
@@ -121,6 +159,8 @@ final class AggregationRefusedSealStore {
     /// 插入顺序，超过上限时淘汰最旧的目标。
     private var order: [String] = []
     private let capacity = 4096
+    /// 单目标上限：一次超长会话可能产生大量 seal，避免单个目标无限增长。
+    private let perTargetCapacity = 512
 
     func record(targetKey: String, seals: [String]) {
         guard !seals.isEmpty else { return }
@@ -128,6 +168,10 @@ final class AggregationRefusedSealStore {
         defer { lock.unlock() }
         var current = refused[targetKey] ?? []
         current.formUnion(seals)
+        if current.count > perTargetCapacity {
+            // Set 无序：按指纹排序后保留尾部，行为确定即可（只影响淘汰哪条，不影响正确性）。
+            current = Set(current.sorted().suffix(perTargetCapacity))
+        }
         refused[targetKey] = current
         order.removeAll { $0 == targetKey }
         order.append(targetKey)

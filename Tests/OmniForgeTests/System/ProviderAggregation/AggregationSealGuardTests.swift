@@ -69,6 +69,25 @@ final class AggregationSealGuardTests: XCTestCase {
         ), "最多重试两次")
     }
 
+    func test_retryBodyRemovesItemNamedByNotFoundError() throws {
+        let error = Data(#"{"error":{"message":"Item with id 'rs_1' not found. Items are not persisted when store is set to false."}}"#.utf8)
+        XCTAssertEqual(AggregationSealSanitizer.unreadableItemID(in: error), "rs_1")
+
+        let retry = try XCTUnwrap(AggregationSealSanitizer.retryBody(
+            after: body, errorBody: error, attempt: 0
+        ))
+        let kept = try items(retry.body)
+        XCTAssertFalse(kept.contains { ($0["id"] as? String) == "rs_1" })
+        XCTAssertTrue(kept.contains { ($0["id"] as? String) == "rs_2" }, "只删被点名的 item")
+    }
+
+    func test_refusedStoreCapsPerTarget() {
+        let store = AggregationRefusedSealStore()
+        store.reset()
+        store.record(targetKey: "k", seals: (0..<600).map(String.init))
+        XCTAssertEqual(store.refusedSeals(for: "k").count, 512)
+    }
+
     func test_retryBodyNilForUnrelatedError() {
         XCTAssertNil(AggregationSealSanitizer.retryBody(
             after: body, errorBody: Data(#"{"error":{"message":"bad request"}}"#.utf8), attempt: 0
