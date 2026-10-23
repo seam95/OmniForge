@@ -42,10 +42,32 @@ final class AggregationProxyEndToEndTests: XCTestCase {
     ///
     /// 每个请求用独立 ephemeral session：代理按设计一连接一请求，
     /// 共享 session 的 keep-alive 复用会撞上已关闭的连接。
-    private func postThroughProxy(port: UInt16, path: String, body: String) throws -> (Int, Data) {
+    private final class RedirectBlocker: NSObject, URLSessionTaskDelegate {
+        func urlSession(
+            _ session: URLSession,
+            task: URLSessionTask,
+            willPerformHTTPRedirection response: HTTPURLResponse,
+            newRequest request: URLRequest,
+            completionHandler: @escaping (URLRequest?) -> Void
+        ) {
+            completionHandler(nil)
+        }
+    }
+
+    private func postThroughProxy(
+        port: UInt16,
+        path: String,
+        body: String,
+        followRedirects: Bool = true
+    ) throws -> (Int, Data) {
         let semaphore = DispatchSemaphore(value: 0)
         var received: (Int, Data)?
-        let session = URLSession(configuration: .ephemeral)
+        let blocker = followRedirects ? nil : RedirectBlocker()
+        let session = URLSession(
+            configuration: .ephemeral,
+            delegate: blocker,
+            delegateQueue: nil
+        )
         var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)\(path)")!)
         request.httpMethod = "POST"
         request.httpBody = Data(body.utf8)
@@ -115,6 +137,48 @@ final class AggregationProxyEndToEndTests: XCTestCase {
         let text = String(decoding: body, as: UTF8.self)
         XCTAssertTrue(text.contains("data: one"), "首块必须到达")
         XCTAssertTrue(text.contains("data: two"), "末块必须到达——close-delimited 不得截断")
+    }
+
+    /// URLSession 已把上游 chunked 解成原始字节：转发的响应头不能再带 transfer-encoding。
+    func test_endToEnd_chunkedUpstreamHeadersAreNotForwarded() throws {
+        let stub = try StubUpstreamServer(
+            responseHead: "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n",
+            chunks: ["2\r\n{}", "\r\n0\r\n\r\n"],
+            delayBeforeSecondChunk: 0
+        )
+        defer { stub.stop() }
+        let proxy = makeProxy(defaultTarget: stubTarget(stub))
+        try proxy.start()
+        defer { proxy.stop() }
+        let port = try XCTUnwrap(proxy.resolvedPort)
+
+        let (statusCode, data) = try postThroughProxy(
+            port: port, path: "/v1/responses", body: #"{"model":"m","input":[]}"#
+        )
+        XCTAssertEqual(statusCode, 200)
+        XCTAssertEqual(data, Data("{}".utf8))
+    }
+
+    /// 代理不跟随 3xx：否则会把凭证带到新主机，或在同一条客户端连接上写两次状态行。
+    func test_endToEnd_redirectIsNotFollowed() throws {
+        let stub = try StubUpstreamServer(
+            responseHead: "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/elsewhere\r\nContent-Length: 2\r\n\r\n",
+            chunks: ["{}"],
+            delayBeforeSecondChunk: 0
+        )
+        defer { stub.stop() }
+        let proxy = makeProxy(defaultTarget: stubTarget(stub))
+        try proxy.start()
+        defer { proxy.stop() }
+        let port = try XCTUnwrap(proxy.resolvedPort)
+
+        let (statusCode, data) = try postThroughProxy(
+            port: port, path: "/v1/responses", body: #"{"model":"m","input":[]}"#,
+            followRedirects: false
+        )
+        XCTAssertEqual(statusCode, 302)
+        XCTAssertEqual(data, Data("{}".utf8))
+        XCTAssertEqual(stub.requestCount, 1, "不得向 Location 再发一次")
     }
 
     /// 4xx 错误体超过缓冲上限时也要完整写回，不能因为提前清空 pendingBody 丢体。

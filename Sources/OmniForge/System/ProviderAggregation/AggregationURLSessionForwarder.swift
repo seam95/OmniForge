@@ -147,14 +147,19 @@ final class AggregationURLSessionForwarder: NSObject, AggregationForwarding {
         return streams.removeValue(forKey: task.taskIdentifier)
     }
 
-    /// 响应头透传：键小写化；剔除 `content-encoding` 与 `content-length`
-    /// （URLSession 已自动解压；长度对不上会让客户端截断）。
+    /// 响应头透传：键小写化；剔除 `content-encoding`、`content-length` 与
+    /// `transfer-encoding`（URLSession 已解压/去 chunk；长度和分块由代理自己用
+    /// close-delimited 表达，头再带一次会让客户端二次解析）。
     private static func forwardedHeaders(_ raw: [AnyHashable: Any]) -> [String: String] {
         var headers: [String: String] = [:]
         for (key, value) in raw {
             guard let key = key as? String, let value = value as? String else { continue }
             let lowered = key.lowercased()
-            if lowered == "content-encoding" || lowered == "content-length" { continue }
+            if lowered == "content-encoding"
+                || lowered == "content-length"
+                || lowered == "transfer-encoding" {
+                continue
+            }
             headers[lowered] = value
         }
         return headers
@@ -181,6 +186,18 @@ extension AggregationURLSessionForwarder: URLSessionDataDelegate {
         stream?.headers = headers
         stream?.onHead(statusCode, headers)
         completionHandler(.allow)
+    }
+
+    /// 不跟随重定向：代理只转发到解析出的那家上游，跟随 3xx 会把凭证带到别的主机，
+    /// 也可能让同一条连接写两次状态行。返回 nil → 3xx 原样交给客户端。
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
