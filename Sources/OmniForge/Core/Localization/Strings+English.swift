@@ -1623,5 +1623,10 @@ extension Strings {
         translationResultLabel: "Translation",
         translationHotkeyUpdateFailed: "Couldn't update the shortcut. Try again.",
         translationHistoryUnavailable: "History is unavailable",
+        translationClear: "Clear",
+        translationPaste: "Paste",
+        translationIdentifierSplitFormat: "Split: %@",
+        translationLanguageAutoDetectedFormat: "Auto · %@",
+        translationTargetAutoResolvedFormat: "Auto · %@",
     )
 }

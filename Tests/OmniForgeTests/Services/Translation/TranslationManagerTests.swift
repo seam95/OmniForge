@@ -170,6 +170,7 @@ final class TranslationManagerTests: XCTestCase {
     private var reader: EventRecordingReader!
     private var resolver: FakeTranslationResolver!
     private var pasteboard: FakePasteboardWriter!
+    private var stubbedClipboardText: String?
     private var eventLog: EventLog!
     private var isFeatureAvailable = true
     private var manager: TranslationManager!
@@ -186,6 +187,7 @@ final class TranslationManagerTests: XCTestCase {
         reader = EventRecordingReader()
         resolver = FakeTranslationResolver()
         pasteboard = FakePasteboardWriter()
+        stubbedClipboardText = nil
         eventLog = EventLog()
         reader.log = eventLog
         presenter.log = eventLog
@@ -207,6 +209,7 @@ final class TranslationManagerTests: XCTestCase {
             resolver: resolver,
             reader: reader,
             pasteboard: pasteboard,
+            clipboardReader: { [weak self] in self?.stubbedClipboardText },
             isFeatureAvailable: { [weak self] in self?.isFeatureAvailable ?? false },
             // 既有用例手动 submit，关闭防抖自动翻译以保持请求次数断言稳定；
             // 自动翻译由 TranslationAutoTranslateTests 单独覆盖。
@@ -442,15 +445,59 @@ final class TranslationManagerTests: XCTestCase {
         XCTAssertEqual(manager.sourceText, "选中的文本")
     }
 
-    func test_noSelectionPreservesDraft() {
+    func test_noSelectionPreservesDraftWithoutNoisyNotice() {
         manager.updateText("未翻译草稿")
         reader.stubbedResult = .failure(.noSelection)
 
         manager.handleHotkeyTrigger()
 
         XCTAssertEqual(manager.sourceText, "未翻译草稿", "无选区不得清空草稿")
-        XCTAssertEqual(manager.notice, .noSelection)
+        XCTAssertNil(manager.notice, "空选区呼出直接聚焦输入框，不再在底部堆叠多余提示")
         XCTAssertEqual(presenter.showCount, 1)
+    }
+
+    func test_clearInputAndPasteFromClipboardActions() async {
+        engine.autoResult = makeResult(text: "模型上下文窗口")
+        stubbedClipboardText = "   "
+        manager.pasteFromClipboard()
+        XCTAssertEqual(manager.sourceText, "", "空白剪贴板不应写入或提交")
+        XCTAssertTrue(engine.receivedRequests.isEmpty)
+
+        stubbedClipboardText = "modelContextWindows"
+        manager.pasteFromClipboard()
+        await waitUntil { manager.result != nil }
+
+        XCTAssertEqual(manager.sourceText, "modelContextWindows")
+        XCTAssertEqual(engine.receivedRequests.last?.text, "modelContextWindows")
+        XCTAssertEqual(engine.receivedRequests.last?.textForTranslation, "model context windows")
+        XCTAssertEqual(manager.result?.text, "模型上下文窗口")
+        XCTAssertEqual(store.entries.first?.request.text, "modelContextWindows", "历史记录保留原始标识符")
+
+        manager.clearInput()
+        XCTAssertEqual(manager.sourceText, "")
+        XCTAssertNil(manager.result)
+        XCTAssertEqual(presenter.showCount, 0, "卡片内清空不应重新触发窗口前置切换")
+    }
+
+    func test_swapLanguagesFromAutoDetectedResultUsesResolvedPair() async {
+        preferences.sourceLanguage = nil
+        preferences.target = .automatic
+        XCTAssertFalse(manager.canSwapLanguages, "自动检测且尚无结果时不可交换")
+
+        engine.autoResult = TranslationResult(
+            text: "你好",
+            sourceLanguage: "en",
+            targetLanguage: "zh-Hans",
+            engine: .system
+        )
+        manager.updateText("hello")
+        manager.submit()
+        await waitUntil { manager.result != nil }
+
+        XCTAssertTrue(manager.canSwapLanguages, "自动检测得出有效译文后允许一键交换语言")
+        manager.swapLanguages()
+        XCTAssertEqual(preferences.sourceLanguage, "zh-Hans")
+        XCTAssertEqual(preferences.target, .language("en"))
     }
 
     func test_permissionFailureStillShowsInput() {

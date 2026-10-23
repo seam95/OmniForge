@@ -67,32 +67,87 @@ struct TranslationLanguageResolver: TranslationLanguageResolving {
     }
 }
 
-/// 生产语言检测器：使用 NaturalLanguage 识别主语言。
+/// 生产语言检测器：使用 NaturalLanguage 识别主语言，并针对代码标识符与英文短词做归一化增强。
 ///
-/// 系统识别在短文本、混合语言或符号较多时置信度不可靠，因此同时要求：
-/// 最高候选置信度至少 0.6，且领先次候选至少 0.15；否则返回 `.uncertain`，
-/// 由解析层要求用户手动选择源语言，而不是猜测后发出可能错误的请求。
+/// 识别策略：
+/// 1. 不含任何字母字符（空白、纯数字、标点、符号）直接返回 `.uncertain`；
+/// 2. 先对 `camelCase` / `snake_case` 等代码标识符做空格分词归一化，避免复合标识符被误判为小语种；
+/// 3. 在常用受支持语种约束下取前候选：最高置信度 ≥ 0.6 且领先次候选 ≥ 0.15 时采信；
+///    中文简繁因共用汉字分流置信度但合计 ≥ 0.80 时，采信排名更高的中文变体；
+/// 4. 纯基础 ASCII 字母构成的短词/词组（未命中高置信度法/德/西语）兜底为英语 `en`；
+/// 5. 含非 ASCII 字符的其他脚本保留高置信度（≥ 0.75 且领先 ≥ 0.20）无约束识别。
 struct NaturalLanguageTranslationLanguageDetector: TranslationLanguageDetecting {
     /// 最高候选可被采信的最小置信度。
     static let minimumConfidence = 0.6
     /// 最高候选相对次候选的最小领先幅度。
     static let minimumLead = 0.15
 
+    private static let constrainedLanguages: [NLLanguage] = [
+        .simplifiedChinese,
+        .traditionalChinese,
+        .english,
+        .japanese,
+        .korean,
+        .french,
+        .german,
+        .spanish,
+        .russian,
+    ]
+
     func detect(_ text: String) -> TranslationLanguageDetection {
-        let recognizer = NLLanguageRecognizer()
-        recognizer.processString(text)
-        // 只关心前两名，避免为大字典做无意义排序。
-        let ranked = recognizer
+        let letters = text.filter(\.isLetter)
+        guard !letters.isEmpty else {
+            return .uncertain
+        }
+
+        let probeText = TranslationIdentifierSplitter.normalizedForLanguageDetection(text)
+        let isPureASCIILetters = letters.allSatisfy(\.isASCII)
+
+        let constrained = NLLanguageRecognizer()
+        constrained.languageConstraints = Self.constrainedLanguages
+        constrained.processString(probeText)
+        let constrainedHypotheses = constrained.languageHypotheses(withMaximum: 3)
+        let ranked = constrainedHypotheses.sorted { $0.value > $1.value }
+
+        if let best = ranked.first {
+            if best.value >= Self.minimumConfidence,
+               ranked.count == 1 || best.value - ranked[1].value >= Self.minimumLead {
+                return TranslationLanguageDetection(language: best.key.rawValue, confidence: best.value)
+            }
+
+            // 简繁同形短词（如「窗口」「模型」）常把概率均分给 zh-Hans 与 zh-Hant，合计高置信度即可采信首位。
+            if ranked.count >= 2,
+               TranslationLanguage.primaryLanguage(of: best.key.rawValue) == "zh",
+               TranslationLanguage.primaryLanguage(of: ranked[1].key.rawValue) == "zh",
+               best.value + ranked[1].value >= 0.80 {
+                return TranslationLanguageDetection(
+                    language: best.key.rawValue,
+                    confidence: min(1.0, best.value + ranked[1].value)
+                )
+            }
+        }
+
+        // 纯 ASCII 字母短词（如 apple、ctx、http server error）在未命中高置信度法/德/西语时归入英语。
+        if isPureASCIILetters {
+            let englishConfidence = constrainedHypotheses[.english] ?? Self.minimumConfidence
+            return TranslationLanguageDetection(
+                language: TranslationLanguage.english,
+                confidence: max(englishConfidence, Self.minimumConfidence)
+            )
+        }
+
+        // 非 ASCII 的其他语种脚本（如阿拉伯语、泰语、带变音符的拉丁语）保留高置信度无约束识别。
+        let unconstrained = NLLanguageRecognizer()
+        unconstrained.processString(probeText)
+        let fallbackRanked = unconstrained
             .languageHypotheses(withMaximum: 2)
             .sorted { $0.value > $1.value }
+        if let best = fallbackRanked.first,
+           best.value >= 0.75,
+           fallbackRanked.count == 1 || best.value - fallbackRanked[1].value >= 0.20 {
+            return TranslationLanguageDetection(language: best.key.rawValue, confidence: best.value)
+        }
 
-        guard let best = ranked.first, best.value >= Self.minimumConfidence else {
-            return .uncertain
-        }
-        // 存在次候选且差距不足：文本不足以可靠区分两种语言。
-        if ranked.count > 1, best.value - ranked[1].value < Self.minimumLead {
-            return .uncertain
-        }
-        return TranslationLanguageDetection(language: best.key.rawValue, confidence: best.value)
+        return .uncertain
     }
 }

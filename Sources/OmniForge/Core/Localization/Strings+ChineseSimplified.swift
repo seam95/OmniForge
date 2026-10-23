@@ -1623,5 +1623,10 @@ extension Strings {
         translationResultLabel: "译文",
         translationHotkeyUpdateFailed: "快捷键更新失败，请重试",
         translationHistoryUnavailable: "历史记录暂不可用",
+        translationClear: "清空",
+        translationPaste: "粘贴",
+        translationIdentifierSplitFormat: "拆词：%@",
+        translationLanguageAutoDetectedFormat: "自动检测 · %@",
+        translationTargetAutoResolvedFormat: "自动 · %@",
     )
 }

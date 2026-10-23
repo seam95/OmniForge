@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import XCTest
 @testable import OmniForge
 
@@ -108,5 +109,34 @@ final class TranslationWindowControllerTests: XCTestCase {
         controller.hide()
 
         XCTAssertEqual(preferences.loadWindowFrame(), frame)
+    }
+
+    func test_headerSafeAreaAndTrafficLightsAlignment() {
+        controller.show(focusInput: false)
+        guard let panel = panel() else {
+            return XCTFail("翻译浮窗未创建")
+        }
+        panel.contentView?.superview?.layoutSubtreeIfNeeded()
+
+        XCTAssertTrue(panel.styleMask.contains(.fullSizeContentView))
+        XCTAssertEqual(panel.minSize, TranslationWindowController.minimumSize)
+        XCTAssertEqual(panel.frame.size, TranslationWindowController.defaultSize)
+
+        if let host = panel.contentViewController as? NSHostingController<AnyView> {
+            XCTAssertTrue(host.safeAreaRegions.isEmpty, "必须清空 safeAreaRegions 避免自绘顶栏被下推")
+        } else {
+            XCTFail("contentViewController 应为 NSHostingController<AnyView>")
+        }
+
+        if let closeButton = panel.standardWindowButton(.closeButton) {
+            let rectInWindow = closeButton.convert(closeButton.bounds, to: nil)
+            let centerFromTop = panel.frame.height - rectInWindow.midY
+            XCTAssertEqual(
+                centerFromTop,
+                18,
+                accuracy: 4.0,
+                "红绿灯垂直中心应与自绘顶栏控件中心（18pt）同行对齐"
+            )
+        }
     }
 }

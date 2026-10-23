@@ -186,8 +186,8 @@ final class TranslationWindowController: NSObject, NSWindowDelegate, Translation
         )
         panel.title = stringsProvider().translationTitle
         panel.titleVisibility = .hidden
-        // 与剪贴板面板同一配方：内容延伸到标题栏，红绿灯浮在自绘标题行上，
-        // 避免系统标题栏与视图内标题重复；顶部 38pt 仍保留系统拖动区域。
+        // 内容延伸到透明标题栏，配合 host.safeAreaRegions = [] 消除系统顶部安全区下推，
+        // 使自绘顶栏控件中心线（y = 16pt）与系统红绿灯严格同行居中，同时不引入 NSToolbar 玻璃装饰与 minSize 偏移。
         panel.titlebarAppearsTransparent = true
         panel.styleMask.insert(.fullSizeContentView)
         panel.isReleasedWhenClosed = false
@@ -204,16 +204,20 @@ final class TranslationWindowController: NSObject, NSWindowDelegate, Translation
         // 外观偏好切换即时传导（与剪贴板 / 便签窗口同一白名单机制）。
         resolvedAppearance?.attach(panel)
 
+        let host = NSHostingController(rootView: AnyView(makeRootView()))
+        // 窗口尺寸由本控制器记忆与归一化，禁止 hosting controller 按内容固有尺寸反向改窗口大小；
+        // safeAreaRegions 置空防止 fullSizeContentView 下系统把视图整体下推一个标题栏高度。
+        host.sizingOptions = []
+        host.safeAreaRegions = []
+        hostingController = host
+        // 必须在挂载 contentViewController 之后再设置 minSize 与 frame：
+        // AppKit 挂载 contentViewController 时会按视图控制器默认约束重置窗口 minSize 与 contentSize。
+        panel.contentViewController = host
+        panel.minSize = Self.minimumSize
+
         let frame = restoredFrame()
         panel.setFrame(frame, display: false)
         rememberedFrame = frame
-
-        let host = NSHostingController(rootView: AnyView(makeRootView()))
-        // 窗口尺寸由本控制器记忆与归一化，禁止 hosting controller 按内容固有尺寸
-        // 反向改窗口大小（否则缩放后的 frame 会在下一次布局被重置）。
-        host.sizingOptions = []
-        hostingController = host
-        panel.contentViewController = host
 
         self.panel = panel
         return panel

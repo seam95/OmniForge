@@ -38,13 +38,13 @@ struct TranslationTextEditor: NSViewRepresentable {
         textView.isRichText = false
         textView.allowsUndo = true
         textView.drawsBackground = false
-        textView.font = .systemFont(ofSize: 13)
+        textView.font = .systemFont(ofSize: 13.5)
         textView.textColor = .labelColor
         textView.insertionPointColor = .labelColor
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
-        textView.textContainerInset = NSSize(width: 12, height: 12)
+        textView.textContainerInset = NSSize(width: 14, height: 12)
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.lineFragmentPadding = 0
         textView.textContainer?.containerSize = NSSize(

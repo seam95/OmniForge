@@ -176,10 +176,107 @@ final class TranslationLanguageResolverTests: XCTestCase {
         XCTAssertEqual(detector.detectedTexts, ["hello"])
     }
 
-    // MARK: - 生产检测器
+    // MARK: - 生产检测器与代码标识符分词
 
     func test_naturalLanguageDetector_returnsUncertainForUninformativeText() {
-        // 空文本没有可识别语言：必须返回不确定，而不是猜一个语言。
-        XCTAssertEqual(NaturalLanguageTranslationLanguageDetector().detect(""), .uncertain)
+        let detector = NaturalLanguageTranslationLanguageDetector()
+        // 空文本、纯数字、纯标点或纯 emoji 没有可识别语言：必须返回不确定，而不是猜测语种。
+        for text in ["", "   ", "12345", "---", "🚀🎉"] {
+            XCTAssertEqual(detector.detect(text), .uncertain, "非文本输入 \(text.debugDescription) 应返回不确定")
+        }
+    }
+
+    func test_naturalLanguageDetector_detectsShortEnglishWordsAndCodeIdentifiers() {
+        let detector = NaturalLanguageTranslationLanguageDetector()
+        for sample in [
+            "modelContextWindows",
+            "HTTPServerError",
+            "getUserByID",
+            "snake_case_name",
+            "hello",
+            "apple",
+            "context",
+        ] {
+            let detected = detector.detect(sample)
+            XCTAssertEqual(
+                TranslationLanguage.primaryLanguage(of: detected.language ?? ""),
+                "en",
+                "英文短词或代码标识符 \(sample) 应识别为英语，实际为 \(String(describing: detected.language))"
+            )
+        }
+    }
+
+    func test_naturalLanguageDetector_detectsChineseAndJapaneseShortText() {
+        let detector = NaturalLanguageTranslationLanguageDetector()
+        for sample in ["你好", "窗口", "模型上下文"] {
+            let detected = detector.detect(sample)
+            XCTAssertEqual(
+                TranslationLanguage.primaryLanguage(of: detected.language ?? ""),
+                "zh",
+                "中文短词 \(sample) 应识别为中文，实际为 \(String(describing: detected.language))"
+            )
+        }
+        XCTAssertEqual(
+            TranslationLanguage.primaryLanguage(of: detector.detect("こんにちは").language ?? ""),
+            "ja"
+        )
+    }
+
+    func test_identifierSplitter_splitsCompositeIdentifiersAndLeavesNormalTextUntouched() {
+        XCTAssertEqual(
+            TranslationIdentifierSplitter.splitIfSingleIdentifier("modelContextWindows"),
+            "model context windows"
+        )
+        XCTAssertEqual(
+            TranslationIdentifierSplitter.splitIfSingleIdentifier("HTTPServerError"),
+            "HTTP server error"
+        )
+        XCTAssertEqual(
+            TranslationIdentifierSplitter.splitIfSingleIdentifier("getUserByID"),
+            "get user by ID"
+        )
+        XCTAssertEqual(
+            TranslationIdentifierSplitter.splitIfSingleIdentifier("MAX_RETRY_COUNT"),
+            "max retry count"
+        )
+        XCTAssertEqual(
+            TranslationIdentifierSplitter.splitIfSingleIdentifier("snake_case_name"),
+            "snake case name"
+        )
+        XCTAssertEqual(
+            TranslationIdentifierSplitter.splitIfSingleIdentifier("kebab-case-token"),
+            "kebab case token"
+        )
+        XCTAssertEqual(
+            TranslationIdentifierSplitter.splitIfSingleIdentifier("user.displayName"),
+            "user display name"
+        )
+
+        // 普通单词、含空格句子、URL、邮箱、裸域名、纯版本号不得触发拆词。
+        for untouched in [
+            "hello",
+            "HTTPS",
+            "Hello world",
+            "firstLine\nsecondLine",
+            "https://example.com/modelContextWindows",
+            "dev@example.com",
+            "example.com",
+            "v1.2.3",
+            "模型上下文",
+        ] {
+            XCTAssertNil(
+                TranslationIdentifierSplitter.splitIfSingleIdentifier(untouched),
+                "\(untouched) 不应按单代码标识符拆词"
+            )
+        }
+
+        // TranslationRequest 保留原始 text 供界面与历史展示，仅 textForTranslation 提供拆词结果。
+        let request = TranslationRequest(
+            text: "modelContextWindows",
+            sourceLanguage: "en",
+            targetLanguage: "zh-Hans"
+        )
+        XCTAssertEqual(request.text, "modelContextWindows")
+        XCTAssertEqual(request.textForTranslation, "model context windows")
     }
 }

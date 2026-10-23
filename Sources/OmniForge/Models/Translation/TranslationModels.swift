@@ -62,6 +62,12 @@ struct TranslationRequest: Equatable, Codable {
         self.sourceLanguage = sourceLanguage
         self.targetLanguage = targetLanguage
     }
+
+    /// 实际发送给翻译引擎的文本：单个代码标识符自动拆词（如 `modelContextWindows` → `model context windows`），
+    /// 同时保留 `text` 原始输入用于界面展示与历史持久化。
+    var textForTranslation: String {
+        TranslationIdentifierSplitter.splitIfSingleIdentifier(text) ?? text
+    }
 }
 
 /// 引擎成功的翻译结果。
@@ -328,5 +334,121 @@ enum TranslationTextValidator {
         guard text.count <= maxLength else {
             throw TranslationError.textTooLong(limit: maxLength)
         }
+    }
+}
+
+// MARK: - 代码标识符分词
+
+/// 代码标识符分词工具：服务于「短词/标识符语言识别」与「单标识符智能拆词翻译」。
+///
+/// 严格边界：
+/// - `splitIfSingleIdentifier` 仅在整段输入是单个复合 ASCII 标识符时返回拆词短语，
+///   普通单词、带空格句子、多行文本、URL、邮箱、纯版本号一律返回 nil，不破坏正常文本。
+/// - `normalizedForLanguageDetection` 在多词文本中也会展开内嵌标识符，仅用于语言识别探针。
+enum TranslationIdentifierSplitter {
+    private static let separatorCharacters = Set<Character>("_-./:$")
+    private static let commonDomainTLDs: Set<String> = [
+        "com", "org", "net", "io", "co", "ai", "dev", "app", "cn", "me", "edu", "gov",
+    ]
+
+    /// 若去首尾空白后为单个复合代码标识符，返回拆词后的自然短语；否则返回 nil。
+    static func splitIfSingleIdentifier(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2, trimmed.count <= 128 else { return nil }
+        guard !trimmed.contains(where: \.isWhitespace) else { return nil }
+        guard !trimmed.contains("://"), !trimmed.contains("@") else { return nil }
+        guard trimmed.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || separatorCharacters.contains($0)) }) else {
+            return nil
+        }
+        guard !isLikelyBareDomain(trimmed) else { return nil }
+
+        let words = splitTokenIntoWords(trimmed)
+        let alphabeticWordCount = words.filter { $0.contains(where: \.isLetter) }.count
+        guard words.count >= 2, alphabeticWordCount >= 2 else { return nil }
+        guard words.contains(where: { $0.filter(\.isLetter).count >= 2 }) else { return nil }
+
+        let hasAnyLowercase = trimmed.contains(where: \.isLowercase)
+        let normalizedWords = words.map { word -> String in
+            // 混合大小写标识符中的全大写缩写（如 HTTPServerError 的 HTTP、getUserByID 的 ID）保留大写；
+            // 全大写常量（如 MAX_RETRY_COUNT）整体转小写，避免翻译引擎当作专有名词原样透传。
+            if hasAnyLowercase, word.count >= 2, word.allSatisfy({ !$0.isLetter || $0.isUppercase }) {
+                return word
+            }
+            return word.lowercased()
+        }
+        return normalizedWords.joined(separator: " ")
+    }
+
+    /// 面向语言检测的文本归一化：将内嵌的 camelCase / snake_case token 展开为空格词组，
+    /// 使 `NLLanguageRecognizer` 能够提取自然词形而非把复合标识符误判为小语种。
+    static func normalizedForLanguageDetection(_ text: String) -> String {
+        if let single = splitIfSingleIdentifier(text) {
+            return single
+        }
+        let parts = text.split(omittingEmptySubsequences: false, whereSeparator: \.isWhitespace)
+        var changed = false
+        let expanded = parts.map { substring -> String in
+            let token = String(substring)
+            let stripped = token.trimmingCharacters(in: .punctuationCharacters)
+            if let split = splitIfSingleIdentifier(stripped) {
+                changed = true
+                return split
+            }
+            return token
+        }
+        return changed ? expanded.joined(separator: " ") : text
+    }
+
+    private static func isLikelyBareDomain(_ token: String) -> Bool {
+        guard token.contains("."),
+              !token.contains("_"),
+              !token.contains("/"),
+              !token.contains(":") else {
+            return false
+        }
+        let segments = token.split(separator: ".", omittingEmptySubsequences: false)
+        guard segments.count >= 2,
+              segments.allSatisfy({ !$0.isEmpty }),
+              let tld = segments.last?.lowercased() else {
+            return false
+        }
+        // 含驼峰的成员访问（如 user.displayName）不是裸域名。
+        let hasCamelCase = segments.contains { seg in
+            seg.contains(where: \.isLowercase) && seg.contains(where: \.isUppercase)
+        }
+        if hasCamelCase { return false }
+        return commonDomainTLDs.contains(tld)
+    }
+
+    private static func splitTokenIntoWords(_ token: String) -> [String] {
+        let chunks = token.split(whereSeparator: { separatorCharacters.contains($0) })
+        var words: [String] = []
+        for chunk in chunks where !chunk.isEmpty {
+            words.append(contentsOf: splitCamelCase(Array(chunk)))
+        }
+        return words
+    }
+
+    private static func splitCamelCase(_ chars: [Character]) -> [String] {
+        guard !chars.isEmpty else { return [] }
+        var result: [String] = []
+        var start = 0
+        for i in 1..<chars.count {
+            let prev = chars[i - 1]
+            let curr = chars[i]
+            let next: Character? = (i + 1 < chars.count) ? chars[i + 1] : nil
+
+            // 1. 小写或数字 → 大写：modelContext → model | Context，v2Token → v2 | Token
+            let lowerOrDigitToUpper = (prev.isLowercase || prev.isNumber) && curr.isUppercase
+            // 2. 连续大写缩写 → 首字母大写单词：HTTPServer → HTTP | Server
+            let acronymToWord = prev.isUppercase && curr.isUppercase && (next?.isLowercase == true)
+
+            if lowerOrDigitToUpper || acronymToWord {
+                result.append(String(chars[start..<i]))
+                start = i
+            }
+        }
+        result.append(String(chars[start..<chars.count]))
+        return result
     }
 }

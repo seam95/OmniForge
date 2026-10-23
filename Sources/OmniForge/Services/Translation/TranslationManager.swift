@@ -18,11 +18,10 @@ final class TranslationManager: ObservableObject {
     }
 
     /// 入口取词提示：与「失败」区分，避免把权限问题显示成翻译错误。
+    /// 空选区呼出属于日常手动输入/粘贴主路径，不再在底部弹出多余提示。
     enum Notice: Equatable {
         /// 辅助功能权限未授予或未生效；仍允许手动输入。
         case accessibilityRequired
-        /// 目标应用没有可读选区。
-        case noSelection
     }
 
     // MARK: - 依赖
@@ -34,6 +33,8 @@ final class TranslationManager: ObservableObject {
     private let engineFactory: (TranslationEngineID) throws -> any TranslationEngine
     private let reader: SelectedTextReading
     private let pasteboard: PasteboardWriting
+    /// 用户显式点击「粘贴」按钮时读取剪贴板文本；绝不在后台或呼出时自动调用。
+    private let clipboardReader: () -> String?
     private let isFeatureAvailable: () -> Bool
     private let historyLimit: Int
     private let now: () -> Date
@@ -82,6 +83,7 @@ final class TranslationManager: ObservableObject {
         resolver: TranslationLanguageResolving,
         reader: SelectedTextReading = AXSelectedTextReader(),
         pasteboard: PasteboardWriting = SystemPasteboardWriter(),
+        clipboardReader: @escaping () -> String? = { NSPasteboard.general.string(forType: .string) },
         isFeatureAvailable: @escaping () -> Bool = { true },
         historyLimit: Int = TranslationPreferences.defaultHistoryLimit,
         now: @escaping () -> Date = Date.init,
@@ -93,6 +95,7 @@ final class TranslationManager: ObservableObject {
         self.resolver = resolver
         self.reader = reader
         self.pasteboard = pasteboard
+        self.clipboardReader = clipboardReader
         self.isFeatureAvailable = isFeatureAvailable
         self.historyLimit = historyLimit
         self.now = now
@@ -110,6 +113,11 @@ final class TranslationManager: ObservableObject {
     /// 复制按钮可用条件：有译文、未失效，且不在翻译中。
     var canCopyResult: Bool {
         result != nil && !isResultStale && !isTranslating
+    }
+
+    /// 交换语言可用条件：已手动指定源语言，或自动检测已得出当前有效结果。
+    var canSwapLanguages: Bool {
+        preferences.sourceLanguage != nil || (result != nil && !isResultStale)
     }
 
     /// 当前展示的引擎（macOS 14 上存储 system 会解析为 AI）。
@@ -195,7 +203,7 @@ final class TranslationManager: ObservableObject {
         case .success(let text):
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else {
-                notice = .noSelection
+                notice = nil
                 return
             }
             cancel()
@@ -209,8 +217,8 @@ final class TranslationManager: ObservableObject {
             historyError = nil
             submit()
         case .failure(.noSelection):
-            // 无可读选区：保留原有会话或草稿，不清空。
-            notice = .noSelection
+            // 无可读选区：保留原有会话或草稿并聚焦输入框，不在底部追加干扰提示。
+            notice = nil
         case .failure(.accessibilityInactive):
             // 权限未生效：仍打开输入框，并显示授权入口。
             notice = .accessibilityRequired
@@ -228,6 +236,32 @@ final class TranslationManager: ObservableObject {
     func updateText(_ text: String) {
         sourceText = text
         scheduleAutoTranslateIfNeeded()
+    }
+
+    /// 清空当前输入与结果（浮窗原文卡片「清空」按钮），不触发窗口前置切换。
+    func clearInput() {
+        cancel()
+        isSuppressingTextEdit = true
+        sourceText = ""
+        isSuppressingTextEdit = false
+        resetSessionState()
+    }
+
+    /// 用户显式点击「粘贴」按钮：写入剪贴板文本并在条件允许时立即触发翻译。
+    func pasteFromClipboard() {
+        guard let pasted = clipboardReader(),
+              !pasted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+        cancel()
+        isSuppressingTextEdit = true
+        sourceText = pasted
+        isSuppressingTextEdit = false
+        resetSessionState()
+        if pasted.count <= TranslationTextValidator.defaultMaxLength,
+           !(preferences.effectiveEngine() == .ai && !preferences.isAIConfigured) {
+            submit()
+        }
     }
 
     func selectSourceLanguage(_ language: String?) {
@@ -254,20 +288,28 @@ final class TranslationManager: ObservableObject {
         scheduleAutoTranslateIfNeeded()
     }
 
-    /// 交换源与目标语言；只在源语言明确时可用，交换后自动重译。
+    /// 交换源与目标语言；手动指定源语言或已有有效检测结果时可用，交换后自动重译。
     func swapLanguages() {
-        guard let source = preferences.sourceLanguage else { return }
-        let targetCode: String
-        switch preferences.target {
-        case .automatic:
-            // 与语言解析器共用同一自动方向规则：繁体中文也应按「中文 → 英语」交换。
-            targetCode = TranslationLanguage.automaticTarget(for: source)
-        case .language(let code):
-            targetCode = code
+        let resolvedSource: String
+        let resolvedTarget: String
+        if let manualSource = preferences.sourceLanguage {
+            resolvedSource = manualSource
+            switch preferences.target {
+            case .automatic:
+                // 与语言解析器共用同一自动方向规则：繁体中文也应按「中文 → 英语」交换。
+                resolvedTarget = TranslationLanguage.automaticTarget(for: manualSource)
+            case .language(let code):
+                resolvedTarget = code
+            }
+        } else if !isResultStale, let currentResult = result {
+            resolvedSource = currentResult.sourceLanguage
+            resolvedTarget = currentResult.targetLanguage
+        } else {
+            return
         }
         cancel()
-        preferences.sourceLanguage = targetCode
-        preferences.target = .language(source)
+        preferences.sourceLanguage = resolvedTarget
+        preferences.target = .language(resolvedSource)
         invalidateResultForSettingsChange()
         scheduleAutoTranslateIfNeeded()
     }

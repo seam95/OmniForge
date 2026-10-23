@@ -57,7 +57,7 @@ final class AITranslationService: TranslationEngine {
                     targetLanguage: request.targetLanguage
                 ),
             ],
-            ["role": "user", "content": request.text],
+            ["role": "user", "content": request.textForTranslation],
         ]
         let translatedText = try await send(messages: messages)
         return TranslationResult(

@@ -232,7 +232,7 @@ final class AppleTranslationBridge: ObservableObject, TranslationEngine {
             try await driver.prepareTranslation()
             // 宿主任务被 SwiftUI 取消（窗口隐藏等）时结束等待，不继续翻译。
             try Task.checkCancellation()
-            let outcome = try await driver.translate(request.text)
+            let outcome = try await driver.translate(request.textForTranslation)
             try Task.checkCancellation()
             guard isCurrent(token) else { return }
             let result = TranslationResult(

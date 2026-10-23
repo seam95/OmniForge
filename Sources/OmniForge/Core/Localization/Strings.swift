@@ -1834,9 +1834,14 @@ struct Strings: Equatable {
     let translationSettingsHotkeySection: String
     let translationHotkeyConflictFormat: String
 
-    // MARK: - Translation 浮窗区块标题（追加在末尾，构造器同名参数同步追加）
+    // MARK: - Translation 浮窗区块标题与快捷操作（追加在末尾，构造器同名参数同步追加）
     let translationSourceTextLabel: String
     let translationResultLabel: String
     let translationHotkeyUpdateFailed: String
     let translationHistoryUnavailable: String
+    let translationClear: String
+    let translationPaste: String
+    let translationIdentifierSplitFormat: String
+    let translationLanguageAutoDetectedFormat: String
+    let translationTargetAutoResolvedFormat: String
 }

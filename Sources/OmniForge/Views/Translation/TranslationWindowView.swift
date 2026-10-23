@@ -3,13 +3,10 @@ import SwiftUI
 
 // MARK: - 浮窗主视图
 
-/// 翻译浮窗内容（SPEC §4）：标题与置顶 → 引擎与语言 → 原文 → 翻译操作 → 译文与复制。
+/// 翻译浮窗内容：统一紧凑顶栏（与系统红绿灯同行）→ 对称语言栏 → 原文卡片 → 译文卡片 → 按需状态横幅。
 ///
 /// 视图只读 manager 的会话状态并调用其动作，不直接发请求、不读数据库、不写剪贴板。
-/// 原文与译文上下排列、各自滚动；过期译文保留展示但复制禁用。
-///
-/// 顶栏与系统红绿灯共用一行（窗口使用 fullSizeContentView）：左侧 76pt 为
-/// 红绿灯让位，标题只出现一次，避免与系统标题栏重复。
+/// 原文与译文上下双卡片各自滚动，快捷微操作（粘贴/清空/手动重译/复制）与语言方向内聚在卡片底栏。
 @MainActor
 struct TranslationWindowView: View {
     @ObservedObject var manager: TranslationManager
@@ -20,41 +17,43 @@ struct TranslationWindowView: View {
     let translationTaskHost: (() -> AnyView)?
     let onTogglePin: () -> Void
     let onRequestClose: () -> Void
-    /// AI 配置 / 引擎降级时进入设置页；nil 时隐藏该入口（仅保留文案提示）。
+    /// AI 配置 / 引擎降级 / 顶栏快捷入口进入设置页；nil 时隐藏该入口。
     let onOpenSettings: (() -> Void)?
 
     @Environment(\.colorScheme) private var colorScheme
     /// 原文编辑区是否处于中文输入法组合态；组合期间隐藏占位符。
     @State private var editorHasMarkedText = false
-    /// 原文编辑区焦点：聚焦时卡片描边高亮。
+    /// 原文编辑区焦点：聚焦时卡片描边柔和提亮。
     @State private var isEditorFocused = false
 
     private var strings: Strings { stringsProvider() }
     private var primaryText: Color { MonitorOverviewPalette.primary(colorScheme) }
     private var secondaryText: Color { MonitorOverviewPalette.secondary(colorScheme) }
     private var auxiliaryText: Color { MonitorOverviewPalette.auxiliary(colorScheme) }
-    private var hairline: Color { MonitorOverviewPalette.hairline(colorScheme) }
 
     var body: some View {
         VStack(spacing: 0) {
             header
-            toolbar
-            FlatHairline()
-            sourceSection
-            actionBar
-            resultSection
-            noticeArea
+            languageBar
+            cardsArea
+            if hasNoticeContent {
+                noticeArea
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(backgroundColor)
+        .background(canvasBackground)
+        .ignoresSafeArea(.container, edges: .top)
+        .omniNoFocusRing()
         .overlay(alignment: .topLeading) { systemTranslationHost }
         // Esc 兜底：原文编辑器的 Esc 已被输入法 / 本视图拦截；焦点在其它控件时
         // 由窗口层的取消动作走到这里（文本编辑器 doCommandBy 优先于本回调）。
         .onExitCommand(perform: onRequestClose)
     }
 
-    private var backgroundColor: Color {
-        colorScheme == .dark ? Color(nsColor: .windowBackgroundColor) : .white
+    private var canvasBackground: Color {
+        colorScheme == .dark
+            ? Color(nsColor: .windowBackgroundColor)
+            : Color(red: 0xF5 / 255.0, green: 0xF6 / 255.0, blue: 0xF9 / 255.0)
     }
 
     /// 系统翻译任务宿主：macOS 15 以下不挂载，避免调用不可用 API。
@@ -65,50 +64,26 @@ struct TranslationWindowView: View {
         }
     }
 
-    // MARK: - 标题行
+    // MARK: - 统一顶栏（控件中心线距窗口顶边 18pt，与系统红绿灯严格水平居中同行）
 
-    /// 与系统红绿灯同一行：左侧留出红绿灯宽度，右侧为置顶。
     private var header: some View {
         HStack(spacing: 7) {
             Image(systemName: TranslationPresentation.symbolName)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(TranslationPresentation.tint)
-                .frame(width: 22, height: 22)
+                .frame(width: 21, height: 21)
                 .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(TranslationPresentation.tint.opacity(0.12))
+                    RoundedRectangle(cornerRadius: 5.5, style: .continuous)
+                        .fill(TranslationPresentation.tint.opacity(colorScheme == .dark ? 0.18 : 0.12))
                 )
 
             Text(strings.translationTitle)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(primaryText)
+                .lineLimit(1)
 
             Spacer(minLength: 8)
 
-            Button(action: onTogglePin) {
-                Image(systemName: windowState.isPinned ? "pin.fill" : "pin")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(windowState.isPinned ? Color.white : secondaryText)
-                    .frame(width: 24, height: 24)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(windowState.isPinned ? TranslationPresentation.tint : Color.clear)
-                    )
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(windowState.isPinned ? strings.translationUnpin : strings.translationPin)
-        }
-        .padding(.leading, 76)
-        .padding(.trailing, 12)
-        .frame(height: 36)
-    }
-
-    // MARK: - 引擎与语言
-
-    /// 工具条：左侧引擎分段、右侧语言对胶囊；控件高度统一，整行只占 24pt。
-    private var toolbar: some View {
-        HStack(spacing: 8) {
             PanelSegmentedControl(
                 options: [
                     .init(tag: TranslationEngineID.system, title: strings.translationEngineSystem),
@@ -119,25 +94,44 @@ struct TranslationWindowView: View {
             )
             .layoutPriority(1)
 
-            Spacer(minLength: 8)
+            HStack(spacing: 3) {
+                if let onOpenSettings {
+                    TranslationTopBarIconButton(
+                        systemName: "gearshape",
+                        help: strings.translationOpenSettings,
+                        action: onOpenSettings
+                    )
+                }
 
-            languageControls
+                TranslationTopBarIconButton(
+                    systemName: windowState.isPinned ? "pin.fill" : "pin",
+                    isActive: windowState.isPinned,
+                    help: windowState.isPinned ? strings.translationUnpin : strings.translationPin,
+                    action: onTogglePin
+                )
+            }
         }
-        .padding(.horizontal, 14)
-        .padding(.bottom, 10)
+        .frame(height: 28)
+        .padding(.top, 4)
+        .padding(.bottom, 6)
+        .padding(.leading, 78)
+        .padding(.trailing, 14)
     }
 
-    private var languageControls: some View {
-        TranslationControlGroup {
+    // MARK: - 对称语言栏
+
+    private var languageBar: some View {
+        HStack(spacing: 6) {
             TranslationPickMenu(
                 options: sourceLanguageOptions,
                 title: sourceLanguageTitle,
                 selection: sourceLanguageBinding,
-                help: strings.translationSourceLanguage
+                help: strings.translationSourceLanguage,
+                fillsAvailableWidth: true
             )
 
             TranslationSwapButton(
-                isEnabled: preferences.sourceLanguage != nil,
+                isEnabled: manager.canSwapLanguages,
                 help: strings.translationSwapLanguages,
                 action: { manager.swapLanguages() }
             )
@@ -146,13 +140,16 @@ struct TranslationWindowView: View {
                 options: targetOptions,
                 title: targetTitle,
                 selection: targetBinding,
-                help: strings.translationTargetLanguage
+                help: strings.translationTargetLanguage,
+                fillsAvailableWidth: true
             )
         }
+        .padding(.horizontal, 14)
+        .padding(.top, 2)
+        .padding(.bottom, 10)
     }
 
-    /// 引擎选择绑定「本次运行实际引擎」：macOS 14 上存储 system 会解析为 AI，
-    /// 选择 system 时偏好仍写 system，但界面继续显示当前实际引擎并提示降级。
+    /// 引擎选择绑定「本次运行实际引擎」：macOS 14 上存储 system 会解析为 AI。
     private var engineBinding: Binding<TranslationEngineID> {
         Binding(
             get: { manager.displayedEngine },
@@ -196,28 +193,45 @@ struct TranslationWindowView: View {
     }
 
     private var sourceLanguageTitle: String {
-        guard let code = preferences.sourceLanguage else { return strings.translationLanguageAuto }
-        return TranslationPresentation.languageName(for: code, strings: strings)
+        if let code = preferences.sourceLanguage {
+            return TranslationPresentation.languageName(for: code, strings: strings)
+        }
+        if !manager.isResultStale, let result = manager.result {
+            let detectedName = TranslationPresentation.languageName(for: result.sourceLanguage, strings: strings)
+            return String(format: strings.translationLanguageAutoDetectedFormat, detectedName)
+        }
+        return strings.translationLanguageAuto
     }
 
     private var targetTitle: String {
         switch preferences.target {
         case .automatic:
+            if !manager.isResultStale, let result = manager.result {
+                let targetName = TranslationPresentation.languageName(for: result.targetLanguage, strings: strings)
+                return String(format: strings.translationTargetAutoResolvedFormat, targetName)
+            }
             return strings.translationTargetAuto
         case .language(let code):
             return TranslationPresentation.languageName(for: code, strings: strings)
         }
     }
 
-    // MARK: - 原文
+    // MARK: - 双卡片主工作区
 
-    private var sourceSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            sectionHeader(
-                title: strings.translationSourceTextLabel,
-                trailing: AnyView(characterCount)
-            )
+    private var cardsArea: some View {
+        VStack(spacing: 10) {
+            sourceCard
+            resultCard
+        }
+        .padding(.horizontal, 14)
+        .padding(.bottom, hasNoticeContent ? 8 : 14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 
+    // MARK: - 原文卡片
+
+    private var sourceCard: some View {
+        VStack(spacing: 0) {
             ZStack(alignment: .topLeading) {
                 TranslationTextEditor(
                     text: sourceTextBinding,
@@ -232,34 +246,102 @@ struct TranslationWindowView: View {
                 // 占位符照常渲染会与未确认拼音重叠。
                 if manager.sourceText.isEmpty && !editorHasMarkedText {
                     Text(strings.translationSourcePlaceholder)
-                        .font(.system(size: 12.5))
-                        .foregroundStyle(auxiliaryText.opacity(0.9))
-                        .padding(.horizontal, 12)
+                        .font(.system(size: 13.5))
+                        .foregroundStyle(auxiliaryText.opacity(0.88))
+                        .padding(.horizontal, 14)
                         .padding(.top, 12)
                         .allowsHitTesting(false)
                 }
             }
-            .background(cardFill(isFocused: isEditorFocused))
-            .overlay(cardBorder(isFocused: isEditorFocused))
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
-            .frame(maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            sourceCardFooter
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 10)
+        .background(cardSurface(isFocused: isEditorFocused))
+        .overlay(cardBorder(isFocused: isEditorFocused))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+        .shadow(
+            color: Color.black.opacity(colorScheme == .dark ? 0.0 : (isEditorFocused ? 0.05 : 0.025)),
+            radius: isEditorFocused ? 6 : 3,
+            x: 0,
+            y: 1
+        )
         .frame(maxHeight: .infinity)
     }
 
-    private var characterCount: some View {
-        Text(
-            String(
-                format: strings.translationCharacterCountFormat,
-                manager.sourceText.count,
-                TranslationTextValidator.defaultMaxLength
+    private var sourceCardFooter: some View {
+        HStack(spacing: 6) {
+            if manager.sourceText.isEmpty {
+                TranslationCardActionPill(
+                    systemImage: "doc.on.clipboard",
+                    title: strings.translationPaste,
+                    tone: .neutral,
+                    action: {
+                        manager.pasteFromClipboard()
+                        windowState.requestInputFocus()
+                    }
+                )
+            } else {
+                characterCountLabel
+
+                if let splitPreview = identifierSplitPreview {
+                    Text("·")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(auxiliaryText.opacity(0.7))
+
+                    Text(String(format: strings.translationIdentifierSplitFormat, splitPreview))
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(auxiliaryText)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            if !manager.sourceText.isEmpty {
+                TranslationCardActionPill(
+                    systemImage: "xmark",
+                    title: strings.translationClear,
+                    tone: .neutral,
+                    action: {
+                        manager.clearInput()
+                        windowState.requestInputFocus()
+                    }
+                )
+            }
+
+            TranslationCardActionPill(
+                systemImage: manager.isTranslating ? nil : "arrow.triangle.2.circlepath",
+                title: manager.isTranslating ? strings.translationTranslating : strings.translationTranslate,
+                shortcutHint: "⌘↩",
+                tone: translateActionTone,
+                isLoading: manager.isTranslating,
+                isDisabled: isTranslateDisabled,
+                action: { manager.submit() }
             )
-        )
-        .font(.system(size: 10, weight: .regular))
-        .monospacedDigit()
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 4)
+        .padding(.bottom, 8)
+    }
+
+    private var characterCountLabel: some View {
+        HStack(spacing: 4) {
+            if isTextTooLong {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 9.5))
+            }
+            Text("\(manager.sourceText.count) / \(TranslationTextValidator.defaultMaxLength)")
+                .font(.system(size: 10.5, weight: .regular))
+                .monospacedDigit()
+        }
         .foregroundStyle(isTextTooLong ? Color.orange : auxiliaryText)
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var identifierSplitPreview: String? {
+        TranslationIdentifierSplitter.splitIfSingleIdentifier(manager.sourceText)
     }
 
     private var sourceTextBinding: Binding<String> {
@@ -269,211 +351,178 @@ struct TranslationWindowView: View {
         )
     }
 
-    // MARK: - 卡片外观
-
-    /// 输入/输出共用卡片底：浅色近白、深色低透明白；聚焦时提升到纯白并加描边。
-    private func cardFill(isFocused: Bool) -> some View {
-        RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-            .fill(
-                colorScheme == .dark
-                    ? Color.white.opacity(isFocused ? 0.06 : 0.045)
-                    : (isFocused
-                        ? Color.white
-                        : Color(red: 0xF5 / 255.0, green: 0xF5 / 255.0, blue: 0xF7 / 255.0))
-            )
-    }
-
-    private func cardBorder(isFocused: Bool) -> some View {
-        RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-            .strokeBorder(
-                isFocused
-                    ? TranslationPresentation.tint.opacity(0.5)
-                    : (colorScheme == .dark ? Color.white.opacity(0.1) : Color.black.opacity(0.08)),
-                lineWidth: isFocused ? 1 : 0.5
-            )
-    }
-
-    // MARK: - 翻译操作
-
-    private var actionBar: some View {
-        HStack(spacing: 9) {
-            Button {
-                manager.submit()
-            } label: {
-                HStack(spacing: 5) {
-                    if manager.isTranslating {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                    Text(manager.isTranslating ? strings.translationTranslating : strings.translationTranslate)
-                        .font(.system(size: 12.5, weight: .semibold))
-                }
-                .frame(minWidth: 64)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(isTranslateDisabled)
-
-            // 快捷键提示使用系统键盘符号（非本地化文案）；实际按键由原文编辑器
-            // 的 doCommandBy 处理，避免 SwiftUI 快捷键在输入法组合态抢先提交。
-            Text("⌘↩")
-                .font(.system(size: 10, weight: .regular))
-                .foregroundStyle(auxiliaryText)
-
-            Spacer(minLength: 8)
-
-            if isTextTooLong {
-                HStack(spacing: 4) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 10))
-                    Text(
-                        String(
-                            format: strings.translationErrorTextTooLongFormat,
-                            TranslationTextValidator.defaultMaxLength
-                        )
-                    )
-                    .font(.system(size: 10, weight: .regular))
-                }
-                .foregroundStyle(Color.orange)
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
-    }
-
     private var isTextTooLong: Bool {
         manager.sourceText.count > TranslationTextValidator.defaultMaxLength
     }
 
-    /// 空文本禁用翻译（SPEC §4）；翻译进行中避免重复提交。
-    /// 超长不静默截断，按钮保留可点，点击后由语言解析层给出明确错误。
     private var isTranslateDisabled: Bool {
         manager.sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || manager.isTranslating
     }
 
-    // MARK: - 译文
+    private var translateActionTone: TranslationCardActionPill.Tone {
+        if isTranslateDisabled {
+            return .neutral
+        }
+        if manager.result == nil || manager.isResultStale || currentError != nil {
+            return .accent
+        }
+        return .neutral
+    }
 
-    private var resultSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            sectionHeader(
-                title: strings.translationResultLabel,
-                trailing: AnyView(copyControl)
-            )
+    // MARK: - 译文卡片
 
+    private var resultCard: some View {
+        VStack(spacing: 0) {
             ZStack {
-                VStack(alignment: .leading, spacing: 0) {
-                    // 过期提示放在译文内容上方而不是标题行：中英文长句都不会挤压复制按钮。
-                    if manager.isResultStale {
-                        HStack(spacing: 4) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.system(size: 9))
-                            Text(strings.translationResultStale)
-                                .font(.system(size: 10, weight: .regular))
-                        }
-                        .foregroundStyle(Color.orange)
-                        .padding(.horizontal, 12)
-                        .padding(.top, 8)
-                    }
-
+                if manager.result != nil {
                     ScrollView {
                         Text(displayedResultText)
-                            .font(.system(size: 13))
-                            .foregroundStyle(resultTextColor)
+                            .font(.system(size: 13.5))
+                            .lineSpacing(3)
+                            .foregroundStyle(primaryText.opacity(isResultDimmed ? 0.58 : 1.0))
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(12)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
                     }
-                }
-
-                if manager.result == nil {
-                    if manager.isTranslating {
-                        VStack(spacing: 7) {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text(strings.translationTranslating)
-                                .font(.system(size: 11))
-                                .foregroundStyle(auxiliaryText)
-                        }
-                    } else {
-                        VStack(spacing: 6) {
-                            Image(systemName: "text.alignleft")
-                                .font(.system(size: 17, weight: .light))
-                            Text(strings.translationResultPlaceholder)
-                                .font(.system(size: 12))
-                        }
-                        .foregroundStyle(auxiliaryText.opacity(0.75))
+                } else if manager.isTranslating {
+                    VStack(spacing: 7) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text(strings.translationTranslating)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(auxiliaryText)
                     }
+                } else {
+                    VStack(spacing: 6) {
+                        Image(systemName: "text.bubble")
+                            .font(.system(size: 17, weight: .light))
+                        Text(strings.translationResultPlaceholder)
+                            .font(.system(size: 12))
+                    }
+                    .foregroundStyle(auxiliaryText.opacity(0.75))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(cardFill(isFocused: false))
-            .overlay(cardBorder(isFocused: false))
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
+
+            resultCardFooter
         }
-        .padding(.horizontal, 14)
-        .padding(.bottom, 10)
+        .background(cardSurface(isFocused: false))
+        .overlay(cardBorder(isFocused: false))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+        .shadow(
+            color: Color.black.opacity(colorScheme == .dark ? 0.0 : 0.025),
+            radius: 3,
+            x: 0,
+            y: 1
+        )
         .frame(maxHeight: .infinity)
+    }
+
+    private var resultCardFooter: some View {
+        HStack(spacing: 6) {
+            resultStatusLeading
+
+            Spacer(minLength: 8)
+
+            TranslationCardActionPill(
+                systemImage: manager.didCopyResult ? "checkmark" : "doc.on.doc",
+                title: manager.didCopyResult ? strings.translationCopied : strings.translationCopy,
+                tone: manager.didCopyResult
+                    ? .success
+                    : (manager.canCopyResult ? .accent : .neutral),
+                isDisabled: !manager.canCopyResult,
+                action: { manager.copyResult() }
+            )
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 4)
+        .padding(.bottom, 8)
+    }
+
+    @ViewBuilder
+    private var resultStatusLeading: some View {
+        if isTextTooLong {
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 9.5))
+                Text(
+                    String(
+                        format: strings.translationErrorTextTooLongFormat,
+                        TranslationTextValidator.defaultMaxLength
+                    )
+                )
+                .font(.system(size: 10.5))
+                .lineLimit(1)
+            }
+            .foregroundStyle(Color.orange)
+        } else if manager.isResultStale && !manager.isTranslating {
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.system(size: 9.5))
+                Text(strings.translationResultStale)
+                    .font(.system(size: 10.5))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(Color.orange)
+        } else if let result = manager.result {
+            Text(TranslationPresentation.resultMetaText(for: result, strings: strings))
+                .font(.system(size: 10.5))
+                .foregroundStyle(auxiliaryText)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
     }
 
     private var displayedResultText: String {
         manager.result?.text ?? ""
     }
 
-    private var resultTextColor: Color {
-        manager.result == nil ? secondaryText.opacity(0.55) : primaryText
+    private var isResultDimmed: Bool {
+        manager.isResultStale || (manager.isTranslating && manager.result != nil)
     }
 
-    /// 复制控件：过期译文保留展示但禁用复制；已复制显示短暂确认文案。
-    private var copyControl: some View {
-        let isEnabled = manager.canCopyResult
-        let isCopied = manager.didCopyResult
+    // MARK: - 卡片表面与描边
 
-        return Button {
-            manager.copyResult()
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: isCopied ? "checkmark" : "doc.on.doc")
-                    .font(.system(size: 9.5))
-                Text(isCopied ? strings.translationCopied : strings.translationCopy)
-                    .font(.system(size: 10.5, weight: .medium))
-            }
-            .foregroundStyle(
-                isCopied
-                    ? Color.green
-                    : (isEnabled ? secondaryText : auxiliaryText.opacity(0.75))
+    private func cardSurface(isFocused: Bool) -> some View {
+        RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+            .fill(
+                colorScheme == .dark
+                    ? Color.white.opacity(isFocused ? 0.072 : 0.052)
+                    : Color.white
             )
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(!isEnabled)
     }
 
-    // MARK: - 错误与提示
+    private func cardBorder(isFocused: Bool) -> some View {
+        RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+            .strokeBorder(
+                isFocused
+                    ? TranslationPresentation.tint.opacity(colorScheme == .dark ? 0.48 : 0.40)
+                    : (colorScheme == .dark ? Color.white.opacity(0.09) : Color.black.opacity(0.065)),
+                lineWidth: isFocused ? 1 : 0.6
+            )
+    }
 
-    /// 提示区：普通提示为轻量说明行，失败才用 tint 横幅。
-    /// 与「失败」区分的 notice 不显示为错误色，避免把权限问题渲染成网络错误。
+    // MARK: - 按需提示栏（常态零高度）
+
     @ViewBuilder
     private var noticeArea: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let notice = manager.notice {
                 hintRow(
-                    icon: notice == .accessibilityRequired ? "lock.circle" : "text.cursor",
+                    icon: "lock.circle",
                     tint: .orange,
                     text: noticeMessage(notice),
-                    actionTitle: notice == .accessibilityRequired ? strings.translationOpenSettings : nil,
-                    action: notice == .accessibilityRequired
-                        ? { Permissions.shared.openAccessibilitySettings() }
-                        : nil
+                    actionTitle: strings.translationOpenSettings,
+                    action: { Permissions.shared.openAccessibilitySettings() }
                 )
             }
 
             if case .failed(let error) = manager.phase {
                 bannerRow(
                     icon: "xmark.circle.fill",
-                    tint: Color(red: 0.95, green: 0.35, blue: 0.32),
+                    tint: Color(red: 0.92, green: 0.32, blue: 0.30),
                     text: TranslationPresentation.errorMessage(error, strings: strings),
                     actionTitle: error == .configurationIncomplete
                         ? strings.translationOpenSettings
@@ -513,7 +562,7 @@ struct TranslationWindowView: View {
             }
         }
         .padding(.horizontal, 14)
-        .padding(.bottom, hasNoticeContent ? 10 : 0)
+        .padding(.bottom, 12)
     }
 
     private var hasNoticeContent: Bool {
@@ -532,12 +581,11 @@ struct TranslationWindowView: View {
 
     private func noticeMessage(_ notice: TranslationManager.Notice) -> String {
         switch notice {
-        case .accessibilityRequired: return strings.translationNoticeAccessibility
-        case .noSelection: return strings.translationNoticeNoSelection
+        case .accessibilityRequired:
+            return strings.translationNoticeAccessibility
         }
     }
 
-    /// 轻量提示行：无底色，只用来补充信息或提供设置入口。
     private func hintRow(
         icon: String,
         tint: Color,
@@ -545,13 +593,13 @@ struct TranslationWindowView: View {
         actionTitle: String?,
         action: (() -> Void)?
     ) -> some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 6) {
             Image(systemName: icon)
-                .font(.system(size: 10))
+                .font(.system(size: 10.5))
                 .foregroundStyle(tint)
 
             Text(text)
-                .font(.system(size: 10.5))
+                .font(.system(size: 11))
                 .foregroundStyle(secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -563,9 +611,18 @@ struct TranslationWindowView: View {
                     .buttonStyle(.link)
             }
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                .fill(colorScheme == .dark ? Color.white.opacity(0.05) : Color.white)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                .strokeBorder(colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06), lineWidth: 0.5)
+        )
     }
 
-    /// 失败横幅：tint 低透明底 + 圆角，与普通提示区分。
     private func bannerRow(
         icon: String,
         tint: Color,
@@ -575,7 +632,7 @@ struct TranslationWindowView: View {
     ) -> some View {
         HStack(spacing: 6) {
             Image(systemName: icon)
-                .font(.system(size: 10.5))
+                .font(.system(size: 11))
                 .foregroundStyle(tint)
 
             Text(text)
@@ -591,25 +648,16 @@ struct TranslationWindowView: View {
                     .buttonStyle(.link)
             }
         }
-        .padding(.horizontal, 9)
+        .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
                 .fill(tint.opacity(colorScheme == .dark ? 0.14 : 0.08))
         )
-    }
-
-    // MARK: - 区块头
-
-    private func sectionHeader(title: String, trailing: AnyView) -> some View {
-        HStack(spacing: 6) {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .tracking(0.3)
-                .foregroundStyle(secondaryText)
-            Spacer(minLength: 8)
-            trailing
-        }
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                .strokeBorder(tint.opacity(colorScheme == .dark ? 0.28 : 0.18), lineWidth: 0.5)
+        )
     }
 }
 
@@ -671,6 +719,24 @@ enum TranslationPresentation {
         case .ai:
             return strings.translationEngineAI
         }
+    }
+
+    /// 译文卡片底栏展示的完整元信息：「英语 → 简体中文 · 系统翻译」（AI 优先展示具体模型名）。
+    static func resultMetaText(for result: TranslationResult, strings: Strings) -> String {
+        let direction = languageDirection(
+            source: result.sourceLanguage,
+            target: result.targetLanguage,
+            strings: strings
+        )
+        let providerLabel: String
+        if result.engine == .ai,
+           let model = result.model?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !model.isEmpty {
+            providerLabel = model
+        } else {
+            providerLabel = engineLabel(result.engine, strings: strings)
+        }
+        return String(format: strings.translationMetaFormat, direction, providerLabel)
     }
 
     // MARK: - 错误
