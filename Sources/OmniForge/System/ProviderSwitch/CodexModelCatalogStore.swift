@@ -349,6 +349,20 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
             )
             rows.append(row)
         }
+        // 主动拉取到的新模型可能还没进合成官方卡（profile 的 codexModels 来自 models_cache）：
+        // 缓存里多出来的行也要追加，否则新模型会被静默丢掉。
+        for cached in officialCacheRows {
+            guard let slug = cached["slug"] as? String, seenSlugs.insert(slug).inserted else { continue }
+            var row = cached
+            let context = (row["context_window"] as? Int) ?? (row["max_context_window"] as? Int) ?? 0
+            let maxWindow = row["max_context_window"] as? Int
+            Self.sinkWorkingWindow(
+                &row,
+                contextWindow: UInt64(max(context, 0)),
+                maxWindow: maxWindow.map { UInt64(max($0, 0)) }
+            )
+            rows.append(row)
+        }
         // 成员行：与非官方路径同构（Stack slug + 窗口下沉，不写 comp_hash）。
         let memberRows: [(entry: [String: Any], window: UInt64)] =
             published.filter { $0.key != defaultKey }.map { member in

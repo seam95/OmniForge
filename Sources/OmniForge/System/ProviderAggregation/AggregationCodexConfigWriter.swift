@@ -20,6 +20,13 @@ protocol AggregationCodexConfigWriting: AnyObject {
         port: UInt16,
         requiresOpenAIAuth: Bool
     ) -> String
+    /// 官方默认时后台刷新官方模型列表；真正拉到新列表才回调。
+    func refreshOfficialModelsIfNeeded(defaultProfile: ProviderProfile, completion: @escaping () -> Void)
+}
+
+extension AggregationCodexConfigWriting {
+    /// 单测 stub 默认无官方列表可刷，也不触发目录重写。
+    func refreshOfficialModelsIfNeeded(defaultProfile: ProviderProfile, completion: @escaping () -> Void) {}
 }
 
 /// `~/.codex/config.toml` 聚合投影 + `omniforge-stack-catalog.json` 目录写入。
@@ -37,7 +44,9 @@ final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
     let configURL: URL
     let catalogURL: URL
     let modelsCacheURL: URL
+    let authURL: URL
     let fileManager: FileManager
+    private let officialModelsStore: CodexOfficialModelsProviding
 
     /// 占位凭证 — 代理按目标替换为真实凭证；客户端侧只见此值。
     /// 字面量与识别端（`ProviderSwitchManager.detectActive` 的聚合态判定）共用
@@ -70,12 +79,23 @@ final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
         configURL: URL,
         catalogURL: URL,
         modelsCacheURL: URL = ProviderSwitchPaths.codexModelsCacheURL(),
+        authURL: URL? = nil,
+        officialModelsCacheURL: URL? = nil,
+        officialModelsStore: CodexOfficialModelsProviding? = nil,
         fileManager: FileManager = .default
     ) {
         self.configURL = configURL
         self.catalogURL = catalogURL
         self.modelsCacheURL = modelsCacheURL
+        self.authURL = authURL
+            ?? modelsCacheURL.deletingLastPathComponent().appendingPathComponent("auth.json")
         self.fileManager = fileManager
+        self.officialModelsStore = officialModelsStore ?? CodexOfficialModelsStore(
+            cacheURL: officialModelsCacheURL
+                ?? catalogURL.deletingLastPathComponent()
+                    .appendingPathComponent("omniforge-official-models.json"),
+            fileManager: fileManager
+        )
     }
 
     func applyAggregation(
@@ -245,11 +265,21 @@ final class AggregationCodexConfigWriter: AggregationCodexConfigWriting {
 
     // MARK: - private
 
-    /// 官方默认时的官方行来源：读 `models_cache.json` 原样行；非官方默认 → nil；
-    /// 官方默认但缓存缺失/损坏 → 空数组（安全降级：官方行不进目录，Codex 回落内置默认）。
+    /// 官方默认时的官方行来源：优先 OmniForge 自己拉的官方列表，其次 `models_cache.json`；
+    /// 非官方默认 → nil；两者都缺失 → 空数组（安全降级：官方行不进目录，Codex 回落内置默认）。
     private func officialCacheRowsIfDefault(defaultProfile: ProviderProfile) -> [[String: Any]]? {
         guard defaultProfile.isOfficial else { return nil }
-        return CodexModelCatalogStore.officialCacheRows(modelsCacheURL: modelsCacheURL, fileManager: fileManager) ?? []
+        return officialModelsStore.rows(authURL: authURL, modelsCacheURL: modelsCacheURL) ?? []
+    }
+
+    func refreshOfficialModelsIfNeeded(
+        defaultProfile: ProviderProfile,
+        completion: @escaping () -> Void
+    ) {
+        guard defaultProfile.isOfficial else { return }
+        officialModelsStore.refresh(
+            authURL: authURL, modelsCacheURL: modelsCacheURL, completion: completion
+        )
     }
 
     /// 旧版聚合目录文件（与现行目录同目录）。

@@ -335,6 +335,8 @@ final class ProviderAggregationManager: ObservableObject {
 
             lastPartialWrite = false
             commit(stack: newStack)
+            // 官方默认：目录已写盘后再后台刷新官方列表；拉到新列表会重写目录。
+            refreshOfficialModelsIfNeeded(defaultProfile: defaultProfile, tool: tool)
             // 模式已切换且投影已写盘：驱动直连激活态重算，避免 UI 缓存停留在旧值
             // （退出不刷旧的根因修复，见 ProviderActivationRefreshing 注释）。
             activationRefresher?.refreshActivationState()
@@ -503,6 +505,7 @@ final class ProviderAggregationManager: ObservableObject {
         }
         commit(stack: newStack)
         try rewriteProjectionIfChanged(tool: tool)
+        refreshOfficialModelsIfNeeded(defaultProfile: profile, tool: tool)
     }
 
     // MARK: - 生命周期
@@ -566,6 +569,12 @@ final class ProviderAggregationManager: ObservableObject {
             // （官方默认不再写 experimental_bearer_token），升级前落盘的旧投影
             // 必须在这里补一刀，否则 Codex 一直发占位符 → 官方 401。
             try? rewriteProjectionIfChanged(tool: tool)
+        }
+        // 启动时即官方的聚合：即使投影没变也后台刷新一次官方模型列表（缓存过期才联网）。
+        if stack.toolStack(.codex).enabled,
+           let defaultID = stack.toolStack(.codex).members.first,
+           let defaultProfile = profile(id: defaultID, tool: .codex) {
+            refreshOfficialModelsIfNeeded(defaultProfile: defaultProfile, tool: .codex)
         }
     }
 
@@ -677,6 +686,9 @@ final class ProviderAggregationManager: ObservableObject {
             codexWriter: AggregationCodexConfigWriter(
                 configURL: ProviderSwitchPaths.codexConfigURL(homePath: homePath, environment: environment),
                 catalogURL: ProviderSwitchPaths.codexAggregationCatalogURL(homePath: homePath, environment: environment),
+                officialModelsCacheURL: aggregationRoot.appendingPathComponent(
+                    "codex-official-models.json", isDirectory: false
+                ),
                 fileManager: fileManager
             ),
             profiles: Self.loadProfilesWithSyntheticOfficial(
@@ -835,6 +847,19 @@ final class ProviderAggregationManager: ObservableObject {
                 defaultProfile: defaultProfile, defaultKey: defaultKey, published: published, port: port,
                 requiresOpenAIAuth: loginStashStore.hasNativeLogin
             )
+            refreshOfficialModelsIfNeeded(defaultProfile: defaultProfile, tool: tool)
+        }
+    }
+
+    /// 官方默认时后台刷新官方模型列表；拉到新列表后按新目录重写一次投影。
+    /// 缓存新鲜时 store 不回调，因此不会形成重写循环。
+    private func refreshOfficialModelsIfNeeded(defaultProfile: ProviderProfile, tool: ProviderTool) {
+        guard tool == .codex, defaultProfile.isOfficial else { return }
+        codexWriter.refreshOfficialModelsIfNeeded(defaultProfile: defaultProfile) { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                try? self.rewriteProjectionIfChanged(tool: .codex)
+            }
         }
     }
 

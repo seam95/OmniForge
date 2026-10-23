@@ -294,6 +294,30 @@ final class CodexModelCatalogStoreTests: XCTestCase {
         XCTAssertEqual(routeRow["context_window"] as? Int, 200_000, "窗口取发布条目值，不是 extraEnv 全局回落")
     }
 
+    /// 主动拉取列表里的新模型可能还没进合成官方卡；目录必须把它补进来。
+    func test_writeAggregatedCatalog_includesFetchedOfficialModelsBeyondPublishedList() throws {
+        let official = ProviderProfile(
+            id: "openai", name: "OpenAI", tool: .codex,
+            baseURL: "https://api.openai.com/v1", token: "",
+            codexModels: ["gpt-known"]
+        )
+        let published = [
+            makePublished(key: "openai", profileName: "OpenAI", model: "gpt-known", window: 272_000),
+        ]
+        let cache: [[String: Any]] = [
+            ["slug": "gpt-known", "comp_hash": "3000", "context_window": 272_000, "visibility": "list"],
+            ["slug": "gpt-fetched-new", "comp_hash": "3000", "context_window": 500_000, "visibility": "list"],
+        ]
+        try store.writeAggregatedCatalog(
+            defaultProfile: official, published: published, defaultKey: "openai",
+            officialCacheRows: cache
+        )
+        let models = try readModels()
+        XCTAssertEqual(models.map { $0["slug"] as? String }, ["gpt-known", "gpt-fetched-new"])
+        XCTAssertEqual(models[1]["context_window"] as? Int, 272_000, "新模型同样下沉工作窗口")
+        XCTAssertEqual(models[1]["max_context_window"] as? Int, 500_000)
+    }
+
     /// 官方行保留原生 `comp_hash`（Codex 官方压缩语义与失败重试），但窗口同样下沉到
     /// 统一工作窗口，避免从第三方 1M 成员切到官方 500K 模型时被判为降窗。
     func test_writeAggregatedCatalog_officialRowsKeepCompHashButShareWorkingWindow() throws {
