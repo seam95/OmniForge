@@ -62,8 +62,8 @@ struct ProfileEditorView: View {
     /// Codex 模型显示名编辑态：与 `codexModelRows` **按位平行**（等长，空串 = 未配置）。
     @State private var codexDisplayNameRows: [String] = []
     /// Codex 模型上下文窗口编辑态：与 `codexModelRows` **按位平行**（等长，空串 = 未配置）。
-    /// 窗口本身无编辑 UI（SPEC §7 只做数据层），但**必须跟着行增删同步平移**——否则删掉
-    /// 中间一行后，幸存行的窗口还按原下标读取，每个模型都会拿到邻居的窗口。
+    /// 窗口在模型行第三列编辑；行增删时必须同步平移——否则删掉中间一行后，幸存行的窗口
+    /// 还按原下标读取，每个模型都会拿到邻居的窗口。
     @State private var codexWindowRows: [String] = []
     /// Claude 聚合发布源编辑态（`stackModels`）：**nil = 用户没动过**（回显与保存都按表单
     /// 当前模型映射实时推导）；非 nil = 用户动过（含 `[]` = 主动清空，什么都不发布）。
@@ -437,6 +437,19 @@ struct ProfileEditorView: View {
                         .frame(width: 200, height: 32)
                         .background(mappingInputBackground)
                         .overlay(mappingInputBorder)
+
+                        // 上下文窗口（可选）：纯数字 tokens，留空 = 未配置（聚合按 272K 工作窗口）
+                        TextField(
+                            strings.providerCodexModelWindowPlaceholder,
+                            text: codexWindowBinding(index)
+                        )
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .padding(.horizontal, 10)
+                        .frame(width: 110, height: 32)
+                        .background(mappingInputBackground)
+                        .overlay(mappingInputBorder)
+                        .help(strings.providerCodexModelWindowHelp)
 
                         // 保留一行：删空后仍能改回「不指定模型」
                         if codexModelRows.count > 1 {
@@ -878,6 +891,18 @@ struct ProfileEditorView: View {
         )
     }
 
+    /// 上下文窗口编辑绑定：与模型行严格等长（越界读空串，写入忽略越界）。
+    private func codexWindowBinding(_ index: Int) -> Binding<String> {
+        Binding(
+            get: { index < codexWindowRows.count ? codexWindowRows[index] : "" },
+            set: { newValue in
+                if index < codexWindowRows.count {
+                    codexWindowRows[index] = newValue
+                }
+            }
+        )
+    }
+
     /// 显示名编辑态与模型行严格等长（平行数组的编辑侧不变量）。
     /// 窗口行与显示名行共用同一条不变量（按位平行，越界按空串 = 未配置）。
     private func syncCodexParallelRows() {
@@ -947,7 +972,7 @@ struct ProfileEditorView: View {
     ///   由 `alignedCodexSaveRows` 与模型行**同源过滤**后实时推导，不能再取既有档案的原数组——
     ///   删掉中间一行后模型会左移，原数组的下标就整体错位（每个模型拿到邻居的窗口）。
     ///
-    /// 窗口仍无编辑 UI（SPEC §7 只做数据层），本保存路径是它唯一的保留点。
+    /// 窗口在模型行第三列编辑，本保存路径负责把它与模型、显示名一起落盘。
     func makeProfile(
         name: String,
         baseURL: String,

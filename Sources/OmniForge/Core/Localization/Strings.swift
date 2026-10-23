@@ -1385,6 +1385,9 @@ struct Strings: Equatable {
     let providerCodexModelsPlaceholder: String
     /// Codex 模型行「显示名称」输入占位（可选，留空用模型名）。
     let providerCodexModelDisplayNamePlaceholder: String
+    /// Codex 模型行「上下文窗口」输入占位与说明（可选，留空用默认窗口）。
+    let providerCodexModelWindowPlaceholder: String
+    let providerCodexModelWindowHelp: String
     /// Claude 聚合成员模型编辑区：每行「显示名 / 实际请求模型 / 1M 复选 / 删除」。
     let providerStackModelsSectionTitle: String
     /// 追加一行（无「+」前缀：列表项不带头部符号）。
