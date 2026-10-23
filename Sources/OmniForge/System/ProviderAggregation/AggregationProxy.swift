@@ -39,6 +39,10 @@ enum AggregationProxyError: Error, Equatable {
     case allPortsTaken
     /// 已在运行。
     case alreadyRunning
+    /// listener 在超时内没有进入 ready。
+    case startTimedOut
+    /// listener 启动失败（端口在探测后被抢占等）。
+    case startFailed(String)
 }
 
 /// 代理服务边界（编排层持此协议；测试注入「必然启动失败」的 stub）。
@@ -99,22 +103,32 @@ final class AggregationProxy: AggregationProxying {
         listener.newConnectionHandler = { [weak self] connection in
             self?.handleConnection(connection)
         }
+        let gate = StartGate()
         listener.stateUpdateHandler = { [weak self] state in
-            // 状态回调收敛到主线程：listener / resolvedPort 只在主线程访问。
-            DispatchQueue.main.async {
-                guard let self else { return }
-                switch state {
-                case .failed, .cancelled:
-                    // 非本实例主动 stop（self.listener 已换人/置空）才视为异常退出。
-                    if self.listener === listener {
-                        self.handleUnexpectedStop()
-                    }
-                default:
-                    break
-                }
+            switch state {
+            case .ready:
+                gate.signal(.success(()))
+            case .failed(let error):
+                gate.signal(.failure(error))
+                self?.notifyUnexpectedStopIfStarted(listener: listener)
+            case .cancelled:
+                gate.signal(.failure(AggregationProxyError.startFailed("listener cancelled before ready")))
+                self?.notifyUnexpectedStopIfStarted(listener: listener)
+            default:
+                break
             }
         }
         listener.start(queue: connectionQueue)
+        // 必须等 ready 才返回：端口探测与真实绑定之间有竞争窗口，绑定失败时
+        // 编排层若已写配置，客户端会指向一个没有监听的地址。
+        guard gate.wait(timeout: 3) else {
+            listener.cancel()
+            throw AggregationProxyError.startTimedOut
+        }
+        if let error = gate.error {
+            listener.cancel()
+            throw AggregationProxyError.startFailed(error.localizedDescription)
+        }
         self.listener = listener
         resolvedPort = port
     }
@@ -129,6 +143,15 @@ final class AggregationProxy: AggregationProxying {
         listener = nil
         resolvedPort = nil
         onUnexpectedStop?()
+    }
+
+    /// start 已返回、listener 已登记后才把后续 failed/cancelled 当异常退出；
+    /// 启动阶段的状态由 `StartGate` 处理，避免重复回调。
+    private func notifyUnexpectedStopIfStarted(listener: NWListener) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.listener === listener else { return }
+            self.handleUnexpectedStop()
+        }
     }
 
     // MARK: - 判定（同步纯函数）
@@ -622,6 +645,35 @@ final class AggregationProxy: AggregationProxying {
             },
         ]
         return (try? JSONSerialization.data(withJSONObject: root)) ?? Data()
+    }
+}
+
+/// 一次性启动闸门：ready / 失败只放行一次，避免 listener 后续状态覆盖启动结论。
+private final class StartGate {
+    private let lock = NSLock()
+    private let semaphore = DispatchSemaphore(value: 0)
+    private var result: Result<Void, Error>?
+
+    func signal(_ value: Result<Void, Error>) {
+        lock.lock()
+        if result == nil {
+            result = value
+            semaphore.signal()
+        }
+        lock.unlock()
+    }
+
+    func wait(timeout: TimeInterval) -> Bool {
+        semaphore.wait(timeout: .now() + timeout) == .success
+    }
+
+    var error: Error? {
+        lock.lock()
+        defer { lock.unlock() }
+        if case .failure(let error) = result {
+            return error
+        }
+        return nil
     }
 }
 
