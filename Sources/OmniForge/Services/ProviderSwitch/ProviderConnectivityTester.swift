@@ -103,7 +103,8 @@ final class ProviderConnectivityTester: ProviderConnectivityTesting {
             request.timeoutInterval = Self.timeout
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             request.setValue("*/*", forHTTPHeaderField: "Accept")
-            if tool == .claudeCode {
+            if tool == .claudeCode || tool == .claudeDesktop {
+                // Claude 系工具带版本头（Desktop 网关同样是 Anthropic 形状，SPEC 功能 E）。
                 request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
             }
 

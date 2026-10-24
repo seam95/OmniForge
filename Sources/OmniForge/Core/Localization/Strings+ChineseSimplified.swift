@@ -1210,6 +1210,7 @@ extension Strings {
         providerOfficialClaudeCaption: "Anthropic 官方 API",
         providerOfficialCodexCaption: "OpenAI 官方 API",
         providerOfficialClaudeDesktopCaption: "Anthropic 官方账号（1P 模式）",
+        providerDesktopRestartHint: "重启 Claude Desktop 后生效",
         providerSwitchBackToOfficial: "切换到官方",
         providerActiveProfileFormat: "已激活：%@",
         providerActiveUnmanagedTitle: "未托管配置",

@@ -39,6 +39,19 @@ enum ClaudeDesktopSettingsError: Error, Equatable {
     case corrupted(path: String)
 }
 
+extension ClaudeDesktopSettingsError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .modelRoutesRequireAggregation:
+            return "该供应商配置了模型映射，直连模式不可用：请进入聚合模式使用"
+        case .metaEntriesNotArray(let path):
+            return "Claude Desktop 配置注册表损坏（entries 不是数组）：\(path)"
+        case .corrupted(let path):
+            return "Claude Desktop 配置文件损坏（不是合法 JSON 对象）：\(path)"
+        }
+    }
+}
+
 /// 4 文件事务写入实现（对齐 cc-switch `claude_desktop_config.rs`）：
 /// - `~/Library/Application Support/Claude/claude_desktop_config.json`（生效开关，最后写）
 /// - `~/Library/Application Support/Claude-3p/claude_desktop_config.json`

@@ -647,9 +647,15 @@ struct ProviderSwitchSettingsView: View {
         case .profile(let name):
             base = String(format: strings.providerSwitchDoneFormat, name)
         }
-        let hint = outcome.cliRunning
-            ? String(format: strings.providerRestartRunningHintFormat, outcome.tool.displayName(in: strings))
-            : strings.providerRestartHint
+        // Desktop 只在启动时读配置：切换后必须重启（与进程是否运行无关，SPEC 行为定义）。
+        let hint: String
+        if outcome.tool == .claudeDesktop {
+            hint = strings.providerDesktopRestartHint
+        } else if outcome.cliRunning {
+            hint = String(format: strings.providerRestartRunningHintFormat, outcome.tool.displayName(in: strings))
+        } else {
+            hint = strings.providerRestartHint
+        }
         showToast("\(base) · \(hint)")
     }
 

@@ -154,8 +154,11 @@ struct ProfileEditorView: View {
             // Claude 按打开时的模式二选一（对齐 cc-switch classic/stack）：
             // 聚合 → 发布列表（无角色映射）；直连 → 角色映射（无发布列表）。
             // Codex 恒为模型列表（直连聚合同构，无二选一）。
+            // Desktop 直连卡无映射区块（Desktop 自动发现模型；映射区块在 C5 聚合接入）。
             if tool == .claudeCode && aggregating {
                 stackModelsSection
+            } else if tool == .claudeDesktop {
+                EmptyView()
             } else {
                 modelMappingSection
             }
@@ -1380,6 +1383,9 @@ struct ProfileEditorView: View {
             modelReasoningLevels: codexModelReasoningLevels,
             modelDefaultReasoningLevels: codexModelDefaultReasoningLevels,
             extraEnv: extraEnv,
+            // Desktop：C3 无映射编辑区块（直连卡不需要；聚合映射区块在 C5 接入），
+            // 保存保留既有原值——对齐 stackModels 直连模式「不携带字段 → 原样保留」。
+            desktopModelRoutes: tool == .claudeDesktop ? self.profile?.desktopModelRoutes : nil,
             // 收编外部文件时保留原来源标记；本 App 新建一律打 omniforge
             managedBy: self.profile?.managedBy ?? ProviderProfile.managedByMarker
         )

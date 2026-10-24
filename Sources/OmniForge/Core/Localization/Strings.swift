@@ -1312,6 +1312,8 @@ struct Strings: Equatable {
     let providerOfficialClaudeCaption: String
     let providerOfficialCodexCaption: String
     let providerOfficialClaudeDesktopCaption: String
+    /// Desktop 切换后重启提示（Desktop 只在启动时读配置）。
+    let providerDesktopRestartHint: String
     /// 「切换到官方」按钮。
     let providerSwitchBackToOfficial: String
     /// 激活项标注（%@ = profile 名）。

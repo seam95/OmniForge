@@ -1210,6 +1210,7 @@ extension Strings {
         providerOfficialClaudeCaption: "Anthropic Official API",
         providerOfficialCodexCaption: "OpenAI Official API",
         providerOfficialClaudeDesktopCaption: "Anthropic Official Account (1P mode)",
+        providerDesktopRestartHint: "Restart Claude Desktop to apply",
         providerSwitchBackToOfficial: "Switch to Official",
         providerActiveProfileFormat: "Active: %@",
         providerActiveUnmanagedTitle: "Unmanaged Configuration",
