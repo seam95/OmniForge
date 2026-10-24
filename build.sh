@@ -165,14 +165,28 @@ xattr -c -r "$STAGE" 2>/dev/null || true
 # Apple 证书配 --timestamp（向 Apple TSA 盖安全时间戳）；本地自签证书不在 Apple 体系
 # 内，TSA 盖章无意义，跳过。
 TIMESTAMP_ARGS=("--timestamp")
+
+# 自签证书没有 Team ID，Hardened Runtime 的 Library Validation 会拒绝已签名的嵌套
+# 框架：dyld 报 "mapping process and mapped file (non-platform) have different
+# Team IDs"，app 启动即崩溃。自签模式必须为宿主声明 disable-library-validation
+# （本地自签本就无第三方信任边界，Apple 证书路径保持默认，不削弱校验）。
+SIGN_ENTITLEMENTS="$ENTITLEMENTS"
+FINDER_SIGN_ENTITLEMENTS="$FINDER_ENTITLEMENTS"
 if [[ "$SIGNING_IDENTITY" == *"OmniForge Local Codesign"* ]]; then
     TIMESTAMP_ARGS=()
+    SIGN_ENTITLEMENTS="$STAGE_PARENT/selfsigned-app.entitlements"
+    FINDER_SIGN_ENTITLEMENTS="$STAGE_PARENT/selfsigned-appex.entitlements"
+    cp "$ENTITLEMENTS" "$SIGN_ENTITLEMENTS"
+    cp "$FINDER_ENTITLEMENTS" "$FINDER_SIGN_ENTITLEMENTS"
+    for plist in "$SIGN_ENTITLEMENTS" "$FINDER_SIGN_ENTITLEMENTS"; do
+        /usr/libexec/PlistBuddy -c \
+            "Add :com.apple.security.cs.disable-library-validation bool true" "$plist"
+    done
 fi
 
 # Step 6: 签名（优先 Developer ID，其次 Apple Development，最后本地自签；仅 stage 可 ad-hoc）
 # 嵌入 Sparkle 与 FinderSync 扩展后必须先按顺序重签其嵌套代码再签外层 .app：Hardened Runtime 的
 # Library Validation 要求嵌套代码与宿主 Team ID 一致。顺序由内向外，切勿用 --deep（会破坏嵌套签名）。
-# 自签证书无 Team ID，Library Validation 同样按签名链校验嵌套代码与宿主一致。
 SPARKLE_EMBEDDED="$STAGE/Contents/Frameworks/Sparkle.framework"
 if [[ -n "$SIGNING_IDENTITY" ]]; then
     echo "▸ Signing with stable identity (hardened runtime): $SIGNING_IDENTITY"
@@ -192,10 +206,10 @@ if [[ -n "$SIGNING_IDENTITY" ]]; then
     fi
     if [[ -d "$FINDER_EXT_STAGE" ]]; then
         codesign --force --options runtime "${TIMESTAMP_ARGS[@]}" \
-            --entitlements "$FINDER_ENTITLEMENTS" --sign "$SIGNING_IDENTITY" "$FINDER_EXT_STAGE"
+            --entitlements "$FINDER_SIGN_ENTITLEMENTS" --sign "$SIGNING_IDENTITY" "$FINDER_EXT_STAGE"
     fi
     codesign --force --strip-disallowed-xattrs --options runtime "${TIMESTAMP_ARGS[@]}" \
-        --entitlements "$ENTITLEMENTS" --sign "$SIGNING_IDENTITY" "$STAGE"
+        --entitlements "$SIGN_ENTITLEMENTS" --sign "$SIGNING_IDENTITY" "$STAGE"
 else
     echo "⚠ 未找到稳定签名身份，仅为 stage 执行 ad-hoc 签名；重新签名后系统权限可能失效" >&2
     if [[ -d "$FINDER_EXT_STAGE" ]]; then
