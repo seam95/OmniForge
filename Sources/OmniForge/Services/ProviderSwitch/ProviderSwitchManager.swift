@@ -324,6 +324,8 @@ final class ProviderSwitchManager: ObservableObject, ProviderActivationRefreshin
     }
 
     /// 写入失败 → 自动从快照回滚；回滚也失败则抛 rollbackFailed。
+    /// Desktop 回滚成功后必须丢弃 pending：残留的 pending 会在下一次 refresh 被
+    /// 重放落盘，把刚回滚掉的失败事务静默完成（回滚结果必须胜利）。
     private func rollbackOrThrow(_ backup: ProviderBackup, tool: ProviderTool) throws {
         do {
             if tool == .claudeDesktop {
@@ -331,6 +333,7 @@ final class ProviderSwitchManager: ObservableObject, ProviderActivationRefreshin
                     throw ProviderSwitchManagerError.unsupportedTool(tool: tool)
                 }
                 try desktopBackupStore.restore(backup)
+                try? desktopStore?.discardPending()
             } else {
                 try backupStore.restore(backup, to: configURL(for: tool))
             }

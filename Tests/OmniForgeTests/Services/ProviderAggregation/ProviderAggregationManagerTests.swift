@@ -985,6 +985,8 @@ extension ProviderAggregationManagerTests {
         }
 
         func replayPendingIfPresent() throws -> Bool { false }
+
+        func discardPending() throws {}
     }
 
     private func makeDesktopManager(

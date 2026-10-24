@@ -381,7 +381,9 @@ extension AggregationProxyTests {
         XCTAssertEqual(data.count, 1)
         XCTAssertEqual(data[0]["id"] as? String, entry.id)
         XCTAssertEqual(data[0]["supports1m"] as? Bool, true)
-        XCTAssertNotNil(data[0]["created_at"], "Desktop 形状必须带 created_at")
+        // 审查 I-2 回归锁：created_at 是 RFC3339 字符串（对齐 cc-switch 常量），
+        // 不是 Unix 秒整型——Anthropic 官方该字段即字符串形态。
+        XCTAssertEqual(data[0]["created_at"] as? String, DesktopModelDiscovery.createdAtConstant)
         XCTAssertEqual((data[0]["display_name"] as? String)?.contains("智谱"), true)
         XCTAssertEqual(root["has_more"] as? Bool, false)
     }
@@ -395,6 +397,23 @@ extension AggregationProxyTests {
         XCTAssertEqual(response.statusCode, 200)
         let forwardedBody = try XCTUnwrap((try? JSONSerialization.jsonObject(with: forwarder.lastRequest?.body ?? Data())) as? [String: Any])
         XCTAssertEqual(forwardedBody["model"] as? String, "glm-5.3", "映射卡必须把档名改写为上游真实名")
+    }
+
+    /// 审查 C-1 回归锁：转发前必须剥掉 /claude-desktop 路由前缀——
+    /// 上游端点是 /v1/messages，带前缀拼接会让上游 404。
+    func test_desktop_forwardedPathStripsClaudeDesktopPrefix() throws {
+        let proxy = makeDesktopProxy(token: "ccs-t", routes: nil)
+        _ = proxy.handle(desktopRequest(path: "/claude-desktop/v1/messages", body: #"{"model":"claude-sonnet-5"}"#, token: "ccs-t"))
+        XCTAssertEqual(forwarder.lastRequest?.head.path, "/v1/messages", "plain 透传路径剥前缀")
+
+        let entry = AggregationPublishedModel(
+            tool: .claudeDesktop, key: "glm", profileName: "智谱",
+            model: "glm-5.3", upstream: "glm-5.3", displayName: "GLM 5.3",
+            oneM: false, window: 0
+        )
+        let hitProxy = makeDesktopProxy(token: "ccs-t", routes: nil, published: [entry])
+        _ = hitProxy.handle(desktopRequest(path: "/claude-desktop/v1/messages", body: #"{"model":"\(entry.id)"}"#, token: "ccs-t"))
+        XCTAssertEqual(forwarder.lastRequest?.head.path, "/v1/messages", "聚合 id 命中路径剥前缀")
     }
 
     func test_desktop_plainModelPassesThroughWithoutMappingCard() throws {

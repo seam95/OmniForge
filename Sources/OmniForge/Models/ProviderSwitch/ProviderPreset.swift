@@ -29,13 +29,14 @@ struct DesktopPresetConnection: Equatable {
     let baseURL: String
     let modelRoutes: [String: DesktopModelRoute]
 
-    /// 便捷构造：主力档模型 + haiku 档模型（sonnet/opus/fable 共用主力档）。
-    static func routes(main: String, haiku: String, oneM: Bool = false) -> [String: DesktopModelRoute] {
+    /// 便捷构造：主力档模型 + haiku 档模型（sonnet/opus/fable 共用主力档）；
+    /// `haikuOneM` 独立传（Kimi 四档全 1M，其余家 haiku 档不标）。
+    static func routes(main: String, haiku: String, oneM: Bool = false, haikuOneM: Bool = false) -> [String: DesktopModelRoute] {
         [
             "claude-sonnet-5": DesktopModelRoute(model: main, labelOverride: nil, supports1M: oneM),
             "claude-opus-5": DesktopModelRoute(model: main, labelOverride: nil, supports1M: oneM),
             "claude-fable-5": DesktopModelRoute(model: main, labelOverride: nil, supports1M: oneM),
-            "claude-haiku-4-5": DesktopModelRoute(model: haiku, labelOverride: nil, supports1M: false),
+            "claude-haiku-4-5": DesktopModelRoute(model: haiku, labelOverride: nil, supports1M: haikuOneM),
         ]
     }
 }
@@ -97,7 +98,7 @@ enum ProviderPresetCatalog {
         codex: nil,
         claudeDesktop: DesktopPresetConnection(
             baseURL: "https://api.kimi.com/coding",
-            modelRoutes: DesktopPresetConnection.routes(main: "k3", haiku: "k3", oneM: true)
+            modelRoutes: DesktopPresetConnection.routes(main: "k3", haiku: "k3", oneM: true, haikuOneM: true)
         )
     )
 

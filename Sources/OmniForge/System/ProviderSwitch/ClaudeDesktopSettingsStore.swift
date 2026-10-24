@@ -34,6 +34,9 @@ protocol ClaudeDesktopSettingsStoring: AnyObject {
     /// pending 存在时按其完整内容重放写入（自愈；幂等）。返回是否发生了重放。
     @discardableResult
     func replayPendingIfPresent() throws -> Bool
+    /// 丢弃 pending（切换失败回滚后调用：保留 pending 会让下一次 refresh 把
+    /// 已回滚的事务重新落盘——回滚结果必须胜利）。
+    func discardPending() throws
 }
 
 /// Claude Desktop 配置写入错误。
@@ -268,6 +271,10 @@ final class ClaudeDesktopSettingsStore: ClaudeDesktopSettingsStoring {
         try writeFiles(from: pending)
         try pendingStore.clear()
         return true
+    }
+
+    func discardPending() throws {
+        try pendingStore.clear()
     }
 
     // MARK: - private

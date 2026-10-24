@@ -630,4 +630,30 @@ extension ProviderSwitchManagerTests {
         XCTAssertFalse(FileManager.default.fileExists(atPath: configURL.path))
         try? FileManager.default.removeItem(at: tmp)
     }
+
+    /// 审查 I-1 回归锁：切换失败回滚后 pending 必须被丢弃——
+    /// 残留的 pending 会在下一次 refresh 被重放，把回滚掉的失败事务静默完成。
+    func test_desktop_switchFailureDiscardsPending() async throws {
+        let (manager, _, tmp) = try makeDesktopStores()
+        let (_, _, _, _) = desktopStoreConfigURLs(tmp)
+        let pendingURL = tmp.appendingPathComponent("ProviderDesktop/pending.json")
+        // 预写 pending（模拟此前中断残留）→ 切换失败回滚 → pending 必须被清。
+        try FileManager.default.createDirectory(
+            at: pendingURL.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        try Data(#"{"files":[{"path":"/tmp/x.json","object":{"k":1}}],"createdAt":0}"#.utf8).write(to: pendingURL)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: pendingURL.path))
+
+        let (_, _, _, metaURL) = desktopStoreConfigURLs(tmp)
+        try FileManager.default.createDirectory(at: metaURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(#"{"entries":"broken"}"#.utf8).write(to: metaURL)
+        let profile = seedProfile(name: "智谱桌面", tool: .claudeDesktop, baseURL: "https://open.bigmodel.cn/api/anthropic")
+        do {
+            _ = try await manager.switchTo(profile: profile)
+            XCTFail("预期切换失败")
+        } catch {}
+        XCTAssertFalse(FileManager.default.fileExists(atPath: pendingURL.path),
+                       "回滚成功后 pending 必须丢弃，防止 refresh 重放推翻回滚结果")
+        try? FileManager.default.removeItem(at: tmp)
+    }
 }

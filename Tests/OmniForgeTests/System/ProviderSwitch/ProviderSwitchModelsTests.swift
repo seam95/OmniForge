@@ -567,7 +567,10 @@ extension ProviderSwitchModelsTests {
         XCTAssertEqual(model(ProviderPresetCatalog.glm, "claude-sonnet-5"), "glm-5.3")
         XCTAssertEqual(model(ProviderPresetCatalog.glm, "claude-haiku-4-5"), "glm-5.3-flash")
         XCTAssertEqual(model(ProviderPresetCatalog.kimi, "claude-sonnet-5"), "k3")
-        XCTAssertTrue(ProviderPresetCatalog.kimi.claudeDesktop!.modelRoutes["claude-sonnet-5"]!.supports1M, "Kimi 四档 1M")
+        for slot in ClaudeDesktopSettingsStore.defaultRoutes {
+            XCTAssertTrue(ProviderPresetCatalog.kimi.claudeDesktop!.modelRoutes[slot]!.supports1M,
+                          "Kimi 四档全 1M（含 \(slot)）")
+        }
         XCTAssertEqual(model(ProviderPresetCatalog.deepSeek, "claude-fable-5"), "deepseek-v4-pro")
         XCTAssertEqual(model(ProviderPresetCatalog.deepSeek, "claude-haiku-4-5"), "deepseek-v4-flash")
         XCTAssertEqual(model(ProviderPresetCatalog.miniMax, "claude-opus-5"), "MiniMax-M3")

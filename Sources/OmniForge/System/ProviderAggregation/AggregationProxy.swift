@@ -267,6 +267,9 @@ final class AggregationProxy: AggregationProxying {
 
     /// Desktop Messages 请求分派：聚合 id 走 resolver 发布表反查；
     /// plain 名走 `DesktopModelRouter`（默认那家是映射卡时按四档改写，直连卡原样透传）。
+    /// 转发前剥掉 `/claude-desktop` 路由前缀——客户端按 profile 的
+    /// `origin + /claude-desktop` 发请求，上游端点是 `/v1/messages`
+    /// （对齐 cc-switch `handlers.rs` 的 `strip_prefix`，漏剥会让上游 404）。
     private func dispatchDesktopMessages(_ request: AggregationHTTPRequest) -> AggregationDispatch {
         let model = AggregationRequestParser.model(from: request.body) ?? ""
         switch resolver.resolve(tool: .claudeDesktop, model: model) {
@@ -274,7 +277,11 @@ final class AggregationProxy: AggregationProxying {
             switch DesktopModelRouter.route(model: model, routes: desktopRouteTableProvider?()) {
             case .passthrough(let name), .rewritten(let name):
                 let rewritten = name == model ? request : Self.requestWithModel(request, model: name)
-                return forwardRequest(rewritten, to: target, protocol: .claudeDesktopMessages)
+                return forwardRequest(
+                    Self.strippingDesktopPrefix(rewritten),
+                    to: target,
+                    protocol: .claudeDesktopMessages
+                )
             case .unconfigured(let name):
                 return .respond(Self.missResponse(
                     statusCode: 400,
@@ -284,7 +291,7 @@ final class AggregationProxy: AggregationProxying {
             }
         case .hit(let target, let upstreamModel):
             return forwardRequest(
-                Self.requestWithModel(request, model: upstreamModel),
+                Self.strippingDesktopPrefix(Self.requestWithModel(request, model: upstreamModel)),
                 to: target,
                 protocol: .claudeDesktopMessages
             )
@@ -295,6 +302,21 @@ final class AggregationProxy: AggregationProxying {
                 protocol: .claudeDesktopMessages
             ))
         }
+    }
+
+    /// 剥掉 `/claude-desktop` 前缀：`/claude-desktop/v1/messages` → `/v1/messages`。
+    private static func strippingDesktopPrefix(_ request: AggregationHTTPRequest) -> AggregationHTTPRequest {
+        let prefix = "/claude-desktop"
+        guard request.head.path.hasPrefix(prefix) else { return request }
+        let stripped = String(request.head.path.dropFirst(prefix.count))
+        let head = AggregationRequestHead(
+            method: request.head.method,
+            path: stripped.isEmpty ? "/" : stripped,
+            query: request.head.query,
+            headers: request.head.headers,
+            contentLength: request.head.contentLength
+        )
+        return AggregationHTTPRequest(head: head, body: request.body)
     }
 
     /// `/claude-desktop/*` 鉴权：`Authorization: Bearer <token>` 与快照 token 精确匹配。

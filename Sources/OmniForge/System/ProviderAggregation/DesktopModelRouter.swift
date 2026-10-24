@@ -70,6 +70,10 @@ enum DesktopModelRouter {
 /// has_more, first_id, last_id}`。不复用 `AggregationModelDiscovery.responseBody`：
 /// 后者缺 `supports1m` 与 `created_at`（SPEC 功能 C）。
 enum DesktopModelDiscovery {
+    /// `created_at` 固定常量（RFC3339 字符串，对齐 cc-switch `DEFAULT_CREATED_AT`；
+    /// Anthropic 官方 `/v1/models` 同字段即字符串形态，整型可能导致整列表解析失败）。
+    static let createdAtConstant = "2024-01-01T00:00:00Z"
+
     static func responseBody(published: [AggregationPublishedModel]) -> Data {
         let rows: [[String: Any]] = published.map { model in
             [
@@ -77,7 +81,7 @@ enum DesktopModelDiscovery {
                 "id": model.id,
                 "display_name": model.label,
                 "description": model.description,
-                "created_at": Int(Date().timeIntervalSince1970),
+                "created_at": createdAtConstant,
                 "supports1m": model.oneM,
             ]
         }
