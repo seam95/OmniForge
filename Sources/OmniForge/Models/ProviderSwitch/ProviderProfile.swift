@@ -2,8 +2,9 @@ import Foundation
 
 /// Codex 思考档位的规范顺序（强度升序）— 解析、摘要与目录写入共用同一口径，
 /// 与 `CodexModelCatalogStore.standardReasoningLevels` 的 effort 值一致。
+/// 含 `ultra`（对齐 cc-switch `CODEX_REASONING_LEVEL_DESCRIPTIONS`：八档，ultra 最高）。
 enum CodexReasoningLevel {
-    static let ordered: [String] = ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+    static let ordered: [String] = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
 
     static func isValid(_ level: String) -> Bool {
         ordered.contains(level)
@@ -42,7 +43,7 @@ struct CodexModelEntry: Equatable {
     var model: String
     var displayName: String?
     var contextWindow: UInt64?
-    /// 该模型接受的思考档位（`supported_reasoning_levels` 覆盖；nil = 用默认七档）。
+    /// 该模型接受的思考档位（`supported_reasoning_levels` 覆盖；nil = 用默认八档）。
     var reasoningLevels: [String]?
     /// 默认思考档位（`default_reasoning_level` 覆盖；仅与 `reasoningLevels` 同用时有效，
     /// 最终裁决在目录写入侧：不在列表内会被忽略并回落）。

@@ -66,7 +66,7 @@ struct ProfileEditorView: View {
     /// 还按原下标读取，每个模型都会拿到邻居的窗口。
     @State private var codexWindowRows: [String] = []
     /// Codex 模型思考档位编辑态（逗号分隔串，如 "none,low,high"）：与 `codexModelRows`
-    /// **按位平行**（空串 = 未配置 = 默认七档）。行尾档位按钮展开编辑。
+    /// **按位平行**（空串 = 未配置 = 默认八档）。行尾档位按钮展开编辑。
     @State private var codexLevelsRows: [String] = []
     /// Codex 模型默认思考档位编辑态：与 `codexModelRows` **按位平行**（空串 = 未设置）。
     @State private var codexDefaultLevelsRows: [String] = []
@@ -314,6 +314,7 @@ struct ProfileEditorView: View {
                     .frame(height: 36)
                     .background(inputBackground)
                     .overlay(inputBorder)
+                    .onChange(of: baseURL) { _, _ in invalidateConnectivityResult() }
             }
 
             // 凭证
@@ -348,6 +349,7 @@ struct ProfileEditorView: View {
                 .frame(height: 36)
                 .background(inputBackground)
                 .overlay(inputBorder)
+                .onChange(of: token) { _, _ in invalidateConnectivityResult() }
             }
 
             connectivityTestSection
@@ -412,6 +414,13 @@ struct ProfileEditorView: View {
         !trimmed(baseURL).isEmpty && !trimmed(token).isEmpty
     }
 
+    /// 连接参数变化后旧结果不再可信（尤其是成功结果会放出「选择模型」入口）——
+    /// 清掉结果并收起弹窗，避免用旧供应商的模型列表回填新配置。
+    private func invalidateConnectivityResult() {
+        connectivityResult = nil
+        showModelPicker = false
+    }
+
     private func runConnectivityTest() {
         connectivityTesting = true
         connectivityResult = nil
@@ -450,6 +459,8 @@ struct ProfileEditorView: View {
 
     /// 应用勾选的模型回表单（Codex）：按模型名保留既有显示名、窗口与档位，
     /// 新行补空串；平行数组重新对齐。
+    /// 全部取消勾选时保留一个空行——模型列表的既有不变量是「至少一行」
+    /// （空行保存后被 `alignedCodexSaveRows` 丢弃，语义等于「不指定模型」，但 UI 不会塌成空列表）。
     private func applyPickedModels(_ models: [String]) {
         var oldDisplay: [String: String] = [:]
         var oldWindows: [String: String] = [:]
@@ -463,11 +474,12 @@ struct ProfileEditorView: View {
             oldLevels[model] = index < codexLevelsRows.count ? codexLevelsRows[index] : ""
             oldDefaults[model] = index < codexDefaultLevelsRows.count ? codexDefaultLevelsRows[index] : ""
         }
-        codexModelRows = models
-        codexDisplayNameRows = models.map { oldDisplay[$0] ?? "" }
-        codexWindowRows = models.map { oldWindows[$0] ?? "" }
-        codexLevelsRows = models.map { oldLevels[$0] ?? "" }
-        codexDefaultLevelsRows = models.map { oldDefaults[$0] ?? "" }
+        let target = models.isEmpty ? [""] : models
+        codexModelRows = target
+        codexDisplayNameRows = target.map { oldDisplay[$0] ?? "" }
+        codexWindowRows = target.map { oldWindows[$0] ?? "" }
+        codexLevelsRows = target.map { oldLevels[$0] ?? "" }
+        codexDefaultLevelsRows = target.map { oldDefaults[$0] ?? "" }
         expandedReasoningIndex = nil
         syncCodexParallelRows()
     }
@@ -720,6 +732,9 @@ struct ProfileEditorView: View {
                 Button(strings.providerReasoningEffortMax) {
                     reasoningEffort = "max"
                 }
+                Button(strings.providerReasoningEffortUltra) {
+                    reasoningEffort = "ultra"
+                }
             } label: {
                 HStack {
                     Text(displayReasoningEffortText)
@@ -748,6 +763,7 @@ struct ProfileEditorView: View {
         case "high": return strings.providerReasoningEffortHigh
         case "xhigh": return strings.providerReasoningEffortXHigh
         case "max": return strings.providerReasoningEffortMax
+        case "ultra": return strings.providerReasoningEffortUltra
         default: return strings.providerReasoningEffortDefault
         }
     }
@@ -1141,7 +1157,6 @@ struct ProfileEditorView: View {
                     reasoningLevelToggle(level, index: index)
                 }
             }
-
             Text(strings.providerCodexModelLevelsHint)
                 .font(.system(size: 11.5))
                 .foregroundStyle(Color(red: 0x8E / 255.0, green: 0x8E / 255.0, blue: 0x93 / 255.0))

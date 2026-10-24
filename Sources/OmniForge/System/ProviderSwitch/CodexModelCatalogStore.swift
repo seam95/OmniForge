@@ -45,6 +45,8 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
     }
 
     /// 规范化的完整思考等级列表（激活 Desktop 思考强度滑块与下拉选择）。
+    /// 含 `ultra`（对齐 cc-switch：八档，ultra 最高）——缺了它，「列表最高档」兜底会把
+    /// 声明了 ultra 的模型降到 max。
     static let standardReasoningLevels: [[String: String]] = [
         ["effort": "none", "description": "Disable Thinking"],
         ["effort": "minimal", "description": "Minimal Thinking"],
@@ -53,6 +55,7 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
         ["effort": "high", "description": "High Thinking"],
         ["effort": "xhigh", "description": "Extra High Thinking"],
         ["effort": "max", "description": "Max Thinking"],
+        ["effort": "ultra", "description": "Ultra Thinking"],
     ]
 
     /// 聚合目录统一工作窗口（对齐 Codex 官方 GPT 的 272K 与 magpie 的默认）。
@@ -80,7 +83,7 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
     ///   - priority: 目录内排序位（直连模式恒 1000；聚合模式末尾统一重排为 1...n）。
     ///   - useResponsesLite: Responses Lite 形态开关（仅聚合目录成员行显式注入；nil 不写键）。
     ///   - inputModalities: 显式声明的输入模态（nil 时按模型名推导，见 `ModelImageCapability`）。
-    ///   - reasoningLevels: 条目级思考档位覆盖（nil = 默认七档全列）。
+    ///   - reasoningLevels: 条目级思考档位覆盖（nil = 默认八档全列）。
     ///   - reasoningDefault: 条目级默认档位（仅与 `reasoningLevels` 同用有效；裁决见
     ///     `resolvedReasoningDefault`）。
     ///   - baseInstructions: 条目级身份提示词覆盖（nil = 中性默认）。当前无数据来源，
@@ -102,12 +105,16 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
     ) -> [String: Any] {
         let window = Int(contextWindow ?? 1_000_000)
         // 档位覆盖（对齐 cc-switch `apply_codex_reasoning_level_override`）：
-        // 配了列表 → 覆盖 supported_reasoning_levels（字符串数组，对齐 cc-switch 覆盖形状），
+        // 配了列表 → 按标准序重排后写**对象数组** `[{effort, description}]`（与默认档位同形状，
+        // Codex 目录解析器只认这个形状；写成字符串数组会让整份目录加载失败）；
         // default 按「显式命中 → 模板默认命中 → 列表最高档」裁决；
-        // 未配列表 → 保持七档对象数组（带描述，激活 Desktop 强度滑块），default 保持模板值。
-        let supportedLevels: [Any]
-        if let reasoningLevels {
-            supportedLevels = reasoningLevels
+        // 未配列表 → 保持默认八档对象数组，default 保持模板值。
+        let supportedLevels: [[String: String]]
+        if let reasoningLevels, !reasoningLevels.isEmpty {
+            supportedLevels = standardReasoningLevels.filter { item in
+                guard let effort = item["effort"] else { return false }
+                return reasoningLevels.contains(effort)
+            }
         } else {
             supportedLevels = standardReasoningLevels
         }

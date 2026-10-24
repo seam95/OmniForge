@@ -20,12 +20,18 @@ struct ProviderModelPickerSheet: View {
     @State private var searchText = ""
 
     /// 已配置、供应商未返回（置顶单列——这些行不在供应商列表里，只能在这里勾选）。
+    /// 去重保序：ForEach 以模型名为 id，重复 id 会让 SwiftUI 渲染错乱。
     private var configuredNotReturned: [String] {
-        configuredModels.filter { !fetchedModels.contains($0) }
+        Self.deduped(configuredModels.filter { !fetchedModels.contains($0) })
     }
 
     private var filteredConfigured: [String] { filtered(configuredNotReturned) }
-    private var filteredAvailable: [String] { filtered(fetchedModels) }
+    private var filteredAvailable: [String] { filtered(Self.deduped(fetchedModels)) }
+
+    private static func deduped(_ models: [String]) -> [String] {
+        var seen = Set<String>()
+        return models.filter { seen.insert($0).inserted }
+    }
 
     var body: some View {
         VStack(spacing: 0) {

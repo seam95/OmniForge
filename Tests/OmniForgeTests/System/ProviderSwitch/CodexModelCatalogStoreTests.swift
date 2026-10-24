@@ -89,7 +89,11 @@ final class CodexModelCatalogStoreTests: XCTestCase {
 
         let levels = try XCTUnwrap(first["supported_reasoning_levels"] as? [[String: String]])
         let effortValues = levels.compactMap { $0["effort"] }
-        XCTAssertEqual(effortValues, ["none", "minimal", "low", "medium", "high", "xhigh", "max"])
+        XCTAssertEqual(
+            effortValues,
+            ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
+            "八档（对齐 cc-switch，ultra 最高）"
+        )
     }
 
     /// 回归：Codex 的目录解析器把 `base_instructions` 当必需字段，缺失时整份
@@ -228,15 +232,24 @@ final class CodexModelCatalogStoreTests: XCTestCase {
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         let models = try XCTUnwrap(json["models"] as? [[String: Any]])
 
-        // 覆盖行：字符串数组形状 + 显式默认档
+        // 覆盖行：对象数组形状（effort + description）+ 显式默认档
         let overridden = try XCTUnwrap(models.first { $0["slug"] as? String == "glm-5.3" })
-        XCTAssertEqual(overridden["supported_reasoning_levels"] as? [String], ["none", "low", "high"])
+        let overriddenLevels = try XCTUnwrap(overridden["supported_reasoning_levels"] as? [[String: String]])
+        XCTAssertEqual(
+            overriddenLevels.map { $0["effort"] },
+            ["none", "low", "high"],
+            "只保留勾选档位，按标准序重排"
+        )
+        XCTAssertTrue(
+            overriddenLevels.allSatisfy { ($0["description"] ?? "").isEmpty == false },
+            "每个档位必须带 description（Codex 目录解析器只认对象形状）"
+        )
         XCTAssertEqual(overridden["default_reasoning_level"] as? String, "low")
 
-        // 未覆盖行：保持七档对象数组（带描述）+ 模板默认档
+        // 未覆盖行：保持八档对象数组（带描述）+ 模板默认档
         let untouched = try XCTUnwrap(models.first { $0["slug"] as? String == "glm-4.7-air" })
         let standardLevels = untouched["supported_reasoning_levels"] as? [[String: Any]]
-        XCTAssertEqual(standardLevels?.count, 7, "未配置档位覆盖时保持默认七档对象形状")
+        XCTAssertEqual(standardLevels?.count, 8, "未配置档位覆盖时保持默认档位对象形状")
         XCTAssertEqual(untouched["default_reasoning_level"] as? String, "high")
     }
 

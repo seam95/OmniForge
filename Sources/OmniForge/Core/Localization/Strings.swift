@@ -1415,7 +1415,7 @@ struct Strings: Equatable {
     let providerCodexModelLevelsHint: String
     let providerCodexModelLevelsDefaultLabel: String
     let providerCodexModelLevelsDefaultAuto: String
-    /// 档位徽章：未配置（跟随默认七档）。
+    /// 档位徽章：未配置（跟随默认八档）。
     let providerCodexModelLevelsAuto: String
     /// 档位徽章：不连续档位集合的计数（%d = 档数）。
     let providerCodexModelLevelsCountFormat: String
@@ -1440,6 +1440,7 @@ struct Strings: Equatable {
     let providerReasoningEffortHigh: String
     let providerReasoningEffortXHigh: String
     let providerReasoningEffortMax: String
+    let providerReasoningEffortUltra: String
     /// 角色模型映射分组标题（Claude Code）。
     let providerModelMappingLabel: String
     let providerModelMappingSectionTitle: String

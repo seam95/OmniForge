@@ -93,7 +93,6 @@ final class ProviderConnectivityTester: ProviderConnectivityTesting {
             )
         }
 
-        var missingStatuses: [Int] = []
         var attemptedAny = false
         for urlString in candidates {
             // 用户可能填了无 scheme 的地址；无法构成 URL 的候选直接跳过。
@@ -144,7 +143,7 @@ final class ProviderConnectivityTester: ProviderConnectivityTesting {
                     latencyMilliseconds: Self.elapsedMilliseconds(since: start)
                 )
             case 404, 405:
-                missingStatuses.append(http.statusCode)
+                // 端点不存在 → 换下一个候选（其余状态直接出结果）。
                 continue
             default:
                 return ProviderConnectivityResult(
