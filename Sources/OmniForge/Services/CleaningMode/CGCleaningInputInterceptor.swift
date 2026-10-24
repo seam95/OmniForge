@@ -12,6 +12,7 @@ import Foundation
 final class CGCleaningInputInterceptor: CleaningInputIntercepting {
     var onHoldProgress: ((Double) -> Void)?
     var onHoldSatisfied: (() -> Void)?
+    var onSystemReclaimed: (() -> Void)?
 
     /// 解锁所需持续按压时长（秒）。
     private let holdDuration: TimeInterval
@@ -84,12 +85,22 @@ final class CGCleaningInputInterceptor: CleaningInputIntercepting {
     // MARK: - 事件处理（tap 回调，主线程）
 
     private func handleEvent(type: CGEventType) -> Unmanaged<CGEvent>? {
-        // tap 被系统超时禁用时自动重启，避免拦截意外失效。
-        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+        switch type {
+        case .tapDisabledByTimeout:
+            // 超时是自身卡顿：重装一次，拦截继续有效。
             if let tap = eventTap {
                 CGEvent.tapEnable(tap: tap, enable: true)
             }
             return nil
+        case .tapDisabledByUserInput:
+            // 系统主动收回（锁屏安全输入等）：不能再抢回 tap，上报退出清洁。
+            // 尤其锁屏时鼠标事件不受安全输入保护，继续吞会冻结指针与锁屏界面。
+            // 回调内拆除 mach port / runloop source 不安全，等本次回调返回后再退出。
+            let report = onSystemReclaimed
+            DispatchQueue.main.async { report?() }
+            return nil
+        default:
+            break
         }
 
         switch type {

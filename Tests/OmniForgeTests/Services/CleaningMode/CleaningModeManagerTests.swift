@@ -7,6 +7,7 @@ final class CleaningModeManagerTests: XCTestCase {
     private var interceptor: FakeCleaningInputInterceptor!
     private var overlay: FakeCleaningOverlayPresenter!
     private var scheduler: FakeCleaningTimeoutScheduler!
+    private var systemEvents: FakeCleaningSystemEventObserver!
     private var userDefaults: UserDefaults!
     private var defaultsSuiteName = ""
     private var startedNotifications = 0
@@ -16,6 +17,7 @@ final class CleaningModeManagerTests: XCTestCase {
         interceptor = FakeCleaningInputInterceptor()
         overlay = FakeCleaningOverlayPresenter()
         scheduler = FakeCleaningTimeoutScheduler()
+        systemEvents = FakeCleaningSystemEventObserver()
         defaultsSuiteName = "CleaningModeManagerTests-\(UUID().uuidString)"
         userDefaults = UserDefaults(suiteName: defaultsSuiteName)
         startedNotifications = 0
@@ -38,6 +40,7 @@ final class CleaningModeManagerTests: XCTestCase {
             interceptor: interceptor,
             overlayPresenter: overlay,
             timeoutScheduler: scheduler,
+            systemEventObserver: systemEvents,
             defaults: userDefaults
         )
     }
@@ -203,6 +206,73 @@ final class CleaningModeManagerTests: XCTestCase {
         XCTAssertEqual(manager.state, .idle)
         XCTAssertFalse(overlay.isPresented)
     }
+
+    // MARK: - 系统中断（锁屏 / 睡眠 / 会话切换）
+
+    func test_仅会话期间订阅系统事件() {
+        let manager = makeManager()
+        XCTAssertFalse(systemEvents.isObserving)
+
+        XCTAssertTrue(manager.start(.keyboard))
+        XCTAssertTrue(systemEvents.isObserving)
+
+        manager.stop()
+        XCTAssertFalse(systemEvents.isObserving)
+    }
+
+    func test_启动失败不订阅系统事件() {
+        interceptor.startResult = false
+        let manager = makeManager()
+        XCTAssertFalse(manager.start(.screen))
+        XCTAssertFalse(systemEvents.isObserving)
+    }
+
+    func test_锁屏等系统中断即退出清洁并撤下全部资源() {
+        let manager = makeManager()
+        XCTAssertTrue(manager.start(.screen))
+        XCTAssertTrue(overlay.isPresented)
+
+        systemEvents.simulateInterrupt()
+
+        XCTAssertEqual(manager.state, .idle)
+        XCTAssertNil(manager.activeSince)
+        XCTAssertFalse(interceptor.isRunning)
+        XCTAssertFalse(overlay.isPresented)
+        XCTAssertTrue(scheduler.allCancelled)
+        XCTAssertFalse(systemEvents.isObserving)
+    }
+
+    func test_键盘清洁同样响应系统中断() {
+        let manager = makeManager()
+        XCTAssertTrue(manager.start(.keyboard))
+        systemEvents.simulateInterrupt()
+        XCTAssertEqual(manager.state, .idle)
+        XCTAssertFalse(overlay.isHintPresented)
+        XCTAssertFalse(interceptor.isRunning)
+    }
+
+    func test_系统收回拦截事件即退出且不重装tap() {
+        let manager = makeManager()
+        XCTAssertTrue(manager.start(.keyboard))
+
+        interceptor.simulateSystemReclaimed()
+
+        XCTAssertEqual(manager.state, .idle)
+        XCTAssertFalse(interceptor.isRunning)
+        XCTAssertFalse(overlay.isHintPresented)
+        XCTAssertFalse(systemEvents.isObserving)
+    }
+
+    func test_系统中断后重置状态不残留() {
+        let manager = makeManager()
+        XCTAssertTrue(manager.start(.screen))
+        systemEvents.simulateInterrupt()
+
+        // 中断退出后可再次启动，且重新订阅监听。
+        XCTAssertTrue(manager.start(.keyboard))
+        XCTAssertTrue(systemEvents.isObserving)
+        XCTAssertEqual(manager.state, .active(.keyboard))
+    }
 }
 
 // MARK: - 假实现
@@ -210,6 +280,7 @@ final class CleaningModeManagerTests: XCTestCase {
 private final class FakeCleaningInputInterceptor: CleaningInputIntercepting {
     var onHoldProgress: ((Double) -> Void)?
     var onHoldSatisfied: (() -> Void)?
+    var onSystemReclaimed: (() -> Void)?
     var startResult = true
     private(set) var isRunning = false
 
@@ -222,6 +293,25 @@ private final class FakeCleaningInputInterceptor: CleaningInputIntercepting {
 
     func simulateHoldProgress(_ progress: Double) { onHoldProgress?(progress) }
     func simulateHoldSatisfied() { onHoldSatisfied?() }
+    func simulateSystemReclaimed() { onSystemReclaimed?() }
+}
+
+@MainActor
+private final class FakeCleaningSystemEventObserver: CleaningSystemEventObserving {
+    private(set) var isObserving = false
+    private var onInterrupt: (@MainActor () -> Void)?
+
+    func start(onInterrupt: @escaping @MainActor () -> Void) {
+        isObserving = true
+        self.onInterrupt = onInterrupt
+    }
+
+    func stop() {
+        isObserving = false
+        onInterrupt = nil
+    }
+
+    func simulateInterrupt() { onInterrupt?() }
 }
 
 private final class FakeCleaningOverlayPresenter: CleaningOverlayPresenting {

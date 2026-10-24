@@ -385,6 +385,7 @@ struct FeatureFactory {
                         L10n(userDefaults: userDefaults).s
                     }),
                     timeoutScheduler: DispatchCleaningTimeoutScheduler(),
+                    systemEventObserver: CleaningSystemEventObserver(),
                     defaults: userDefaults
                 )
                 runtime.register(.cleaningMode, manager: manager)

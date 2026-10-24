@@ -14,6 +14,8 @@ protocol CleaningInputIntercepting: AnyObject {
     var onHoldProgress: ((Double) -> Void)? { get set }
     /// 长按满足解锁时长（主线程回调），应退出清洁状态。
     var onHoldSatisfied: (() -> Void)? { get set }
+    /// 系统收回事件 tap（锁屏安全输入等）时的回调：此时必须退出清洁，不能重新抢占 tap。
+    var onSystemReclaimed: (() -> Void)? { get set }
     /// 启动拦截；返回 false 表示事件 tap 创建失败（通常是辅助功能权限缺失）。
     func start() -> Bool
     /// 停止拦截并恢复输入。
@@ -57,6 +59,7 @@ final class CleaningModeManager: ObservableObject {
     private let interceptor: CleaningInputIntercepting
     private let overlayPresenter: CleaningOverlayPresenting?
     private let timeoutScheduler: CleaningTimeoutScheduling
+    private let systemEventObserver: CleaningSystemEventObserving
     private let defaults: UserDefaults
     private var timeoutCancellable: CleaningTimeoutCancellable?
 
@@ -64,11 +67,13 @@ final class CleaningModeManager: ObservableObject {
         interceptor: CleaningInputIntercepting,
         overlayPresenter: CleaningOverlayPresenting?,
         timeoutScheduler: CleaningTimeoutScheduling,
+        systemEventObserver: CleaningSystemEventObserving,
         defaults: UserDefaults
     ) {
         self.interceptor = interceptor
         self.overlayPresenter = overlayPresenter
         self.timeoutScheduler = timeoutScheduler
+        self.systemEventObserver = systemEventObserver
         self.defaults = defaults
         bindInterceptor()
     }
@@ -120,14 +125,20 @@ final class CleaningModeManager: ObservableObject {
             overlayPresenter?.present(style: overlayStyle)
         }
 
+        // 锁屏/睡眠会让系统收回输入，必须跟着退出，否则解锁后仍被遮罩和光标隐藏挡住。
+        systemEventObserver.start { [weak self] in
+            self?.stop()
+        }
+
         scheduleTimeout()
 
         NotificationCenter.default.post(name: Self.didStartNotification, object: nil)
         return true
     }
 
-    /// 退出清洁：撤遮罩 → 停拦截 → 清计时。幂等。
+    /// 退出清洁：停系统监听 → 撤遮罩 → 停拦截 → 清计时。幂等。
     func stop() {
+        systemEventObserver.stop()
         overlayPresenter?.setHoldProgress(nil)
         overlayPresenter?.dismiss()
         timeoutCancellable?.cancel()
@@ -152,6 +163,10 @@ final class CleaningModeManager: ObservableObject {
             self.overlayPresenter?.setHoldProgress(progress)
         }
         interceptor.onHoldSatisfied = { [weak self] in
+            self?.stop()
+        }
+        // 系统收回 tap 说明当前无法继续可靠拦截（锁屏安全输入等），退出而不重装 tap。
+        interceptor.onSystemReclaimed = { [weak self] in
             self?.stop()
         }
     }
