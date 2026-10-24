@@ -80,8 +80,8 @@ final class CodexModelCatalogStoreTests: XCTestCase {
         XCTAssertEqual(first["display_name"] as? String, "GLM (glm-4-7)")
         XCTAssertEqual(first["description"] as? String, "OmniForge 托管 · GLM")
         XCTAssertEqual(first["default_reasoning_level"] as? String, "medium")
-        XCTAssertEqual(first["context_window"] as? Int, 1_000_000)
-        XCTAssertEqual(first["max_context_window"] as? Int, 1_000_000)
+        XCTAssertEqual(first["context_window"] as? Int, 128_000, "未配置窗口默认 128K（对齐 cc-switch）")
+        XCTAssertEqual(first["max_context_window"] as? Int, 128_000)
         XCTAssertEqual(first["effective_context_window_percent"] as? Int, 95)
         XCTAssertEqual(first["supported_in_api"] as? Bool, true)
         XCTAssertEqual(first["visibility"] as? String, "list")
@@ -359,6 +359,30 @@ final class CodexModelCatalogStoreTests: XCTestCase {
         XCTAssertNil(routeRow["comp_hash"], "聚合成员行不写 comp_hash")
         XCTAssertEqual(routeRow["display_name"] as? String, "GLM 智谱 (glm-5.3)")
         XCTAssertEqual(routeRow["context_window"] as? Int, 200_000, "窗口取发布条目值，不是 extraEnv 全局回落")
+    }
+
+    /// 回归：默认那家未发布、未配任何窗口时，回退行的窗口默认 128K（对齐
+    /// cc-switch `unwrap_or(128_000)`）——此前 1M 会让 128K 模型按 1M 发送。
+    func test_writeAggregatedCatalog_fallbackRouteRowDefaultsTo128KWindow() throws {
+        let relay = ProviderProfile(
+            id: "relay",
+            name: "Relay",
+            tool: .codex,
+            baseURL: "https://relay.example.com/v1",
+            token: "sk-test",
+            codexModels: ["relay-model"],
+            managedBy: ProviderProfile.managedByMarker
+        )
+        // 默认那家不在 published → 走直连列表回退分支。
+        try store.writeAggregatedCatalog(
+            defaultProfile: relay,
+            published: [makePublished(key: "kimi", profileName: "Kimi", model: "kimi-k3")],
+            defaultKey: "relay"
+        )
+
+        let routeRow = try XCTUnwrap(try readModels().first { $0["slug"] as? String == "relay-model" })
+        XCTAssertEqual(routeRow["context_window"] as? Int, 128_000)
+        XCTAssertEqual(routeRow["max_context_window"] as? Int, 128_000)
     }
 
     /// 主动拉取列表里的新模型可能还没进合成官方卡；目录必须把它补进来。

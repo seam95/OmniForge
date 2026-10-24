@@ -58,6 +58,11 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
         ["effort": "ultra", "description": "Ultra Thinking"],
     ]
 
+    /// 未配置窗口时的目录默认窗口（对齐 cc-switch `unwrap_or(128_000)`）。
+    /// 此前用 1M：128K/272K 的第三方模型会按 1M 发送，直到上游拒绝（同
+    /// `codexPublishedModels` 注释所述危害）；聚合路径另有 272K 工作窗口策略。
+    static let defaultContextWindow: UInt64 = 128_000
+
     /// 聚合目录统一工作窗口（对齐 Codex 官方 GPT 的 272K 与 magpie 的默认）。
     ///
     /// 聚合里每个成员原本按自己的真实窗口告诉 Codex：1M 的 DeepSeek 与 272K 的 GPT
@@ -103,7 +108,7 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
         baseInstructions: String? = nil,
         supportsParallelToolCalls: Bool? = nil
     ) -> [String: Any] {
-        let window = Int(contextWindow ?? 1_000_000)
+        let window = Int(contextWindow ?? Self.defaultContextWindow)
         // 档位覆盖（对齐 cc-switch `apply_codex_reasoning_level_override`）：
         // 配了列表 → 按标准序重排后写**对象数组** `[{effort, description}]`（与默认档位同形状，
         // Codex 目录解析器只认这个形状；写成字符串数组会让整份目录加载失败）；
@@ -185,9 +190,11 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
         }
 
         let defaultEffort = profile.reasoningEffort?.isEmpty == false ? profile.reasoningEffort! : "high"
-        // 未按模型配置窗口时回落到供应商级 `model_context_window`；再缺省才用 1M。
+        // 未按模型配置窗口时回落到供应商级 `model_context_window`；再缺省用 128K
+        // （对齐 cc-switch `unwrap_or(128_000)`）。
         // 逐模型窗口必须写进目录：Codex 只按目录行决定发送与压缩，表单里的值不写就无效。
-        let fallbackWindow = UInt64(profile.extraEnv["model_context_window"] ?? "") ?? 1_000_000
+        let fallbackWindow = UInt64(profile.extraEnv["model_context_window"] ?? "")
+            ?? Self.defaultContextWindow
         let modelEntries: [[String: Any]] = entries.map { entry in
             Self.catalogEntry(
                 model: entry.model,
@@ -309,7 +316,8 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
             }
         } else {
             // 回退：默认那家未在 published 中 —— 用其直连模型列表保证普通 slug 可达。
-            let fallbackWindow = UInt64(defaultProfile.extraEnv["model_context_window"] ?? "") ?? 1_000_000
+            let fallbackWindow = UInt64(defaultProfile.extraEnv["model_context_window"] ?? "")
+                ?? Self.defaultContextWindow
             for model in defaultProfile.codexModelList {
                 rows.append((
                     Self.catalogEntry(
