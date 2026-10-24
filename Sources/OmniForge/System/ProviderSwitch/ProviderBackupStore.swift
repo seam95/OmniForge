@@ -7,18 +7,24 @@ struct ProviderBackup: Identifiable, Equatable {
     let date: Date
     /// 排序用：实际文件修改时间（文件名时间戳精度到秒，同秒内靠修改时间区分先后）。
     var sortDate: Date = .distantPast
+    /// 快照时源配置文件不存在（如 CLI 首次安装未运行）→ 恢复 = 回到文件不存在。
+    /// 仅内存标记：absent 快照不落盘，也不出现在历史列表。
+    var isAbsent: Bool = false
 }
 
 /// 备份存储边界。
 protocol ProviderBackupStoring: AnyObject {
     /// 对目标配置文件做带时间戳快照；按工具保留最近 10 份（超出删最旧）。
+    /// 源文件缺失（如 CLI 首次安装未运行）→ 记 absent 快照不抛错，首次切换不失败；
+    /// 恢复 absent 快照 = 回到文件不存在。absent 快照仅存内存，不入历史列表。
     /// 返回新快照。
     func snapshot(tool: ProviderTool, of configURL: URL) throws -> ProviderBackup
     /// 按工具列出历史快照（最新在前）。
     func list(tool: ProviderTool) -> [ProviderBackup]
     /// 读取指定快照的内容（文本），供用户在恢复前查看将要恢复的内容。
     func content(of backup: ProviderBackup) throws -> String
-    /// 恢复指定快照：快照内容经 tmp+rename 原子写回目标配置文件（`0600`）。
+    /// 恢复指定快照：快照内容经 tmp+rename 原子写回目标配置文件（`0600`）；
+    /// absent 快照恢复 = 删除目标文件（回到快照时不存在）。
     func restore(_ backup: ProviderBackup, to configURL: URL) throws
 }
 
@@ -38,7 +44,15 @@ final class ProviderBackupStore: ProviderBackupStoring {
     func snapshot(tool: ProviderTool, of configURL: URL) throws -> ProviderBackup {
         try fileManager.createDirectory(at: backupDirectory, withIntermediateDirectories: true)
         guard fileManager.fileExists(atPath: configURL.path) else {
-            throw ProviderBackupError.sourceMissing(path: configURL.path)
+            // 源文件缺失（CLI 首次安装未运行）→ 记 absent 快照，首次切换不失败
+            //（对齐 Desktop bundle 的「缺失记 absent」语义）；写入端会从零创建最小配置。
+            var backup = ProviderBackup(
+                id: Self.makeSnapshotFileName(tool: tool, extensionName: configURL.pathExtension),
+                tool: tool,
+                date: Date()
+            )
+            backup.isAbsent = true
+            return backup
         }
         let data = try Data(contentsOf: configURL)
         let backup = ProviderBackup(
@@ -76,6 +90,7 @@ final class ProviderBackupStore: ProviderBackupStoring {
     }
 
     func content(of backup: ProviderBackup) throws -> String {
+        if backup.isAbsent { return "" }
         let source = backupDirectory.appendingPathComponent(backup.id)
         guard fileManager.fileExists(atPath: source.path) else {
             throw ProviderBackupError.backupMissing(path: source.path)
@@ -87,6 +102,13 @@ final class ProviderBackupStore: ProviderBackupStoring {
     }
 
     func restore(_ backup: ProviderBackup, to configURL: URL) throws {
+        if backup.isAbsent {
+            // absent 快照恢复 = 回到文件不存在（删除快照后才出现的文件）。
+            if fileManager.fileExists(atPath: configURL.path) {
+                try fileManager.removeItem(at: configURL)
+            }
+            return
+        }
         let source = backupDirectory.appendingPathComponent(backup.id)
         guard fileManager.fileExists(atPath: source.path) else {
             throw ProviderBackupError.backupMissing(path: source.path)
@@ -137,6 +159,14 @@ final class ProviderBackupStore: ProviderBackupStoring {
 
 /// 备份错误。
 enum ProviderBackupError: Error, Equatable {
-    case sourceMissing(path: String)
     case backupMissing(path: String)
+}
+
+extension ProviderBackupError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .backupMissing(let path):
+            return "备份文件不存在：\(path)"
+        }
+    }
 }

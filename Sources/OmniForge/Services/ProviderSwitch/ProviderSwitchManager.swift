@@ -25,6 +25,19 @@ enum ProviderSwitchManagerError: Error, Equatable {
     case unsupportedTool(tool: ProviderTool)
 }
 
+extension ProviderSwitchManagerError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .missingUnmanagedValues:
+            return "当前配置缺少网关地址或密钥，无法收编为供应商"
+        case .rollbackFailed:
+            return "写入失败，且自动回滚也失败了：请在备份列表中手动恢复配置"
+        case .unsupportedTool:
+            return "该工具的切换能力尚未装配"
+        }
+    }
+}
+
 /// 供应商切换编排管理器 — 串联配置读写 / 备份回滚 / profile 管理 / 进程检测。
 @MainActor
 final class ProviderSwitchManager: ObservableObject, ProviderActivationRefreshing {

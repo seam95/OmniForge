@@ -337,6 +337,36 @@ final class ProviderSwitchManagerTests: XCTestCase {
         XCTAssertTrue(outcome.cliRunning, "检测到运行中进程 → 提示需重启")
     }
 
+    /// 回归（2026-10-24 首次切换失败）：CLI 首次安装从未运行（settings.json 不存在）时，
+    /// 切换不得因备份快照缺源而中止。修复前 snapshot 抛 sourceMissing，toast 显示
+    /// 「未能完成操作。（OmniForge.ProviderBackupError 错误 0。）」。
+    func test_switchTo_succeedsWhenConfigFileMissing() async throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ProviderSwitchManagerTests_\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let settingsURL = tmp.appendingPathComponent("settings.json") // 故意不创建
+        let realBackupStore = ProviderBackupStore(backupDirectory: tmp.appendingPathComponent("Backups"))
+        let realClaudeStore = ClaudeSettingsStore(settingsURL: settingsURL)
+        let manager = ProviderSwitchManager(
+            claudeStore: realClaudeStore,
+            codexStore: codexStore,
+            backupStore: realBackupStore,
+            profileStore: profileStore,
+            claudeConfigURL: settingsURL,
+            codexConfigURL: codexConfigURL,
+            processDetector: detector
+        )
+        let profile = seedProfile()
+
+        let outcome = try await manager.switchTo(profile: profile)
+
+        XCTAssertEqual(outcome.target, .profile(name: "GLM"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: settingsURL.path), "写入端从零创建最小配置文件")
+        XCTAssertEqual(try realClaudeStore.readEnv()["ANTHROPIC_BASE_URL"], profile.baseURL)
+        XCTAssertEqual(manager.active(tool: .claudeCode), .profile(profileID: "glm"))
+    }
+
     func test_switchTo_writeFailureRollsBackFromSnapshot() async throws {
         let profile = seedProfile()
         claudeStore.applyError = ProviderConfigFileError.writeFailed(path: "settings.json")

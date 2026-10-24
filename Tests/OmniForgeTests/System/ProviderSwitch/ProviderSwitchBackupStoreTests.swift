@@ -38,10 +38,26 @@ final class ProviderSwitchBackupStoreTests: XCTestCase {
         XCTAssertEqual(saved, "{\"env\": {\"A\": \"1\"}}")
     }
 
-    func test_snapshot_missingSourceThrows() {
-        XCTAssertThrowsError(try makeStore().snapshot(tool: .claudeCode, of: configURL)) { error in
-            XCTAssertEqual(error as? ProviderBackupError, .sourceMissing(path: configURL.path))
-        }
+    /// 源文件缺失（CLI 首次安装未运行）→ 记 absent 快照不抛错（对齐 Desktop bundle 的
+    /// 「缺失记 absent」语义，首次切换不失败）；absent 快照仅存内存，不落盘、不入历史列表。
+    func test_snapshot_missingSourceRecordsAbsent() throws {
+        let backup = try makeStore().snapshot(tool: .claudeCode, of: configURL)
+        XCTAssertTrue(backup.isAbsent)
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: backupDir.path)) ?? []
+        XCTAssertTrue(files.isEmpty, "absent 快照不落盘")
+    }
+
+    /// absent 快照恢复 = 回到文件不存在：删除快照后才出现的文件；目标本就不存在则无操作。
+    func test_restore_absentRemovesTargetFile() throws {
+        let store = makeStore()
+        let backup = try store.snapshot(tool: .claudeCode, of: configURL)
+        XCTAssertTrue(backup.isAbsent)
+
+        try writeConfig("{\"partial\": true}") // 模拟写入中途失败留下的残留文件
+        try store.restore(backup, to: configURL)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: configURL.path))
+
+        XCTAssertNoThrow(try store.restore(backup, to: configURL), "目标已不存在 → 无操作")
     }
 
     func test_snapshot_retainsLatestTenPerTool() throws {
