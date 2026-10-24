@@ -215,3 +215,33 @@ final class AggregationRouteTableTests: XCTestCase {
         XCTAssertEqual(rewritten["chatgpt-account-id"], "acct-1")
     }
 }
+
+// MARK: - Claude Desktop 路由
+
+extension AggregationRouteTableTests {
+    func test_desktopPaths_routeToDesktopProtocols() {
+        XCTAssertEqual(
+            AggregationRouteTable.protocolOf(method: "POST", path: "/claude-desktop/v1/messages"),
+            .claudeDesktopMessages
+        )
+        XCTAssertEqual(
+            AggregationRouteTable.protocolOf(method: "GET", path: "/claude-desktop/v1/models"),
+            .claudeDesktopModelDiscovery
+        )
+    }
+
+    /// Desktop 端点固定带 /claude-desktop 前缀，无裸 /v1 或 /codex 变体——
+    /// 变体形态必须 404（不透传），避免鉴权前误路由。
+    func test_desktopPathVariants_areUnsupported() {
+        XCTAssertEqual(AggregationRouteTable.protocolOf(method: "POST", path: "/claude-desktop/messages"), .unsupported)
+        XCTAssertEqual(AggregationRouteTable.protocolOf(method: "POST", path: "/v1/claude-desktop/v1/messages"), .unsupported)
+        XCTAssertEqual(AggregationRouteTable.protocolOf(method: "GET", path: "/claude-desktop/models"), .unsupported)
+    }
+
+    func test_desktopProtocolToolIsClaudeDesktop() {
+        XCTAssertEqual(AggregationClientProtocol.claudeDesktopMessages.modelIDTool, .claudeDesktop)
+        XCTAssertNil(AggregationClientProtocol.claudeDesktopModelDiscovery.modelIDTool, "本地应答形状无归属")
+        XCTAssertEqual(AggregationClientProtocol.anthropicMessages.modelIDTool, .claudeCode,
+                       "既有 anthropicMessages 的单值工具映射不得被挤占")
+    }
+}

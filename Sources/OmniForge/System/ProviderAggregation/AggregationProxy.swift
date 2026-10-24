@@ -66,6 +66,10 @@ final class AggregationProxy: AggregationProxying {
     private let forwarder: AggregationForwarding
     private let sealStore: AggregationRefusedSealStore
     private let defaults: UserDefaults
+    /// Desktop 网关 token（快照透传；nil → `/claude-desktop/*` 一律 401，SPEC 功能 C）。
+    var desktopGatewayTokenProvider: (() -> String?)?
+    /// Desktop 默认那家的模型映射表（快照透传；nil/空 = 直连卡 → plain 名原样透传）。
+    var desktopRouteTableProvider: (() -> [String: DesktopModelRoute]?)?
     /// 连接数据面队列。每连接一个独立状态机，无共享可变状态。
     private let connectionQueue = DispatchQueue(label: "AggregationProxy.connections")
 
@@ -176,6 +180,23 @@ final class AggregationProxy: AggregationProxying {
             ))
         case .unsupported:
             return .respond(Self.jsonResponse(statusCode: 404, body: ["error": "not_found"]))
+        case .claudeDesktopMessages, .claudeDesktopModelDiscovery:
+            // /claude-desktop/* 前置鉴权：token 来自快照，缺失/不匹配一律 401（不透传上游）。
+            guard Self.isDesktopAuthorized(request, expected: desktopGatewayTokenProvider?()) else {
+                return .respond(Self.jsonResponse(statusCode: 401, body: [
+                    "type": "error",
+                    "error": ["type": "authentication_error", "message": "invalid gateway token"],
+                ]))
+            }
+            if clientProtocol == .claudeDesktopModelDiscovery {
+                return .respond(Self.jsonDataResponse(
+                    statusCode: 200,
+                    body: DesktopModelDiscovery.responseBody(
+                        published: modelLister.publishedModels(tool: .claudeDesktop)
+                    )
+                ))
+            }
+            return dispatchDesktopMessages(request)
         case .modelDiscovery:
             if AggregationModelDiscovery.isModelDiscoveryRequest(
                 method: request.head.method,
@@ -242,6 +263,44 @@ final class AggregationProxy: AggregationProxying {
                 ))
             }
         }
+    }
+
+    /// Desktop Messages 请求分派：聚合 id 走 resolver 发布表反查；
+    /// plain 名走 `DesktopModelRouter`（默认那家是映射卡时按四档改写，直连卡原样透传）。
+    private func dispatchDesktopMessages(_ request: AggregationHTTPRequest) -> AggregationDispatch {
+        let model = AggregationRequestParser.model(from: request.body) ?? ""
+        switch resolver.resolve(tool: .claudeDesktop, model: model) {
+        case .plain(let target):
+            switch DesktopModelRouter.route(model: model, routes: desktopRouteTableProvider?()) {
+            case .passthrough(let name), .rewritten(let name):
+                let rewritten = name == model ? request : Self.requestWithModel(request, model: name)
+                return forwardRequest(rewritten, to: target, protocol: .claudeDesktopMessages)
+            case .unconfigured(let name):
+                return .respond(Self.missResponse(
+                    statusCode: 400,
+                    message: "模型路由未配置: \(name)",
+                    protocol: .claudeDesktopMessages
+                ))
+            }
+        case .hit(let target, let upstreamModel):
+            return forwardRequest(
+                Self.requestWithModel(request, model: upstreamModel),
+                to: target,
+                protocol: .claudeDesktopMessages
+            )
+        case .miss(let miss):
+            return .respond(Self.missResponse(
+                statusCode: 400,
+                message: miss.message(model: model),
+                protocol: .claudeDesktopMessages
+            ))
+        }
+    }
+
+    /// `/claude-desktop/*` 鉴权：`Authorization: Bearer <token>` 与快照 token 精确匹配。
+    private static func isDesktopAuthorized(_ request: AggregationHTTPRequest, expected: String?) -> Bool {
+        guard let expected, !expected.isEmpty else { return false }
+        return request.head.headers["authorization"] == "Bearer \(expected)"
     }
 
     /// 转发前按目标预清洗：该目标此前拒绝过的 sealed reasoning/compaction 不再发送。
@@ -610,13 +669,13 @@ final class AggregationProxy: AggregationProxying {
     ) -> AggregationHTTPResponse {
         let body: [String: Any]
         switch `protocol` {
-        case .anthropicMessages:
+        case .anthropicMessages, .claudeDesktopMessages:
             body = ["type": "error", "error": ["type": "invalid_request_error", "message": message]]
         // 透明端点是 Codex 形状的端点（凭证头同口径），错误信封也按 OpenAI 形状给。
         case .openAIResponses, .openAIChatCompletions, .codexPassthrough:
             body = ["error": ["message": message, "type": "invalid_request_error",
                               "param": "model", "code": "model_not_found"]]
-        case .modelDiscovery, .health, .websocketProbe, .unsupported:
+        case .claudeDesktopModelDiscovery, .modelDiscovery, .health, .websocketProbe, .unsupported:
             body = ["error": message]
         }
         return jsonResponse(statusCode: statusCode, body: body)

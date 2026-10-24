@@ -176,6 +176,8 @@ final class AggregationRequestTrace {
     private static func name(of clientProtocol: AggregationClientProtocol) -> String {
         switch clientProtocol {
         case .anthropicMessages: return "anthropic"
+        case .claudeDesktopMessages: return "desktop-messages"
+        case .claudeDesktopModelDiscovery: return "desktop-models"
         case .openAIResponses: return "responses"
         case .openAIChatCompletions: return "chat"
         case .modelDiscovery: return "models"

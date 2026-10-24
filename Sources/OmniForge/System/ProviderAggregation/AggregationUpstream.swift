@@ -248,7 +248,7 @@ enum AggregationUpstream {
             }
         }
         switch `protocol` {
-        case .anthropicMessages:
+        case .anthropicMessages, .claudeDesktopMessages:
             if !passthroughAuthorization {
                 if rewritten["x-api-key"] != nil {
                     rewritten["x-api-key"] = credential
@@ -263,7 +263,7 @@ enum AggregationUpstream {
             if !passthroughAuthorization {
                 rewritten["authorization"] = "Bearer \(credential)"
             }
-        case .modelDiscovery, .health, .websocketProbe, .unsupported:
+        case .claudeDesktopModelDiscovery, .modelDiscovery, .health, .websocketProbe, .unsupported:
             break // 本地应答的形状，不向上游转发
         }
         applyOpenCodeGatewayRequirements(&rewritten, upstreamBase: upstreamBase, sessionID: openCodeSession)

@@ -4,6 +4,11 @@ import Foundation
 enum AggregationClientProtocol: Equatable {
     /// Anthropic Messages 形状（Claude Code）。
     case anthropicMessages
+    /// Anthropic Messages 形状（Claude Desktop，`/claude-desktop/v1/messages`）。
+    /// 不复用 `.anthropicMessages`：那是 `.claudeCode` 的单值工具映射（SPEC 决策 8）。
+    case claudeDesktopMessages
+    /// 模型发现（Claude Desktop 专属形状，`/claude-desktop/v1/models`）。
+    case claudeDesktopModelDiscovery
     /// OpenAI Responses 形状（Codex）。
     case openAIResponses
     /// OpenAI Chat Completions 形状（Codex 兼容路径）。
@@ -25,8 +30,9 @@ enum AggregationClientProtocol: Equatable {
     var modelIDTool: ProviderTool? {
         switch self {
         case .anthropicMessages: return .claudeCode
+        case .claudeDesktopMessages: return .claudeDesktop
         case .openAIResponses, .openAIChatCompletions: return .codex
-        case .modelDiscovery, .health, .websocketProbe, .codexPassthrough, .unsupported: return nil
+        case .claudeDesktopModelDiscovery, .modelDiscovery, .health, .websocketProbe, .codexPassthrough, .unsupported: return nil
         }
     }
 }
@@ -36,6 +42,10 @@ enum AggregationClientProtocol: Equatable {
 enum AggregationRouteTable {
     static func protocolOf(method: String, path: String) -> AggregationClientProtocol {
         switch (method.uppercased(), path) {
+        case ("POST", "/claude-desktop/v1/messages"):
+            return .claudeDesktopMessages
+        case ("GET", "/claude-desktop/v1/models"):
+            return .claudeDesktopModelDiscovery
         case ("POST", "/v1/messages"),
              ("POST", "/claude/v1/messages"),
              ("POST", "/v1/messages/count_tokens"):

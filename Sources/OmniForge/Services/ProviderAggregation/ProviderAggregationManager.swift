@@ -47,6 +47,8 @@ final class ProviderAggregationManager: ObservableObject {
     private let codexWriter: AggregationCodexConfigWriting
     /// 生产装配的迟绑定（单测为 nil）——代理状态变化时喂新快照。
     private let proxyBinding: AggregationProxyBinding?
+    /// Desktop 网关 token 存储（独立文件，0600；nil = 快照不带 token → 代理一律 401）。
+    private let desktopTokenStore: DesktopGatewayTokenStore?
     /// 模式切换成功后驱动直连激活态重算（生产装配传入 `ProviderSwitchManager`；nil = 不驱动）。
     private let activationRefresher: ProviderActivationRefreshing?
     private var profiles: [ProviderProfile]
@@ -65,6 +67,7 @@ final class ProviderAggregationManager: ObservableObject {
         profiles: [ProviderProfile],
         fileManager: FileManager = .default,
         proxyBinding: AggregationProxyBinding? = nil,
+        desktopTokenStore: DesktopGatewayTokenStore? = nil,
         activationRefresher: ProviderActivationRefreshing? = nil
     ) {
         self.profileStore = profileStore
@@ -79,6 +82,7 @@ final class ProviderAggregationManager: ObservableObject {
         self.profiles = profiles
         self.fileManager = fileManager
         self.proxyBinding = proxyBinding
+        self.desktopTokenStore = desktopTokenStore
         self.activationRefresher = activationRefresher
         stack = stackStore.load()
         isProxyRunning = proxy.isRunning
@@ -661,6 +665,10 @@ final class ProviderAggregationManager: ObservableObject {
             modelLister: binding,
             forwarder: AggregationURLSessionForwarder()
         )
+        // Desktop 鉴权与模型路由的快照透传（token 存储由 manager 持有并在快照里读取）。
+        proxy.desktopGatewayTokenProvider = { [weak binding] in binding?.desktopGatewayToken() }
+        proxy.desktopRouteTableProvider = { [weak binding] in binding?.desktopDefaultRoutes() }
+        let desktopTokenStore = DesktopGatewayTokenStore.production(applicationSupportRoot: root)
         let manager = ProviderAggregationManager(
             profileStore: profileStore,
             backupStore: ProviderBackupStore(
@@ -708,6 +716,7 @@ final class ProviderAggregationManager: ObservableObject {
             ),
             fileManager: fileManager,
             proxyBinding: binding,
+            desktopTokenStore: desktopTokenStore,
             activationRefresher: activationRefresher
         )
         binding.update(manager.proxySnapshot())
@@ -1053,11 +1062,21 @@ final class ProviderAggregationManager: ObservableObject {
             }
             published[tool] = publishedModels(tool: tool)
         }
+        // Desktop 网关 token：独立文件持久化（SPEC 决策 7），读取缺失即生成（幂等）。
+        let desktopToken = try? desktopTokenStore?.loadOrCreate()
+        // Desktop 默认那家的映射表（直连卡 → nil → 代理对 plain 名原样透传，SPEC 决策 1）。
+        var desktopDefaultRoutes: [String: DesktopModelRoute]?
+        if let defaultID = stack.toolStack(.claudeDesktop).members.first,
+           let defaultProfile = profile(id: defaultID, tool: .claudeDesktop) {
+            desktopDefaultRoutes = defaultProfile.desktopModelRoutes
+        }
         return AggregationProxySnapshot(
             stacks: stacks,
             profiles: profiles,
             defaultTargets: defaultTargets,
-            published: published
+            published: published,
+            desktopGatewayToken: desktopToken,
+            desktopDefaultRoutes: desktopDefaultRoutes
         )
     }
 
@@ -1130,6 +1149,10 @@ struct AggregationProxySnapshot {
     var profiles: [ProviderProfile]
     var defaultTargets: [ProviderTool: AggregationProxyTarget]
     var published: [ProviderTool: [AggregationPublishedModel]]
+    /// Desktop 网关 token（缺省 nil → `/claude-desktop/*` 一律 401）。
+    var desktopGatewayToken: String?
+    /// Desktop 默认那家的模型映射表（缺省 nil = 直连卡 → plain 名原样透传）。
+    var desktopDefaultRoutes: [String: DesktopModelRoute]?
 }
 
 /// 生产装配的迟绑定 — 代理持它做解析/列表，管理器就位后喂快照。
@@ -1162,6 +1185,16 @@ final class AggregationProxyBinding: AggregationResolving, AggregationProxyModel
 
     func publishedModels(tool: ProviderTool) -> [AggregationPublishedModel] {
         locked { snapshot }?.published[tool] ?? []
+    }
+
+    /// Desktop 网关 token（快照透传；nil → 代理一律 401）。
+    func desktopGatewayToken() -> String? {
+        locked { snapshot }?.desktopGatewayToken
+    }
+
+    /// Desktop 默认那家的模型映射表（快照透传）。
+    func desktopDefaultRoutes() -> [String: DesktopModelRoute]? {
+        locked { snapshot }?.desktopDefaultRoutes
     }
 
     private func locked<T>(_ body: () -> T) -> T {
