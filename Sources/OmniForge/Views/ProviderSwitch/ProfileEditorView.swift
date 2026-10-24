@@ -84,6 +84,10 @@ struct ProfileEditorView: View {
     @State private var isTokenVisible = false
     @State private var showDisplayNames = false
     @State private var errorMessage: String?
+    /// 连通性测试（拉模型列表口径）：进行中 / 结果 / Codex 回填弹窗开关。
+    @State private var connectivityTesting = false
+    @State private var connectivityResult: ProviderConnectivityResult?
+    @State private var showModelPicker = false
 
     private var isEditing: Bool { profile != nil }
 
@@ -110,6 +114,18 @@ struct ProfileEditorView: View {
         .frame(height: maxEditorHeight)
         .background(editorBackground)
         .onAppear(perform: loadInitialValues)
+        .sheet(isPresented: $showModelPicker) {
+            if let result = connectivityResult, result.isSuccess {
+                ProviderModelPickerSheet(
+                    strings: strings,
+                    fetchedModels: result.models,
+                    configuredModels: codexModelRows
+                        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                        .filter { !$0.isEmpty },
+                    onApply: applyPickedModels
+                )
+            }
+        }
     }
 
     private var formContent: some View {
@@ -326,7 +342,120 @@ struct ProfileEditorView: View {
                 .background(inputBackground)
                 .overlay(inputBorder)
             }
+
+            connectivityTestSection
         }
+    }
+
+    // MARK: - 连通性测试（拉模型列表口径：一次验证连通 + 鉴权）
+
+    private var connectivityTestSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Button {
+                    runConnectivityTest()
+                } label: {
+                    HStack(spacing: 6) {
+                        if connectivityTesting {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text(strings.providerConnectivityTesting)
+                        } else {
+                            Image(systemName: "antenna.radiowaves.left.and.right")
+                                .font(.system(size: 12, weight: .medium))
+                            Text(strings.providerConnectivityTestButton)
+                        }
+                    }
+                    .font(.system(size: 13))
+                    .padding(.horizontal, 12)
+                    .frame(height: 30)
+                    .background(inputBackground)
+                    .overlay(inputBorder)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!canRunConnectivityTest || connectivityTesting)
+
+                if let result = connectivityResult {
+                    Text(connectivityMessage(for: result))
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(result.isSuccess ? Color.green : Color.red)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Spacer()
+
+                    // Codex：成功后可勾选回填模型列表；Claude 角色映射形态不同，不回填。
+                    if tool == .codex, result.isSuccess {
+                        Button(strings.providerConnectivityPickModels) {
+                            showModelPicker = true
+                        }
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(Color.accentColor)
+                        .buttonStyle(.plain)
+                    }
+                } else {
+                    Spacer()
+                }
+            }
+        }
+    }
+
+    private var canRunConnectivityTest: Bool {
+        !trimmed(baseURL).isEmpty && !trimmed(token).isEmpty
+    }
+
+    private func runConnectivityTest() {
+        connectivityTesting = true
+        connectivityResult = nil
+        let tester = ProviderConnectivityTester()
+        let base = baseURL
+        let credential = token
+        let targetTool = tool
+        Task {
+            let result = await tester.test(baseURL: base, token: credential, tool: targetTool)
+            await MainActor.run {
+                connectivityTesting = false
+                connectivityResult = result
+            }
+        }
+    }
+
+    /// 结果 → 展示文案（成功绿 / 失败红）。
+    private func connectivityMessage(for result: ProviderConnectivityResult) -> String {
+        switch result.outcome {
+        case .success(let models):
+            return String(
+                format: strings.providerConnectivitySuccessFormat,
+                "\(result.latencyMilliseconds ?? 0)",
+                models.count
+            )
+        case .authRejected(let status):
+            return String(format: strings.providerConnectivityAuthRejectedFormat, "\(status)")
+        case .endpointMissing:
+            return strings.providerConnectivityEndpointMissing
+        case .networkFailure(let reason):
+            return String(format: strings.providerConnectivityNetworkFailureFormat, reason)
+        case .serverError(let status, let body):
+            return String(format: strings.providerConnectivityServerErrorFormat, status, body)
+        }
+    }
+
+    /// 应用勾选的模型回表单（Codex）：按模型名保留既有显示名与窗口，
+    /// 新行补空串；平行数组重新对齐。
+    private func applyPickedModels(_ models: [String]) {
+        var oldDisplay: [String: String] = [:]
+        var oldWindows: [String: String] = [:]
+        for (index, raw) in codexModelRows.enumerated() {
+            let model = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !model.isEmpty else { continue }
+            oldDisplay[model] = index < codexDisplayNameRows.count ? codexDisplayNameRows[index] : ""
+            oldWindows[model] = index < codexWindowRows.count ? codexWindowRows[index] : ""
+        }
+        codexModelRows = models
+        codexDisplayNameRows = models.map { oldDisplay[$0] ?? "" }
+        codexWindowRows = models.map { oldWindows[$0] ?? "" }
+        syncCodexParallelRows()
     }
 
     // MARK: - 模型映射分组

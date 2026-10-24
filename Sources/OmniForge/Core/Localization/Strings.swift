@@ -1373,6 +1373,28 @@ struct Strings: Equatable {
     let providerBaseURLLabel: String
     let providerTokenLabel: String
     let providerTokenPlaceholder: String
+    /// 连通性测试（拉模型列表口径：GET 模型端点带 Key，一次验证连通 + 鉴权）。
+    let providerConnectivityTestButton: String
+    let providerConnectivityTesting: String
+    /// 测试成功后 Codex 侧的回填入口按钮。
+    let providerConnectivityPickModels: String
+    /// 测试成功文案（%1$@ = 耗时 ms，%2$d = 模型数）。
+    let providerConnectivitySuccessFormat: String
+    /// 401/403 鉴权失败文案（%@ = 状态码）。
+    let providerConnectivityAuthRejectedFormat: String
+    let providerConnectivityEndpointMissing: String
+    /// 网络不可达文案（%@ = 原因）。
+    let providerConnectivityNetworkFailureFormat: String
+    /// 其他 HTTP 错误文案（%1$d = 状态码，%2$@ = 截断响应体）。
+    let providerConnectivityServerErrorFormat: String
+    /// 模型选择弹窗（Codex 回填）。
+    let providerModelPickerTitle: String
+    let providerModelPickerApply: String
+    let providerModelPickerConfiguredSection: String
+    let providerModelPickerAvailableSection: String
+    let providerModelPickerSearchPlaceholder: String
+    /// 弹窗搜索无匹配。
+    let providerModelPickerNoMatches: String
     /// 模型覆盖（可选）。
     let providerModelLabel: String
     let providerModelHint: String
