@@ -130,6 +130,50 @@ final class ClaudeDesktopSettingsStoreTests: XCTestCase {
         }
     }
 
+    /// 审查回归锁：我方条目**只覆盖 id/name**，既有条目的其它字段（note 等）必须保留
+    /// （对齐 cc-switch `claude_desktop_keeps_other_meta_entries_in_place`）。
+    func test_applyProfile_preservesOtherFieldsOnOurMetaEntry() throws {
+        try FileManager.default.createDirectory(at: metaURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let json = """
+        {"entries":[{"id":"\(ClaudeDesktopSettingsStore.profileID)","name":"old","note":"user note"}],"appliedId":"x"}
+        """
+        try Data(json.utf8).write(to: metaURL)
+        try store.applyProfile(makeProfile(), inferenceModels: nil, modelDiscoveryEnabled: nil)
+        let meta = try readJSONObject(metaURL)
+        let entries = try XCTUnwrap(meta["entries"] as? [[String: Any]])
+        XCTAssertEqual(entries[0]["note"] as? String, "user note", "既有条目的其它字段不得被整条替换丢掉")
+        XCTAssertEqual(entries[0]["name"] as? String, ClaudeDesktopSettingsStore.profileName)
+    }
+
+    /// 恢复官方要清 3P config 的 legacy `enterpriseConfig` 网关键（cc-switch 同口径：
+    /// 残留会让 1P 仍走旧网关，并把明文 Key 留在磁盘上）。
+    func test_restoreOfficial_clearsLegacyEnterpriseGatewayKeys() throws {
+        try FileManager.default.createDirectory(
+            at: config3PURL.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        let json = """
+        {"deploymentMode":"3p","enterpriseConfig":{"inferenceGatewayApiKey":"sk-leak","inferenceProvider":"gateway","keepMe":"yes"}}
+        """
+        try Data(json.utf8).write(to: config3PURL)
+        try store.restoreOfficial()
+        let config = try readJSONObject(config3PURL)
+        XCTAssertEqual(config["deploymentMode"] as? String, "1p")
+        let enterprise = try XCTUnwrap(config["enterpriseConfig"] as? [String: Any])
+        XCTAssertNil(enterprise["inferenceGatewayApiKey"], "明文 Key 必须清除")
+        XCTAssertNil(enterprise["inferenceProvider"])
+        XCTAssertEqual(enterprise["keepMe"] as? String, "yes", "非网关键保留")
+    }
+
+    /// 空白配置文件视为空对象（对齐 cc-switch `patch_json::parse`），不判损坏。
+    func test_applyProfile_treatsBlankConfigAsEmptyObject() throws {
+        try FileManager.default.createDirectory(
+            at: configURL.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        try Data("   \n".utf8).write(to: configURL)
+        XCTAssertNoThrow(try store.applyProfile(makeProfile(), inferenceModels: nil, modelDiscoveryEnabled: nil))
+        XCTAssertEqual((try readJSONObject(configURL))["deploymentMode"] as? String, "3p")
+    }
+
     // MARK: - restoreOfficial
 
     func test_restoreOfficial_clearsGatewayKeysAndRemovesOwnEntry() throws {
@@ -194,6 +238,13 @@ final class ClaudeDesktopSettingsStoreTests: XCTestCase {
         XCTAssertFalse(ClaudeDesktopSettingsStore.isClaudeSafeModelID("glm-5.3"))
         XCTAssertFalse(ClaudeDesktopSettingsStore.isClaudeSafeModelID("k3"))
         XCTAssertFalse(ClaudeDesktopSettingsStore.isClaudeSafeModelID("claude-3-5-sonnet"))
+    }
+
+    /// 审查回归锁：对齐 cc-switch 的 trim + 小写 + 拒 [1m] 口径。
+    func test_isClaudeSafeModelID_normalizesCaseWhitespaceAndRejectsOneMMarker() {
+        XCTAssertTrue(ClaudeDesktopSettingsStore.isClaudeSafeModelID("  CLAUDE-SONNET-5  "))
+        XCTAssertFalse(ClaudeDesktopSettingsStore.isClaudeSafeModelID("claude-sonnet-5[1m]"))
+        XCTAssertFalse(ClaudeDesktopSettingsStore.isClaudeSafeModelID("claude-sonnet-"))
     }
 
     func test_defaultRoutesAreClaudeSafe() {

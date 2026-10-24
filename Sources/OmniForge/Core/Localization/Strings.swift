@@ -1328,6 +1328,12 @@ struct Strings: Equatable {
     let providerDesktopAggregationRestartTitle: String
     /// Desktop 聚合重启提示正文。
     let providerDesktopAggregationRestartMessage: String
+    /// Desktop 进入聚合的 toast。
+    let providerAggregationEnteredClaudeDesktop: String
+    /// Desktop 退出聚合的 toast。
+    let providerAggregationExitedClaudeDesktop: String
+    /// 直连模式选映射卡的拦截提示。
+    let providerDesktopMappingCardNeedsAggregation: String
     /// 「切换到官方」按钮。
     let providerSwitchBackToOfficial: String
     /// 激活项标注（%@ = profile 名）。

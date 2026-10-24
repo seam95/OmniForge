@@ -388,6 +388,29 @@ extension AggregationProxyTests {
         XCTAssertEqual(root["has_more"] as? Bool, false)
     }
 
+    /// 审查回归锁：models 端点包含默认那家四档（与 profile 的 inferenceModels 同源），
+    /// 且鉴权接受小写 `bearer ` 前缀（cc-switch 同口径）。
+    func test_desktop_modelsEndpointIncludesDefaultSlotsAndAcceptsLowercaseBearer() throws {
+        let proxy = makeDesktopProxy(token: "ccs-t", routes: nil)
+        var headers = ["authorization": "bearer ccs-t"]
+        let request = AggregationHTTPRequest(
+            head: AggregationRequestHead(
+                method: "GET", path: "/claude-desktop/v1/models", query: "",
+                headers: headers, contentLength: 0
+            ),
+            body: Data()
+        )
+        let response = proxy.handle(request)
+        XCTAssertEqual(response.statusCode, 200, "小写 bearer 应通过鉴权")
+        let root = try XCTUnwrap((try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any])
+        let data = try XCTUnwrap(root["data"] as? [[String: Any]])
+        let ids = data.compactMap { $0["id"] as? String }
+        for slot in ClaudeDesktopSettingsStore.defaultRoutes {
+            XCTAssertTrue(ids.contains(slot), "默认四档 \(slot) 必须出现在模型列表")
+        }
+        _ = headers
+    }
+
     func test_desktop_plainModelRewrittenByMappingCard() throws {
         let routes = [
             "claude-sonnet-5": DesktopModelRoute(model: "glm-5.3", labelOverride: nil, supports1M: false),

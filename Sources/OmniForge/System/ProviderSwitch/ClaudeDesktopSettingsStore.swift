@@ -77,6 +77,17 @@ final class ClaudeDesktopSettingsStore: ClaudeDesktopSettingsStoring {
     static let profileName = "OmniForge"
     /// UI 固定四档路由名（Claude-safe）。
     static let defaultRoutes = ["claude-sonnet-5", "claude-opus-5", "claude-haiku-4-5", "claude-fable-5"]
+    /// 旧版工具写进 3P config `enterpriseConfig` 的网关键 — 恢复官方时清除
+    /// （对齐 cc-switch `LEGACY_ENTERPRISE_GATEWAY_KEYS`；残留会让 1P 仍走旧网关，
+    /// 且把明文 Key 留在磁盘上）。
+    static let legacyEnterpriseGatewayKeys = [
+        "disableDeploymentModeChooser",
+        "inferenceGatewayApiKey",
+        "inferenceGatewayAuthScheme",
+        "inferenceGatewayBaseUrl",
+        "inferenceProvider",
+    ]
+
     /// 恢复官方时从 profile 清除的关键字段（其余用户设置保留，下次切回仍在）。
     static let profileGatewayKeys = [
         "inferenceProvider",
@@ -129,17 +140,9 @@ final class ClaudeDesktopSettingsStore: ClaudeDesktopSettingsStoring {
 
     // MARK: - 白名单（纯函数）
 
-    /// Desktop 模型名校验器口径：`claude-` / `anthropic/claude-` 前缀 +
-    /// `sonnet-` / `opus-` / `haiku-` / `fable-` 角色段。写错一个名，Desktop 拒收整组模型
-    /// （fail-all），因此映射 key 与发布的模型 id 都要过这道校验。
+    /// Desktop 模型名校验器口径 — 转发到 Models 层单一事实源（`DesktopModelWhitelist`）。
     static func isClaudeSafeModelID(_ model: String) -> Bool {
-        for prefix in ["claude-", "anthropic/claude-"] where model.hasPrefix(prefix) {
-            let rest = String(model.dropFirst(prefix.count))
-            if ["sonnet-", "opus-", "haiku-", "fable-"].contains(where: rest.hasPrefix) {
-                return true
-            }
-        }
-        return false
+        DesktopModelWhitelist.isClaudeSafe(model)
     }
 
     // MARK: - 事务写入
@@ -253,7 +256,10 @@ final class ClaudeDesktopSettingsStore: ClaudeDesktopSettingsStoring {
     }
 
     func readState() throws -> ClaudeDesktopState {
+        // 4 个文件全部解析一次：SPEC 要求「任一文件 JSON 损坏 → unreadable」，
+        // 只看 1P config 会漏掉 3P 沙盒配置损坏（那份同样是 Desktop 的真源）。
         let config = try readJSONObject(configURL, allowMissing: true)
+        _ = try readJSONObject(config3PURL, allowMissing: true)
         let meta = try readJSONObject(metaURL, allowMissing: true)
         let profile = try readJSONObject(profileURL, allowMissing: true)
         let appliedId = meta["appliedId"] as? String
@@ -321,8 +327,15 @@ final class ClaudeDesktopSettingsStore: ClaudeDesktopSettingsStoring {
             if allowMissing { return [:] }
             throw ClaudeDesktopSettingsError.corrupted(path: url.path)
         }
-        guard let data = try? Data(contentsOf: url),
-              let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+        guard let data = try? Data(contentsOf: url) else {
+            throw ClaudeDesktopSettingsError.corrupted(path: url.path)
+        }
+        // 空白文件视为空对象（对齐 cc-switch `patch_json::parse`）：Desktop 可能留下
+        // 0 字节配置，把它判损坏会让用户卡在「切换失败」且无从自愈。
+        if data.isEmpty || (String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? false) {
+            return [:]
+        }
+        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             throw ClaudeDesktopSettingsError.corrupted(path: url.path)
         }
         return object
@@ -343,13 +356,21 @@ final class ClaudeDesktopSettingsStore: ClaudeDesktopSettingsStoring {
     }
 
     /// 我们的条目在 `entries` 中原位更新（不挪位置），不存在则追加；`appliedId` 指向我们。
+    /// 与 cc-switch `MetaPatch` 同口径：既有条目**只覆盖 id/name 两个键**，其余字段
+    /// （`note`、Desktop 自己写的元数据）原样保留——整条替换会静默丢用户数据。
     private func upsertOwnEntry(_ meta: inout [String: Any]) {
         var entries = (meta["entries"] as? [Any]) ?? []
-        let own: [String: Any] = ["id": Self.profileID, "name": Self.profileName]
-        if let index = entries.firstIndex(where: { ($0 as? [String: Any])?["id"] as? String == Self.profileID }) {
-            entries[index] = own
+        let matchIndex = entries.firstIndex { entry in
+            guard let dict = entry as? [String: Any] else { return false }
+            return (dict["id"] as? String) == Self.profileID
+        }
+        if let matchIndex, var existing = entries[matchIndex] as? [String: Any] {
+            existing["id"] = Self.profileID
+            existing["name"] = Self.profileName
+            entries[matchIndex] = existing
         } else {
-            entries.append(own)
+            // 无匹配（或匹配到非对象条目）→ 追加新条目（cc-switch `_ => push` 同语义）。
+            entries.append(["id": Self.profileID, "name": Self.profileName])
         }
         meta["entries"] = entries
         meta["appliedId"] = Self.profileID
@@ -365,6 +386,17 @@ final class ClaudeDesktopSettingsStore: ClaudeDesktopSettingsStoring {
     private func mergeConfig3P(mode: String) throws -> [String: Any] {
         var config = try readJSONObject(config3PURL, allowMissing: true)
         config["deploymentMode"] = mode
+        // 恢复官方（1p）时清 legacy 网关键；3p 写入不动（那是别的工具的遗留，不归我们管）。
+        if mode == "1p", var enterprise = config["enterpriseConfig"] as? [String: Any] {
+            for key in Self.legacyEnterpriseGatewayKeys {
+                enterprise.removeValue(forKey: key)
+            }
+            if enterprise.isEmpty {
+                config.removeValue(forKey: "enterpriseConfig")
+            } else {
+                config["enterpriseConfig"] = enterprise
+            }
+        }
         return config
     }
 }

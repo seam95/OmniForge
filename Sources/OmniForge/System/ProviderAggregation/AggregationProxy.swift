@@ -189,11 +189,13 @@ final class AggregationProxy: AggregationProxying {
                 ]))
             }
             if clientProtocol == .claudeDesktopModelDiscovery {
+                // 默认那家的四档 + 成员发布，与 profile 的 inferenceModels 同源
+                // （cc-switch 同口径：路由那家在前，聚合成员在后）。
+                let desktopModels = defaultRouteTableEntries()
+                    + modelLister.publishedModels(tool: .claudeDesktop)
                 return .respond(Self.jsonDataResponse(
                     statusCode: 200,
-                    body: DesktopModelDiscovery.responseBody(
-                        published: modelLister.publishedModels(tool: .claudeDesktop)
-                    )
+                    body: DesktopModelDiscovery.responseBody(published: desktopModels)
                 ))
             }
             return dispatchDesktopMessages(request)
@@ -319,10 +321,41 @@ final class AggregationProxy: AggregationProxying {
         return AggregationHTTPRequest(head: head, body: request.body)
     }
 
+    /// 默认那家的四档（与 profile 的 inferenceModels 默认段同源）：
+    /// 直连卡 → 四档 identity（`claude-sonnet-5` 等）；映射卡 → 只列已配置的档。
+    /// 发布条目类型的 id 就是档名本身（profile 里写的也是档名），故可直接构造。
+    private func defaultRouteTableEntries() -> [AggregationPublishedModel] {
+        guard let routes = desktopRouteTableProvider?(), !routes.isEmpty else {
+            return ClaudeDesktopSettingsStore.defaultRoutes.map { slot in
+                AggregationPublishedModel(
+                    tool: .claudeDesktop, key: "", profileName: "",
+                    model: slot, upstream: slot, displayName: slot,
+                    oneM: false, window: 0
+                )
+            }
+        }
+        return ClaudeDesktopSettingsStore.defaultRoutes.compactMap { slot in
+            guard let route = routes[slot] else { return nil }
+            return AggregationPublishedModel(
+                tool: .claudeDesktop, key: "", profileName: "",
+                model: slot, upstream: route.model,
+                displayName: route.labelOverride ?? slot,
+                oneM: route.supports1M, window: 0
+            )
+        }
+    }
+
     /// `/claude-desktop/*` 鉴权：`Authorization: Bearer <token>` 与快照 token 精确匹配。
+    /// Scheme 大小写不敏感（cc-switch 同时接受 `Bearer ` / `bearer `）。
     private static func isDesktopAuthorized(_ request: AggregationHTTPRequest, expected: String?) -> Bool {
-        guard let expected, !expected.isEmpty else { return false }
-        return request.head.headers["authorization"] == "Bearer \(expected)"
+        guard let expected, !expected.isEmpty,
+              let authorization = request.head.headers["authorization"] else {
+            return false
+        }
+        let trimmed = authorization.trimmingCharacters(in: .whitespaces)
+        let lowercased = trimmed.lowercased()
+        guard lowercased.hasPrefix("bearer ") else { return false }
+        return String(trimmed.dropFirst("bearer ".count)) == expected
     }
 
     /// 转发前按目标预清洗：该目标此前拒绝过的 sealed reasoning/compaction 不再发送。

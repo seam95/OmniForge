@@ -52,7 +52,13 @@ enum AggregationModelID {
             return assemble(key: key, rawModel: rawModel)
         case .claudeDesktop:
             // Desktop id 是纯数字哈希，key/model 信息已不可逆 — 交由发布表反查。
-            return id.hasPrefix(desktopPrefix) ? .stackCode(id) : .plain
+            // 必须先剥末尾 `[1m]`：profile 写了 `prefer1m` 后 Desktop 发请求用 `<id>[1m]`，
+            // 发布表存的 id 不带标记，不剥就查不到 → 1M 模型全部 400
+            // （对齐 cc-switch `decode` 的 `strip_one_m_suffix_for_upstream`）。
+            guard let remainder = id.remainderAfterPrefix(desktopPrefix) else { return .plain }
+            let (code, _) = stripOneMMarker(remainder)
+            guard code.count == 6, code.allSatisfy(\.isNumber) else { return .malformed }
+            return .stackCode(desktopPrefix + code)
         }
     }
 

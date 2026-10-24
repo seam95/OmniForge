@@ -5,6 +5,20 @@ enum ProviderProfileStoreError: Error, Equatable {
     /// 目标文件名已存在且不属于同一档案（CCQ 或其它档案）→ 拒绝写入，提示改名（SPEC 2.4）。
     case nameConflict(key: String)
     case writeFailed(path: String)
+    /// Desktop 映射含非 Claude-safe 模型名 → 拒绝保存（Desktop 会整组拒收，SPEC 行为定义）。
+    case unsafeDesktopModelNames(names: [String])
+}
+
+extension ProviderProfileStoreError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .unsafeDesktopModelNames(let names):
+            let list = names.joined(separator: "、")
+            return "模型名不符合 Claude Desktop 要求：\(list)。合法格式为 claude-sonnet-5 / anthropic/claude-opus-4-8 这类「claude 前缀 + 角色段」，且不能带 [1m] 标记"
+        default:
+            return nil
+        }
+    }
 }
 
 /// profile 文件管理边界 — CCQ 兼容路径（SPEC 2.4）。
@@ -126,6 +140,11 @@ final class ProviderProfileStore: ProviderProfileStoring {
     // MARK: - 写入 / 删除 / 收编
 
     func upsert(_ profile: ProviderProfile) throws {
+        // Desktop 白名单闸门：非法名会被 Desktop 整组拒收（fail-all），保存即报错。
+        let unsafeNames = profile.desktopUnsafeRouteNames
+        guard unsafeNames.isEmpty else {
+            throw ProviderProfileStoreError.unsafeDesktopModelNames(names: unsafeNames)
+        }
         var profile = profile
         if profile.id.isEmpty {
             profile.id = profile.profileKey

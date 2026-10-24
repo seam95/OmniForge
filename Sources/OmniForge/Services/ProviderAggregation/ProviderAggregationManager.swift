@@ -182,9 +182,12 @@ final class ProviderAggregationManager: ObservableObject {
     }
 
     /// 某工具全部成员的已发布模型（名单顺序 = 选择器顺序；默认那家在首位）。
+    /// 必须按 tool 限定：档案 id 只在单工具目录内唯一，六家预设的同名卡
+    /// 会在 Claude Code 与 Desktop 同时存在（id 相同），不加过滤会取到别家卡
+    /// → Desktop 发布表为空 → 成员模型 id 反查失败（SPEC 行为定义「每工具独立」）。
     func publishedModels(tool: ProviderTool) -> [AggregationPublishedModel] {
         stack.toolStack(tool).members.flatMap { profileID -> [AggregationPublishedModel] in
-            guard let profile = profiles.first(where: { $0.id == profileID }) else { return [] }
+            guard let profile = profile(id: profileID, tool: tool) else { return [] }
             return publishedModels(for: profile)
         }
     }
@@ -216,7 +219,13 @@ final class ProviderAggregationManager: ObservableObject {
         syncCodexLoginStash(tool: tool, defaultProfile: defaultProfile)
 
         // 3) 目标文件快照 — 退出聚合时的直连恢复点。
-        try? backupStore.snapshot(tool: tool, of: Self.configURL(for: tool))
+        // Desktop 走 bundle（4 文件）；单文件 store 明确排除 bundle，漏分派会让
+        // 退出恢复链拿不到快照（同步入口同样要分派，不能只修异步路径）。
+        if tool == .claudeDesktop {
+            try? desktopBackupStore?.snapshot4Files()
+        } else {
+            try? backupStore.snapshot(tool: tool, of: Self.configURL(for: tool))
+        }
 
         // 4) 组新栈：默认那家入座首位 + key 分配 + 模式位。
         var newStack = stack
@@ -439,6 +448,7 @@ final class ProviderAggregationManager: ObservableObject {
                 .flatMap { profile(id: $0, tool: .claudeDesktop) }
             : nil
         let desktopStore = self.desktopStore
+        let desktopBackupStore = self.desktopBackupStore
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -454,7 +464,11 @@ final class ProviderAggregationManager: ObservableObject {
                         case .claudeCode: try claudeWriter.clearAggregation()
                         case .codex: try codexWriter.clearAggregation()
                         case .claudeDesktop:
-                            try Self.restoreDesktopDirect(defaultProfile: desktopExitProfile, store: desktopStore)
+                            try Self.restoreDesktopDirect(
+                                defaultProfile: desktopExitProfile,
+                                store: desktopStore,
+                                backupStore: desktopBackupStore
+                            )
                         }
                     }
                 } catch {
@@ -463,7 +477,11 @@ final class ProviderAggregationManager: ObservableObject {
                         case .claudeCode: try claudeWriter.clearAggregation()
                         case .codex: try codexWriter.clearAggregation()
                         case .claudeDesktop:
-                            try Self.restoreDesktopDirect(defaultProfile: desktopExitProfile, store: desktopStore)
+                            try Self.restoreDesktopDirect(
+                                defaultProfile: desktopExitProfile,
+                                store: desktopStore,
+                                backupStore: desktopBackupStore
+                            )
                         }
                     } catch {
                         continuation.resume(throwing: error)
@@ -1016,28 +1034,42 @@ final class ProviderAggregationManager: ObservableObject {
         }
     }
 
-    /// Desktop 退出聚合的直连恢复：写默认那家 direct 形态（4 文件事务）；
-    /// 默认那家不存在或写入失败 → `restoreOfficial`（恢复官方 1P，语义安全的兜底）。
+    /// Desktop 退出聚合的直连恢复。
+    /// 优先按 bundle 快照恢复进入聚合前的文件状态（这是 SPEC 决策 3 的恢复语义，
+    /// 也避免「默认那家是映射卡 → applyProfile 抛守卫错」的死路：映射卡根本不能直连）。
+    /// 快照不可用才退化为写默认那家 direct 形态；仍不行则恢复官方 1P。
     private func restoreDesktopDirect() throws {
         let defaultProfile = stack.toolStack(.claudeDesktop).members.first
             .flatMap { profile(id: $0, tool: .claudeDesktop) }
-        try Self.restoreDesktopDirect(defaultProfile: defaultProfile, store: desktopStore)
+        try Self.restoreDesktopDirect(
+            defaultProfile: defaultProfile,
+            store: desktopStore,
+            backupStore: desktopBackupStore
+        )
     }
 
     /// 纯文件操作版（可在后台线程执行；默认那家由调用方在主线程解析，避免跨线程读栈态）。
+    ///
+    /// 顺序即优先级：
+    /// 1. bundle 快照存在 → 按快照恢复（进入聚合前的精确状态，含 absent 文件删除）；
+    /// 2. 默认那家是直连卡（无映射）→ 写它 direct 形态；
+    /// 3. 其余（映射卡/无默认/写失败）→ `restoreOfficial` 恢复 1P。
+    ///
+    /// 不把映射卡写进直连路径：`applyProfile` 对映射卡抛 `modelRoutesRequireAggregation`，
+    /// 六家预设全是映射卡，走那条路会让退出聚合必然失败（并把文件留在 1P、栈仍 enabled）。
     private static func restoreDesktopDirect(
         defaultProfile: ProviderProfile?,
-        store: ClaudeDesktopSettingsStoring?
+        store: ClaudeDesktopSettingsStoring?,
+        backupStore: ClaudeDesktopBackupStoring?
     ) throws {
         guard let store else { return }
-        if let defaultProfile {
-            do {
-                try store.applyProfile(defaultProfile, inferenceModels: nil, modelDiscoveryEnabled: nil)
-                return
-            } catch {
-                try? store.restoreOfficial()
-                throw error
-            }
+        if let snapshot = backupStore?.list(tool: .claudeDesktop).first {
+            try backupStore?.restore(snapshot)
+            return
+        }
+        if let defaultProfile, defaultProfile.desktopModelRoutes?.isEmpty ?? true {
+            try store.applyProfile(defaultProfile, inferenceModels: nil, modelDiscoveryEnabled: nil)
+            return
         }
         try store.restoreOfficial()
     }

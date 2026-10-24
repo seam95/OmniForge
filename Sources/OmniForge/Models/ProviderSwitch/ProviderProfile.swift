@@ -58,6 +58,28 @@ struct DesktopModelRoute: Codable, Equatable {
     var supports1M: Bool
 }
 
+/// Claude Desktop 模型名白名单 — 写入 profile 与代理透传判定的单一事实源
+/// （对齐 cc-switch `is_claude_safe_model_id`）。放 Models 层：档案保存校验、
+/// 投影写入与代理路由都要用，System/Services 不得各自复制口径。
+enum DesktopModelWhitelist {
+    /// 先 trim + 小写（Desktop 侧大小写不敏感），含 `[1m]` 标记一律拒绝
+    /// （标记由 `prefer1m` 承载，不该出现在名字里），再要求
+    /// `claude-` / `anthropic/claude-` 前缀 + `sonnet-` / `opus-` / `haiku-` / `fable-` 角色段。
+    /// 写错一个名，Desktop 拒收整组模型（fail-all），因此映射值与发布 id 都要过这道校验。
+    static func isClaudeSafe(_ model: String) -> Bool {
+        let normalized = model.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.contains("[1m]") else { return false }
+        for prefix in ["claude-", "anthropic/claude-"] where normalized.hasPrefix(prefix) {
+            let rest = String(normalized.dropFirst(prefix.count))
+            if ["sonnet-", "opus-", "haiku-", "fable-"].contains(where: rest.hasPrefix),
+               rest.count > "sonnet-".count - 1 {
+                return true
+            }
+        }
+        return false
+    }
+}
+
 /// 供应商档案 — 一个可用供应商 = 名称 + 目标工具 + base URL + 明文凭证 + 可选模型覆盖。
 /// 一个 Profile 只服务一个工具（Claude Code 或 Codex 之一）；Preset : Profile = 1 : N。
 struct ProviderProfile: Identifiable, Codable, Equatable {
@@ -175,6 +197,27 @@ struct ProviderProfile: Identifiable, Codable, Equatable {
     /// 缺失连接参数（外部文件无法解析出 base URL / 凭证时）— 不可直接激活。
     var hasCompleteConnection: Bool {
         !baseURL.isEmpty && !token.isEmpty
+    }
+
+    /// Desktop 映射卡：`desktopModelRoutes` 非空（必须聚合，直连切换会被拒绝）。
+    var isDesktopMappingCard: Bool {
+        tool == .claudeDesktop && !(desktopModelRoutes?.isEmpty ?? true)
+    }
+
+    /// Desktop 模型映射里**将被写进 Desktop 客户端**的非 Claude-safe 名字（保存前校验用）。
+    /// 只校验 slot key（= 写进 `inferenceModels` 的 `name`）：`route.model` 是上游真实模型名
+    /// （如 `glm-5.3`），本来就不该是 Claude-safe——校验它会把所有映射卡判非法。
+    /// Desktop 校验器是 fail-all：一个非法名会让整组模型被拒收，所以保存即拦。
+    var desktopUnsafeRouteNames: [String] {
+        guard let routes = desktopModelRoutes else { return [] }
+        return routes.keys
+            .filter { !isClaudeSafeDesktopModelID($0) }
+            .sorted()
+    }
+
+    /// 转发到 Models 层的白名单实现（单一事实源）。
+    private func isClaudeSafeDesktopModelID(_ model: String) -> Bool {
+        DesktopModelWhitelist.isClaudeSafe(model)
     }
 
     /// 官方账号判定：指向厂商官方端点（或无 override 的空 baseURL）的 profile。

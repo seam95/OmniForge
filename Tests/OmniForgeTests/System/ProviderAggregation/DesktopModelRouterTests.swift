@@ -24,6 +24,13 @@ final class DesktopModelRouterTests: XCTestCase {
         )
     }
 
+    /// 审查回归锁：无映射卡的直连上游也只对 Claude-safe 名透传；
+    /// 非 safe 名必须明确报错（对齐 cc-switch route_unknown），不静默发给上游。
+    func test_noMappingCard_rejectsNonClaudeSafeNames() {
+        XCTAssertEqual(DesktopModelRouter.route(model: "gpt-5", routes: nil), .unconfigured("gpt-5"))
+        XCTAssertEqual(DesktopModelRouter.route(model: "glm-5.3", routes: [:]), .unconfigured("glm-5.3"))
+    }
+
     func test_mappingCard_exactLookupRewritesUpstreamName() {
         XCTAssertEqual(
             DesktopModelRouter.route(model: "claude-sonnet-5", routes: mappingCard),

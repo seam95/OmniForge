@@ -78,6 +78,21 @@ final class AggregationModelIDTests: XCTestCase {
                        .stackCode("claude-fable-om-136067"))
     }
 
+    /// 审查回归锁：profile 写了 prefer1m 后 Desktop 发 `<id>[1m]`，
+    /// 解码必须先剥标记再校验 6 位数字，否则发布表查不到 → 1M 模型全 400。
+    func test_decode_desktopStripsOneMMarkerFromStackID() {
+        let id = AggregationModelID.encode(tool: .claudeDesktop, key: "kimi", model: "k3", oneM: false)
+        XCTAssertEqual(AggregationModelID.decode(tool: .claudeDesktop, id: id + "[1m]"),
+                       .stackCode(id))
+        XCTAssertEqual(AggregationModelID.decode(tool: .claudeDesktop, id: id + "[1M]"),
+                       .stackCode(id))
+    }
+
+    func test_decode_desktopMalformedWhenCodeIsNotSixDigits() {
+        XCTAssertEqual(AggregationModelID.decode(tool: .claudeDesktop, id: "claude-fable-om-12"), .malformed)
+        XCTAssertEqual(AggregationModelID.decode(tool: .claudeDesktop, id: "claude-fable-om-abcdef"), .malformed)
+    }
+
     func test_decode_desktopNonStackIDIsPlain() {
         XCTAssertEqual(AggregationModelID.decode(tool: .claudeDesktop, id: "claude-sonnet-5"), .plain)
         XCTAssertEqual(AggregationModelID.decode(tool: .claudeDesktop, id: "glm-5.3"), .plain)

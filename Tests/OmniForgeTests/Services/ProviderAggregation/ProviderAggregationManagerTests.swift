@@ -1093,6 +1093,40 @@ extension ProviderAggregationManagerTests {
         XCTAssertEqual(store.restoreOfficialCount, 0)
     }
 
+    /// 审查回归锁（跨工具串卡）：同名卡在两工具同时存在时，Desktop 发布表只能取 Desktop 的卡。
+    /// 档案 id 只在单工具目录内唯一，漏 tool 过滤会取到 Claude Code 的卡 → 发布表为空。
+    func test_desktop_publishedModelsDoNotPickOtherToolsCard() throws {
+        // 同 id "glm" 的 Claude Code 卡排在 profiles 前面（制造无过滤时的错误命中）。
+        let claudeCodeCard = ProviderProfile(
+            id: "glm", name: "GLM", tool: .claudeCode,
+            baseURL: "https://open.bigmodel.cn/api/anthropic", token: "sk-cc",
+            stackModels: [ClaudeStackModel(model: "glm-5.3", displayName: nil, oneM: false)]
+        )
+        let desktopCard = makeDesktopProfile(id: "glm", routes: fourSlotRoutes)
+        let store = StubDesktopStore()
+        let manager = makeDesktopManager(desktopStore: store, profiles: [claudeCodeCard, desktopCard])
+
+        try manager.enterAggregation(tool: .claudeDesktop, defaultProfileID: "glm")
+        let published = manager.publishedModels(tool: .claudeDesktop)
+        XCTAssertFalse(published.isEmpty, "Desktop 发布表不得因同名卡排在前面而变空")
+        XCTAssertTrue(published.allSatisfy { $0.tool == .claudeDesktop })
+        XCTAssertTrue(published.allSatisfy { $0.id.hasPrefix(AggregationModelID.desktopPrefix) })
+    }
+
+    /// 审查回归锁：映射卡做默认那家时，退出聚合不得失败（映射卡不能走直连写入）。
+    /// 有 bundle 快照 → 按快照恢复；无快照 → 恢复官方 1P（不尝试非法直连写入）。
+    func test_desktop_exitAggregationWithMappingCardDefaultDoesNotThrow() throws {
+        let mapping = makeDesktopProfile(id: "glm", routes: fourSlotRoutes)
+        let store = StubDesktopStore()
+        let manager = makeDesktopManager(desktopStore: store, profiles: [mapping])
+
+        try manager.enterAggregation(tool: .claudeDesktop, defaultProfileID: "glm")
+        XCTAssertNoThrow(try manager.exitAggregation(tool: .claudeDesktop))
+        XCTAssertEqual(manager.mode(tool: .claudeDesktop), .direct)
+        XCTAssertNil(store.lastApplyProfile, "映射卡不得走 applyProfile（会被白名单/守卫拒绝）")
+        XCTAssertGreaterThanOrEqual(store.restoreOfficialCount, 1, "无快照时恢复官方 1P")
+    }
+
     /// 默认那家被删后退出 → restoreOfficial 兜底。
     func test_desktop_exitAggregationFallsBackToOfficialWhenDefaultGone() throws {
         let mapping = makeDesktopProfile(id: "glm", routes: fourSlotRoutes)

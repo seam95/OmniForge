@@ -32,8 +32,12 @@ enum DesktopModelRouter {
         // 1. 剥 [1m] 标记（大小写不敏感）。
         let (stripped, _) = AggregationModelID.stripOneMMarker(model)
         guard let routes, !routes.isEmpty else {
-            // 2. 无映射卡：原样透传（Claude-safe 与否都不改写——不认识的名字动辄 404）。
-            return .passthrough(stripped)
+            // 2. 无映射卡（直连卡）：只有 Claude-safe 名原样透传——绝不按四档 identity 改写
+            //    （带日期后缀的名会被错改成档名，上游 404）。非 Claude-safe 名报错，
+            //    不静默发给上游（对齐 cc-switch `map_proxy_request_model` 的 route_unknown）。
+            return ClaudeDesktopSettingsStore.isClaudeSafeModelID(stripped)
+                ? .passthrough(stripped)
+                : .unconfigured(stripped)
         }
         // 3a. 精确查表。
         if let exact = routes[stripped] {

@@ -11,6 +11,27 @@ extension ProviderTool {
     }
 }
 
+extension ProviderTool {
+    /// 进入聚合的 toast 文案：Desktop 必须提示重启（只在启动时读配置）。
+    static func aggregationEnteredMessage(tool: ProviderTool, strings: Strings) -> String {
+        switch tool {
+        case .claudeCode: return strings.providerAggregationEnteredClaude
+        case .codex: return strings.providerAggregationEnteredCodex
+        case .claudeDesktop: return strings.providerAggregationEnteredClaudeDesktop
+        }
+    }
+
+    /// 退出聚合的 toast 文案：Desktop 同样提示重启。
+    static func aggregationExitedMessage(tool: ProviderTool, strings: Strings, memberName: String) -> String {
+        switch tool {
+        case .claudeCode, .codex:
+            return String(format: strings.providerAggregationExitedFormat, memberName)
+        case .claudeDesktop:
+            return strings.providerAggregationExitedClaudeDesktop
+        }
+    }
+}
+
 /// 供应商切换页（卡片列表风格，唯一入口为菜单栏控制中心 tab）：
 /// - 分段选择器：Claude Code / Codex 复用 `PanelSegmentedControl`，右端齿轮
 ///   设置入口（对齐 Token 面板「限额显示」齿轮：popover 收纳底部链接动作）
@@ -393,7 +414,13 @@ struct ProviderSwitchSettingsView: View {
             HStack(spacing: 12) {
                 Button {
                     if !active && profile.hasCompleteConnection {
-                        activate(profile)
+                        // 直连模式选映射卡 → 前端拦截并提示（对齐 cc-switch `needsRouting`）；
+                        // 写到一半才由 store 抛错会只剩通用「切换失败」toast。
+                        if profile.isDesktopMappingCard {
+                            showToast(strings.providerDesktopMappingCardNeedsAggregation)
+                        } else {
+                            activate(profile)
+                        }
                     }
                 } label: {                    HStack(spacing: 12) {
                         brandLogoBadge(
@@ -709,9 +736,7 @@ struct ProviderSwitchSettingsView: View {
             do {
                 try await aggregation.enterAggregationAsync(tool: tool, defaultProfileID: candidate)
                 withAnimation(Theme.Animation.snappy) {
-                    showToast(tool == .claudeCode
-                        ? strings.providerAggregationEnteredClaude
-                        : strings.providerAggregationEnteredCodex)
+                    showToast(ProviderTool.aggregationEnteredMessage(tool: tool, strings: strings))
                 }
             } catch {
                 showToast(String(format: strings.providerSwitchFailedFormat, error.localizedDescription))

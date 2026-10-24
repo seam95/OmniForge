@@ -467,4 +467,51 @@ final class ProviderSwitchProfileStoreTests: XCTestCase {
         XCTAssertEqual(listed[0].token, "sk-manual")
         XCTAssertEqual(listed[0].managedBy, "omniforge")
     }
+
+}
+
+// MARK: - Desktop 白名单保存闸门
+
+extension ProviderSwitchProfileStoreTests {
+    private func makeDesktopStore() -> ProviderProfileStore {
+        let dir = tmpDir.appendingPathComponent("desktop")
+        return ProviderProfileStore(profileDirectories: [.claudeDesktop: dir])
+    }
+
+    private func makeDesktopProfile(routes: [String: DesktopModelRoute]?) -> ProviderProfile {
+        ProviderProfile(
+            id: "glm", name: "智谱", tool: .claudeDesktop,
+            baseURL: "https://open.bigmodel.cn/api/anthropic", token: "sk-glm",
+            desktopModelRoutes: routes
+        )
+    }
+
+    /// 审查回归锁：非 Claude-safe 的 slot key 保存即报错，错误信息带非法名与合法格式说明
+    /// （Desktop 是 fail-all：一个非法名整组被拒，静默保存等于写坏配置）。
+    func test_upsert_rejectsUnsafeDesktopRouteKeys() {
+        let store = makeDesktopStore()
+        let routes = ["glm-sonnet": DesktopModelRoute(model: "glm-5.3", labelOverride: nil, supports1M: false)]
+        XCTAssertThrowsError(try store.upsert(makeDesktopProfile(routes: routes))) { error in
+            guard case .unsafeDesktopModelNames(let names)? = error as? ProviderProfileStoreError else {
+                return XCTFail("预期 unsafeDesktopModelNames，实际 \(error)")
+            }
+            XCTAssertEqual(names, ["glm-sonnet"])
+            XCTAssertTrue((error as? ProviderProfileStoreError)?.errorDescription?.contains("合法格式") == true)
+        }
+    }
+
+    /// 上游真实模型名（非 Claude-safe）不得被校验误伤——它本来就不是写给 Desktop 的名字。
+    func test_upsert_acceptsUpstreamModelNamesUnderSafeSlots() throws {
+        let store = makeDesktopStore()
+        let routes = [
+            "claude-sonnet-5": DesktopModelRoute(model: "glm-5.3", labelOverride: nil, supports1M: false),
+            "claude-haiku-4-5": DesktopModelRoute(model: "deepseek-v4-flash", labelOverride: nil, supports1M: true),
+        ]
+        try store.upsert(makeDesktopProfile(routes: routes))
+        XCTAssertEqual(store.list(for: .claudeDesktop).count, 1)
+    }
+
+    func test_upsert_acceptsDirectCardWithoutRoutes() throws {
+        try makeDesktopStore().upsert(makeDesktopProfile(routes: nil))
+    }
 }

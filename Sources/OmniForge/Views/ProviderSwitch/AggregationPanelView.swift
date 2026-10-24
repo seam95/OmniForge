@@ -807,9 +807,7 @@ struct AggregationPanelView: View {
             do {
                 try await manager.enterAggregationAsync(tool: tool, defaultProfileID: candidate)
                 withAnimation(Theme.Animation.snappy) {
-                    showToast(tool == .claudeCode
-                              ? strings.providerAggregationEnteredClaude
-                              : strings.providerAggregationEnteredCodex)
+                    showToast(ProviderTool.aggregationEnteredMessage(tool: tool, strings: strings))
                 }
             } catch {
                 showToast(String(format: strings.providerSwitchFailedFormat, error.localizedDescription))
@@ -825,9 +823,10 @@ struct AggregationPanelView: View {
             do {
                 try await manager.exitAggregationAsync(tool: tool)
                 withAnimation(Theme.Animation.snappy) {
-                    showToast(String(
-                        format: strings.providerAggregationExitedFormat,
-                        manager.members(tool: tool).first(where: { $0.isDefault })?.name ?? ""
+                    showToast(ProviderTool.aggregationExitedMessage(
+                        tool: tool,
+                        strings: strings,
+                        memberName: manager.members(tool: tool).first(where: { $0.isDefault })?.name ?? ""
                     ))
                 }
             } catch {
