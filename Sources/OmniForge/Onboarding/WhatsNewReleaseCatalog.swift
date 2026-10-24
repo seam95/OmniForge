@@ -11,6 +11,19 @@ enum WhatsNewReleaseCatalog {
     /// 历次版本的更新内容，新版本在前
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            version: "3.18.0",
+            entries: [
+                WhatsNewEntry(type: .added, text: "新增翻译工具：支持系统与 AI 双引擎，划词或快捷键唤出独立浮窗，输入停顿自动翻译，历史记录可随时回看"),
+                WhatsNewEntry(type: .added, text: "翻译浮窗采用双卡片布局，自动识别代码标识符（camelCase / snake_case）并拆词翻译，已有译文可一键互换语言"),
+                WhatsNewEntry(type: .added, text: "Codex 供应商的模型列表支持逐模型设置上下文窗口，写入模型目录真实上限；聚合模式统一按 272K 工作窗口"),
+                WhatsNewEntry(type: .added, text: "官方账号作为聚合默认时，主动拉取 Codex 官方模型列表，缓存缺失或过期时官方模型不再缺席"),
+                WhatsNewEntry(type: .added, text: "聚合代理新增请求级追踪日志：记录每次转发的状态码、耗时与目标供应商，便于排查路由问题"),
+                WhatsNewEntry(type: .added, text: "Token 用量监控新接入 Antigravity、DSH、WorkBuddy、Qoder CN、Pi、Oh My Pi、Copilot 等平台"),
+                WhatsNewEntry(type: .changed, text: "聚合模式跨供应商切换更稳定：统一工作窗口避免切换触发预压缩，残留的 reasoning 内容自动清除并在失败时透明重试"),
+                WhatsNewEntry(type: .fixed, text: "修复聚合代理的多项协议健壮性问题：跟随重定向、transfer-encoding 头残留、路由缺失与退出聚合后的配置恢复"),
+            ]
+        ),
+        WhatsNewRelease(
             version: "3.17.3",
             entries: [
                 WhatsNewEntry(type: .fixed, text: "修复聚合模式长任务中频繁出现「正在重新连接」的问题：流式响应会先等最后一块数据写出，再关闭连接"),

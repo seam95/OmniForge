@@ -146,7 +146,7 @@ final class CaptureFlightAnimator: CaptureFlightAnimating {
             ctx.duration = 0.16
             window.animator().alphaValue = 0
         }, completionHandler: { [window] in
-            MainActor.assumeIsolated { window.orderOut(nil) }
+            MainActor.assumeIsolated { window?.orderOut(nil) }
         })
     }
 
