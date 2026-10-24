@@ -81,6 +81,52 @@ final class ProviderSwitchPathsTests: XCTestCase {
         )
     }
 
+    // MARK: - Claude Desktop
+
+    func test_claudeDesktop_fourConfigURLs() {
+        XCTAssertEqual(
+            ProviderSwitchPaths.claudeDesktopConfigURL(homePath: homePath).path,
+            "/Users/tester/Library/Application Support/Claude/claude_desktop_config.json"
+        )
+        XCTAssertEqual(
+            ProviderSwitchPaths.claudeDesktop3PConfigURL(homePath: homePath).path,
+            "/Users/tester/Library/Application Support/Claude-3p/claude_desktop_config.json"
+        )
+        XCTAssertEqual(
+            ProviderSwitchPaths.claudeDesktopProfileURL(homePath: homePath).path,
+            "/Users/tester/Library/Application Support/Claude-3p/configLibrary/00000000-0000-4000-8000-000000157210.json"
+        )
+        XCTAssertEqual(
+            ProviderSwitchPaths.claudeDesktopMetaURL(homePath: homePath).path,
+            "/Users/tester/Library/Application Support/Claude-3p/configLibrary/_meta.json"
+        )
+    }
+
+    func test_desktopProfileDirectory_underApplicationSupport() {
+        XCTAssertEqual(
+            ProviderSwitchPaths.desktopProfileDirectory(
+                applicationSupportRoot: URL(fileURLWithPath: "/tmp/AppSupport")
+            ).path,
+            "/tmp/AppSupport/ProviderDesktop"
+        )
+    }
+
+    func test_desktopGatewayTokenURL_underProviderAggregation() {
+        XCTAssertEqual(
+            ProviderSwitchPaths.desktopGatewayTokenURL(
+                applicationSupportRoot: URL(fileURLWithPath: "/tmp/AppSupport")
+            ).path,
+            "/tmp/AppSupport/ProviderAggregation/desktop-gateway-token"
+        )
+    }
+
+    func test_configURL_claudeDesktopRoutesToOfficialConfig() {
+        XCTAssertEqual(
+            ProviderSwitchPaths.configURL(for: .claudeDesktop, homePath: homePath, environment: [:]).path,
+            "/Users/tester/Library/Application Support/Claude/claude_desktop_config.json"
+        )
+    }
+
     // MARK: - 统一入口
 
     func test_configURL_forToolRoutesToCorrectFile() {
@@ -95,13 +141,27 @@ final class ProviderSwitchPathsTests: XCTestCase {
     }
 
     func test_profileDirectory_forToolRoutesCorrectly() {
+        let root = URL(fileURLWithPath: "/tmp/AppSupport")
         XCTAssertEqual(
-            ProviderSwitchPaths.profileDirectory(for: .claudeCode, homePath: homePath, environment: [:]).path,
+            ProviderSwitchPaths.profileDirectory(
+                for: .claudeCode, homePath: homePath, environment: [:],
+                applicationSupportRoot: root
+            ).path,
             "/Users/tester/.claude/providers"
         )
         XCTAssertEqual(
-            ProviderSwitchPaths.profileDirectory(for: .codex, homePath: homePath, environment: [:]).path,
+            ProviderSwitchPaths.profileDirectory(
+                for: .codex, homePath: homePath, environment: [:],
+                applicationSupportRoot: root
+            ).path,
             "/Users/tester/.codex"
+        )
+        XCTAssertEqual(
+            ProviderSwitchPaths.profileDirectory(
+                for: .claudeDesktop, homePath: homePath, environment: [:],
+                applicationSupportRoot: root
+            ).path,
+            "/tmp/AppSupport/ProviderDesktop"
         )
     }
 

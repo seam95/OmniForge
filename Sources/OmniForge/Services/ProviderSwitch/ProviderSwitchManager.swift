@@ -21,6 +21,8 @@ enum ProviderSwitchManagerError: Error, Equatable {
     case missingUnmanagedValues(tool: ProviderTool)
     /// 写入失败后自动回滚也失败（快照无法恢复）。
     case rollbackFailed(tool: ProviderTool)
+    /// 目标工具的切换能力尚未装配（C1 编译占位，Desktop 在 C2 落地）。
+    case unsupportedTool(tool: ProviderTool)
 }
 
 /// 供应商切换编排管理器 — 串联配置读写 / 备份回滚 / profile 管理 / 进程检测。
@@ -93,8 +95,11 @@ final class ProviderSwitchManager: ObservableObject, ProviderActivationRefreshin
             codexStore: CodexConfigStore(configURL: configURL),
             backupStore: backupStore,
             profileStore: ProviderProfileStore(
-                claudeProfileDirectory: claudeProfiles,
-                codexProfileDirectory: codexProfiles
+                profileDirectories: [
+                    .claudeCode: claudeProfiles,
+                    .codex: codexProfiles,
+                    .claudeDesktop: ProviderSwitchPaths.desktopProfileDirectory(applicationSupportRoot: root),
+                ]
             ),
             claudeConfigURL: settingsURL,
             codexConfigURL: configURL,
@@ -121,6 +126,7 @@ final class ProviderSwitchManager: ObservableObject, ProviderActivationRefreshin
         switch tool {
         case .claudeCode: return claudeConfigURL
         case .codex: return codexConfigURL
+        case .claudeDesktop: return ProviderSwitchPaths.claudeDesktopConfigURL()
         }
     }
 
@@ -150,11 +156,16 @@ final class ProviderSwitchManager: ObservableObject, ProviderActivationRefreshin
     @discardableResult
     func switchTo(profile: ProviderProfile) async throws -> ProviderSwitchOutcome {
         let tool = profile.tool
+        if tool == .claudeDesktop {
+            // C1 占位；Desktop 直连切换在 C2（ClaudeDesktopSettingsStore + 4 文件事务）落地。
+            throw ProviderSwitchManagerError.unsupportedTool(tool: tool)
+        }
         let backup = try snapshot(tool: tool)
         do {
             switch tool {
             case .claudeCode: try claudeStore.applyProfile(profile)
             case .codex: try codexStore.applyProfile(profile)
+            case .claudeDesktop: throw ProviderSwitchManagerError.unsupportedTool(tool: tool)
             }
         } catch {
             try rollbackOrThrow(backup, tool: tool)
@@ -167,11 +178,16 @@ final class ProviderSwitchManager: ObservableObject, ProviderActivationRefreshin
     /// 切到官方：快照 → 删除 override → 失败自动回滚 → 刷新。
     @discardableResult
     func switchToOfficial(tool: ProviderTool) async throws -> ProviderSwitchOutcome {
+        if tool == .claudeDesktop {
+            // C1 占位；恢复官方在 C2（restoreOfficial 恢复 1P）落地。
+            throw ProviderSwitchManagerError.unsupportedTool(tool: tool)
+        }
         let backup = try snapshot(tool: tool)
         do {
             switch tool {
             case .claudeCode: try claudeStore.clearOverrides()
             case .codex: try codexStore.clearOverrides()
+            case .claudeDesktop: throw ProviderSwitchManagerError.unsupportedTool(tool: tool)
             }
         } catch {
             try rollbackOrThrow(backup, tool: tool)
@@ -205,6 +221,9 @@ final class ProviderSwitchManager: ObservableObject, ProviderActivationRefreshin
             let (_, base, tokenValue, _) = try codexStore.readActiveProvider()
             baseURL = base ?? ""
             token = tokenValue ?? ""
+        case .claudeDesktop:
+            // C1 占位；Desktop 的收编读取在 C2（readState）落地。
+            throw ProviderSwitchManagerError.unsupportedTool(tool: tool)
         }
         guard !baseURL.isEmpty, !token.isEmpty else {
             throw ProviderSwitchManagerError.missingUnmanagedValues(tool: tool)
@@ -305,6 +324,10 @@ final class ProviderSwitchManager: ObservableObject, ProviderActivationRefreshin
                 return .official // codex login 自带配置
             }
             return .unmanaged(summary: active.baseURL ?? key)
+
+        case .claudeDesktop:
+            // C1 占位；Desktop 的全态检测在 C2（readState → _meta.json / baseURL 匹配）落地。
+            return .official
         }
     }
 }

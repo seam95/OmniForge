@@ -50,6 +50,14 @@ struct CodexModelEntry: Equatable {
     var defaultReasoningLevel: String?
 }
 
+/// Claude Desktop 模型映射条目 — key 为 Claude-safe 路由名（四档固定），
+/// value 为上游真实模型名 + 可选显示名与 1M 标记（SPEC 功能 C）。
+struct DesktopModelRoute: Codable, Equatable {
+    var model: String
+    var labelOverride: String?
+    var supports1M: Bool
+}
+
 /// 供应商档案 — 一个可用供应商 = 名称 + 目标工具 + base URL + 明文凭证 + 可选模型覆盖。
 /// 一个 Profile 只服务一个工具（Claude Code 或 Codex 之一）；Preset : Profile = 1 : N。
 struct ProviderProfile: Identifiable, Codable, Equatable {
@@ -86,6 +94,9 @@ struct ProviderProfile: Identifiable, Codable, Equatable {
     var modelDefaultReasoningLevels: [String]?
     /// 额外 env（如 `CLAUDE_CODE_EFFORT_LEVEL=max`），随 profile 原样写入。
     var extraEnv: [String: String]
+    /// Claude Desktop 模型映射（key = Claude-safe 路由名）。nil/空 = 直连卡；
+    /// 非空 = 映射卡（必须聚合，直连切换前校验拒绝）。其余工具恒 nil。
+    var desktopModelRoutes: [String: DesktopModelRoute]?
     /// 来源标记：本 App 写入为 "omniforge"；CCQ 等外部文件为 nil（只读展示，可收编/编辑）。
     var managedBy: String?
 
@@ -105,6 +116,7 @@ struct ProviderProfile: Identifiable, Codable, Equatable {
         modelReasoningLevels: [String]? = nil,
         modelDefaultReasoningLevels: [String]? = nil,
         extraEnv: [String: String] = [:],
+        desktopModelRoutes: [String: DesktopModelRoute]? = nil,
         managedBy: String? = nil
     ) {
         self.id = id
@@ -122,6 +134,7 @@ struct ProviderProfile: Identifiable, Codable, Equatable {
         self.modelReasoningLevels = modelReasoningLevels
         self.modelDefaultReasoningLevels = modelDefaultReasoningLevels
         self.extraEnv = extraEnv
+        self.desktopModelRoutes = desktopModelRoutes
         self.managedBy = managedBy
     }
 
@@ -181,6 +194,10 @@ struct ProviderProfile: Identifiable, Codable, Equatable {
             return host.isEmpty
                 || host == "api.openai.com" || host.hasSuffix(".openai.com")
                 || host == "chatgpt.com" || host.hasSuffix(".chatgpt.com")
+        case .claudeDesktop:
+            // Desktop 官方是纯 UI 概念（restoreOfficial 恢复 1P），不合成 profile 记录；
+            // 聚合准入、路由目标与 host 判定均不走该谓词，故恒 false（SPEC 功能 A）。
+            return false
         }
     }
 

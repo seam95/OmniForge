@@ -225,3 +225,89 @@ final class AggregationTargetResolverTests: XCTestCase {
         }
     }
 }
+
+// MARK: - Desktop 聚合 id（.stackCode 发布表反查）
+
+extension AggregationTargetResolverTests {
+    private func makeDesktopFixture(
+        enabled: Bool = true,
+        members: [String] = ["glm"],
+        published: [AggregationPublishedModel] = []
+    ) -> (resolver: AggregationTargetResolver, entry: AggregationPublishedModel?) {
+        let profile = ProviderProfile(
+            id: "glm",
+            name: "智谱",
+            tool: .claudeDesktop,
+            baseURL: "https://open.bigmodel.cn/api/anthropic",
+            token: "sk-glm",
+            desktopModelRoutes: ["claude-sonnet-5": DesktopModelRoute(model: "glm-5.3", labelOverride: nil, supports1M: false)]
+        )
+        let stack = AggregationStack.ToolStack(
+            enabled: enabled, members: members, keys: ["glm": "glm"]
+        )
+        let entry = published.first ?? AggregationPublishedModel(
+            tool: .claudeDesktop,
+            key: "glm",
+            profileName: "智谱",
+            model: "glm-5.3",
+            upstream: "glm-5.3",
+            displayName: "GLM 5.3",
+            oneM: false,
+            window: 0
+        )
+        let resolver = AggregationTargetResolver(
+            stack: stack,
+            registry: AggregationKeyRegistry(keys: ["glm": "glm"]),
+            profiles: [profile],
+            defaultTarget: AggregationProxyTarget(
+                key: "glm", profileID: "glm",
+                baseURL: "https://open.bigmodel.cn/api/anthropic", token: "sk-glm"
+            ),
+            published: [entry]
+        )
+        return (resolver, entry)
+    }
+
+    func test_desktopStackCodeHitsPublishedTableAndResolvesUpstream() {
+        let (resolver, entry) = makeDesktopFixture()
+        let entryID = entry!.id
+        let target = AggregationProxyTarget(
+            key: "glm", profileID: "glm",
+            baseURL: "https://open.bigmodel.cn/api/anthropic", token: "sk-glm"
+        )
+        XCTAssertEqual(
+            resolver.resolve(tool: .claudeDesktop, model: entryID),
+            .hit(target: target, upstreamModel: "glm-5.3")
+        )
+    }
+
+    func test_desktopStackCodeMissesWhenTableEmpty() {
+        let (resolver, entry) = makeDesktopFixture(published: [])
+        // 发布表为空时任何 Desktop 聚合 id 都反查不到。
+        let anyID = AggregationModelID.encode(tool: .claudeDesktop, key: "glm", model: "glm-5.3", oneM: false)
+        _ = entry
+        XCTAssertEqual(resolver.resolve(tool: .claudeDesktop, model: anyID), .miss(.unknown))
+    }
+
+    func test_desktopStackCodeMissesWhenStackDisabled() {
+        let (resolver, entry) = makeDesktopFixture(enabled: false)
+        XCTAssertEqual(resolver.resolve(tool: .claudeDesktop, model: entry!.id), .miss(.stackOff))
+    }
+
+    func test_desktopStackCodeMissesWhenProfileRemovedFromMembers() {
+        let (resolver, entry) = makeDesktopFixture(members: [])
+        XCTAssertEqual(resolver.resolve(tool: .claudeDesktop, model: entry!.id), .miss(.removed))
+    }
+
+    func test_desktopPlainModelRoutesToDefault() {
+        let (resolver, _) = makeDesktopFixture()
+        let target = AggregationProxyTarget(
+            key: "glm", profileID: "glm",
+            baseURL: "https://open.bigmodel.cn/api/anthropic", token: "sk-glm"
+        )
+        XCTAssertEqual(
+            resolver.resolve(tool: .claudeDesktop, model: "claude-sonnet-5"),
+            .plain(target: target)
+        )
+    }
+}

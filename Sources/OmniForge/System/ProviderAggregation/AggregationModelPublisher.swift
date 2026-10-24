@@ -27,6 +27,7 @@ enum AggregationModelPublisher {
                 let existing = result[existingIndex]
                 guard oneM, !existing.oneM else { continue }
                 result[existingIndex] = AggregationPublishedModel(
+                    tool: existing.tool,
                     key: existing.key,
                     profileName: existing.profileName,
                     model: existing.model,
@@ -39,6 +40,7 @@ enum AggregationModelPublisher {
             }
             indexByModel[stripped.model] = result.count
             result.append(AggregationPublishedModel(
+                tool: .claudeCode,
                 key: key,
                 profileName: profile.name,
                 model: stripped.model,

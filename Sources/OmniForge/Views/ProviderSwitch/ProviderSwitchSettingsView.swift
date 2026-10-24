@@ -6,6 +6,7 @@ extension ProviderTool {
         switch self {
         case .claudeCode: return strings.providerToolClaudeCode
         case .codex: return strings.providerToolCodex
+        case .claudeDesktop: return strings.providerToolClaudeDesktop
         }
     }
 }
@@ -370,6 +371,7 @@ struct ProviderSwitchSettingsView: View {
         switch tool {
         case .claudeCode: return strings.providerOfficialClaudeCaption
         case .codex: return strings.providerOfficialCodexCaption
+        case .claudeDesktop: return strings.providerOfficialClaudeDesktopCaption
         }
     }
 
@@ -946,6 +948,8 @@ enum ProviderBrandVisual {
             return Color(red: 0xD9 / 255.0, green: 0x77 / 255.0, blue: 0x57 / 255.0) // 陶土色
         case .codex:
             return Color(red: 0x18 / 255.0, green: 0x18 / 255.0, blue: 0x1B / 255.0) // 曜石黑
+        case .claudeDesktop:
+            return Color(red: 0xD9 / 255.0, green: 0x77 / 255.0, blue: 0x57 / 255.0) // 陶土色（同 Claude 品牌系）
         }
     }
 
@@ -954,6 +958,7 @@ enum ProviderBrandVisual {
         switch tool {
         case .claudeCode: return ProviderLogoAssets.claude
         case .codex: return ProviderLogoAssets.openai
+        case .claudeDesktop: return ProviderLogoAssets.claude
         }
     }
 }

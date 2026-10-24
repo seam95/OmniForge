@@ -26,6 +26,10 @@ enum ProviderLaunchCommand {
 
         case .codex:
             return "codex --profile \(shellArgument(profileKey))"
+
+        case .claudeDesktop:
+            // Desktop 是 GUI 应用，无 profile 启动参数 — 启动命令即打开应用（SPEC 功能 E）。
+            return "open -a \"Claude\""
         }
     }
 

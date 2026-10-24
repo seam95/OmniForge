@@ -20,7 +20,7 @@ final class ProviderSwitchProfileStoreTests: XCTestCase {
     }
 
     private func makeStore() -> ProviderProfileStore {
-        ProviderProfileStore(claudeProfileDirectory: claudeDir, codexProfileDirectory: codexDir)
+        ProviderProfileStore(profileDirectories: [.claudeCode: claudeDir, .codex: codexDir])
     }
 
     private func makeProfile(

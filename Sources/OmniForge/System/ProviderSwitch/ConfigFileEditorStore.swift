@@ -23,6 +23,8 @@ protocol ConfigFileEditing: AnyObject {
 final class ConfigFileEditorStore: ConfigFileEditing {
     let claudeConfigURL: URL
     let codexConfigURL: URL
+    /// Desktop 编辑目标：3P 网关 profile 原文（configLibrary 内的固定 UUID 文件）。
+    let desktopProfileURL: URL
     let backupStore: ProviderBackupStoring
     let fileManager: FileManager
 
@@ -30,10 +32,12 @@ final class ConfigFileEditorStore: ConfigFileEditing {
         claudeConfigURL: URL,
         codexConfigURL: URL,
         backupStore: ProviderBackupStoring,
+        desktopProfileURL: URL = ProviderSwitchPaths.claudeDesktopProfileURL(),
         fileManager: FileManager = .default
     ) {
         self.claudeConfigURL = claudeConfigURL
         self.codexConfigURL = codexConfigURL
+        self.desktopProfileURL = desktopProfileURL
         self.backupStore = backupStore
         self.fileManager = fileManager
     }
@@ -42,6 +46,7 @@ final class ConfigFileEditorStore: ConfigFileEditing {
         switch tool {
         case .claudeCode: return claudeConfigURL
         case .codex: return codexConfigURL
+        case .claudeDesktop: return desktopProfileURL
         }
     }
 
@@ -56,10 +61,10 @@ final class ConfigFileEditorStore: ConfigFileEditing {
 
     func isValid(tool: ProviderTool, content: String) -> Bool {
         switch tool {
-        case .claudeCode:
+        case .claudeCode, .claudeDesktop:
             guard let data = content.data(using: .utf8) else { return false }
             guard let root = try? JSONSerialization.jsonObject(with: data) else { return false }
-            return root is [String: Any] // settings.json 顶层必须是对象
+            return root is [String: Any] // settings.json / 3P profile 顶层必须是对象
         case .codex:
             return TOMLFile.parse(content) != nil
         }

@@ -105,6 +105,60 @@ enum ProviderSwitchPaths {
             .appendingPathComponent(codexModelsCacheFileName, isDirectory: false)
     }
 
+    // MARK: - Claude Desktop
+
+    /// Claude Desktop 官方（1P）配置文件：`~/Library/Application Support/Claude/claude_desktop_config.json`。
+    static func claudeDesktopConfigURL(homePath: String = FileManager.default.homeDirectoryForCurrentUser.path) -> URL {
+        desktopSupportRoot(homePath: homePath).appendingPathComponent("claude_desktop_config.json", isDirectory: false)
+    }
+
+    /// Claude Desktop 3P（沙盒）配置文件：`~/Library/Application Support/Claude-3p/claude_desktop_config.json`。
+    static func claudeDesktop3PConfigURL(homePath: String = FileManager.default.homeDirectoryForCurrentUser.path) -> URL {
+        desktop3PRoot(homePath: homePath).appendingPathComponent("claude_desktop_config.json", isDirectory: false)
+    }
+
+    /// Claude Desktop 网关 profile（固定 UUID，对齐 cc-switch `build_gateway_profile`）。
+    static func claudeDesktopProfileURL(homePath: String = FileManager.default.homeDirectoryForCurrentUser.path) -> URL {
+        desktop3PRoot(homePath: homePath)
+            .appendingPathComponent("configLibrary", isDirectory: true)
+            .appendingPathComponent("00000000-0000-4000-8000-000000157210.json", isDirectory: false)
+    }
+
+    /// Claude Desktop profile 注册表：`entries[]` + `appliedId`。
+    static func claudeDesktopMetaURL(homePath: String = FileManager.default.homeDirectoryForCurrentUser.path) -> URL {
+        desktop3PRoot(homePath: homePath)
+            .appendingPathComponent("configLibrary", isDirectory: true)
+            .appendingPathComponent("_meta.json", isDirectory: false)
+    }
+
+    /// `~/Library/Application Support/Claude`。
+    static func desktopSupportRoot(homePath: String) -> URL {
+        URL(fileURLWithPath: homePath)
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("Application Support", isDirectory: true)
+            .appendingPathComponent("Claude", isDirectory: true)
+    }
+
+    /// `~/Library/Application Support/Claude-3p`。
+    static func desktop3PRoot(homePath: String) -> URL {
+        URL(fileURLWithPath: homePath)
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("Application Support", isDirectory: true)
+            .appendingPathComponent("Claude-3p", isDirectory: true)
+    }
+
+    /// OmniForge 的 Desktop 档案目录：`<App Support>/ProviderDesktop`（JSON 格式，无外部兼容需求）。
+    static func desktopProfileDirectory(applicationSupportRoot: URL) -> URL {
+        applicationSupportRoot.appendingPathComponent("ProviderDesktop", isDirectory: true)
+    }
+
+    /// Desktop 聚合 gateway token 文件：`<App Support>/ProviderAggregation/desktop-gateway-token`。
+    static func desktopGatewayTokenURL(applicationSupportRoot: URL) -> URL {
+        applicationSupportRoot
+            .appendingPathComponent("ProviderAggregation", isDirectory: true)
+            .appendingPathComponent("desktop-gateway-token", isDirectory: false)
+    }
+
     // MARK: - 统一入口
 
     /// 目标工具配置文件 URL。
@@ -118,20 +172,26 @@ enum ProviderSwitchPaths {
             return claudeSettingsURL(homePath: homePath, environment: environment)
         case .codex:
             return codexConfigURL(homePath: homePath, environment: environment)
+        case .claudeDesktop:
+            return claudeDesktopConfigURL(homePath: homePath)
         }
     }
 
     /// 目标工具的 profile 目录。
+    /// Desktop 分支需要 `applicationSupportRoot`（档案在 App Support，不在 home 布局）。
     static func profileDirectory(
         for tool: ProviderTool,
         homePath: String = FileManager.default.homeDirectoryForCurrentUser.path,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        applicationSupportRoot: URL
     ) -> URL {
         switch tool {
         case .claudeCode:
             return claudeProfileDirectory(homePath: homePath, environment: environment)
         case .codex:
             return codexProfileDirectory(homePath: homePath, environment: environment)
+        case .claudeDesktop:
+            return desktopProfileDirectory(applicationSupportRoot: applicationSupportRoot)
         }
     }
 

@@ -162,7 +162,7 @@ final class ProfileEditorViewTests: XCTestCase {
         let claudeConfigURL = tmp.appendingPathComponent("settings.json")
         let codexConfigURL = tmp.appendingPathComponent("config.toml")
 
-        let profileStore = ProviderProfileStore(claudeProfileDirectory: claudeDir, codexProfileDirectory: codexDir)
+        let profileStore = ProviderProfileStore(profileDirectories: [.claudeCode: claudeDir, .codex: codexDir])
         let backupStore = ProviderBackupStore(backupDirectory: backupDir)
         let claudeStore = ClaudeSettingsStore(settingsURL: claudeConfigURL)
         let codexStore = CodexConfigStore(configURL: codexConfigURL)
@@ -215,7 +215,7 @@ final class ProfileEditorViewTests: XCTestCase {
         let claudeConfigURL = tmp.appendingPathComponent("settings.json")
         let codexConfigURL = tmp.appendingPathComponent("config.toml")
 
-        let profileStore = ProviderProfileStore(claudeProfileDirectory: claudeDir, codexProfileDirectory: codexDir)
+        let profileStore = ProviderProfileStore(profileDirectories: [.claudeCode: claudeDir, .codex: codexDir])
         let backupStore = ProviderBackupStore(backupDirectory: backupDir)
         let claudeStore = ClaudeSettingsStore(settingsURL: claudeConfigURL)
         let codexStore = CodexConfigStore(configURL: codexConfigURL)
@@ -381,7 +381,7 @@ final class ProfileEditorViewTests: XCTestCase {
         let claudeConfigURL = tmp.appendingPathComponent("settings.json")
         let codexConfigURL = tmp.appendingPathComponent("config.toml")
 
-        let profileStore = ProviderProfileStore(claudeProfileDirectory: claudeDir, codexProfileDirectory: codexDir)
+        let profileStore = ProviderProfileStore(profileDirectories: [.claudeCode: claudeDir, .codex: codexDir])
         let manager = ProviderSwitchManager(
             claudeStore: ClaudeSettingsStore(settingsURL: claudeConfigURL),
             codexStore: CodexConfigStore(configURL: codexConfigURL),

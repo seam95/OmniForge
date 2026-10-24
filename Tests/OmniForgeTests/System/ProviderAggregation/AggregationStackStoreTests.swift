@@ -49,3 +49,29 @@ final class AggregationStackStoreTests: XCTestCase {
         XCTAssertEqual(attrs[.posixPermissions] as? NSNumber, NSNumber(value: 0o600))
     }
 }
+
+// MARK: - Desktop 后向兼容
+
+extension AggregationStackStoreTests {
+    /// 存量 stack.json 只有 claudeCode/codex 两键（Desktop 接入前的全部存量）：
+    /// 解码不失败，claudeDesktop 取默认空栈。
+    func test_load_legacyTwoToolJSONDecodesWithEmptyDesktopStack() throws {
+        let legacyJSON = """
+        {"claudeCode":{"enabled":true,"members":["kimi"],"keys":{"kimi":"kimi"}},"codex":{"enabled":false,"members":[],"keys":{}}}
+        """
+        try Data(legacyJSON.utf8).write(to: stackURL)
+        let stack = store.load()
+        XCTAssertEqual(stack.claudeCode.members, ["kimi"])
+        XCTAssertTrue(stack.claudeCode.enabled)
+        XCTAssertEqual(stack.claudeDesktop, AggregationStack.ToolStack())
+    }
+
+    /// 新格式三键往返不丢 Desktop 栈。
+    func test_save_thenLoad_roundTripsDesktopStack() throws {
+        let stack = AggregationStack(
+            claudeDesktop: .init(enabled: true, members: ["glm"], keys: ["glm": "glm"])
+        )
+        try store.save(stack)
+        XCTAssertEqual(store.load(), stack)
+    }
+}

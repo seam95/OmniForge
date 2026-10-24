@@ -1,15 +1,30 @@
 import Foundation
 
-/// 聚合状态顶层容器 — 两个工具各一份，独立处于直连/聚合（SPEC 6.1）。
+/// 聚合状态顶层容器 — 每个工具各一份，独立处于直连/聚合（SPEC 6.1）。
 /// 同一 profile 只属一边是正常形态：两侧准入规则不同
 /// （Codex 成员要求 `wire_api="responses"`，Claude 侧按 `stackModels`/映射发布）。
 struct AggregationStack: Codable, Equatable {
     var claudeCode: ToolStack
     var codex: ToolStack
+    var claudeDesktop: ToolStack
 
-    init(claudeCode: ToolStack = .init(), codex: ToolStack = .init()) {
+    init(
+        claudeCode: ToolStack = .init(),
+        codex: ToolStack = .init(),
+        claudeDesktop: ToolStack = .init()
+    ) {
         self.claudeCode = claudeCode
         self.codex = codex
+        self.claudeDesktop = claudeDesktop
+    }
+
+    /// 顶层自定义解码：`claudeDesktop` 是后加的非可选键，存量 `stack.json` 没有它 —
+    /// 合成 Codable 会因缺键整体失败，这里 `decodeIfPresent` 容错（SPEC 功能 D）。
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        claudeCode = try container.decodeIfPresent(ToolStack.self, forKey: .claudeCode) ?? .init()
+        codex = try container.decodeIfPresent(ToolStack.self, forKey: .codex) ?? .init()
+        claudeDesktop = try container.decodeIfPresent(ToolStack.self, forKey: .claudeDesktop) ?? .init()
     }
 
     /// 单个工具的聚合状态 — 模式位、成员名单、key 登记簿三层。
@@ -51,6 +66,7 @@ struct AggregationStack: Codable, Equatable {
         switch tool {
         case .claudeCode: return claudeCode
         case .codex: return codex
+        case .claudeDesktop: return claudeDesktop
         }
     }
 
@@ -58,6 +74,7 @@ struct AggregationStack: Codable, Equatable {
         switch tool {
         case .claudeCode: claudeCode = stack
         case .codex: codex = stack
+        case .claudeDesktop: claudeDesktop = stack
         }
     }
 }

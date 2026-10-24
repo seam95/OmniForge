@@ -4,22 +4,28 @@ import Foundation
 enum ProviderTool: String, Codable, CaseIterable, Identifiable {
     case claudeCode
     case codex
+    case claudeDesktop
 
     var id: String { rawValue }
 
-    /// 配置文件文件名（settings.json / config.toml）。
+    /// 配置文件文件名（settings.json / config.toml / claude_desktop_config.json）。
+    /// Desktop 侧仅展示用：实际写入目标是 4 文件事务（SPEC 关键设计决策 2）。
     var configFileName: String {
         switch self {
         case .claudeCode: return "settings.json"
         case .codex: return "config.toml"
+        case .claudeDesktop: return "claude_desktop_config.json"
         }
     }
 
     /// profile 目录名（Claude 侧为 CCQ 兼容的 `providers/`；Codex 侧即 home 根目录）。
+    /// Desktop 档案在 App Support（`ProviderSwitchPaths.profileDirectory`），
+    /// 不属于 home 相对布局，故不参与此映射 — 返回 nil 仅为穷尽性，不可消费。
     var profileDirectoryName: String? {
         switch self {
         case .claudeCode: return "providers"
         case .codex: return nil
+        case .claudeDesktop: return nil
         }
     }
 }

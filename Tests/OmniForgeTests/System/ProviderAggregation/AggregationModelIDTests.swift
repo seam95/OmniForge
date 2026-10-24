@@ -51,4 +51,35 @@ final class AggregationModelIDTests: XCTestCase {
         XCTAssertTrue(AggregationModelID.claudePrefix.contains("claude"))
         XCTAssertFalse(AggregationModelID.claudePrefix.hasPrefix("claude-"))
     }
+
+    // MARK: - Desktop（FNV-1a u64 编码；参考值由独立 Python 实现算出）
+
+    func test_encode_desktopUsesFNV1aReferenceValues() {
+        XCTAssertEqual(AggregationModelID.encode(tool: .claudeDesktop, key: "kimi", model: "k3", oneM: false),
+                       "claude-fable-om-136067")
+        XCTAssertEqual(AggregationModelID.encode(tool: .claudeDesktop, key: "zhipu", model: "glm-5.3", oneM: false),
+                       "claude-fable-om-440626")
+    }
+
+    func test_encode_desktopPadsShortHashToSixDigits() {
+        // 42660 < 100000 → 必须左补零为 042660。
+        XCTAssertEqual(AggregationModelID.encode(tool: .claudeDesktop, key: "glm", model: "deepseek-v4-pro", oneM: false),
+                       "claude-fable-om-042660")
+    }
+
+    func test_encode_desktopIgnoresOneMFlag() {
+        // Desktop 的 1M 语义在 route 的 supports1M，不进 id；oneM 参数对 Desktop 无效。
+        XCTAssertEqual(AggregationModelID.encode(tool: .claudeDesktop, key: "kimi", model: "k3", oneM: true),
+                       AggregationModelID.encode(tool: .claudeDesktop, key: "kimi", model: "k3", oneM: false))
+    }
+
+    func test_decode_desktopStackIDCarriesOriginalID() {
+        XCTAssertEqual(AggregationModelID.decode(tool: .claudeDesktop, id: "claude-fable-om-136067"),
+                       .stackCode("claude-fable-om-136067"))
+    }
+
+    func test_decode_desktopNonStackIDIsPlain() {
+        XCTAssertEqual(AggregationModelID.decode(tool: .claudeDesktop, id: "claude-sonnet-5"), .plain)
+        XCTAssertEqual(AggregationModelID.decode(tool: .claudeDesktop, id: "glm-5.3"), .plain)
+    }
 }

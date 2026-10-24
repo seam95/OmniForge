@@ -6,19 +6,31 @@ final class ProviderSwitchModelsTests: XCTestCase {
     // MARK: - ProviderTool
 
     func test_toolCasesBothCovered() {
-        XCTAssertEqual(ProviderTool.allCases, [.claudeCode, .codex])
+        XCTAssertEqual(ProviderTool.allCases, [.claudeCode, .codex, .claudeDesktop])
         XCTAssertEqual(ProviderTool.claudeCode.rawValue, "claudeCode")
         XCTAssertEqual(ProviderTool.codex.rawValue, "codex")
+        XCTAssertEqual(ProviderTool.claudeDesktop.rawValue, "claudeDesktop")
     }
 
     func test_toolConfigFileNames() {
         XCTAssertEqual(ProviderTool.claudeCode.configFileName, "settings.json")
         XCTAssertEqual(ProviderTool.codex.configFileName, "config.toml")
+        XCTAssertEqual(ProviderTool.claudeDesktop.configFileName, "claude_desktop_config.json")
     }
 
     func test_toolProfileDirectoryNames() {
         XCTAssertEqual(ProviderTool.claudeCode.profileDirectoryName, "providers")
         XCTAssertNil(ProviderTool.codex.profileDirectoryName, "Codex profile 落 home 根")
+        XCTAssertNil(ProviderTool.claudeDesktop.profileDirectoryName, "Desktop 档案在 App Support，不参与 home 布局")
+    }
+
+    func test_isOfficial_desktopIsAlwaysFalse() {
+        // Desktop 官方是 UI 概念（restoreOfficial），不合成 profile；该谓词恒 false（SPEC 功能 A）。
+        let profile = ProviderProfile(
+            id: "x", name: "X", tool: .claudeDesktop,
+            baseURL: "https://api.anthropic.com", token: "t"
+        )
+        XCTAssertFalse(profile.isOfficial)
     }
 
     func test_claudeOwnedEnvKeys() {
@@ -474,5 +486,58 @@ final class ProviderSwitchModelsTests: XCTestCase {
             modelDefaultReasoningLevels: ["ultra"]
         )
         XCTAssertNil(profile.codexModelEntries[0].defaultReasoningLevel, "非法档位按未配置处理")
+    }
+}
+
+// MARK: - Claude Desktop 档案编解码
+
+extension ProviderSwitchModelsTests {
+    private func makeDesktopProfile(routes: [String: DesktopModelRoute]?) -> ProviderProfile {
+        ProviderProfile(
+            id: "glm",
+            name: "智谱",
+            tool: .claudeDesktop,
+            baseURL: "https://open.bigmodel.cn/api/anthropic",
+            token: "sk-glm",
+            desktopModelRoutes: routes
+        )
+    }
+
+    func test_desktopProfileCodec_roundTripsModelRoutes() throws {
+        let routes: [String: DesktopModelRoute] = [
+            "claude-sonnet-5": DesktopModelRoute(model: "glm-5.3", labelOverride: "GLM 5.3", supports1M: true),
+            "claude-haiku-4-5": DesktopModelRoute(model: "glm-5.3-flash", labelOverride: nil, supports1M: false),
+        ]
+        let profile = makeDesktopProfile(routes: routes)
+        let data = try XCTUnwrap(ProviderProfileFileCodec.encode(profile))
+        let decoded = try XCTUnwrap(ProviderProfileFileCodec.decode(data: data, tool: .claudeDesktop, fallbackID: "glm"))
+        XCTAssertEqual(decoded.tool, .claudeDesktop)
+        XCTAssertEqual(decoded.baseURL, "https://open.bigmodel.cn/api/anthropic")
+        XCTAssertEqual(decoded.token, "sk-glm")
+        XCTAssertEqual(decoded.desktopModelRoutes, routes)
+        XCTAssertEqual(decoded.managedBy, ProviderProfile.managedByMarker)
+    }
+
+    func test_desktopProfileCodec_nilRoutesRoundTripAsNil() throws {
+        // 直连卡：routes 为 nil，编解码后仍为 nil（不写键 → 解码缺省 nil）。
+        let profile = makeDesktopProfile(routes: nil)
+        let data = try XCTUnwrap(ProviderProfileFileCodec.encode(profile))
+        let decoded = try XCTUnwrap(ProviderProfileFileCodec.decode(data: data, tool: .claudeDesktop, fallbackID: "glm"))
+        XCTAssertNil(decoded.desktopModelRoutes)
+    }
+
+    func test_desktopProfileCodec_supports1MDefaultsToFalseWhenKeyMissing() throws {
+        // 容错：条目缺 supports1M 键时按 false（不因缺键整体失败）。
+        let json = """
+        {"name":"智谱","tool":"claudeDesktop","baseURL":"https://x.example","token":"t",
+         "desktopModelRoutes":{"claude-sonnet-5":{"model":"glm-5.3"}}}
+        """
+        let decoded = try XCTUnwrap(ProviderProfileFileCodec.decode(
+            data: Data(json.utf8), tool: .claudeDesktop, fallbackID: "glm"
+        ))
+        XCTAssertEqual(
+            decoded.desktopModelRoutes?["claude-sonnet-5"],
+            DesktopModelRoute(model: "glm-5.3", labelOverride: nil, supports1M: false)
+        )
     }
 }

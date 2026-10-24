@@ -323,6 +323,9 @@ final class ProviderAggregationManager: ObservableObject {
                                 requiresOpenAIAuth: loginStashStore.hasNativeLogin
                             )
                             staleDetector.observe(catalogURL: codexCatalogURL, catalogIsOurs: true)
+                        case .claudeDesktop:
+                            // C1 编译占位；Desktop 聚合投影在 C5（AggregationClaudeDesktopConfigWriter）落地。
+                            break
                         }
 
                         try? pendingStore.clear()
@@ -407,6 +410,7 @@ final class ProviderAggregationManager: ObservableObject {
                         switch tool {
                         case .claudeCode: try claudeWriter.clearAggregation()
                         case .codex: try codexWriter.clearAggregation()
+                        case .claudeDesktop: break // C1 占位，C5 落地退出投影
                         }
                     }
                 } catch {
@@ -414,6 +418,7 @@ final class ProviderAggregationManager: ObservableObject {
                         switch tool {
                         case .claudeCode: try claudeWriter.clearAggregation()
                         case .codex: try codexWriter.clearAggregation()
+                        case .claudeDesktop: break // C1 占位，C5 落地退出投影
                         }
                     } catch {
                         continuation.resume(throwing: error)
@@ -642,8 +647,11 @@ final class ProviderAggregationManager: ObservableObject {
             ?? fileManager.temporaryDirectory
         let aggregationRoot = root.appendingPathComponent("ProviderAggregation", isDirectory: true)
         let profileStore = ProviderProfileStore(
-            claudeProfileDirectory: ProviderSwitchPaths.claudeProfileDirectory(homePath: homePath, environment: environment),
-            codexProfileDirectory: ProviderSwitchPaths.codexProfileDirectory(homePath: homePath, environment: environment),
+            profileDirectories: [
+                .claudeCode: ProviderSwitchPaths.claudeProfileDirectory(homePath: homePath, environment: environment),
+                .codex: ProviderSwitchPaths.codexProfileDirectory(homePath: homePath, environment: environment),
+                .claudeDesktop: ProviderSwitchPaths.desktopProfileDirectory(applicationSupportRoot: root),
+            ],
             fileManager: fileManager
         )
         // 迟绑定：代理持 binding，管理器就位后喂快照（破解「代理要解析器、解析器要管理器」的循环初始化）。
@@ -789,7 +797,8 @@ final class ProviderAggregationManager: ObservableObject {
 
     private func stopProxyIfIdle(_ currentStack: AggregationStack) {
         guard !currentStack.toolStack(.claudeCode).enabled,
-              !currentStack.toolStack(.codex).enabled else {
+              !currentStack.toolStack(.codex).enabled,
+              !currentStack.toolStack(.claudeDesktop).enabled else {
             syncProxyState()
             return
         }
@@ -828,6 +837,9 @@ final class ProviderAggregationManager: ObservableObject {
                     defaultProfile: defaultProfile, defaultKey: defaultKey, published: published, port: port,
                     requiresOpenAIAuth: loginStashStore.hasNativeLogin
                 )
+        case .claudeDesktop:
+            // C1 占位；Desktop 投影摘要比较在 C5 落地。
+            changed = true
         }
         guard changed else { return }
         try writeProjection(tool: tool, defaultProfile: defaultProfile, defaultKey: defaultKey, port: port)
@@ -848,6 +860,9 @@ final class ProviderAggregationManager: ObservableObject {
                 requiresOpenAIAuth: loginStashStore.hasNativeLogin
             )
             refreshOfficialModelsIfNeeded(defaultProfile: defaultProfile, tool: tool)
+        case .claudeDesktop:
+            // C1 占位；Desktop 投影写入在 C5 落地（此路径 C5 前不可达：成员准入尚未放行 Desktop）。
+            break
         }
     }
 
@@ -901,6 +916,9 @@ final class ProviderAggregationManager: ObservableObject {
                 to: configURL,
                 fileManager: fileManager
             )
+        case .claudeDesktop:
+            // C1 占位；Desktop 键级恢复在 C5（AggregationRestoreMerger.desktop）落地。
+            throw ProviderConfigFileError.corrupted(path: configURL.path)
         }
     }
 
@@ -908,6 +926,7 @@ final class ProviderAggregationManager: ObservableObject {
         switch tool {
         case .claudeCode: try claudeWriter.clearAggregation()
         case .codex: try codexWriter.clearAggregation()
+        case .claudeDesktop: break // C1 占位，C5 落地
         }
     }
 
@@ -974,6 +993,9 @@ final class ProviderAggregationManager: ObservableObject {
             return AggregationModelPublisher.published(profile: profile, key: key)
         case .codex:
             return Self.codexPublishedModels(profile: profile, key: key)
+        case .claudeDesktop:
+            // C1 占位；desktopPublishedModels 在 C5 落地（成员准入同批放行）。
+            return []
         }
     }
 
@@ -988,6 +1010,7 @@ final class ProviderAggregationManager: ObservableObject {
             ?? CodexModelCatalogStore.aggregationWorkingWindow
         return profile.codexModelEntries.map { entry in
             AggregationPublishedModel(
+                tool: .codex,
                 key: key,
                 profileName: profile.name,
                 model: entry.model,
@@ -1132,7 +1155,8 @@ final class AggregationProxyBinding: AggregationResolving, AggregationProxyModel
             stack: toolStack,
             registry: AggregationKeyRegistry(keys: toolStack.keys),
             profiles: current.profiles,
-            defaultTarget: defaultTarget
+            defaultTarget: defaultTarget,
+            published: current.published[tool] ?? []
         ).resolve(tool: tool, model: model)
     }
 

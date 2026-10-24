@@ -29,34 +29,31 @@ protocol ProviderProfileStoring: AnyObject {
 }
 
 /// profile 文件 CRUD 实现（JSON / TOML 双格式，按工具区分）。
+/// 目录按工具显式注入（SPEC 决策 6）：Claude Code / Codex 在 home 布局，
+/// Desktop 在 App Support，无统一相对关系。
 final class ProviderProfileStore: ProviderProfileStoring {
-    let claudeProfileDirectory: URL
-    let codexProfileDirectory: URL
+    private let directories: [ProviderTool: URL]
     let fileManager: FileManager
 
     init(
-        claudeProfileDirectory: URL,
-        codexProfileDirectory: URL,
+        profileDirectories: [ProviderTool: URL],
         fileManager: FileManager = .default
     ) {
-        self.claudeProfileDirectory = claudeProfileDirectory
-        self.codexProfileDirectory = codexProfileDirectory
+        self.directories = profileDirectories
         self.fileManager = fileManager
     }
 
     // MARK: - 目录与文件名
 
-    func directory(for tool: ProviderTool) -> URL {
-        switch tool {
-        case .claudeCode: return claudeProfileDirectory
-        case .codex: return codexProfileDirectory
-        }
+    func directory(for tool: ProviderTool) -> URL? {
+        directories[tool]
     }
 
     static func fileExtension(for tool: ProviderTool) -> String {
         switch tool {
         case .claudeCode: return "json"
         case .codex: return "config.toml"
+        case .claudeDesktop: return "json"
         }
     }
 
@@ -67,7 +64,7 @@ final class ProviderProfileStore: ProviderProfileStoring {
     /// 从文件名还原档案 id（Codex 档案为双扩展名 `<key>.config.toml`，需去掉两层）。
     static func profileKey(from fileName: String, tool: ProviderTool) -> String {
         switch tool {
-        case .claudeCode:
+        case .claudeCode, .claudeDesktop:
             return (fileName as NSString).deletingPathExtension
         case .codex:
             let suffix = ".\(fileExtension(for: tool))"
@@ -80,7 +77,7 @@ final class ProviderProfileStore: ProviderProfileStoring {
     // MARK: - 列举
 
     func list(for tool: ProviderTool) -> [ProviderProfile] {
-        let dir = directory(for: tool)
+        guard let dir = directories[tool] else { return [] }
         let ext = Self.fileExtension(for: tool)
         guard let urls = try? fileManager.contentsOfDirectory(
             at: dir,
@@ -134,7 +131,9 @@ final class ProviderProfileStore: ProviderProfileStoring {
             profile.id = profile.profileKey
         }
         let tool = profile.tool
-        let dir = directory(for: tool)
+        guard let dir = directories[tool] else {
+            throw ProviderProfileStoreError.writeFailed(path: "\(tool.rawValue) profile directory 未装配")
+        }
         try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
 
         let target = dir.appendingPathComponent(Self.fileName(for: tool, key: profile.profileKey))
@@ -158,7 +157,8 @@ final class ProviderProfileStore: ProviderProfileStoring {
 
     func delete(_ profile: ProviderProfile) throws {
         guard !profile.id.isEmpty else { return }
-        let path = directory(for: profile.tool)
+        guard let dir = directories[profile.tool] else { return }
+        let path = dir
             .appendingPathComponent(Self.fileName(for: profile.tool, key: profile.id))
         guard fileManager.fileExists(atPath: path.path) else { return }
         try fileManager.removeItem(at: path)
@@ -196,6 +196,29 @@ enum ProviderProfileFileCodec {
 
     static func encode(_ profile: ProviderProfile) -> Data? {
         switch profile.tool {
+        case .claudeDesktop:
+            // Desktop 档案为自有 JSON 格式（App Support 内，无外部兼容需求），
+            // 字段平铺；模型映射逐条编码（labelOverride 缺省不写键）。
+            var root: [String: Any] = [
+                "name": profile.name,
+                "tool": profile.tool.rawValue,
+                "baseURL": profile.baseURL,
+                "token": profile.token,
+                managedByKey: ProviderProfile.managedByMarker,
+            ]
+            if let routes = profile.desktopModelRoutes, !routes.isEmpty {
+                root["desktopModelRoutes"] = routes.mapValues { route -> [String: Any] in
+                    var encoded: [String: Any] = [
+                        "model": route.model,
+                        "supports1M": route.supports1M,
+                    ]
+                    if let labelOverride = route.labelOverride {
+                        encoded["labelOverride"] = labelOverride
+                    }
+                    return encoded
+                }
+            }
+            return try? JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
         case .claudeCode:
             // 新格式（对齐 ccswitch）：`{ "name": ..., "env": { ... }, "_managedBy": "omniforge" }`，
             // 模型映射只写非空字段。`name` 为展示名（ccswitch 等外部读取方忽略未知键）。
@@ -273,7 +296,34 @@ enum ProviderProfileFileCodec {
             return decodeClaudeJSON(data: data, fallbackID: fallbackID)
         case .codex:
             return decodeCodexTOML(data: data, fallbackID: fallbackID)
+        case .claudeDesktop:
+            return decodeDesktopJSON(data: data, fallbackID: fallbackID)
         }
+    }
+
+    /// Desktop 档案解码：自有 JSON 格式，字段平铺；缺键取缺省（存量容忍）。
+    private static func decodeDesktopJSON(data: Data, fallbackID: String) -> ProviderProfile? {
+        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            return nil
+        }
+        let routes = (root["desktopModelRoutes"] as? [String: Any])?.compactMapValues { raw -> DesktopModelRoute? in
+            guard let dict = raw as? [String: Any],
+                  let model = dict["model"] as? String, !model.isEmpty else { return nil }
+            return DesktopModelRoute(
+                model: model,
+                labelOverride: dict["labelOverride"] as? String,
+                supports1M: dict["supports1M"] as? Bool ?? false
+            )
+        }
+        return ProviderProfile(
+            id: fallbackID,
+            name: root["name"] as? String ?? fallbackID,
+            tool: .claudeDesktop,
+            baseURL: root["baseURL"] as? String ?? "",
+            token: root["token"] as? String ?? "",
+            desktopModelRoutes: (routes?.isEmpty ?? true) ? nil : routes,
+            managedBy: root[managedByKey] as? String
+        )
     }
 
     private static func decodeClaudeJSON(data: Data, fallbackID: String) -> ProviderProfile? {

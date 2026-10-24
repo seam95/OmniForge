@@ -998,6 +998,9 @@ struct ProfileEditorView: View {
                 codexDefaultLevelsRows = [""]
                 reasoningEffort = ""
             }
+        case .claudeDesktop:
+            // C1 编译占位；预设带入（含四档映射）在 C6（DesktopPresetConnection）落地。
+            break
         }
     }
 

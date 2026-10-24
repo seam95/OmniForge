@@ -501,6 +501,7 @@ struct AggregationPanelView: View {
             switch tool {
             case .claudeCode: return strings.providerOfficialClaudeCaption
             case .codex: return strings.providerOfficialCodexCaption
+            case .claudeDesktop: return strings.providerOfficialClaudeDesktopCaption
             }
         }
         guard let profile else { return "" }

@@ -36,23 +36,27 @@ protocol AggregationResolving {
 
 /// 目标解析实现（对齐 cc-switch `mode::stack::resolve`）——纯值逻辑，无 I/O。
 /// `stack` / `registry` 都是**该工具**的那份，由调用方按 `toolStack(tool)` 提供；
-/// `profiles` 由 `ProviderProfileStore` 列举后注入（登记簿本身不持列表）。
+/// `profiles` 由 `ProviderProfileStore` 列举后注入（登记簿本身不持列表）；
+/// `published` 为该工具的发布表快照，仅 Desktop 使用（id 不可逆，靠表反查）。
 final class AggregationTargetResolver: AggregationResolving {
     private let stack: AggregationStack.ToolStack
     private let registry: AggregationKeyRegistry
     private let profiles: [ProviderProfile]
     private let defaultTarget: AggregationProxyTarget?
+    private let published: [AggregationPublishedModel]
 
     init(
         stack: AggregationStack.ToolStack,
         registry: AggregationKeyRegistry,
         profiles: [ProviderProfile],
-        defaultTarget: AggregationProxyTarget?
+        defaultTarget: AggregationProxyTarget?,
+        published: [AggregationPublishedModel] = []
     ) {
         self.stack = stack
         self.registry = registry
         self.profiles = profiles
         self.defaultTarget = defaultTarget
+        self.published = published
     }
 
     func resolve(tool: ProviderTool, model: String) -> AggregationResolution {
@@ -62,6 +66,8 @@ final class AggregationTargetResolver: AggregationResolving {
             return .plain(target: defaultTarget)
         case .malformed:
             return .miss(.unknown)
+        case .stackCode(let id):
+            return resolveDesktopStackCode(id, tool: tool)
         case .stack(let key, let stackModel, let oneM):
             guard stack.enabled else { return .miss(.stackOff) }
             guard let profileID = registry.keys[key] else { return .miss(.unknown) }
@@ -89,11 +95,30 @@ final class AggregationTargetResolver: AggregationResolving {
         }
     }
 
+    /// Desktop 聚合 id 解析：发布表按 id 反查 → key → registry → profile → hit。
+    /// 表中查不到（发布源已变/成员已删）→ `.miss(.unknown)`；栈关 → `.stackOff`。
+    /// Desktop 无官方透传（`isOfficial` 恒 false，官方不进聚合）。
+    private func resolveDesktopStackCode(_ id: String, tool: ProviderTool) -> AggregationResolution {
+        guard stack.enabled else { return .miss(.stackOff) }
+        guard let entry = published.first(where: { $0.id == id }) else { return .miss(.unknown) }
+        guard let profileID = registry.keys[entry.key] else { return .miss(.unknown) }
+        guard let profile = profiles.first(where: { $0.id == profileID && $0.tool == tool }) else { return .miss(.deleted) }
+        guard stack.isMember(profileID) else { return .miss(.removed) }
+        let target = AggregationProxyTarget(
+            key: entry.key,
+            profileID: profileID,
+            baseURL: profile.baseURL,
+            token: profile.token
+        )
+        return .hit(target: target, upstreamModel: entry.upstream)
+    }
+
     /// 上游模型名：Codex 侧用裸模型名；Claude 侧在发布源里找**剥标记后**匹配的条目，
     /// 取其 `upstream`（可能带 `[1M]`）；找不到（成员发布源已变）则按 oneM 重建。
+    /// Desktop 不会走到这里（id 解码走 `.stackCode` 分支，上游名由发布表反查给出）。
     private func upstreamModel(tool: ProviderTool, profile: ProviderProfile, key: String, model: String, oneM: Bool) -> String {
         switch tool {
-        case .codex:
+        case .codex, .claudeDesktop:
             return model
         case .claudeCode:
             if let published = AggregationModelPublisher.published(profile: profile, key: key)

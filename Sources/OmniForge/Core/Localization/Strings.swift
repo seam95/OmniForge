@@ -1306,10 +1306,12 @@ struct Strings: Equatable {
     let controlcenterNavProviderSwitch: String
     let providerToolClaudeCode: String
     let providerToolCodex: String
+    let providerToolClaudeDesktop: String
     /// 官方供应商行标题。
     let providerOfficial: String
     let providerOfficialClaudeCaption: String
     let providerOfficialCodexCaption: String
+    let providerOfficialClaudeDesktopCaption: String
     /// 「切换到官方」按钮。
     let providerSwitchBackToOfficial: String
     /// 激活项标注（%@ = profile 名）。

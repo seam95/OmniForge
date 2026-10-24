@@ -13,6 +13,7 @@ final class RunningProcessDetector: RunningProcessDetecting {
         switch tool {
         case .claudeCode: return "claude"
         case .codex: return "codex"
+        case .claudeDesktop: return "Claude"
         }
     }
 
