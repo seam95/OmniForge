@@ -392,4 +392,44 @@ final class ProfileEditorViewTests: XCTestCase {
         )
         return (manager, profileStore)
     }
+
+    /// 档位与默认档平行数组：与模型行同源过滤（删空白行不错位）+ 规范化落盘口径。
+    func test_alignedCodexSaveRows_filtersLevelsWithModelRows() {
+        let rows = ProfileEditorView.alignedCodexSaveRows(
+            models: ["glm-5.3", "  ", "glm-4.7-air"],
+            displayNames: ["A", "B", "C"],
+            windows: ["256000", "1", "2"],
+            levels: ["none,low,high", "max", ""],
+            defaultLevels: ["low", "high", ""]
+        )
+        // 空白模型行连同其平行字段一起丢弃，幸存行不错位。
+        XCTAssertEqual(rows.map(\.model), ["glm-5.3", "glm-4.7-air"])
+        XCTAssertEqual(rows.map(\.levels), ["none,low,high", ""])
+        XCTAssertEqual(rows.map(\.defaultLevel), ["low", ""])
+        // 平行字段短于模型 → 越界按未配置补空。
+        let shortRows = ProfileEditorView.alignedCodexSaveRows(
+            models: ["a", "b"], displayNames: [""], windows: [], levels: ["low"], defaultLevels: []
+        )
+        XCTAssertEqual(shortRows.map(\.levels), ["low", ""])
+        XCTAssertEqual(shortRows.map(\.defaultLevel), ["", ""])
+    }
+
+    func test_codexReasoningLevelsForSave_allEmptyReturnsNil() {
+        let rows = ProfileEditorView.alignedCodexSaveRows(
+            models: ["a", "b"], displayNames: [""], levels: ["", "invalid,junk"], defaultLevels: ["", ""]
+        )
+        XCTAssertNil(ProfileEditorView.codexReasoningLevelsForSave(rows), "全空/全非法 → 不写键")
+        XCTAssertNil(ProfileEditorView.codexDefaultReasoningLevelsForSave(rows))
+    }
+
+    func test_codexReasoningLevelsForSave_normalizesAndKeepsPlaceholders() {
+        let rows = ProfileEditorView.alignedCodexSaveRows(
+            models: ["a", "b"], displayNames: [""],
+            levels: ["HIGH, none", ""], defaultLevels: ["none", ""]
+        )
+        // 规范化：小写、标准序；未配置行保留空串占位（按位对齐）。
+        XCTAssertEqual(ProfileEditorView.codexReasoningLevelsForSave(rows), ["none,high", ""])
+        // 默认档跟随档位列表存在才保留。
+        XCTAssertEqual(ProfileEditorView.codexDefaultReasoningLevelsForSave(rows), ["none", ""])
+    }
 }

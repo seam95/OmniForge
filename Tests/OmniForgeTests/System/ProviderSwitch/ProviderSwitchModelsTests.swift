@@ -416,4 +416,63 @@ final class ProviderSwitchModelsTests: XCTestCase {
         let decoded = try JSONDecoder().decode(ClaudeStackModel.self, from: JSONEncoder().encode(model))
         XCTAssertEqual(decoded, model)
     }
+
+    // MARK: - Codex 思考档位（对齐 cc-switch 行内可编辑集）
+
+    func test_codexReasoningLevel_parseNormalizesOrderAndDedupes() {
+        // 乱序 + 大写 + 多余空白 + 非法档 → 规范化：过滤非法、按标准序排序。
+        XCTAssertEqual(
+            CodexReasoningLevel.parse(" High , NONE, ultra, low ,high "),
+            ["none", "low", "high"]
+        )
+    }
+
+    func test_codexReasoningLevel_parseAllInvalidReturnsNil() {
+        XCTAssertNil(CodexReasoningLevel.parse("ultra, turbo"))
+        XCTAssertNil(CodexReasoningLevel.parse("  "))
+    }
+
+    func test_codexReasoningLevel_summaryRange() {
+        let continuous = CodexReasoningLevel.summaryRange(for: ["low", "medium", "high"])
+        XCTAssertEqual(continuous?.first, "low")
+        XCTAssertEqual(continuous?.last, "high")
+        let single = CodexReasoningLevel.summaryRange(for: ["max"])
+        XCTAssertEqual(single?.first, "max")
+        XCTAssertEqual(single?.last, "max")
+        // 不连续 → nil（UI 退回计数文案）
+        XCTAssertNil(CodexReasoningLevel.summaryRange(for: ["none", "high"]))
+        XCTAssertNil(CodexReasoningLevel.summaryRange(for: nil))
+    }
+
+    func test_codexModelEntries_zipReasoningLevelsAndDefaults() {
+        let profile = ProviderProfile(
+            id: "glm",
+            name: "GLM",
+            tool: .codex,
+            baseURL: "https://example.com",
+            token: "sk-x",
+            codexModels: ["glm-5.3", "glm-4.7-air"],
+            modelReasoningLevels: ["none,low,high", ""],
+            modelDefaultReasoningLevels: ["low", ""]
+        )
+        let entries = profile.codexModelEntries
+        XCTAssertEqual(entries[0].reasoningLevels, ["none", "low", "high"])
+        XCTAssertEqual(entries[0].defaultReasoningLevel, "low")
+        // 空串 = 未配置 → nil
+        XCTAssertNil(entries[1].reasoningLevels)
+        XCTAssertNil(entries[1].defaultReasoningLevel)
+    }
+
+    func test_codexModelEntries_invalidDefaultLevelDropped() {
+        let profile = ProviderProfile(
+            id: "glm",
+            name: "GLM",
+            tool: .codex,
+            baseURL: "https://example.com",
+            token: "sk-x",
+            codexModels: ["glm-5.3"],
+            modelDefaultReasoningLevels: ["ultra"]
+        )
+        XCTAssertNil(profile.codexModelEntries[0].defaultReasoningLevel, "非法档位按未配置处理")
+    }
 }

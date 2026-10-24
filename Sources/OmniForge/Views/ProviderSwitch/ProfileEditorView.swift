@@ -65,6 +65,13 @@ struct ProfileEditorView: View {
     /// 窗口在模型行第三列编辑；行增删时必须同步平移——否则删掉中间一行后，幸存行的窗口
     /// 还按原下标读取，每个模型都会拿到邻居的窗口。
     @State private var codexWindowRows: [String] = []
+    /// Codex 模型思考档位编辑态（逗号分隔串，如 "none,low,high"）：与 `codexModelRows`
+    /// **按位平行**（空串 = 未配置 = 默认七档）。行尾档位按钮展开编辑。
+    @State private var codexLevelsRows: [String] = []
+    /// Codex 模型默认思考档位编辑态：与 `codexModelRows` **按位平行**（空串 = 未设置）。
+    @State private var codexDefaultLevelsRows: [String] = []
+    /// 当前展开档位编辑区的模型行下标（nil = 全部收起；同时只展开一行）。
+    @State private var expandedReasoningIndex: Int?
     /// Claude 聚合发布源编辑态（`stackModels`）：**nil = 用户没动过**（回显与保存都按表单
     /// 当前模型映射实时推导）；非 nil = 用户动过（含 `[]` = 主动清空，什么都不发布）。
     /// 三态不可混淆：nil 跟着映射、`[]` 什么都不发布、`[行]` 原样发布。
@@ -441,20 +448,27 @@ struct ProfileEditorView: View {
         }
     }
 
-    /// 应用勾选的模型回表单（Codex）：按模型名保留既有显示名与窗口，
+    /// 应用勾选的模型回表单（Codex）：按模型名保留既有显示名、窗口与档位，
     /// 新行补空串；平行数组重新对齐。
     private func applyPickedModels(_ models: [String]) {
         var oldDisplay: [String: String] = [:]
         var oldWindows: [String: String] = [:]
+        var oldLevels: [String: String] = [:]
+        var oldDefaults: [String: String] = [:]
         for (index, raw) in codexModelRows.enumerated() {
             let model = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !model.isEmpty else { continue }
             oldDisplay[model] = index < codexDisplayNameRows.count ? codexDisplayNameRows[index] : ""
             oldWindows[model] = index < codexWindowRows.count ? codexWindowRows[index] : ""
+            oldLevels[model] = index < codexLevelsRows.count ? codexLevelsRows[index] : ""
+            oldDefaults[model] = index < codexDefaultLevelsRows.count ? codexDefaultLevelsRows[index] : ""
         }
         codexModelRows = models
         codexDisplayNameRows = models.map { oldDisplay[$0] ?? "" }
         codexWindowRows = models.map { oldWindows[$0] ?? "" }
+        codexLevelsRows = models.map { oldLevels[$0] ?? "" }
+        codexDefaultLevelsRows = models.map { oldDefaults[$0] ?? "" }
+        expandedReasoningIndex = nil
         syncCodexParallelRows()
     }
 
@@ -530,6 +544,8 @@ struct ProfileEditorView: View {
                         codexModelRows.append("")
                         codexDisplayNameRows.append("")
                         codexWindowRows.append("")
+                        codexLevelsRows.append("")
+                        codexDefaultLevelsRows.append("")
                         syncCodexParallelRows()
                     } label: {
                         Image(systemName: "plus")
@@ -541,59 +557,71 @@ struct ProfileEditorView: View {
                 }
 
                 ForEach(codexModelRows.indices, id: \.self) { index in
-                    HStack(spacing: 8) {
-                        // 显示名（可选）：留空用模型名（SPEC §7 / P1-8）
-                        TextField(
-                            strings.providerCodexModelDisplayNamePlaceholder,
-                            text: codexDisplayNameBinding(index)
-                        )
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 13))
-                        .padding(.horizontal, 10)
-                        .frame(height: 32)
-                        .background(mappingInputBackground)
-                        .overlay(mappingInputBorder)
+                    VStack(spacing: 6) {
+                        HStack(spacing: 8) {
+                            // 显示名（可选）：留空用模型名（SPEC §7 / P1-8）
+                            TextField(
+                                strings.providerCodexModelDisplayNamePlaceholder,
+                                text: codexDisplayNameBinding(index)
+                            )
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 13))
+                            .padding(.horizontal, 10)
+                            .frame(height: 32)
+                            .background(mappingInputBackground)
+                            .overlay(mappingInputBorder)
 
-                        TextField(
-                            index == 0
-                                ? strings.providerCodexModelsFirstPlaceholder
-                                : strings.providerCodexModelsPlaceholder,
-                            text: $codexModelRows[index]
-                        )
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 13))
-                        .padding(.horizontal, 10)
-                        .frame(width: 200, height: 32)
-                        .background(mappingInputBackground)
-                        .overlay(mappingInputBorder)
+                            TextField(
+                                index == 0
+                                    ? strings.providerCodexModelsFirstPlaceholder
+                                    : strings.providerCodexModelsPlaceholder,
+                                text: $codexModelRows[index]
+                            )
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 13))
+                            .padding(.horizontal, 10)
+                            .frame(width: 200, height: 32)
+                            .background(mappingInputBackground)
+                            .overlay(mappingInputBorder)
 
-                        // 上下文窗口（可选）：纯数字 tokens，留空 = 未配置（聚合按 272K 工作窗口）
-                        TextField(
-                            strings.providerCodexModelWindowPlaceholder,
-                            text: codexWindowBinding(index)
-                        )
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 13))
-                        .padding(.horizontal, 10)
-                        .frame(width: 110, height: 32)
-                        .background(mappingInputBackground)
-                        .overlay(mappingInputBorder)
-                        .help(strings.providerCodexModelWindowHelp)
+                            // 上下文窗口（可选）：纯数字 tokens，留空 = 未配置（聚合按 272K 工作窗口）
+                            TextField(
+                                strings.providerCodexModelWindowPlaceholder,
+                                text: codexWindowBinding(index)
+                            )
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 13))
+                            .padding(.horizontal, 10)
+                            .frame(width: 110, height: 32)
+                            .background(mappingInputBackground)
+                            .overlay(mappingInputBorder)
+                            .help(strings.providerCodexModelWindowHelp)
 
-                        // 保留一行：删空后仍能改回「不指定模型」
-                        if codexModelRows.count > 1 {
-                            Button {
-                                codexModelRows.remove(at: index)
-                                codexDisplayNameRows.remove(at: index)
-                                codexWindowRows.remove(at: index)
-                                syncCodexParallelRows()
-                            } label: {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(Color(red: 0x8E / 255.0, green: 0x8E / 255.0, blue: 0x93 / 255.0))
+                            // 思考档位（可选）：徽章 + 展开箭头，展开区编辑该行档位
+                            reasoningBadgeButton(index)
+
+                            // 保留一行：删空后仍能改回「不指定模型」
+                            if codexModelRows.count > 1 {
+                                Button {
+                                    codexModelRows.remove(at: index)
+                                    codexDisplayNameRows.remove(at: index)
+                                    codexWindowRows.remove(at: index)
+                                    codexLevelsRows.remove(at: index)
+                                    codexDefaultLevelsRows.remove(at: index)
+                                    expandedReasoningIndex = nil
+                                    syncCodexParallelRows()
+                                } label: {
+                                    Image(systemName: "trash")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Color(red: 0x8E / 255.0, green: 0x8E / 255.0, blue: 0x93 / 255.0))
+                                }
+                                .buttonStyle(.plain)
+                                .help(strings.providerCodexModelsDelete)
                             }
-                            .buttonStyle(.plain)
-                            .help(strings.providerCodexModelsDelete)
+                        }
+
+                        if expandedReasoningIndex == index {
+                            reasoningLevelsEditor(index)
                         }
                     }
                 }
@@ -900,6 +928,8 @@ struct ProfileEditorView: View {
         ).map(\.displayName)
         // 窗口与 `codexModelList` 按位平行（落盘口径见 `ProviderProfile.codexModelEntries`）。
         codexWindowRows = profile.modelContextWindows ?? []
+        codexLevelsRows = profile.modelReasoningLevels ?? []
+        codexDefaultLevelsRows = profile.modelDefaultReasoningLevels ?? []
         syncCodexParallelRows()
         reasoningEffort = profile.reasoningEffort ?? ""
         sonnet = profile.modelMapping?.sonnet ?? ""
@@ -948,6 +978,8 @@ struct ProfileEditorView: View {
                 codexModelRows = [connection.defaultModel]
                 codexDisplayNameRows = [""]
                 codexWindowRows = [""]
+                codexLevelsRows = [""]
+                codexDefaultLevelsRows = [""]
                 reasoningEffort = ""
             }
         }
@@ -970,7 +1002,9 @@ struct ProfileEditorView: View {
         let codexRows = Self.alignedCodexSaveRows(
             models: codexModelRows,
             displayNames: codexDisplayNameRows,
-            windows: codexWindowRows
+            windows: codexWindowRows,
+            levels: codexLevelsRows,
+            defaultLevels: codexDefaultLevelsRows
         )
         let profile = makeProfile(
             name: trimmed(name),
@@ -996,7 +1030,10 @@ struct ProfileEditorView: View {
             // 与 codexModels 同源过滤 → 按位对齐；一个都没配 → nil（不写键）
             codexModelDisplayNames: ProfileEditorView.codexDisplayNamesForSave(codexRows),
             // 窗口同样与 codexModels 同源过滤（删行不错位）；Claude 侧恒为空 → nil
-            codexModelContextWindows: ProfileEditorView.codexContextWindowsForSave(codexRows)
+            codexModelContextWindows: ProfileEditorView.codexContextWindowsForSave(codexRows),
+            // 思考档位与默认档：同源过滤 + 规范化；Claude 侧恒空 → nil
+            codexModelReasoningLevels: ProfileEditorView.codexReasoningLevelsForSave(codexRows),
+            codexModelDefaultReasoningLevels: ProfileEditorView.codexDefaultReasoningLevelsForSave(codexRows)
         )
         do {
             try manager.upsertProfile(profile)
@@ -1032,8 +1069,154 @@ struct ProfileEditorView: View {
         )
     }
 
+    // MARK: - Codex 思考档位（行内展开编辑，对齐 cc-switch 行内可编辑集）
+
+    /// 档位徽章按钮：未配置显示「自动」；已配置显示区间（low–max）或计数（N 档）。
+    private func reasoningBadgeButton(_ index: Int) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                expandedReasoningIndex = expandedReasoningIndex == index ? nil : index
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(reasoningBadgeLabel(index))
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(
+                        reasoningLevelsFor(index) == nil
+                            ? Color(red: 0x8E / 255.0, green: 0x8E / 255.0, blue: 0x93 / 255.0)
+                            : Color.accentColor
+                    )
+                    .lineLimit(1)
+                Image(systemName: expandedReasoningIndex == index ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Color(red: 0x8E / 255.0, green: 0x8E / 255.0, blue: 0x93 / 255.0))
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 32)
+            .background(mappingInputBackground)
+            .overlay(mappingInputBorder)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(strings.providerCodexModelLevelsTitle)
+    }
+
+    /// 徽章文案：区间（连续）→ `low–max`；不连续 → `N 档`；未配置 → 「自动」。
+    private func reasoningBadgeLabel(_ index: Int) -> String {
+        guard let levels = reasoningLevelsFor(index), !levels.isEmpty else {
+            return strings.providerCodexModelLevelsAuto
+        }
+        if let range = CodexReasoningLevel.summaryRange(for: levels) {
+            return range.first == range.last ? range.first : "\(range.first)–\(range.last)"
+        }
+        return String(format: strings.providerCodexModelLevelsCountFormat, levels.count)
+    }
+
+    /// 该行解析后的档位列表（编辑中的原始串实时解析）。
+    private func reasoningLevelsFor(_ index: Int) -> [String]? {
+        guard index < codexLevelsRows.count else { return nil }
+        return CodexReasoningLevel.parse(codexLevelsRows[index])
+    }
+
+    /// 展开的档位编辑区：七档复选（4+3 两行）+ 默认档位菜单。
+    private func reasoningLevelsEditor(_ index: Int) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(strings.providerCodexModelLevelsTitle)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.primary)
+
+                Spacer()
+
+                defaultReasoningLevelMenu(index)
+            }
+
+            HStack(spacing: 14) {
+                ForEach(CodexReasoningLevel.ordered.prefix(4), id: \.self) { level in
+                    reasoningLevelToggle(level, index: index)
+                }
+            }
+            HStack(spacing: 14) {
+                ForEach(CodexReasoningLevel.ordered.dropFirst(4), id: \.self) { level in
+                    reasoningLevelToggle(level, index: index)
+                }
+            }
+
+            Text(strings.providerCodexModelLevelsHint)
+                .font(.system(size: 11.5))
+                .foregroundStyle(Color(red: 0x8E / 255.0, green: 0x8E / 255.0, blue: 0x93 / 255.0))
+        }
+        .padding(10)
+        .background(mappingInputBackground)
+        .overlay(mappingInputBorder)
+    }
+
+    private func reasoningLevelToggle(_ level: String, index: Int) -> some View {
+        let isOn = reasoningLevelsFor(index)?.contains(level) ?? false
+        return Toggle(isOn: Binding(
+            get: { isOn },
+            set: { enabled in toggleReasoningLevel(level, index: index, enabled: enabled) }
+        )) {
+            Text(level)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(Color.primary)
+        }
+        .toggleStyle(.checkbox)
+    }
+
+    /// 勾选/去勾某档位：以解析后的规范列表重建逗号串（保持标准序）。
+    private func toggleReasoningLevel(_ level: String, index: Int, enabled: Bool) {
+        var levels = reasoningLevelsFor(index) ?? []
+        if enabled {
+            if !levels.contains(level) { levels.append(level) }
+        } else {
+            levels.removeAll { $0 == level }
+        }
+        let ordered = CodexReasoningLevel.ordered.filter { levels.contains($0) }
+        if index < codexLevelsRows.count {
+            codexLevelsRows[index] = ordered.joined(separator: ",")
+            // 去勾后默认档可能已不在列表内——一并清掉，避免悬空引用。
+            let fallback = index < codexDefaultLevelsRows.count ? codexDefaultLevelsRows[index] : ""
+            if !fallback.isEmpty, !ordered.contains(fallback),
+               index < codexDefaultLevelsRows.count {
+                codexDefaultLevelsRows[index] = ""
+            }
+        }
+    }
+
+    /// 默认档位菜单：未设置 + 当前列表内档位（列表空时给全部七档——先选档位再选默认的顺序也合法）。
+    private func defaultReasoningLevelMenu(_ index: Int) -> some View {
+        let current = index < codexDefaultLevelsRows.count ? codexDefaultLevelsRows[index] : ""
+        let levels = reasoningLevelsFor(index) ?? CodexReasoningLevel.ordered
+        return Menu {
+            Button(strings.providerCodexModelLevelsDefaultAuto) {
+                if index < codexDefaultLevelsRows.count { codexDefaultLevelsRows[index] = "" }
+            }
+            Divider()
+            ForEach(levels, id: \.self) { level in
+                Button(level) {
+                    if index < codexDefaultLevelsRows.count { codexDefaultLevelsRows[index] = level }
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Text(strings.providerCodexModelLevelsDefaultLabel)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color(red: 0x6E / 255.0, green: 0x6E / 255.0, blue: 0x73 / 255.0))
+                Text(current.isEmpty ? strings.providerCodexModelLevelsDefaultAuto : current)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(current.isEmpty ? Color.secondary : Color.primary)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Color.secondary)
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
     /// 显示名编辑态与模型行严格等长（平行数组的编辑侧不变量）。
-    /// 窗口行与显示名行共用同一条不变量（按位平行，越界按空串 = 未配置）。
+    /// 窗口行与档位行共用同一条不变量（按位平行，越界按空串 = 未配置）。
     private func syncCodexParallelRows() {
         if codexDisplayNameRows.count > codexModelRows.count {
             codexDisplayNameRows = Array(codexDisplayNameRows.prefix(codexModelRows.count))
@@ -1049,17 +1232,34 @@ struct ProfileEditorView: View {
                 contentsOf: Array(repeating: "", count: codexModelRows.count - codexWindowRows.count)
             )
         }
+        if codexLevelsRows.count > codexModelRows.count {
+            codexLevelsRows = Array(codexLevelsRows.prefix(codexModelRows.count))
+        } else if codexLevelsRows.count < codexModelRows.count {
+            codexLevelsRows.append(
+                contentsOf: Array(repeating: "", count: codexModelRows.count - codexLevelsRows.count)
+            )
+        }
+        if codexDefaultLevelsRows.count > codexModelRows.count {
+            codexDefaultLevelsRows = Array(codexDefaultLevelsRows.prefix(codexModelRows.count))
+        } else if codexDefaultLevelsRows.count < codexModelRows.count {
+            codexDefaultLevelsRows.append(
+                contentsOf: Array(repeating: "", count: codexModelRows.count - codexDefaultLevelsRows.count)
+            )
+        }
     }
 
-    /// Codex 待保存的（模型, 显示名, 窗口）行：丢空白行与空行，**三个平行字段与模型同源过滤**——
-    /// 空白模型行被丢掉时它的显示名与窗口必须一起丢，否则平行数组整体串位（数据层容错不崩，
-    /// 只会静默显示错的名字/窗口）。显示名与窗口短于模型（历史档案长度不齐）→ 越界按未配置补空。
+    /// Codex 待保存的（模型, 显示名, 窗口, 档位, 默认档）行：丢空白行与空行，
+    /// **五个平行字段与模型同源过滤**——空白模型行被丢掉时它的平行字段必须一起丢，
+    /// 否则平行数组整体串位（数据层容错不崩，只会静默显示错的名字/窗口/档位）。
+    /// 平行字段短于模型（历史档案长度不齐）→ 越界按未配置补空。
     static func alignedCodexSaveRows(
         models: [String],
         displayNames: [String],
-        windows: [String] = []
-    ) -> [(model: String, displayName: String, window: String)] {
-        var rows: [(model: String, displayName: String, window: String)] = []
+        windows: [String] = [],
+        levels: [String] = [],
+        defaultLevels: [String] = []
+    ) -> [(model: String, displayName: String, window: String, levels: String, defaultLevel: String)] {
+        var rows: [(model: String, displayName: String, window: String, levels: String, defaultLevel: String)] = []
         for (index, raw) in models.enumerated() {
             let model = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !model.isEmpty else { continue }
@@ -1069,22 +1269,49 @@ struct ProfileEditorView: View {
             let window = index < windows.count
                 ? windows[index].trimmingCharacters(in: .whitespacesAndNewlines)
                 : ""
-            rows.append((model, displayName, window))
+            let levelList = index < levels.count
+                ? levels[index].trimmingCharacters(in: .whitespacesAndNewlines)
+                : ""
+            let defaultLevel = index < defaultLevels.count
+                ? defaultLevels[index].trimmingCharacters(in: .whitespacesAndNewlines)
+                : ""
+            rows.append((model, displayName, window, levelList, defaultLevel))
         }
         return rows
     }
 
     /// 显示名平行数组的落盘值：一个都没配 → nil（不写 `model_display_names` 键，
     /// 保持新增档案的既有落盘形状）；有任一个非空 → 原样写（含空串占位，保住按位对齐）。
-    static func codexDisplayNamesForSave(_ rows: [(model: String, displayName: String, window: String)]) -> [String]? {
+    static func codexDisplayNamesForSave(_ rows: [(model: String, displayName: String, window: String, levels: String, defaultLevel: String)]) -> [String]? {
         let names = rows.map(\.displayName)
         return names.allSatisfy { $0.isEmpty } ? nil : names
     }
 
     /// 窗口平行数组的落盘值：口径同显示名（一个都没配 → nil，不写键）。
-    static func codexContextWindowsForSave(_ rows: [(model: String, displayName: String, window: String)]) -> [String]? {
+    static func codexContextWindowsForSave(_ rows: [(model: String, displayName: String, window: String, levels: String, defaultLevel: String)]) -> [String]? {
         let windows = rows.map(\.window)
         return windows.allSatisfy { $0.isEmpty } ? nil : windows
+    }
+
+    /// 档位平行数组的落盘值：口径同显示名（规范化后全空 → nil，不写键）；
+    /// 有配置时写规范化串（按标准序），非法输入被解析层过滤。
+    static func codexReasoningLevelsForSave(_ rows: [(model: String, displayName: String, window: String, levels: String, defaultLevel: String)]) -> [String]? {
+        let normalized = rows.map { row in
+            CodexReasoningLevel.parse(row.levels)?.joined(separator: ",") ?? ""
+        }
+        return normalized.allSatisfy { $0.isEmpty } ? nil : normalized
+    }
+
+    /// 默认档位平行数组的落盘值：口径同显示名；默认档只在档位列表非空时保留
+    /// （列表空 = 未配置档位覆盖，单独的默认档无意义且会被写入层忽略）。
+    static func codexDefaultReasoningLevelsForSave(_ rows: [(model: String, displayName: String, window: String, levels: String, defaultLevel: String)]) -> [String]? {
+        let normalized = rows.map { row in
+            guard let levels = CodexReasoningLevel.parse(row.levels),
+                  !levels.isEmpty,
+                  CodexReasoningLevel.isValid(row.defaultLevel.lowercased()) else { return "" }
+            return row.defaultLevel.lowercased()
+        }
+        return normalized.allSatisfy { $0.isEmpty } ? nil : normalized
     }
 
     /// 由「表单当前值 + 既有档案」构造待保存档案。
@@ -1102,6 +1329,8 @@ struct ProfileEditorView: View {
     ///   删掉中间一行后模型会左移，原数组的下标就整体错位（每个模型拿到邻居的窗口）。
     ///
     /// 窗口在模型行第三列编辑，本保存路径负责把它与模型、显示名一起落盘。
+    /// - `codexModelReasoningLevels` / `codexModelDefaultReasoningLevels`：思考档位与默认档，
+    ///   口径同窗口（同源过滤 + 规范化）。
     func makeProfile(
         name: String,
         baseURL: String,
@@ -1113,7 +1342,9 @@ struct ProfileEditorView: View {
         extraEnv: [String: String],
         stackModels: [ClaudeStackModel]?,
         codexModelDisplayNames: [String]?,
-        codexModelContextWindows: [String]? = nil
+        codexModelContextWindows: [String]? = nil,
+        codexModelReasoningLevels: [String]? = nil,
+        codexModelDefaultReasoningLevels: [String]? = nil
     ) -> ProviderProfile {
         ProviderProfile(
             id: self.profile?.id ?? ProviderProfile.slugify(name),
@@ -1128,6 +1359,8 @@ struct ProfileEditorView: View {
             stackModels: stackModels,
             modelDisplayNames: codexModelDisplayNames,
             modelContextWindows: codexModelContextWindows,
+            modelReasoningLevels: codexModelReasoningLevels,
+            modelDefaultReasoningLevels: codexModelDefaultReasoningLevels,
             extraEnv: extraEnv,
             // 收编外部文件时保留原来源标记；本 App 新建一律打 omniforge
             managedBy: self.profile?.managedBy ?? ProviderProfile.managedByMarker

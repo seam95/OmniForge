@@ -249,6 +249,14 @@ enum ProviderProfileFileCodec {
                windows.contains(where: { !$0.isEmpty }) {
                 document.setValue(windows, key: "model_context_windows", table: nil)
             }
+            if let levels = profile.modelReasoningLevels,
+               levels.contains(where: { !$0.isEmpty }) {
+                document.setValue(levels, key: "model_reasoning_levels", table: nil)
+            }
+            if let defaults = profile.modelDefaultReasoningLevels,
+               defaults.contains(where: { !$0.isEmpty }) {
+                document.setValue(defaults, key: "model_default_reasoning_levels", table: nil)
+            }
             if let effort = profile.reasoningEffort, !effort.isEmpty {
                 document.setValue(effort, key: "reasoning_effort", table: nil)
             }
@@ -376,6 +384,8 @@ enum ProviderProfileFileCodec {
             // 平行数组：缺键 → nil（未配置）；与 models 长度不齐由 `codexModelEntries` 按缺省消化。
             modelDisplayNames: document.stringArrayValue(key: "model_display_names", table: nil),
             modelContextWindows: document.stringArrayValue(key: "model_context_windows", table: nil),
+            modelReasoningLevels: document.stringArrayValue(key: "model_reasoning_levels", table: nil),
+            modelDefaultReasoningLevels: document.stringArrayValue(key: "model_default_reasoning_levels", table: nil),
             extraEnv: [:],
             managedBy: document.stringValue(key: managedByKey, table: nil)
         )

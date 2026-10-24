@@ -80,6 +80,12 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
     ///   - priority: 目录内排序位（直连模式恒 1000；聚合模式末尾统一重排为 1...n）。
     ///   - useResponsesLite: Responses Lite 形态开关（仅聚合目录成员行显式注入；nil 不写键）。
     ///   - inputModalities: 显式声明的输入模态（nil 时按模型名推导，见 `ModelImageCapability`）。
+    ///   - reasoningLevels: 条目级思考档位覆盖（nil = 默认七档全列）。
+    ///   - reasoningDefault: 条目级默认档位（仅与 `reasoningLevels` 同用有效；裁决见
+    ///     `resolvedReasoningDefault`）。
+    ///   - baseInstructions: 条目级身份提示词覆盖（nil = 中性默认）。当前无数据来源，
+    ///     为将来接入预设元数据 / models.dev 预留，写入器零改动。
+    ///   - supportsParallelToolCalls: 条目级并行工具调用覆盖（nil = 保守 false）。预留同上。
     static func catalogEntry(
         model: String,
         displayName: String,
@@ -88,20 +94,37 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
         priority: Int,
         contextWindow: UInt64? = nil,
         useResponsesLite: Bool? = nil,
-        inputModalities: [String]? = nil
+        inputModalities: [String]? = nil,
+        reasoningLevels: [String]? = nil,
+        reasoningDefault: String? = nil,
+        baseInstructions: String? = nil,
+        supportsParallelToolCalls: Bool? = nil
     ) -> [String: Any] {
         let window = Int(contextWindow ?? 1_000_000)
+        // 档位覆盖（对齐 cc-switch `apply_codex_reasoning_level_override`）：
+        // 配了列表 → 覆盖 supported_reasoning_levels（字符串数组，对齐 cc-switch 覆盖形状），
+        // default 按「显式命中 → 模板默认命中 → 列表最高档」裁决；
+        // 未配列表 → 保持七档对象数组（带描述，激活 Desktop 强度滑块），default 保持模板值。
+        let supportedLevels: [Any]
+        if let reasoningLevels {
+            supportedLevels = reasoningLevels
+        } else {
+            supportedLevels = standardReasoningLevels
+        }
+        let effectiveDefault = resolvedReasoningDefault(
+            levels: reasoningLevels, explicitDefault: reasoningDefault, fallback: defaultReasoningLevel
+        )
         var entry: [String: Any] = [
             "slug": model,
             "display_name": displayName,
             "description": description,
-            "base_instructions": neutralBaseInstructions,
-            "default_reasoning_level": defaultReasoningLevel,
-            "supported_reasoning_levels": standardReasoningLevels,
+            "base_instructions": baseInstructions ?? neutralBaseInstructions,
+            "default_reasoning_level": effectiveDefault,
+            "supported_reasoning_levels": supportedLevels,
             "shell_type": "shell_command",
             "experimental_supported_tools": [],
             "truncation_policy": ["mode": "bytes", "limit": 10_000],
-            "supports_parallel_tool_calls": false,
+            "supports_parallel_tool_calls": supportsParallelToolCalls ?? false,
             "supports_reasoning_summaries": true,
             "default_reasoning_summary": "none",
             "support_verbosity": false,
@@ -127,6 +150,25 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
         return entry
     }
 
+    /// 条目级默认档位裁决（仅当 `levels` 非空时生效）：
+    /// 1. 显式默认档在列表内 → 用之；
+    /// 2. 未配 / 不在列表 → 模板默认（profile effort ?? high）在列表内 → 用之；
+    /// 3. 都不在 → 列表最高档（`CodexReasoningLevel.ordered` 序的最后一项）。
+    static func resolvedReasoningDefault(
+        levels: [String]?,
+        explicitDefault: String?,
+        fallback: String
+    ) -> String {
+        guard let levels, !levels.isEmpty else { return fallback }
+        if let explicitDefault, levels.contains(explicitDefault) {
+            return explicitDefault
+        }
+        if levels.contains(fallback) {
+            return fallback
+        }
+        return CodexReasoningLevel.ordered.last { levels.contains($0) } ?? fallback
+    }
+
     func writeCatalog(for profile: ProviderProfile) throws {
         let entries = profile.codexModelEntries
         // 没有模型时不生成目录
@@ -146,7 +188,9 @@ final class CodexModelCatalogStore: CodexModelCatalogStoring {
                 description: "OmniForge 托管 · \(profile.name)",
                 defaultReasoningLevel: defaultEffort,
                 priority: 1000,
-                contextWindow: entry.contextWindow ?? fallbackWindow
+                contextWindow: entry.contextWindow ?? fallbackWindow,
+                reasoningLevels: entry.reasoningLevels,
+                reasoningDefault: entry.defaultReasoningLevel
             )
         }
 

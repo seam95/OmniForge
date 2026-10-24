@@ -186,6 +186,60 @@ final class CodexModelCatalogStoreTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: catalogURL.path), "删空列表即清理目录")
     }
 
+    // MARK: - 思考档位覆盖（对齐 cc-switch apply_codex_reasoning_level_override）
+
+    func test_resolvedReasoningDefault_threeBranches() {
+        // 显式默认在列表内 → 用之
+        XCTAssertEqual(
+            CodexModelCatalogStore.resolvedReasoningDefault(levels: ["low", "high"], explicitDefault: "low", fallback: "high"),
+            "low"
+        )
+        // 未配默认、模板默认在列表 → 模板默认
+        XCTAssertEqual(
+            CodexModelCatalogStore.resolvedReasoningDefault(levels: ["low", "high"], explicitDefault: nil, fallback: "high"),
+            "high"
+        )
+        // 显式默认不在列表且模板默认不在列表 → 列表最高档
+        XCTAssertEqual(
+            CodexModelCatalogStore.resolvedReasoningDefault(levels: ["none", "low"], explicitDefault: "max", fallback: "high"),
+            "low"
+        )
+        // 未配列表 → 模板值原样（条目级 default 单独无效）
+        XCTAssertEqual(
+            CodexModelCatalogStore.resolvedReasoningDefault(levels: nil, explicitDefault: "low", fallback: "medium"),
+            "medium"
+        )
+    }
+
+    func test_writeCatalog_reasoningLevelsOverrideFromProfile() throws {
+        let profile = ProviderProfile(
+            id: "glm",
+            name: "GLM",
+            tool: .codex,
+            baseURL: "https://open.bigmodel.cn/api/paas/v4",
+            token: "sk-test",
+            codexModels: ["glm-5.3", "glm-4.7-air"],
+            modelReasoningLevels: ["none,low,high", ""],
+            modelDefaultReasoningLevels: ["low", ""]
+        )
+        try store.writeCatalog(for: profile)
+
+        let data = try Data(contentsOf: catalogURL)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let models = try XCTUnwrap(json["models"] as? [[String: Any]])
+
+        // 覆盖行：字符串数组形状 + 显式默认档
+        let overridden = try XCTUnwrap(models.first { $0["slug"] as? String == "glm-5.3" })
+        XCTAssertEqual(overridden["supported_reasoning_levels"] as? [String], ["none", "low", "high"])
+        XCTAssertEqual(overridden["default_reasoning_level"] as? String, "low")
+
+        // 未覆盖行：保持七档对象数组（带描述）+ 模板默认档
+        let untouched = try XCTUnwrap(models.first { $0["slug"] as? String == "glm-4.7-air" })
+        let standardLevels = untouched["supported_reasoning_levels"] as? [[String: Any]]
+        XCTAssertEqual(standardLevels?.count, 7, "未配置档位覆盖时保持默认七档对象形状")
+        XCTAssertEqual(untouched["default_reasoning_level"] as? String, "high")
+    }
+
     func test_removeCatalog_deletesFileIfExists() throws {
         try Data("{}".utf8).write(to: catalogURL)
         XCTAssertTrue(FileManager.default.fileExists(atPath: catalogURL.path))

@@ -317,6 +317,49 @@ final class ProviderSwitchProfileStoreTests: XCTestCase {
         XCTAssertEqual(listed[0].codexModelEntries.map(\.contextWindow), [256_000, nil])
     }
 
+    func test_codexProfile_roundTripsReasoningLevels() throws {
+        let store = makeStore()
+        try store.upsert(ProviderProfile(
+            id: "",
+            name: "GLM",
+            tool: .codex,
+            baseURL: "https://open.bigmodel.cn/api/paas/v4",
+            token: "sk-glm",
+            codexModels: ["glm-5.3", "glm-4.7-air"],
+            modelReasoningLevels: ["none,low,high", ""],
+            modelDefaultReasoningLevels: ["low", ""],
+            managedBy: ProviderProfile.managedByMarker
+        ))
+        let text = try String(contentsOf: codexDir.appendingPathComponent("glm.config.toml"))
+        XCTAssertTrue(text.contains("model_reasoning_levels = [\"none,low,high\", \"\"]"))
+        XCTAssertTrue(text.contains("model_default_reasoning_levels = [\"low\", \"\"]"))
+
+        let listed = store.list(for: .codex)
+        XCTAssertEqual(listed[0].modelReasoningLevels, ["none,low,high", ""])
+        XCTAssertEqual(listed[0].modelDefaultReasoningLevels, ["low", ""])
+        XCTAssertEqual(listed[0].codexModelEntries[0].reasoningLevels, ["none", "low", "high"])
+        XCTAssertEqual(listed[0].codexModelEntries[0].defaultReasoningLevel, "low")
+        XCTAssertNil(listed[0].codexModelEntries[1].reasoningLevels, "空串=未配置")
+    }
+
+    func test_codexProfile_allEmptyReasoningLevelsWritesNoKeys() throws {
+        let store = makeStore()
+        try store.upsert(ProviderProfile(
+            id: "",
+            name: "GLM",
+            tool: .codex,
+            baseURL: "https://open.bigmodel.cn/api/paas/v4",
+            token: "sk-glm",
+            codexModels: ["glm-5.3"],
+            modelReasoningLevels: [""],
+            modelDefaultReasoningLevels: [""],
+            managedBy: ProviderProfile.managedByMarker
+        ))
+        let text = try String(contentsOf: codexDir.appendingPathComponent("glm.config.toml"))
+        XCTAssertFalse(text.contains("model_reasoning_levels"), "全空不写键")
+        XCTAssertFalse(text.contains("model_default_reasoning_levels"))
+    }
+
     func test_codexProfile_withoutParallelKeysDecodesNoDisplayNames() throws {
         let store = makeStore()
         // 两个条目都没配显示名/窗口 → 两个键都不写（仅当存在非空值时写）。

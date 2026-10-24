@@ -1410,6 +1410,15 @@ struct Strings: Equatable {
     /// Codex 模型行「上下文窗口」输入占位与说明（可选，留空用默认窗口）。
     let providerCodexModelWindowPlaceholder: String
     let providerCodexModelWindowHelp: String
+    /// Codex 模型行「思考档位」展开区（对齐 cc-switch 行内可编辑集）。
+    let providerCodexModelLevelsTitle: String
+    let providerCodexModelLevelsHint: String
+    let providerCodexModelLevelsDefaultLabel: String
+    let providerCodexModelLevelsDefaultAuto: String
+    /// 档位徽章：未配置（跟随默认七档）。
+    let providerCodexModelLevelsAuto: String
+    /// 档位徽章：不连续档位集合的计数（%d = 档数）。
+    let providerCodexModelLevelsCountFormat: String
     /// Claude 聚合成员模型编辑区：每行「显示名 / 实际请求模型 / 1M 复选 / 删除」。
     let providerStackModelsSectionTitle: String
     /// 追加一行（无「+」前缀：列表项不带头部符号）。
