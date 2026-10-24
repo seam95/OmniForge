@@ -116,6 +116,58 @@ final class ZcodeLimitsFetcherTests: XCTestCase {
         XCTAssertEqual(request?.url?.absoluteString, "https://zcode.z.ai/api/v1/zcode-plan/billing/balance")
     }
 
+    // MARK: - 设备标识请求头（服务端强制，缺失 → HTTP 400 code=3001）
+
+    func test_balance_sendsDeviceMidFromOnboardingRecord() async throws {
+        try writeCredentials(#"{"oauth:active_provider":"bigmodel","zcodejwttoken":"jwt"}"#)
+        let deviceMid = "E502069E-D9CE-493A-82E8-A584C3A0B13B"
+        try writeJSON(#"{"deviceMid":"\#(deviceMid)"}"#, relativePath: "v2/onboarding-record.json")
+        URLProtocolStub.stub = .init(statusCode: 200, data: balanceJSON())
+        _ = try await fetcher.fetchLimits(force: false)
+        XCTAssertEqual(
+            URLProtocolStub.recordedRequests.first?.value(forHTTPHeaderField: "X-Device-Mid"),
+            deviceMid,
+            "billing 请求必须带 X-Device-Mid（缺失时服务端返回 400）"
+        )
+    }
+
+    func test_balance_fallsBackToTelemetryStateDeviceMid() async throws {
+        try writeCredentials(#"{"oauth:active_provider":"bigmodel","zcodejwttoken":"jwt"}"#)
+        let deviceMid = "11111111-2222-3333-4444-555555555555"
+        try writeJSON(#"{"deviceMid":"\#(deviceMid)"}"#, relativePath: "v2/telemetry-state.json")
+        URLProtocolStub.stub = .init(statusCode: 200, data: balanceJSON())
+        _ = try await fetcher.fetchLimits(force: false)
+        XCTAssertEqual(
+            URLProtocolStub.recordedRequests.first?.value(forHTTPHeaderField: "X-Device-Mid"),
+            deviceMid
+        )
+    }
+
+    func test_balance_generatesDeviceMidWhenLocalFilesMissing() async throws {
+        try writeCredentials(#"{"oauth:active_provider":"bigmodel","zcodejwttoken":"jwt"}"#)
+        URLProtocolStub.stub = .init(statusCode: 200, data: balanceJSON())
+        _ = try await fetcher.fetchLimits(force: false)
+        let header = URLProtocolStub.recordedRequests.first?.value(forHTTPHeaderField: "X-Device-Mid")
+        XCTAssertNotNil(header, "本地无 deviceMid 时也要生成合法值，不能空着发请求")
+        XCTAssertNotNil(UUID(uuidString: header ?? ""), "生成的设备标识必须是 UUID 形态")
+    }
+
+    func test_deviceMid_ignoresMalformedValues() {
+        XCTAssertNil(ZcodeLimitsParsing.deviceMid(
+            fromOnboardingRecord: ["deviceMid": "not-a-uuid"],
+            telemetryState: nil
+        ))
+        XCTAssertNil(ZcodeLimitsParsing.deviceMid(fromOnboardingRecord: nil, telemetryState: [:]))
+        XCTAssertEqual(
+            ZcodeLimitsParsing.deviceMid(
+                fromOnboardingRecord: ["deviceMid": "invalid"],
+                telemetryState: ["deviceMid": "11111111-2222-3333-4444-555555555555"]
+            ),
+            "11111111-2222-3333-4444-555555555555",
+            "首个文件值非法时继续看下一个来源"
+        )
+    }
+
     func test_encryptedJWT_decryptedAndUsed() async throws {
         let jwt = try encrypted("jwt-secret-1")
         try writeCredentials(#"{"oauth:active_provider":"bigmodel","zcodejwttoken":"\#(jwt)"}"#)

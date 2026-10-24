@@ -186,6 +186,22 @@ enum ZcodeLimitsParsing {
         )
     }
 
+    // MARK: 设备标识（billing 端点强制要求 X-Device-Mid）
+
+    /// 从本地文件对象提取设备标识：`onboarding-record.json` / `telemetry-state.json`
+    /// 的 `deviceMid`。缺失或非 UUID 形态 → nil（由调用方兜底生成）。
+    ///
+    /// 服务端对 `billing/balance` 校验该头：缺失返回 HTTP 400 `code=3001`。
+    static func deviceMid(fromOnboardingRecord record: [String: Any]?,
+                          telemetryState: [String: Any]?) -> String? {
+        for object in [record, telemetryState] {
+            guard let raw = object?["deviceMid"] as? String else { continue }
+            let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if UUID(uuidString: value) != nil { return value }
+        }
+        return nil
+    }
+
     /// coding-plan quota 端点：bigmodel 固定 bigmodel.cn；zai 仅信任 provider
     /// baseURL 的 api.z.ai 域 origin，其余回落 api.z.ai。
     static func quotaURL(providerKey: String, options: [String: Any]) -> URL? {
@@ -335,11 +351,16 @@ final class ZcodeLimitsFetcher: LimitsFetching {
         self.fileManager = fileManager
     }
 
+    /// zcode home 目录（测试可覆盖）。
+    private var homeURL: URL {
+        homeOverride ?? ZcodeUsageCollector.defaultDatabaseURL()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+    }
+
     func fetchLimits(force: Bool) async throws -> ProviderUsageLimits? {
-        let home = homeOverride ?? ZcodeUsageCollector.defaultDatabaseURL()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
+        let home = homeURL
 
         // 1. 凭据（start-plan JWT；解密失败仅表示该路径不可用，coding-plan 不依赖）。
         let credentials = loadCredentials(at: home.appendingPathComponent("v2/credentials.json"))
@@ -410,6 +431,8 @@ final class ZcodeLimitsFetcher: LimitsFetching {
         request.timeoutInterval = timeout
         request.setValue("Bearer \(candidate.apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        // 服务端强制设备标识：缺失 → HTTP 400 code=3001（会误映射成网络错误）。
+        request.setValue(resolvedDeviceMid(), forHTTPHeaderField: "X-Device-Mid")
         let payload = try await jsonBody(for: request, label: "balance")
 
         // 3. 窗口：主额度桶 → .credits；次/三桶 → labeled。
@@ -454,6 +477,38 @@ final class ZcodeLimitsFetcher: LimitsFetching {
             throw LimitError.decoding("ZCode \(label) API returned non-JSON")
         }
         return payload
+    }
+
+    // MARK: 设备标识解析
+
+    /// 设备标识缓存：同一进程内多次取数复用，避免每轮重读文件。
+    private var cachedDeviceMid: String?
+
+    /// 解析 `X-Device-Mid`：优先本地 `deviceMid`（onboarding / telemetry），
+    /// 缺失时生成 UUID 并回写 telemetry-state.json，与 ZCode 客户端行为一致。
+    private func resolvedDeviceMid() -> String {
+        if let cachedDeviceMid { return cachedDeviceMid }
+        let home = homeURL
+        let recordURL = home.appendingPathComponent("v2/onboarding-record.json")
+        let telemetryURL = home.appendingPathComponent("v2/telemetry-state.json")
+        let resolved = ZcodeLimitsParsing.deviceMid(
+            fromOnboardingRecord: readJSONObject(recordURL),
+            telemetryState: readJSONObject(telemetryURL)
+        ) ?? Self.persistedDeviceMid(at: telemetryURL, existing: readJSONObject(telemetryURL))
+        cachedDeviceMid = resolved
+        return resolved
+    }
+
+    /// 生成并回写 deviceMid（文件不存在时新建，保留已有字段）；写入失败仅影响
+    /// 下次进程启动能否复用，本轮请求仍用内存值。
+    private static func persistedDeviceMid(at telemetryURL: URL, existing: [String: Any]?) -> String {
+        let generated = UUID().uuidString.lowercased()
+        var object = existing ?? [:]
+        object["deviceMid"] = generated
+        if let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]) {
+            try? data.write(to: telemetryURL, options: .atomic)
+        }
+        return generated
     }
 
     // MARK: 凭证读取与解密
