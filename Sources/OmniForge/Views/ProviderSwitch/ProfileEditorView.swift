@@ -1121,8 +1121,14 @@ struct ProfileEditorView: View {
                 reasoningEffort = ""
             }
         case .claudeDesktop:
-            // C1 编译占位；预设带入（含四档映射）在 C6（DesktopPresetConnection）落地。
-            break
+            if let connection = preset.claudeDesktop {
+                name = preset.displayName
+                baseURL = connection.baseURL
+                // 四档映射带入（按位平行；未配档空串，保存时继承首个已配档）。
+                desktopRouteModels = ClaudeDesktopSettingsStore.defaultRoutes.map { connection.modelRoutes[$0]?.model ?? "" }
+                desktopRouteLabels = ClaudeDesktopSettingsStore.defaultRoutes.map { connection.modelRoutes[$0]?.labelOverride ?? "" }
+                desktopRouteOneM = ClaudeDesktopSettingsStore.defaultRoutes.map { connection.modelRoutes[$0]?.supports1M ?? false }
+            }
         }
     }
 

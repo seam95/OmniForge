@@ -8,6 +8,8 @@ struct ProviderPreset: Identifiable, Equatable {
     let claudeCode: PresetConnection?
     /// Codex 侧连接参数（OpenAI 兼容端点；该供应商不提供时为 nil）。
     let codex: PresetConnection?
+    /// Claude Desktop 侧连接参数（本期仅 Anthropic 兼容上游；无映射时为 nil）。
+    let claudeDesktop: DesktopPresetConnection?
 }
 
 /// preset 内的单工具连接参数。
@@ -19,6 +21,23 @@ struct PresetConnection: Equatable {
     let modelMapping: ProviderModelMapping?
     /// 额外 env（如 `CLAUDE_CODE_EFFORT_LEVEL=max`）。
     let extraEnv: [String: String]
+}
+
+/// Claude Desktop 侧预设连接 — baseURL + 四档映射（键 = `ClaudeDesktopSettingsStore.defaultRoutes`）。
+/// 六家内置预设全部配映射（现有默认模型无一 Claude-safe，直连会被 Desktop 白名单拒收）。
+struct DesktopPresetConnection: Equatable {
+    let baseURL: String
+    let modelRoutes: [String: DesktopModelRoute]
+
+    /// 便捷构造：主力档模型 + haiku 档模型（sonnet/opus/fable 共用主力档）。
+    static func routes(main: String, haiku: String, oneM: Bool = false) -> [String: DesktopModelRoute] {
+        [
+            "claude-sonnet-5": DesktopModelRoute(model: main, labelOverride: nil, supports1M: oneM),
+            "claude-opus-5": DesktopModelRoute(model: main, labelOverride: nil, supports1M: oneM),
+            "claude-fable-5": DesktopModelRoute(model: main, labelOverride: nil, supports1M: oneM),
+            "claude-haiku-4-5": DesktopModelRoute(model: haiku, labelOverride: nil, supports1M: false),
+        ]
+    }
 }
 
 /// 内置供应商预设目录 — 6 家：GLM / Kimi / DeepSeek / MiniMax / Step / OpenCode Go。
@@ -55,6 +74,10 @@ enum ProviderPresetCatalog {
             defaultModel: "glm-5.3",
             modelMapping: nil,
             extraEnv: [:]
+        ),
+        claudeDesktop: DesktopPresetConnection(
+            baseURL: "https://open.bigmodel.cn/api/anthropic",
+            modelRoutes: DesktopPresetConnection.routes(main: "glm-5.3", haiku: "glm-5.3-flash")
         )
     )
 
@@ -71,7 +94,11 @@ enum ProviderPresetCatalog {
                 "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "1048576",
             ]
         ),
-        codex: nil
+        codex: nil,
+        claudeDesktop: DesktopPresetConnection(
+            baseURL: "https://api.kimi.com/coding",
+            modelRoutes: DesktopPresetConnection.routes(main: "k3", haiku: "k3", oneM: true)
+        )
     )
 
     /// DeepSeek — 官方支持 Claude Code（Anthropic 兼容端点 api.deepseek.com/anthropic）；OpenAI 兼容根路径。
@@ -102,6 +129,10 @@ enum ProviderPresetCatalog {
             defaultModel: "deepseek-v4-pro",
             modelMapping: nil,
             extraEnv: [:]
+        ),
+        claudeDesktop: DesktopPresetConnection(
+            baseURL: "https://api.deepseek.com/anthropic",
+            modelRoutes: DesktopPresetConnection.routes(main: "deepseek-v4-pro", haiku: "deepseek-v4-flash")
         )
     )
 
@@ -120,6 +151,10 @@ enum ProviderPresetCatalog {
             defaultModel: "MiniMax-M3",
             modelMapping: nil,
             extraEnv: [:]
+        ),
+        claudeDesktop: DesktopPresetConnection(
+            baseURL: "https://api.minimaxi.com/anthropic",
+            modelRoutes: DesktopPresetConnection.routes(main: "MiniMax-M3", haiku: "MiniMax-M3")
         )
     )
 
@@ -149,6 +184,10 @@ enum ProviderPresetCatalog {
             defaultModel: "step-5-preview",
             modelMapping: nil,
             extraEnv: [:]
+        ),
+        claudeDesktop: DesktopPresetConnection(
+            baseURL: "https://api.stepfun.com/step_plan",
+            modelRoutes: DesktopPresetConnection.routes(main: "step-5-preview", haiku: "step-3.5-flash")
         )
     )
 
@@ -179,6 +218,10 @@ enum ProviderPresetCatalog {
             defaultModel: "grok-4.7",
             modelMapping: nil,
             extraEnv: [:]
+        ),
+        claudeDesktop: DesktopPresetConnection(
+            baseURL: "https://opencode.ai/inference/go/anthropic",
+            modelRoutes: DesktopPresetConnection.routes(main: "qwen3.8-max", haiku: "claude-haiku-5-5")
         )
     )
 }

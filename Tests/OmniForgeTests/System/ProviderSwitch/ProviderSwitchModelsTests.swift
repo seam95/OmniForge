@@ -541,3 +541,38 @@ extension ProviderSwitchModelsTests {
         )
     }
 }
+
+// MARK: - Desktop 内置预设
+
+extension ProviderSwitchModelsTests {
+    /// 六家预设全部配 Desktop 映射（现有默认模型无一 Claude-safe，映射是必需品，SPEC 功能 E）。
+    func test_allBuiltinPresetsCarryDesktopRoutes() {
+        for preset in ProviderPresetCatalog.builtins {
+            let connection = preset.claudeDesktop
+            XCTAssertNotNil(connection, "\(preset.displayName) 缺 Desktop 预设连接")
+            guard let connection else { continue }
+            XCTAssertFalse(connection.baseURL.isEmpty)
+            for slot in ClaudeDesktopSettingsStore.defaultRoutes {
+                XCTAssertNotNil(connection.modelRoutes[slot],
+                               "\(preset.displayName) 的 \(slot) 档未配置映射")
+            }
+        }
+    }
+
+    /// 各家映射的具体口径（SPEC 功能 E 逐家对照）。
+    func test_desktopPresetRouteModelsMatchSpec() {
+        func model(_ preset: ProviderPreset, _ slot: String) -> String {
+            preset.claudeDesktop!.modelRoutes[slot]!.model
+        }
+        XCTAssertEqual(model(ProviderPresetCatalog.glm, "claude-sonnet-5"), "glm-5.3")
+        XCTAssertEqual(model(ProviderPresetCatalog.glm, "claude-haiku-4-5"), "glm-5.3-flash")
+        XCTAssertEqual(model(ProviderPresetCatalog.kimi, "claude-sonnet-5"), "k3")
+        XCTAssertTrue(ProviderPresetCatalog.kimi.claudeDesktop!.modelRoutes["claude-sonnet-5"]!.supports1M, "Kimi 四档 1M")
+        XCTAssertEqual(model(ProviderPresetCatalog.deepSeek, "claude-fable-5"), "deepseek-v4-pro")
+        XCTAssertEqual(model(ProviderPresetCatalog.deepSeek, "claude-haiku-4-5"), "deepseek-v4-flash")
+        XCTAssertEqual(model(ProviderPresetCatalog.miniMax, "claude-opus-5"), "MiniMax-M3")
+        XCTAssertEqual(model(ProviderPresetCatalog.step, "claude-haiku-4-5"), "step-3.5-flash")
+        XCTAssertEqual(model(ProviderPresetCatalog.opencodeGo, "claude-sonnet-5"), "qwen3.8-max")
+        XCTAssertEqual(model(ProviderPresetCatalog.opencodeGo, "claude-haiku-4-5"), "claude-haiku-5-5")
+    }
+}
