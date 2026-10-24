@@ -61,6 +61,8 @@ final class ProviderBackupStore: ProviderBackupStoring {
         }
         return urls
             .filter { $0.pathExtension == "json" || $0.pathExtension == "toml" }
+            // Desktop 的 bundle 快照（*.bundle.json）归 ClaudeDesktopBackupStore 管，不在此列出。
+            .filter { !$0.lastPathComponent.hasSuffix(".\(ClaudeDesktopBackupStore.bundleExtension)") }
             .compactMap { url -> ProviderBackup? in
                 guard var backup = Self.parse(fileName: url.lastPathComponent) else { return nil }
                 if let modificationDate = try? url.resourceValues(forKeys: [.contentModificationDateKey])

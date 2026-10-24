@@ -27,4 +27,14 @@ enum AggregationProjectionSignature {
         }
         return loopbackHosts.contains(host)
     }
+
+    /// Claude Desktop 的聚合投影形态：回环主机 + `/claude-desktop` 路径前缀。
+    /// 写入端（Desktop 投影 writer）与识别端（`detectActive` 的 Desktop 分支）共用。
+    static func isDesktopProjectedBaseURL(_ urlString: String) -> Bool {
+        guard isProjectedBaseURL(urlString),
+              let components = URLComponents(string: urlString) else {
+            return false
+        }
+        return components.path.hasPrefix("/claude-desktop")
+    }
 }

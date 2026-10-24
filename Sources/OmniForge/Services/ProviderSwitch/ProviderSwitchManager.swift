@@ -36,6 +36,8 @@ final class ProviderSwitchManager: ObservableObject, ProviderActivationRefreshin
 
     private let claudeStore: ClaudeSettingsStoring
     private let codexStore: CodexConfigStoring
+    private let desktopStore: ClaudeDesktopSettingsStoring?
+    private let desktopBackupStore: ClaudeDesktopBackupStoring?
     private let backupStore: ProviderBackupStoring
     private let profileStore: ProviderProfileStoring
     private let claudeConfigURL: URL
@@ -52,12 +54,16 @@ final class ProviderSwitchManager: ObservableObject, ProviderActivationRefreshin
         profileStore: ProviderProfileStoring,
         claudeConfigURL: URL,
         codexConfigURL: URL,
+        desktopStore: ClaudeDesktopSettingsStoring? = nil,
+        desktopBackupStore: ClaudeDesktopBackupStoring? = nil,
         processDetector: RunningProcessDetecting = RunningProcessDetector(),
         fileManager: FileManager = .default,
         configFileEditor: ConfigFileEditing? = nil
     ) {
         self.claudeStore = claudeStore
         self.codexStore = codexStore
+        self.desktopStore = desktopStore
+        self.desktopBackupStore = desktopBackupStore
         self.backupStore = backupStore
         self.profileStore = profileStore
         self.claudeConfigURL = claudeConfigURL
@@ -90,6 +96,14 @@ final class ProviderSwitchManager: ObservableObject, ProviderActivationRefreshin
         let backupStore = ProviderBackupStore(
             backupDirectory: ProviderSwitchPaths.backupDirectory(applicationSupportRoot: root)
         )
+        let desktopStore = ClaudeDesktopSettingsStore.production(
+            homePath: homePath,
+            applicationSupportRoot: root
+        )
+        let desktopBackupStore = ClaudeDesktopBackupStore.production(
+            homePath: homePath,
+            applicationSupportRoot: root
+        )
         return ProviderSwitchManager(
             claudeStore: ClaudeSettingsStore(settingsURL: settingsURL),
             codexStore: CodexConfigStore(configURL: configURL),
@@ -103,11 +117,14 @@ final class ProviderSwitchManager: ObservableObject, ProviderActivationRefreshin
             ),
             claudeConfigURL: settingsURL,
             codexConfigURL: configURL,
+            desktopStore: desktopStore,
+            desktopBackupStore: desktopBackupStore,
             processDetector: processDetector,
             configFileEditor: ConfigFileEditorStore(
                 claudeConfigURL: settingsURL,
                 codexConfigURL: configURL,
-                backupStore: backupStore
+                backupStore: backupStore,
+                desktopBackupStore: desktopBackupStore
             )
         )
     }
@@ -133,13 +150,20 @@ final class ProviderSwitchManager: ObservableObject, ProviderActivationRefreshin
     // MARK: - 刷新
 
     /// 重读 profile 目录、配置文件激活态与备份列表。
+    /// Desktop 先按 pending 前滚（4 文件事务自愈，SPEC 关键设计决策 2）。
     func refresh() {
+        if let desktopStore {
+            try? desktopStore.replayPendingIfPresent()
+        }
         profiles = ProviderTool.allCases.flatMap { profileStore.list(for: $0) }
         for tool in ProviderTool.allCases {
             activeByTool[tool] = detectActive(tool: tool)
         }
         backups = ProviderTool.allCases
-            .flatMap { backupStore.list(tool: $0) }
+            .flatMap { tool in
+                // 备份分派：Desktop 走 bundle 快照，其余走单文件快照。
+                tool == .claudeDesktop ? (desktopBackupStore?.list(tool: tool) ?? []) : backupStore.list(tool: tool)
+            }
             .sorted { $0.sortDate > $1.sortDate }
     }
 
@@ -156,16 +180,17 @@ final class ProviderSwitchManager: ObservableObject, ProviderActivationRefreshin
     @discardableResult
     func switchTo(profile: ProviderProfile) async throws -> ProviderSwitchOutcome {
         let tool = profile.tool
-        if tool == .claudeDesktop {
-            // C1 占位；Desktop 直连切换在 C2（ClaudeDesktopSettingsStore + 4 文件事务）落地。
-            throw ProviderSwitchManagerError.unsupportedTool(tool: tool)
-        }
         let backup = try snapshot(tool: tool)
         do {
             switch tool {
             case .claudeCode: try claudeStore.applyProfile(profile)
             case .codex: try codexStore.applyProfile(profile)
-            case .claudeDesktop: throw ProviderSwitchManagerError.unsupportedTool(tool: tool)
+            case .claudeDesktop:
+                guard let desktopStore else {
+                    throw ProviderSwitchManagerError.unsupportedTool(tool: tool)
+                }
+                // 直连形态：不带 inferenceModels（Desktop 自动发现）。
+                try desktopStore.applyProfile(profile, inferenceModels: nil, modelDiscoveryEnabled: nil)
             }
         } catch {
             try rollbackOrThrow(backup, tool: tool)
@@ -178,16 +203,16 @@ final class ProviderSwitchManager: ObservableObject, ProviderActivationRefreshin
     /// 切到官方：快照 → 删除 override → 失败自动回滚 → 刷新。
     @discardableResult
     func switchToOfficial(tool: ProviderTool) async throws -> ProviderSwitchOutcome {
-        if tool == .claudeDesktop {
-            // C1 占位；恢复官方在 C2（restoreOfficial 恢复 1P）落地。
-            throw ProviderSwitchManagerError.unsupportedTool(tool: tool)
-        }
         let backup = try snapshot(tool: tool)
         do {
             switch tool {
             case .claudeCode: try claudeStore.clearOverrides()
             case .codex: try codexStore.clearOverrides()
-            case .claudeDesktop: throw ProviderSwitchManagerError.unsupportedTool(tool: tool)
+            case .claudeDesktop:
+                guard let desktopStore else {
+                    throw ProviderSwitchManagerError.unsupportedTool(tool: tool)
+                }
+                try desktopStore.restoreOfficial()
             }
         } catch {
             try rollbackOrThrow(backup, tool: tool)
@@ -222,8 +247,12 @@ final class ProviderSwitchManager: ObservableObject, ProviderActivationRefreshin
             baseURL = base ?? ""
             token = tokenValue ?? ""
         case .claudeDesktop:
-            // C1 占位；Desktop 的收编读取在 C2（readState）落地。
-            throw ProviderSwitchManagerError.unsupportedTool(tool: tool)
+            // 收编未托管网关：读当前 applied profile 的网关地址与密钥。
+            guard let desktopStore, let state = try? desktopStore.readState() else {
+                throw ProviderSwitchManagerError.unsupportedTool(tool: tool)
+            }
+            baseURL = state.inferenceGatewayBaseUrl ?? ""
+            token = state.inferenceGatewayApiKey ?? ""
         }
         guard !baseURL.isEmpty, !token.isEmpty else {
             throw ProviderSwitchManagerError.missingUnmanagedValues(tool: tool)
@@ -242,24 +271,40 @@ final class ProviderSwitchManager: ObservableObject, ProviderActivationRefreshin
     // MARK: - 备份恢复
 
     /// 手动恢复备份：快照内容原子写回目标配置文件（SPEC 2.5）。
+    /// Desktop 走 bundle 恢复（absent 文件删除，其余写回 4 个固定路径）。
     func restoreBackup(_ backup: ProviderBackup) throws {
-        try backupStore.restore(backup, to: configURL(for: backup.tool))
+        if backup.tool == .claudeDesktop {
+            guard let desktopBackupStore else {
+                throw ProviderSwitchManagerError.unsupportedTool(tool: .claudeDesktop)
+            }
+            try desktopBackupStore.restore(backup)
+        } else {
+            try backupStore.restore(backup, to: configURL(for: backup.tool))
+        }
         refresh()
     }
 
     /// 读取某份备份的内容，供用户在恢复前核对（只读，不改动任何状态）。
     func backupContent(_ backup: ProviderBackup) throws -> String {
-        try backupStore.content(of: backup)
+        if backup.tool == .claudeDesktop, let desktopBackupStore {
+            return try desktopBackupStore.content(of: backup)
+        }
+        return try backupStore.content(of: backup)
     }
 
     // MARK: - 损坏配置重建（SPEC 2.8.2）
 
     /// 损坏配置「备份并重建」：坏文件复制到备份目录后移除，回到无 override 状态
     /// （下次切换会创建最小配置文件）。不硬写损坏文件。
+    /// Desktop 的备份走 bundle（4 文件一并快照，恢复入口同源）。
     func rebuildCorruptedConfig(tool: ProviderTool) throws {
         let url = configURL(for: tool)
         guard fileManager.fileExists(atPath: url.path) else { return }
-        _ = try backupStore.snapshot(tool: tool, of: url)
+        if tool == .claudeDesktop, let desktopBackupStore {
+            _ = try desktopBackupStore.snapshot4Files()
+        } else {
+            _ = try backupStore.snapshot(tool: tool, of: url)
+        }
         try fileManager.removeItem(at: url)
         refresh()
     }
@@ -267,14 +312,28 @@ final class ProviderSwitchManager: ObservableObject, ProviderActivationRefreshin
     // MARK: - private
 
     /// 快照失败直接抛（不进入写入）。
+    /// Desktop 走 bundle 快照（源文件缺失记 absent，首次切换不失败）。
     private func snapshot(tool: ProviderTool) throws -> ProviderBackup {
-        try backupStore.snapshot(tool: tool, of: configURL(for: tool))
+        if tool == .claudeDesktop {
+            guard let desktopBackupStore else {
+                throw ProviderSwitchManagerError.unsupportedTool(tool: tool)
+            }
+            return try desktopBackupStore.snapshot4Files()
+        }
+        return try backupStore.snapshot(tool: tool, of: configURL(for: tool))
     }
 
     /// 写入失败 → 自动从快照回滚；回滚也失败则抛 rollbackFailed。
     private func rollbackOrThrow(_ backup: ProviderBackup, tool: ProviderTool) throws {
         do {
-            try backupStore.restore(backup, to: configURL(for: tool))
+            if tool == .claudeDesktop {
+                guard let desktopBackupStore else {
+                    throw ProviderSwitchManagerError.unsupportedTool(tool: tool)
+                }
+                try desktopBackupStore.restore(backup)
+            } else {
+                try backupStore.restore(backup, to: configURL(for: tool))
+            }
         } catch {
             throw ProviderSwitchManagerError.rollbackFailed(tool: tool)
         }
@@ -326,8 +385,39 @@ final class ProviderSwitchManager: ObservableObject, ProviderActivationRefreshin
             return .unmanaged(summary: active.baseURL ?? key)
 
         case .claudeDesktop:
-            // C1 占位；Desktop 的全态检测在 C2（readState → _meta.json / baseURL 匹配）落地。
-            return .official
+            return detectDesktopActive()
         }
+    }
+
+    /// Desktop 激活态识别（SPEC 功能 B）：
+    /// 1. `_meta.json` 缺失或 `appliedId` 非我们 → 存在其它 `appliedId` 或 `deploymentMode == "3p"`
+    ///    → 未托管；否则官方。
+    /// 2. `appliedId` 是我们 → 读 profile 的网关地址：命中某卡 → 该卡；命中本机代理投影 → 聚合接管；
+    ///    其它 → 未托管。
+    /// 3. 任一文件 JSON 损坏 → unreadable。
+    private func detectDesktopActive() -> ActiveProvider {
+        guard let desktopStore else { return .official }
+        guard let state = try? desktopStore.readState() else {
+            return .unreadable
+        }
+        if state.isOurProfileApplied {
+            guard let baseURL = state.inferenceGatewayBaseUrl, !baseURL.isEmpty else {
+                return .unmanaged(summary: "gateway (无网关地址)")
+            }
+            if AggregationProjectionSignature.isDesktopProjectedBaseURL(baseURL) {
+                return .aggregating
+            }
+            if let profile = profiles.first(where: { $0.tool == .claudeDesktop && $0.baseURL == baseURL }) {
+                return .profile(profileID: profile.id)
+            }
+            return .unmanaged(summary: baseURL)
+        }
+        if state.appliedId != nil {
+            return .unmanaged(summary: state.appliedId ?? "")
+        }
+        if state.deploymentMode == "3p" {
+            return .unmanaged(summary: "3p")
+        }
+        return .official
     }
 }

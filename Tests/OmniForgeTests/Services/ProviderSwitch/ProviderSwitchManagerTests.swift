@@ -488,3 +488,146 @@ final class ProviderSwitchManagerTests: XCTestCase {
         XCTAssertTrue(backupStore.snapshots.isEmpty, "文件不存在时不产生备份")
     }
 }
+
+// MARK: - Claude Desktop（4 文件事务 + bundle 备份）
+
+extension ProviderSwitchManagerTests {
+    private func makeDesktopManager(
+        desktopStore: ClaudeDesktopSettingsStore,
+        desktopBackupStore: ClaudeDesktopBackupStore
+    ) -> ProviderSwitchManager {
+        ProviderSwitchManager(
+            claudeStore: claudeStore,
+            codexStore: codexStore,
+            backupStore: backupStore,
+            profileStore: profileStore,
+            claudeConfigURL: claudeConfigURL,
+            codexConfigURL: codexConfigURL,
+            desktopStore: desktopStore,
+            desktopBackupStore: desktopBackupStore,
+            processDetector: detector,
+            fileManager: .default
+        )
+    }
+
+    private func makeDesktopStores() throws -> (ProviderSwitchManager, ClaudeDesktopSettingsStore, URL) {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ProviderSwitchManagerDesktopTests_\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        let desktopStore = ClaudeDesktopSettingsStore(
+            configURL: tmp.appendingPathComponent("Claude/config.json"),
+            config3PURL: tmp.appendingPathComponent("Claude-3p/config.json"),
+            profileURL: tmp.appendingPathComponent("Claude-3p/configLibrary/profile.json"),
+            metaURL: tmp.appendingPathComponent("Claude-3p/configLibrary/_meta.json"),
+            pendingURL: tmp.appendingPathComponent("ProviderDesktop/pending.json")
+        )
+        let desktopBackupStore = ClaudeDesktopBackupStore(
+            configURL: desktopStoreConfigURLs(tmp).0,
+            config3PURL: desktopStoreConfigURLs(tmp).1,
+            profileURL: desktopStoreConfigURLs(tmp).2,
+            metaURL: desktopStoreConfigURLs(tmp).3,
+            backupDirectory: tmp.appendingPathComponent("backups")
+        )
+        return (makeDesktopManager(desktopStore: desktopStore, desktopBackupStore: desktopBackupStore), desktopStore, tmp)
+    }
+
+    private func desktopStoreConfigURLs(_ tmp: URL) -> (URL, URL, URL, URL) {
+        (
+            tmp.appendingPathComponent("Claude/config.json"),
+            tmp.appendingPathComponent("Claude-3p/config.json"),
+            tmp.appendingPathComponent("Claude-3p/configLibrary/profile.json"),
+            tmp.appendingPathComponent("Claude-3p/configLibrary/_meta.json")
+        )
+    }
+
+    func test_desktop_detectActiveAllStates() throws {
+        let (manager, store, tmp) = try makeDesktopStores()
+        let (configURL, _, profileURL, metaURL) = desktopStoreConfigURLs(tmp)
+
+        func write(_ text: String, to url: URL) throws {
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+            )
+            try Data(text.utf8).write(to: url)
+        }
+
+        // 全缺失 → official。
+        XCTAssertEqual(manager.active(tool: .claudeDesktop), .official)
+
+        // 我们 applied + 命中卡 baseURL → profile。
+        let profile = seedProfile(name: "智谱桌面", tool: .claudeDesktop, baseURL: "https://open.bigmodel.cn/api/anthropic")
+        try store.applyProfile(profile, inferenceModels: nil, modelDiscoveryEnabled: nil)
+        manager.refresh()
+        XCTAssertEqual(manager.active(tool: .claudeDesktop), .profile(profileID: profile.id))
+
+        // 我们 applied + 回环 /claude-desktop → aggregating。
+        try write(#"{"inferenceProvider":"gateway","inferenceGatewayBaseUrl":"http://127.0.0.1:15721/claude-desktop"}"#, to: profileURL)
+        manager.refresh()
+        XCTAssertEqual(manager.active(tool: .claudeDesktop), .aggregating)
+
+        // 我们 applied + 未知地址 → unmanaged。
+        try write(#"{"inferenceProvider":"gateway","inferenceGatewayBaseUrl":"https://other.example"}"#, to: profileURL)
+        manager.refresh()
+        XCTAssertEqual(manager.active(tool: .claudeDesktop), .unmanaged(summary: "https://other.example"))
+
+        // appliedId 指向别人 → unmanaged。
+        try write(#"{"entries":[{"id":"other"}],"appliedId":"other"}"#, to: metaURL)
+        manager.refresh()
+        XCTAssertEqual(manager.active(tool: .claudeDesktop), .unmanaged(summary: "other"))
+
+        // deploymentMode 3p 且无 appliedId → unmanaged。
+        try write(#"{"entries":[]}"#, to: metaURL)
+        try write(#"{"deploymentMode":"3p"}"#, to: configURL)
+        manager.refresh()
+        XCTAssertEqual(manager.active(tool: .claudeDesktop), .unmanaged(summary: "3p"))
+
+        // JSON 损坏 → unreadable。
+        try write("not json", to: configURL)
+        manager.refresh()
+        XCTAssertEqual(manager.active(tool: .claudeDesktop), .unreadable)
+
+        try? FileManager.default.removeItem(at: tmp)
+    }
+
+    func test_desktop_switchToOfficialRestores1P() async throws {
+        let (manager, store, tmp) = try makeDesktopStores()
+        let profile = seedProfile(name: "智谱桌面", tool: .claudeDesktop, baseURL: "https://open.bigmodel.cn/api/anthropic")
+        try store.applyProfile(profile, inferenceModels: nil, modelDiscoveryEnabled: nil)
+
+        let outcome = try await manager.switchToOfficial(tool: .claudeDesktop)
+        XCTAssertEqual(outcome.tool, .claudeDesktop)
+        let (configURL, _, _, metaURL) = desktopStoreConfigURLs(tmp)
+        let config = try XCTUnwrap((try? JSONSerialization.jsonObject(
+            with: Data(contentsOf: configURL)
+        )) as? [String: Any])
+        XCTAssertEqual(config["deploymentMode"] as? String, "1p")
+        let meta = try XCTUnwrap((try? JSONSerialization.jsonObject(
+            with: Data(contentsOf: metaURL)
+        )) as? [String: Any])
+        XCTAssertNil(meta["appliedId"])
+        try? FileManager.default.removeItem(at: tmp)
+    }
+
+    /// 切换失败（entries 非数组）→ bundle 回滚恢复快照前状态（文件回到 absent）。
+    func test_desktop_switchFailureRollsBackViaBundle() async throws {
+        let (manager, _, tmp) = try makeDesktopStores()
+        let (configURL, _, _, metaURL) = desktopStoreConfigURLs(tmp)
+        // 快照前存在一个合法但非数组的 entries——applyProfile 抛错。
+        try FileManager.default.createDirectory(at: metaURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(#"{"entries":"broken"}"#.utf8).write(to: metaURL)
+
+        let profile = seedProfile(name: "智谱桌面", tool: .claudeDesktop, baseURL: "https://open.bigmodel.cn/api/anthropic")
+        do {
+            _ = try await manager.switchTo(profile: profile)
+            XCTFail("预期切换失败")
+        } catch {
+            // 预期路径。
+        }
+        // 回滚：meta 文件恢复为快照内容（非数组的原文）。
+        let metaText = try String(contentsOf: metaURL, encoding: .utf8)
+        XCTAssertTrue(metaText.contains("broken"))
+        // 1P config 快照时 absent → 回滚后不存在。
+        XCTAssertFalse(FileManager.default.fileExists(atPath: configURL.path))
+        try? FileManager.default.removeItem(at: tmp)
+    }
+}

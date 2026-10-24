@@ -26,6 +26,8 @@ final class ConfigFileEditorStore: ConfigFileEditing {
     /// Desktop 编辑目标：3P 网关 profile 原文（configLibrary 内的固定 UUID 文件）。
     let desktopProfileURL: URL
     let backupStore: ProviderBackupStoring
+    /// Desktop 保存前的快照走 bundle（4 文件）；nil = Desktop 编辑降级为无备份直写。
+    let desktopBackupStore: ClaudeDesktopBackupStoring?
     let fileManager: FileManager
 
     init(
@@ -33,12 +35,14 @@ final class ConfigFileEditorStore: ConfigFileEditing {
         codexConfigURL: URL,
         backupStore: ProviderBackupStoring,
         desktopProfileURL: URL = ProviderSwitchPaths.claudeDesktopProfileURL(),
+        desktopBackupStore: ClaudeDesktopBackupStoring? = nil,
         fileManager: FileManager = .default
     ) {
         self.claudeConfigURL = claudeConfigURL
         self.codexConfigURL = codexConfigURL
         self.desktopProfileURL = desktopProfileURL
         self.backupStore = backupStore
+        self.desktopBackupStore = desktopBackupStore
         self.fileManager = fileManager
     }
 
@@ -79,8 +83,13 @@ final class ConfigFileEditorStore: ConfigFileEditing {
             throw ConfigFileEditorError.invalidContent(tool: tool)
         }
         // 与切换一致的备份 + 原子写（文件不存在时无需备份）。
+        // Desktop 的备份走 bundle（4 文件整体快照）。
         if fileManager.fileExists(atPath: url.path) {
-            try? backupStore.snapshot(tool: tool, of: url)
+            if tool == .claudeDesktop, let desktopBackupStore {
+                try? desktopBackupStore.snapshot4Files()
+            } else {
+                try? backupStore.snapshot(tool: tool, of: url)
+            }
         }
         do {
             try AtomicFileWriter.write(data, to: url, fileManager: fileManager)
