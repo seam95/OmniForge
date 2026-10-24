@@ -21,21 +21,21 @@ for arg in "$@"; do
     esac
 done
 
+# 签名身份优先级：Developer ID（分发）> Apple Development（日常）> 本地自签证书。
+# 「OmniForge Local Codesign」为本机 openssl 自签的代码签名证书（codeSign 策略受信，
+# 10 年有效期），在无苹果证书身份时兜底，保证签名身份稳定、隐私权限不随构建漂移。
 resolve_signing_identity() {
-    local identity
-    identity="$(security find-identity -v -p codesigning 2>/dev/null \
-        | grep 'Developer ID Application' \
-        | head -1 \
-        | sed -E 's/.*"(.*)".*/\1/' || true)"
-    if [[ -n "$identity" ]]; then
-        echo "$identity"
-        return
-    fi
-
-    security find-identity -v -p codesigning 2>/dev/null \
-        | grep 'Apple Development' \
-        | head -1 \
-        | sed -E 's/.*"(.*)".*/\1/' || true
+    local identity pattern
+    for pattern in 'Developer ID Application' 'Apple Development' 'OmniForge Local Codesign'; do
+        identity="$(security find-identity -v -p codesigning 2>/dev/null \
+            | grep "$pattern" \
+            | head -1 \
+            | sed -E 's/.*"(.*)".*/\1/' || true)"
+        if [[ -n "$identity" ]]; then
+            echo "$identity"
+            return
+        fi
+    done
 }
 
 # --test: 运行 SPM 单元测试
@@ -162,9 +162,17 @@ fi
 # Step 5: 清除扩展属性（xattr 会导致 codesign 失败）
 xattr -c -r "$STAGE" 2>/dev/null || true
 
-# Step 6: 签名（优先 Developer ID，其次 Apple Development；仅 stage 可 ad-hoc）
+# Apple 证书配 --timestamp（向 Apple TSA 盖安全时间戳）；本地自签证书不在 Apple 体系
+# 内，TSA 盖章无意义，跳过。
+TIMESTAMP_ARGS=("--timestamp")
+if [[ "$SIGNING_IDENTITY" == *"OmniForge Local Codesign"* ]]; then
+    TIMESTAMP_ARGS=()
+fi
+
+# Step 6: 签名（优先 Developer ID，其次 Apple Development，最后本地自签；仅 stage 可 ad-hoc）
 # 嵌入 Sparkle 与 FinderSync 扩展后必须先按顺序重签其嵌套代码再签外层 .app：Hardened Runtime 的
 # Library Validation 要求嵌套代码与宿主 Team ID 一致。顺序由内向外，切勿用 --deep（会破坏嵌套签名）。
+# 自签证书无 Team ID，Library Validation 同样按签名链校验嵌套代码与宿主一致。
 SPARKLE_EMBEDDED="$STAGE/Contents/Frameworks/Sparkle.framework"
 if [[ -n "$SIGNING_IDENTITY" ]]; then
     echo "▸ Signing with stable identity (hardened runtime): $SIGNING_IDENTITY"
@@ -175,18 +183,18 @@ if [[ -n "$SIGNING_IDENTITY" ]]; then
             "$SPARKLE_EMBEDDED/Versions/B/Autoupdate" \
             "$SPARKLE_EMBEDDED/Versions/B/Updater.app"; do
             if [[ -e "$nested" ]]; then
-                codesign --force --options runtime --timestamp \
+                codesign --force --options runtime "${TIMESTAMP_ARGS[@]}" \
                     --sign "$SIGNING_IDENTITY" "$nested"
             fi
         done
-        codesign --force --options runtime --timestamp \
+        codesign --force --options runtime "${TIMESTAMP_ARGS[@]}" \
             --sign "$SIGNING_IDENTITY" "$SPARKLE_EMBEDDED"
     fi
     if [[ -d "$FINDER_EXT_STAGE" ]]; then
-        codesign --force --options runtime --timestamp \
+        codesign --force --options runtime "${TIMESTAMP_ARGS[@]}" \
             --entitlements "$FINDER_ENTITLEMENTS" --sign "$SIGNING_IDENTITY" "$FINDER_EXT_STAGE"
     fi
-    codesign --force --strip-disallowed-xattrs --options runtime --timestamp \
+    codesign --force --strip-disallowed-xattrs --options runtime "${TIMESTAMP_ARGS[@]}" \
         --entitlements "$ENTITLEMENTS" --sign "$SIGNING_IDENTITY" "$STAGE"
 else
     echo "⚠ 未找到稳定签名身份，仅为 stage 执行 ad-hoc 签名；重新签名后系统权限可能失效" >&2
