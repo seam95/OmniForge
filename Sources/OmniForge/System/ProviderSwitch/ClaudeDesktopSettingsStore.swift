@@ -20,6 +20,13 @@ protocol ClaudeDesktopSettingsStoring: AnyObject {
     /// 映射卡（`desktopModelRoutes` 非空）拒绝直连，抛 `modelRoutesRequireAggregation`。
     /// `inferenceModels`：聚合投影的模型列表（条目为纯字符串或对象形态）；直连传 nil。
     func applyProfile(_ profile: ProviderProfile, inferenceModels: [Any]?, modelDiscoveryEnabled: Bool?) throws
+    /// 聚合投影写入（同款事务）：代理 origin + gateway token + 模型列表（无映射卡守卫）。
+    func applyAggregation(
+        gatewayBaseURL: String,
+        gatewayToken: String,
+        inferenceModels: [Any],
+        modelDiscoveryEnabled: Bool?
+    ) throws
     /// 恢复官方：两个 config 写回 "1p"、profile 只清关键字段、`_meta.json` 摘除条目；文件保留。
     func restoreOfficial() throws
     /// 读取当前状态（各文件缺失/缺键取 nil，JSON 损坏抛错）。
@@ -143,12 +150,42 @@ final class ClaudeDesktopSettingsStore: ClaudeDesktopSettingsStoring {
         if let routes = profile.desktopModelRoutes, !routes.isEmpty {
             throw ClaudeDesktopSettingsError.modelRoutesRequireAggregation
         }
+        try writeTransaction(
+            gatewayBaseURL: profile.baseURL,
+            gatewayToken: profile.token,
+            inferenceModels: inferenceModels,
+            modelDiscoveryEnabled: modelDiscoveryEnabled
+        )
+    }
 
+    /// 聚合投影写入（4 文件事务同款）：代理 origin + gateway token + 模型列表。
+    /// 不做映射卡守卫——投影的 baseURL 是本机代理而非映射卡直连（守卫只约束直连语义）。
+    func applyAggregation(
+        gatewayBaseURL: String,
+        gatewayToken: String,
+        inferenceModels: [Any],
+        modelDiscoveryEnabled: Bool?
+    ) throws {
+        try writeTransaction(
+            gatewayBaseURL: gatewayBaseURL,
+            gatewayToken: gatewayToken,
+            inferenceModels: inferenceModels,
+            modelDiscoveryEnabled: modelDiscoveryEnabled
+        )
+    }
+
+    /// 事务主流程：读现有 → 合并网关字段 → pending → 4 文件按序落盘 → 删 pending。
+    private func writeTransaction(
+        gatewayBaseURL: String,
+        gatewayToken: String,
+        inferenceModels: [Any]?,
+        modelDiscoveryEnabled: Bool?
+    ) throws {
         // 1. 内存生成 4 个文件的完整目标 JSON。
         var gatewayProfile = try readJSONObject(profileURL, allowMissing: true)
         gatewayProfile["inferenceProvider"] = "gateway"
-        gatewayProfile["inferenceGatewayBaseUrl"] = profile.baseURL
-        gatewayProfile["inferenceGatewayApiKey"] = profile.token
+        gatewayProfile["inferenceGatewayBaseUrl"] = gatewayBaseURL
+        gatewayProfile["inferenceGatewayApiKey"] = gatewayToken
         gatewayProfile["inferenceGatewayAuthScheme"] = "bearer"
         if let inferenceModels, !inferenceModels.isEmpty {
             gatewayProfile["inferenceModels"] = inferenceModels
@@ -172,15 +209,11 @@ final class ClaudeDesktopSettingsStore: ClaudeDesktopSettingsStoring {
         var meta = try readMetaForUpdate()
         upsertOwnEntry(&meta)
 
-        let config1P: [String: Any] = try mergeConfig(mode: "3p")
-        let config3P: [String: Any] = try mergeConfig3P(mode: "3p")
-
-        // 2. 写 pending（完整目标内容）→ 4-7. 按固定顺序落盘 → 8. 删 pending。
         try commitTransaction(
             profile: gatewayProfile,
             meta: meta,
-            config3P: config3P,
-            config1P: config1P
+            config3P: try mergeConfig3P(mode: "3p"),
+            config1P: try mergeConfig(mode: "3p")
         )
     }
 

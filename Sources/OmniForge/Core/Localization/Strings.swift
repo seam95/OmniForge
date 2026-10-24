@@ -1314,6 +1314,20 @@ struct Strings: Equatable {
     let providerOfficialClaudeDesktopCaption: String
     /// Desktop 切换后重启提示（Desktop 只在启动时读配置）。
     let providerDesktopRestartHint: String
+    /// Desktop 模型映射区块标题。
+    let providerDesktopRoutesSectionTitle: String
+    /// Desktop 模型映射区块说明。
+    let providerDesktopRoutesHint: String
+    /// Desktop 映射行的上游模型名占位。
+    let providerDesktopRouteModelPlaceholder: String
+    /// Desktop 映射行的显示名占位。
+    let providerDesktopRouteLabelPlaceholder: String
+    /// Desktop 映射行的 1M 开关标签。
+    let providerDesktopRouteOneMLabel: String
+    /// Desktop 聚合重启提示标题。
+    let providerDesktopAggregationRestartTitle: String
+    /// Desktop 聚合重启提示正文。
+    let providerDesktopAggregationRestartMessage: String
     /// 「切换到官方」按钮。
     let providerSwitchBackToOfficial: String
     /// 激活项标注（%@ = profile 名）。

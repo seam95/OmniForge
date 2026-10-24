@@ -45,6 +45,12 @@ final class ProviderAggregationManager: ObservableObject {
     private let proxy: AggregationProxying
     private let claudeWriter: AggregationClaudeConfigWriting
     private let codexWriter: AggregationCodexConfigWriting
+    /// Desktop 聚合投影写入器（nil = Desktop 聚合不可用，占位分支直通）。
+    private let desktopWriter: AggregationClaudeDesktopConfigWriting?
+    /// Desktop 4 文件事务 store（退出聚合写直连 profile 用）。
+    private let desktopStore: ClaudeDesktopSettingsStoring?
+    /// Desktop bundle 备份（进入聚合前快照 4 文件）。
+    private let desktopBackupStore: ClaudeDesktopBackupStoring?
     /// 生产装配的迟绑定（单测为 nil）——代理状态变化时喂新快照。
     private let proxyBinding: AggregationProxyBinding?
     /// Desktop 网关 token 存储（独立文件，0600；nil = 快照不带 token → 代理一律 401）。
@@ -64,6 +70,9 @@ final class ProviderAggregationManager: ObservableObject {
         proxy: AggregationProxying,
         claudeWriter: AggregationClaudeConfigWriting,
         codexWriter: AggregationCodexConfigWriting,
+        desktopWriter: AggregationClaudeDesktopConfigWriting? = nil,
+        desktopStore: ClaudeDesktopSettingsStoring? = nil,
+        desktopBackupStore: ClaudeDesktopBackupStoring? = nil,
         profiles: [ProviderProfile],
         fileManager: FileManager = .default,
         proxyBinding: AggregationProxyBinding? = nil,
@@ -79,6 +88,9 @@ final class ProviderAggregationManager: ObservableObject {
         self.proxy = proxy
         self.claudeWriter = claudeWriter
         self.codexWriter = codexWriter
+        self.desktopWriter = desktopWriter
+        self.desktopStore = desktopStore
+        self.desktopBackupStore = desktopBackupStore
         self.profiles = profiles
         self.fileManager = fileManager
         self.proxyBinding = proxyBinding
@@ -134,10 +146,19 @@ final class ProviderAggregationManager: ObservableObject {
     }
 
     /// 可加入聚合的 profile：同工具、非官方、尚未在名单。
+    /// Desktop 成员额外要求已配置 `desktopModelRoutes`（无映射不发布，SPEC 功能 D）。
     func joinableProfileIDs(tool: ProviderTool) -> [String] {
         let toolStack = stack.toolStack(tool)
         return profiles
-            .filter { $0.tool == tool && !Self.isOfficial($0) && !toolStack.isMember($0.id) }
+            .filter { profile in
+                guard profile.tool == tool, !Self.isOfficial(profile), !toolStack.isMember(profile.id) else {
+                    return false
+                }
+                if tool == .claudeDesktop {
+                    guard let routes = profile.desktopModelRoutes, !routes.isEmpty else { return false }
+                }
+                return true
+            }
             .map(\.id)
     }
 
@@ -273,6 +294,9 @@ final class ProviderAggregationManager: ObservableObject {
         let staleDetector = self.staleDetector
         let claudeWriter = self.claudeWriter
         let codexWriter = self.codexWriter
+        let desktopWriter = self.desktopWriter
+        let desktopBackupStore = self.desktopBackupStore
+        let desktopGatewayToken = self.gatewayTokenForProjection()
         let configURL = Self.configURL(for: tool)
         let codexCatalogURL = Self.codexAggregationCatalogURL()
         let codexAuthURL = Self.codexAuthURL()
@@ -300,7 +324,12 @@ final class ProviderAggregationManager: ObservableObject {
                             }
                         }
 
-                        try? backupStore.snapshot(tool: tool, of: configURL)
+                        // 进入聚合前快照：Desktop 走 bundle（4 文件），其余单文件。
+                        if tool == .claudeDesktop {
+                            try? desktopBackupStore?.snapshot4Files()
+                        } else {
+                            try? backupStore.snapshot(tool: tool, of: configURL)
+                        }
 
                         let intent = AggregationPending(tool: tool, stack: newStack, published: false)
                         try pendingStore.save(intent)
@@ -328,8 +357,12 @@ final class ProviderAggregationManager: ObservableObject {
                             )
                             staleDetector.observe(catalogURL: codexCatalogURL, catalogIsOurs: true)
                         case .claudeDesktop:
-                            // C1 编译占位；Desktop 聚合投影在 C5（AggregationClaudeDesktopConfigWriter）落地。
-                            break
+                            try desktopWriter?.applyAggregation(
+                                defaultProfile: defaultProfile,
+                                memberPublished: published.filter { $0.key != defaultKey },
+                                port: port,
+                                gatewayToken: desktopGatewayToken
+                            )
                         }
 
                         try? pendingStore.clear()
@@ -400,6 +433,12 @@ final class ProviderAggregationManager: ObservableObject {
         let staleDetector = self.staleDetector
         let configURL = Self.configURL(for: tool)
         let codexAuthURL = Self.codexAuthURL()
+        // Desktop 的退出目标在主线程解析（读栈态），闭包内只做文件操作。
+        let desktopExitProfile = tool == .claudeDesktop
+            ? stack.toolStack(.claudeDesktop).members.first
+                .flatMap { profile(id: $0, tool: .claudeDesktop) }
+            : nil
+        let desktopStore = self.desktopStore
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -414,7 +453,8 @@ final class ProviderAggregationManager: ObservableObject {
                         switch tool {
                         case .claudeCode: try claudeWriter.clearAggregation()
                         case .codex: try codexWriter.clearAggregation()
-                        case .claudeDesktop: break // C1 占位，C5 落地退出投影
+                        case .claudeDesktop:
+                            try Self.restoreDesktopDirect(defaultProfile: desktopExitProfile, store: desktopStore)
                         }
                     }
                 } catch {
@@ -422,7 +462,8 @@ final class ProviderAggregationManager: ObservableObject {
                         switch tool {
                         case .claudeCode: try claudeWriter.clearAggregation()
                         case .codex: try codexWriter.clearAggregation()
-                        case .claudeDesktop: break // C1 占位，C5 落地退出投影
+                        case .claudeDesktop:
+                            try Self.restoreDesktopDirect(defaultProfile: desktopExitProfile, store: desktopStore)
                         }
                     } catch {
                         continuation.resume(throwing: error)
@@ -451,6 +492,7 @@ final class ProviderAggregationManager: ObservableObject {
     // MARK: - 成员管理
 
     /// 加入成员：分配永久 key；官方账号不可加入；已在名单里 → 无变化（不重写）。
+    /// Desktop 成员必须已配置模型映射（SPEC 功能 D：无映射不发布）。
     /// `tool` 必传：同名卡跨工具并存时仅按 id 定位有歧义。
     func addMember(_ profileID: String, tool: ProviderTool) throws {
         guard let profile = profile(id: profileID, tool: tool) else {
@@ -458,6 +500,10 @@ final class ProviderAggregationManager: ObservableObject {
         }
         guard !Self.isOfficial(profile) else {
             throw AggregationManagerError.officialCannotJoin(id: profileID)
+        }
+        if tool == .claudeDesktop,
+           profile.desktopModelRoutes?.isEmpty ?? true {
+            throw AggregationManagerError.desktopRoutesRequired(id: profileID)
         }
         var newStack = stack
         var toolStack = newStack.toolStack(tool)
@@ -707,6 +753,21 @@ final class ProviderAggregationManager: ObservableObject {
                 ),
                 fileManager: fileManager
             ),
+            desktopWriter: AggregationClaudeDesktopConfigWriter.production(
+                homePath: homePath,
+                applicationSupportRoot: root,
+                fileManager: fileManager
+            ),
+            desktopStore: ClaudeDesktopSettingsStore.production(
+                homePath: homePath,
+                applicationSupportRoot: root,
+                fileManager: fileManager
+            ),
+            desktopBackupStore: ClaudeDesktopBackupStore.production(
+                homePath: homePath,
+                applicationSupportRoot: root,
+                fileManager: fileManager
+            ),
             profiles: Self.loadProfilesWithSyntheticOfficial(
                 profileStore: profileStore,
                 modelsCacheURL: ProviderSwitchPaths.codexModelsCacheURL(
@@ -847,8 +908,13 @@ final class ProviderAggregationManager: ObservableObject {
                     requiresOpenAIAuth: loginStashStore.hasNativeLogin
                 )
         case .claudeDesktop:
-            // C1 占位；Desktop 投影摘要比较在 C5 落地。
-            changed = true
+            guard let desktopWriter else { return }
+            let memberPublished = published.filter { $0.key != defaultKey }
+            changed = desktopWriter.currentContractDigest()
+                != desktopWriter.projectedContractDigest(
+                    defaultProfile: defaultProfile, memberPublished: memberPublished,
+                    port: port, gatewayToken: gatewayTokenForProjection()
+                )
         }
         guard changed else { return }
         try writeProjection(tool: tool, defaultProfile: defaultProfile, defaultKey: defaultKey, port: port)
@@ -870,9 +936,19 @@ final class ProviderAggregationManager: ObservableObject {
             )
             refreshOfficialModelsIfNeeded(defaultProfile: defaultProfile, tool: tool)
         case .claudeDesktop:
-            // C1 占位；Desktop 投影写入在 C5 落地（此路径 C5 前不可达：成员准入尚未放行 Desktop）。
-            break
+            try desktopWriter?.applyAggregation(
+                defaultProfile: defaultProfile,
+                memberPublished: published.filter { $0.key != defaultKey },
+                port: port,
+                gatewayToken: gatewayTokenForProjection()
+            )
         }
+    }
+
+    /// Desktop 网关 token（写入投影用；读取缺失即生成，幂等）。无 token store → nil
+    /// （投影仍写入，但代理快照无 token → `/claude-desktop/*` 一律 401，诊断可见）。
+    private func gatewayTokenForProjection() -> String {
+        (try? desktopTokenStore?.loadOrCreate()) ?? ""
     }
 
     /// 官方默认时后台刷新官方模型列表；拉到新列表后按新目录重写一次投影。
@@ -926,8 +1002,9 @@ final class ProviderAggregationManager: ObservableObject {
                 fileManager: fileManager
             )
         case .claudeDesktop:
-            // C1 占位；Desktop 键级恢复在 C5（AggregationRestoreMerger.desktop）落地。
-            throw ProviderConfigFileError.corrupted(path: configURL.path)
+            // Desktop 的退出恢复不走文本键级合并：主路径 = 写默认那家直连 profile
+            // （SPEC 功能 D；merger.desktop 的键级合并留作 bundle 手动恢复的消费口）。
+            try restoreDesktopDirect()
         }
     }
 
@@ -935,8 +1012,34 @@ final class ProviderAggregationManager: ObservableObject {
         switch tool {
         case .claudeCode: try claudeWriter.clearAggregation()
         case .codex: try codexWriter.clearAggregation()
-        case .claudeDesktop: break // C1 占位，C5 落地
+        case .claudeDesktop: try restoreDesktopDirect()
         }
+    }
+
+    /// Desktop 退出聚合的直连恢复：写默认那家 direct 形态（4 文件事务）；
+    /// 默认那家不存在或写入失败 → `restoreOfficial`（恢复官方 1P，语义安全的兜底）。
+    private func restoreDesktopDirect() throws {
+        let defaultProfile = stack.toolStack(.claudeDesktop).members.first
+            .flatMap { profile(id: $0, tool: .claudeDesktop) }
+        try Self.restoreDesktopDirect(defaultProfile: defaultProfile, store: desktopStore)
+    }
+
+    /// 纯文件操作版（可在后台线程执行；默认那家由调用方在主线程解析，避免跨线程读栈态）。
+    private static func restoreDesktopDirect(
+        defaultProfile: ProviderProfile?,
+        store: ClaudeDesktopSettingsStoring?
+    ) throws {
+        guard let store else { return }
+        if let defaultProfile {
+            do {
+                try store.applyProfile(defaultProfile, inferenceModels: nil, modelDiscoveryEnabled: nil)
+                return
+            } catch {
+                try? store.restoreOfficial()
+                throw error
+            }
+        }
+        try store.restoreOfficial()
     }
 
     /// 看门狗：代理异常退出 → 重启；重启失败 → 聚合中的工具全部回落直连并报错。
@@ -1003,9 +1106,33 @@ final class ProviderAggregationManager: ObservableObject {
         case .codex:
             return Self.codexPublishedModels(profile: profile, key: key)
         case .claudeDesktop:
-            // C1 占位；desktopPublishedModels 在 C5 落地（成员准入同批放行）。
-            return []
+            return Self.desktopPublishedModels(profile: profile, key: key)
         }
+    }
+
+    /// Desktop 成员发布：按 `desktopModelRoutes` 的 upstream 去重生成
+    /// `claude-fable-om-<hash>` 条目；label 用 `供应商 / 模型名`（SPEC 功能 D）。
+    /// 无映射（直连卡）→ 空发布（直连卡只可做默认那家，走 identity 四档）。
+    private static func desktopPublishedModels(profile: ProviderProfile, key: String) -> [AggregationPublishedModel] {
+        guard let routes = profile.desktopModelRoutes, !routes.isEmpty else { return [] }
+        var seen = Set<String>()
+        var result: [AggregationPublishedModel] = []
+        for slot in ClaudeDesktopSettingsStore.defaultRoutes {
+            guard let route = routes[slot] else { continue }
+            let (stripped, markerOneM) = AggregationModelID.stripOneMMarker(route.model)
+            guard seen.insert(stripped).inserted else { continue }
+            result.append(AggregationPublishedModel(
+                tool: .claudeDesktop,
+                key: key,
+                profileName: profile.name,
+                model: stripped,
+                upstream: route.model,
+                displayName: route.labelOverride ?? route.model,
+                oneM: route.supports1M || markerOneM,
+                window: 0
+            ))
+        }
+        return result
     }
 
     /// Codex 侧发布源：profile 的成员模型条目逐条转发布条目（原名直出——
@@ -1122,6 +1249,8 @@ enum AggregationManagerError: Error, Equatable {
     /// `requires_openai_auth` 依赖 OAuth 凭证，缺失时官方上游只会回 401。
     case officialLoginRequired
     case defaultMemberLocked(id: String)
+    /// Desktop 成员未配置模型映射（无映射不发布，SPEC 功能 D）。
+    case desktopRoutesRequired(id: String)
 }
 
 extension AggregationManagerError: LocalizedError {
@@ -1137,6 +1266,8 @@ extension AggregationManagerError: LocalizedError {
             return "OpenAI 官方做默认需要 Codex 官方登录：请先在 Codex 登录官方账号，再切换默认"
         case .defaultMemberLocked(let id):
             return "默认供应商在聚合开启期间不可移除（\(id)）"
+        case .desktopRoutesRequired(let id):
+            return "该供应商（\(id)）未配置 Claude Desktop 模型映射，加入聚合前请先在编辑表单配置四档映射"
         }
     }
 }

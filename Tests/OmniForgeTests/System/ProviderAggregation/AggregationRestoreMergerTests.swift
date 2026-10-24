@@ -156,4 +156,43 @@ final class AggregationRestoreMergerTests: XCTestCase {
         )
         XCTAssertNotNil(merged["permissions"], "非拥有顶层键保留")
     }
+
+}
+
+// MARK: - Claude Desktop
+
+extension AggregationRestoreMergerTests {
+    func test_desktop_restoresGatewayKeysFromBackupAndDropsMissingOnes() {
+        let current: [String: Any] = [
+            "inferenceProvider": "gateway",
+            "inferenceGatewayBaseUrl": "http://127.0.0.1:15721/claude-desktop",
+            "inferenceGatewayApiKey": "ccs-aggregation",
+            "inferenceModels": ["claude-sonnet-5"],
+            "favoriteColor": "blue",
+        ]
+        let backup: [String: Any] = [
+            "inferenceProvider": "gateway",
+            "inferenceGatewayBaseUrl": "https://open.bigmodel.cn/api/anthropic",
+            "inferenceGatewayApiKey": "sk-glm",
+            "favoriteColor": "red",
+        ]
+        let merged = AggregationRestoreMerger.desktop(current: current, backup: backup)
+        XCTAssertEqual(merged["inferenceGatewayBaseUrl"] as? String, "https://open.bigmodel.cn/api/anthropic")
+        XCTAssertEqual(merged["inferenceGatewayApiKey"] as? String, "sk-glm")
+        XCTAssertNil(merged["inferenceModels"], "备份缺失的网关键删除（聚合残留清除）")
+        XCTAssertNil(merged["modelDiscoveryEnabled"])
+        XCTAssertEqual(merged["favoriteColor"] as? String, "blue", "用户其它键保留当前值（不回滚用户改动）")
+    }
+
+    func test_desktop_emptyBackupRemovesAllGatewayKeys() {
+        let current: [String: Any] = [
+            "inferenceProvider": "gateway",
+            "inferenceGatewayBaseUrl": "http://127.0.0.1:1/claude-desktop",
+            "customKey": 1,
+        ]
+        let merged = AggregationRestoreMerger.desktop(current: current, backup: [:])
+        XCTAssertNil(merged["inferenceProvider"])
+        XCTAssertNil(merged["inferenceGatewayBaseUrl"])
+        XCTAssertEqual(merged["customKey"] as? Int, 1)
+    }
 }

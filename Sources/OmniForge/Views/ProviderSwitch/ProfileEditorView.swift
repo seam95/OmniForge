@@ -86,6 +86,11 @@ struct ProfileEditorView: View {
     @State private var haiku = ""
     @State private var haikuName = ""
     @State private var subagent = ""
+    /// Desktop 四档映射编辑态（与 `ClaudeDesktopSettingsStore.defaultRoutes` 按位平行）：
+    /// 上游模型名 / 显示名（空串 = 未配置）/ 1M 开关。
+    @State private var desktopRouteModels: [String] = []
+    @State private var desktopRouteLabels: [String] = []
+    @State private var desktopRouteOneM: [Bool] = []
     @State private var extraEnv: [String: String] = [:]
     @State private var presetID: String?
     @State private var isTokenVisible = false
@@ -154,11 +159,11 @@ struct ProfileEditorView: View {
             // Claude 按打开时的模式二选一（对齐 cc-switch classic/stack）：
             // 聚合 → 发布列表（无角色映射）；直连 → 角色映射（无发布列表）。
             // Codex 恒为模型列表（直连聚合同构，无二选一）。
-            // Desktop 直连卡无映射区块（Desktop 自动发现模型；映射区块在 C5 聚合接入）。
+            // Desktop 恒为四档映射区块（配置后即映射卡，仅聚合模式可用；直连激活时拦截）。
             if tool == .claudeCode && aggregating {
                 stackModelsSection
             } else if tool == .claudeDesktop {
-                EmptyView()
+                desktopModelRoutesSection
             } else {
                 modelMappingSection
             }
@@ -488,6 +493,111 @@ struct ProfileEditorView: View {
     }
 
     // MARK: - 模型映射分组
+
+    /// Desktop 四档映射区块：档名只读、上游模型名、显示名（可选）、1M 开关。
+    /// 全档留空 = 直连卡；任一档有值 = 映射卡（仅聚合可用，直连激活时拦截提示）。
+    private var desktopModelRoutesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(strings.providerDesktopRoutesSectionTitle)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color.primary)
+
+            VStack(spacing: 8) {
+                ForEach(ClaudeDesktopSettingsStore.defaultRoutes.indices, id: \.self) { index in
+                    desktopRouteRow(index)
+                }
+            }
+
+            Text(strings.providerDesktopRoutesHint)
+                .font(.system(size: 12))
+                .foregroundStyle(Color(red: 0x8E / 255.0, green: 0x8E / 255.0, blue: 0x93 / 255.0))
+                .padding(.top, 2)
+        }
+    }
+
+    private func desktopRouteRow(_ index: Int) -> some View {
+        let slot = ClaudeDesktopSettingsStore.defaultRoutes[index]
+        return HStack(spacing: 8) {
+            Text(slot)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(Color(red: 0x6E / 255.0, green: 0x6E / 255.0, blue: 0x73 / 255.0))
+                .frame(width: 118, alignment: .leading)
+                .help(slot)
+
+            TextField(strings.providerDesktopRouteModelPlaceholder, text: desktopRouteModelBinding(index))
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .padding(.horizontal, 10)
+                .frame(width: 150, height: 32)
+                .background(mappingInputBackground)
+                .overlay(mappingInputBorder)
+
+            TextField(strings.providerDesktopRouteLabelPlaceholder, text: desktopRouteLabelBinding(index))
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .padding(.horizontal, 10)
+                .frame(height: 32)
+                .background(mappingInputBackground)
+                .overlay(mappingInputBorder)
+
+            Toggle(
+                strings.providerDesktopRouteOneMLabel,
+                isOn: Binding(
+                    get: { index < desktopRouteOneM.count ? desktopRouteOneM[index] : false },
+                    set: { enabled in
+                        if index < desktopRouteOneM.count {
+                            desktopRouteOneM[index] = enabled
+                        }
+                    }
+                )
+            )
+            .toggleStyle(.checkbox)
+            .font(.system(size: 12))
+            .fixedSize()
+        }
+    }
+
+    /// 保存用映射表：全档空 → nil（直连卡）；未配档继承首个已配档的模型名（SPEC 功能 E），
+    /// 显示名与 1M 开关仍取该档自己的值（继承只补模型名）。
+    private func desktopRoutesForSave() -> [String: DesktopModelRoute]? {
+        let models = desktopRouteModels.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let labels = desktopRouteLabels.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard let fallback = models.first(where: { !$0.isEmpty }) else { return nil }
+        var routes: [String: DesktopModelRoute] = [:]
+        for (index, slot) in ClaudeDesktopSettingsStore.defaultRoutes.enumerated() {
+            let model = (index < models.count ? models[index] : "").isEmpty ? fallback : models[index]
+            let label = index < labels.count ? labels[index] : ""
+            let oneM = index < desktopRouteOneM.count ? desktopRouteOneM[index] : false
+            routes[slot] = DesktopModelRoute(
+                model: model,
+                labelOverride: label.isEmpty ? nil : label,
+                supports1M: oneM
+            )
+        }
+        return routes
+    }
+
+    private func desktopRouteModelBinding(_ index: Int) -> Binding<String> {
+        Binding(
+            get: { index < desktopRouteModels.count ? desktopRouteModels[index] : "" },
+            set: { newValue in
+                if index < desktopRouteModels.count {
+                    desktopRouteModels[index] = newValue
+                }
+            }
+        )
+    }
+
+    private func desktopRouteLabelBinding(_ index: Int) -> Binding<String> {
+        Binding(
+            get: { index < desktopRouteLabels.count ? desktopRouteLabels[index] : "" },
+            set: { newValue in
+                if index < desktopRouteLabels.count {
+                    desktopRouteLabels[index] = newValue
+                }
+            }
+        )
+    }
 
     private var modelMappingSection: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -926,6 +1036,10 @@ struct ProfileEditorView: View {
     }
 
     private func loadInitialValues() {
+        // Desktop 四档编辑态：无论新增/编辑都先备好四行（新增空行，编辑按 profile 回显）。
+        desktopRouteModels = Array(repeating: "", count: ClaudeDesktopSettingsStore.defaultRoutes.count)
+        desktopRouteLabels = Array(repeating: "", count: ClaudeDesktopSettingsStore.defaultRoutes.count)
+        desktopRouteOneM = Array(repeating: false, count: ClaudeDesktopSettingsStore.defaultRoutes.count)
         guard let profile else {
             // 新增：默认选第一家可用 preset 带入（GLM），可手动切换
             if let first = ProviderPresetCatalog.builtins.first {
@@ -960,6 +1074,11 @@ struct ProfileEditorView: View {
         haiku = profile.modelMapping?.haiku ?? ""
         haikuName = profile.modelMapping?.haikuName ?? ""
         subagent = profile.modelMapping?.subagent ?? ""
+        // Desktop 四档映射回显：未配档空串（保存时按「未配档继承首个已配档」补全）。
+        let routes = profile.desktopModelRoutes ?? [:]
+        desktopRouteModels = ClaudeDesktopSettingsStore.defaultRoutes.map { routes[$0]?.model ?? "" }
+        desktopRouteLabels = ClaudeDesktopSettingsStore.defaultRoutes.map { routes[$0]?.labelOverride ?? "" }
+        desktopRouteOneM = ClaudeDesktopSettingsStore.defaultRoutes.map { routes[$0]?.supports1M ?? false }
         extraEnv = profile.extraEnv
         // 已存发布源原样回显；未配置（nil = 没动过）保持 nil，由 stackRowsBinding 按表单
         // 当前映射实时推导（SPEC §4；对齐 cc-switch `claudeStackRows ?? mappedClaudeStackRows`）。
@@ -1383,9 +1502,8 @@ struct ProfileEditorView: View {
             modelReasoningLevels: codexModelReasoningLevels,
             modelDefaultReasoningLevels: codexModelDefaultReasoningLevels,
             extraEnv: extraEnv,
-            // Desktop：C3 无映射编辑区块（直连卡不需要；聚合映射区块在 C5 接入），
-            // 保存保留既有原值——对齐 stackModels 直连模式「不携带字段 → 原样保留」。
-            desktopModelRoutes: tool == .claudeDesktop ? self.profile?.desktopModelRoutes : nil,
+            // Desktop：四档映射由表单构造（全空 → nil = 直连卡；未配档继承首个已配档）。
+            desktopModelRoutes: tool == .claudeDesktop ? desktopRoutesForSave() : nil,
             // 收编外部文件时保留原来源标记；本 App 新建一律打 omniforge
             managedBy: self.profile?.managedBy ?? ProviderProfile.managedByMarker
         )

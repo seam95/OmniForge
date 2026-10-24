@@ -957,4 +957,153 @@ private final class StubCodexWriter: AggregationCodexConfigWriting {
     private static func digest(of published: [AggregationPublishedModel]) -> String {
         published.map(\.id).joined(separator: "|")
     }
+
+}
+
+// MARK: - Claude Desktop 聚合
+
+extension ProviderAggregationManagerTests {
+    private final class StubDesktopStore: ClaudeDesktopSettingsStoring {
+        var lastApplyProfile: ProviderProfile?
+        var lastApplyAggregation: (baseURL: String, token: String, models: [Any], discovery: Bool?)?
+        var restoreOfficialCount = 0
+
+        func applyProfile(_ profile: ProviderProfile, inferenceModels: [Any]?, modelDiscoveryEnabled: Bool?) throws {
+            lastApplyProfile = profile
+        }
+
+        func applyAggregation(gatewayBaseURL: String, gatewayToken: String, inferenceModels: [Any], modelDiscoveryEnabled: Bool?) throws {
+            lastApplyAggregation = (gatewayBaseURL, gatewayToken, inferenceModels, modelDiscoveryEnabled)
+        }
+
+        func restoreOfficial() throws {
+            restoreOfficialCount += 1
+        }
+
+        func readState() throws -> ClaudeDesktopState {
+            ClaudeDesktopState(deploymentMode: "1p", appliedId: nil, inferenceGatewayBaseUrl: nil, inferenceGatewayApiKey: nil, isOurProfileApplied: false)
+        }
+
+        func replayPendingIfPresent() throws -> Bool { false }
+    }
+
+    private func makeDesktopManager(
+        desktopStore: StubDesktopStore,
+        profiles: [ProviderProfile]
+    ) -> ProviderAggregationManager {
+        ProviderAggregationManager(
+            profileStore: profileStore,
+            backupStore: backupStore,
+            stackStore: AggregationStackStore(stackURL: tmpDir.appendingPathComponent("stack-\(UUID().uuidString).json")),
+            pendingStore: AggregationPendingStore(pendingURL: tmpDir.appendingPathComponent("pending-\(UUID().uuidString).json")),
+            loginStashStore: loginStash,
+            staleDetector: staleDetector,
+            proxy: proxy,
+            claudeWriter: claudeWriter,
+            codexWriter: codexWriter,
+            desktopWriter: nil,
+            desktopStore: desktopStore,
+            profiles: profiles
+        )
+    }
+
+    private func makeDesktopProfile(
+        id: String,
+        routes: [String: DesktopModelRoute]?
+    ) -> ProviderProfile {
+        ProviderProfile(
+            id: id, name: id, tool: .claudeDesktop,
+            baseURL: "https://\(id).example/api/anthropic", token: "sk-\(id)",
+            desktopModelRoutes: routes
+        )
+    }
+
+    private var fourSlotRoutes: [String: DesktopModelRoute] {
+        [
+            "claude-sonnet-5": DesktopModelRoute(model: "glm-5.3", labelOverride: nil, supports1M: false),
+            "claude-opus-5": DesktopModelRoute(model: "glm-5.3", labelOverride: nil, supports1M: false),
+        ]
+    }
+
+    /// 成员准入：无映射卡不进 joinable、addMember 拒绝并报错。
+    func test_desktop_memberRequiresRoutes() throws {
+        let mapping = makeDesktopProfile(id: "glm", routes: fourSlotRoutes)
+        let direct = makeDesktopProfile(id: "relay", routes: nil)
+        let store = StubDesktopStore()
+        let manager = makeDesktopManager(desktopStore: store, profiles: [mapping, direct])
+
+        XCTAssertEqual(manager.joinableProfileIDs(tool: .claudeDesktop), ["glm"], "无映射的直连卡不可加入")
+        XCTAssertThrowsError(try manager.addMember("relay", tool: .claudeDesktop)) { error in
+            XCTAssertEqual(error as? AggregationManagerError, .desktopRoutesRequired(id: "relay"))
+        }
+    }
+
+    /// 进入聚合 + 成员发布去重（同家多档同 upstream 只发一条）。
+    func test_desktop_enterAggregationPublishesDedupedModels() throws {
+        let mapping = makeDesktopProfile(id: "glm", routes: fourSlotRoutes)
+        let member = makeDesktopProfile(id: "kimi", routes: [
+            "claude-sonnet-5": DesktopModelRoute(model: "k3", labelOverride: nil, supports1M: false),
+            "claude-opus-5": DesktopModelRoute(model: "k3", labelOverride: nil, supports1M: false),
+            "claude-haiku-4-5": DesktopModelRoute(model: "k3-flash", labelOverride: nil, supports1M: true),
+        ])
+        let store = StubDesktopStore()
+        let manager = makeDesktopManager(desktopStore: store, profiles: [mapping, member])
+
+        try manager.enterAggregation(tool: .claudeDesktop, defaultProfileID: "glm")
+        try manager.addMember("kimi", tool: .claudeDesktop)
+
+        let published = manager.publishedModels(tool: .claudeDesktop)
+        // glm 的 sonnet/opus 都指 glm-5.3 → 去重后 1 条；kimi 的 k3 两档 → 1 条 + k3-flash 1 条。
+        XCTAssertEqual(published.count, 3)
+        let upstreams = Set(published.map(\.upstream))
+        XCTAssertEqual(upstreams, ["glm-5.3", "k3", "k3-flash"])
+        // 发布 id 为 Desktop 聚合编码形态。
+        XCTAssertTrue(published.allSatisfy { $0.id.hasPrefix(AggregationModelID.desktopPrefix) })
+        // 1M 合并：kimi haiku 档 supports1M → k3-flash 条目 oneM。
+        XCTAssertTrue(published.first(where: { $0.upstream == "k3-flash" })?.oneM ?? false)
+        // label 形态：供应商 / 模型名。
+        XCTAssertTrue(published.contains { $0.label == "kimi / k3" })
+    }
+
+    /// 每工具独立：Desktop 进入聚合不影响 Claude Code 的直连状态。
+    func test_desktop_aggregationIsPerTool() throws {
+        let mapping = makeDesktopProfile(id: "glm", routes: fourSlotRoutes)
+        let store = StubDesktopStore()
+        let manager = makeDesktopManager(desktopStore: store, profiles: profileStore.stubProfiles + [mapping])
+
+        try manager.enterAggregation(tool: .claudeDesktop, defaultProfileID: "glm")
+        XCTAssertEqual(manager.mode(tool: .claudeDesktop), .aggregation)
+        XCTAssertEqual(manager.mode(tool: .claudeCode), .direct, "Desktop 聚合不影响其它工具")
+        XCTAssertEqual(manager.mode(tool: .codex), .direct)
+    }
+
+    /// 退出聚合：写默认那家 direct 形态（无 inferenceModels）。
+    func test_desktop_exitAggregationWritesDefaultDirectProfile() throws {
+        let mapping = makeDesktopProfile(id: "glm", routes: fourSlotRoutes)
+        let store = StubDesktopStore()
+        let manager = makeDesktopManager(desktopStore: store, profiles: [mapping])
+
+        try manager.enterAggregation(tool: .claudeDesktop, defaultProfileID: "glm")
+        try manager.exitAggregation(tool: .claudeDesktop)
+
+        XCTAssertEqual(manager.mode(tool: .claudeDesktop), .direct)
+        XCTAssertEqual(store.lastApplyProfile?.id, "glm", "退出写默认那家 direct 形态")
+        XCTAssertEqual(store.restoreOfficialCount, 0)
+    }
+
+    /// 默认那家被删后退出 → restoreOfficial 兜底。
+    func test_desktop_exitAggregationFallsBackToOfficialWhenDefaultGone() throws {
+        let mapping = makeDesktopProfile(id: "glm", routes: fourSlotRoutes)
+        let store = StubDesktopStore()
+        var profiles: [ProviderProfile] = profileStore.stubProfiles
+        profiles.append(mapping)
+        let manager = makeDesktopManager(desktopStore: store, profiles: profiles)
+
+        try manager.enterAggregation(tool: .claudeDesktop, defaultProfileID: "glm")
+        // 删掉默认那家再刷新：名单摘除已删卡 → 退出时无默认可写。
+        profileStore.stubProfiles = profiles.filter { $0.id != "glm" }
+        manager.refresh()
+        try manager.exitAggregation(tool: .claudeDesktop)
+        XCTAssertGreaterThanOrEqual(store.restoreOfficialCount, 1, "无默认那家 → 恢复官方兜底")
+    }
 }

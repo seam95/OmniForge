@@ -46,14 +46,24 @@ struct AggregationPanelView: View {
         VStack(alignment: .leading, spacing: ProviderCardVisual.cardSpacing) {
             if manager.isAggregating(tool) {
                 proxyDownBanner
-                staleBanner
+                // staleBanner 与官方入口卡是 Codex / OAuth 官方形态的专属件：
+                // Desktop 的 isOfficial 恒 false（无官方卡可入），无守护进程概念。
+                if tool != .claudeDesktop {
+                    staleBanner
+                }
+                if tool == .claudeDesktop {
+                    desktopRestartBanner
+                }
 
                 // 聚合成员列表（默认排在首位，带高亮描边与「默认」徽章）
                 membersList
 
                 // 官方入口卡：官方不在名单时显示——官方进聚合只有默认位一条路，
                 // 没有这个入口就再也切不回官方默认（候选区显式排除官方）。
-                officialEntryCard
+                // Desktop 官方不合成、不可入聚合（SPEC 功能 E：不显示官方入口卡）。
+                if tool != .claudeDesktop {
+                    officialEntryCard
+                }
 
                 // 可加入候选列表（若存在候选者）
                 if !joinCandidates.isEmpty {
@@ -661,6 +671,16 @@ struct AggregationPanelView: View {
                 .font(.system(size: 11, weight: .medium))
             }
         }
+    }
+
+    /// Desktop 聚合提示：切换/投影变更后需重启 Claude Desktop；聚合需 OmniForge 保持运行。
+    private var desktopRestartBanner: some View {
+        PanelTintBanner(
+            icon: "arrow.clockwise.circle.fill",
+            tint: .orange,
+            title: strings.providerDesktopAggregationRestartTitle,
+            message: strings.providerDesktopAggregationRestartMessage
+        )
     }
 
     /// Codex 陈旧客户端横幅：目录陈旧 / 登录变了 / 进程表不可得三态标题 + 重启守护进程 +
