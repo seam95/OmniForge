@@ -103,7 +103,9 @@ final class AggregationClaudeDesktopConfigWriterTests: XCTestCase {
             XCTAssertEqual(models[index] as? String, expected, "直连卡默认写四档 identity 纯字符串")
         }
         let profile = try readProfile()
-        XCTAssertNil(profile["modelDiscoveryEnabled"], "无成员时不写该键")
+        // 聚合模式恒关自动发现（SPEC 机制事实）：模型菜单完全由 profile 决定，
+        // 无成员（单默认聚合）同样要关，否则 Desktop 会与自动发现结果合并。
+        XCTAssertEqual(profile["modelDiscoveryEnabled"] as? Bool, false)
     }
 
     func test_memberPublishedEntries_getLabelOverrideAnd1M() throws {

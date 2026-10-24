@@ -309,6 +309,30 @@ final class ProviderSwitchManager: ObservableObject, ProviderActivationRefreshin
         refresh()
     }
 
+    // MARK: - Desktop 诊断（SPEC 关键设计决策 8：不设版本门槛，只做状态提示）
+
+    /// Claude Desktop 安装信息（版本号来自 `CFBundleShortVersionString`）。
+    func desktopInstallation() -> ClaudeDesktopInstallation {
+        ClaudeDesktopInstallationReader.read()
+    }
+
+    /// Desktop 配置生效诊断：读到 4 文件状态后按「是否生效 / 是否需要升级」判定。
+    /// `expectedBaseURL` 由调用方给（直连卡 baseURL 或聚合投影地址）；nil = 不校验地址
+    /// （聚合中投影地址随端口变化，磁盘值即真值），只按 appliedId 是否是我们判定。
+    func desktopSetupDiagnosis(expectedBaseURL: String?) -> ClaudeDesktopSetupDiagnosis? {
+        guard let desktopStore, let state = try? desktopStore.readState() else { return nil }
+        let installation = desktopInstallation()
+        guard let expectedBaseURL else {
+            guard installation.isInstalled else { return .notInstalled }
+            return state.isOurProfileApplied ? .active : .notApplied
+        }
+        return ClaudeDesktopSetupDiagnoser.diagnose(
+            state: state,
+            expectedBaseURL: expectedBaseURL,
+            installation: installation
+        )
+    }
+
     // MARK: - private
 
     /// 快照失败直接抛（不进入写入）。

@@ -233,7 +233,6 @@ final class ClaudeDesktopSettingsStore: ClaudeDesktopSettingsStoring {
 
         var meta = try readMetaForUpdate()
         if var entries = meta["entries"] as? [Any] {
-            let before = entries.count
             entries.removeAll { ($0 as? [String: Any])?["id"] as? String == Self.profileID }
             meta["entries"] = entries
             if let applied = meta["appliedId"] as? String, applied == Self.profileID {
@@ -244,7 +243,6 @@ final class ClaudeDesktopSettingsStore: ClaudeDesktopSettingsStoring {
                     meta.removeValue(forKey: "appliedId")
                 }
             }
-            _ = before
         }
 
         try commitTransaction(

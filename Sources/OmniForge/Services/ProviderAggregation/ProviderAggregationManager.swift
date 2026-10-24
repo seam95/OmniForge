@@ -1020,8 +1020,8 @@ final class ProviderAggregationManager: ObservableObject {
                 fileManager: fileManager
             )
         case .claudeDesktop:
-            // Desktop 的退出恢复不走文本键级合并：主路径 = 写默认那家直连 profile
-            // （SPEC 功能 D；merger.desktop 的键级合并留作 bundle 手动恢复的消费口）。
+            // Desktop 的退出恢复不走文本键级合并：主路径 = 按 bundle 快照恢复
+            // 进入聚合前的文件状态（SPEC 决策 3）；无快照才写默认那家直连。
             try restoreDesktopDirect()
         }
     }

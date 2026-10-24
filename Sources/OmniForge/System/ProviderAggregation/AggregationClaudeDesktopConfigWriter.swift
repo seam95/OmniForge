@@ -134,7 +134,10 @@ final class AggregationClaudeDesktopConfigWriter: AggregationClaudeDesktopConfig
             gatewayBaseURL: Self.projectedBaseURL(port: port),
             gatewayToken: gatewayToken,
             inferenceModels: Self.inferenceModels(defaultProfile: defaultProfile, memberPublished: memberPublished),
-            modelDiscoveryEnabled: memberPublished.isEmpty ? nil : false
+            // 聚合模式恒关自动发现（SPEC 机制事实）：模型菜单完全由 profile 的
+            // inferenceModels 决定。只对有成员时关会让单默认聚合仍自动发现，
+            // 与投影列表合并出计划外条目（cc-switch `route_profile` 同口径）。
+            modelDiscoveryEnabled: false
         )
     }
 
@@ -148,15 +151,12 @@ final class AggregationClaudeDesktopConfigWriter: AggregationClaudeDesktopConfig
         port: UInt16,
         gatewayToken: String
     ) -> String {
-        var projected: [String: Any] = [
+        Self.digest(of: [
             "inferenceGatewayBaseUrl": Self.projectedBaseURL(port: port),
             "inferenceGatewayApiKey": gatewayToken,
             "inferenceModels": Self.inferenceModels(defaultProfile: defaultProfile, memberPublished: memberPublished),
-        ]
-        if !memberPublished.isEmpty {
-            projected["modelDiscoveryEnabled"] = false
-        }
-        return Self.digest(of: projected)
+            "modelDiscoveryEnabled": false,
+        ])
     }
 
     /// 摘要 = 网关三键（baseURL/token/models）+ 可选 discovery 键的规范序列化 SHA-256。

@@ -1334,6 +1334,15 @@ struct Strings: Equatable {
     let providerAggregationExitedClaudeDesktop: String
     /// 直连模式选映射卡的拦截提示。
     let providerDesktopMappingCardNeedsAggregation: String
+    /// Desktop 未安装标题/正文。
+    let providerDesktopNotInstalledTitle: String
+    let providerDesktopNotInstalledCaption: String
+    /// Desktop 版本可能不支持 3P 的标题与正文（正文含版本号）。
+    let providerDesktopUnsupportedTitle: String
+    let providerDesktopUnsupportedFormat: String
+    /// Desktop 配置已写入但未生效。
+    let providerDesktopNotAppliedTitle: String
+    let providerDesktopNotAppliedCaption: String
     /// 「切换到官方」按钮。
     let providerSwitchBackToOfficial: String
     /// 激活项标注（%@ = profile 名）。

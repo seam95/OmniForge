@@ -86,20 +86,4 @@ enum AggregationRestoreMerger {
         }
         return merged
     }
-
-    /// Claude Desktop 3P profile：只把聚合写过的 6 个网关字段按备份恢复
-    /// （缺失则删除），保留用户在 Desktop 内改的其它键（下次切回仍在）。
-    /// `_meta.json` 的条目摘除与两个 config 的 `deploymentMode` 不在此层——
-    /// 由 settings store 的 `restoreOfficial` / 直连写入处理（SPEC C5-2）。
-    static func desktop(current: [String: Any], backup: [String: Any]) -> [String: Any] {
-        var merged = current
-        for key in ClaudeDesktopSettingsStore.profileGatewayKeys {
-            if let value = backup[key] {
-                merged[key] = value
-            } else {
-                merged.removeValue(forKey: key)
-            }
-        }
-        return merged
-    }
 }

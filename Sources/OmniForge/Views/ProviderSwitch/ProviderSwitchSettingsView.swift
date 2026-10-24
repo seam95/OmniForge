@@ -125,6 +125,7 @@ struct ProviderSwitchSettingsView: View {
 
                             unmanagedBanner(for: tool)
                             corruptedBanner(for: tool)
+                            desktopDiagnosisBanner(for: tool)
                         }
                         .transition(.opacity)
                     }
@@ -621,6 +622,67 @@ struct ProviderSwitchSettingsView: View {
                 confirmingRebuildTool = tool
                 rebuildPromptPresented = true
             }
+        }
+    }
+
+    /// Desktop 状态诊断（SPEC 关键设计决策 8：不设版本门槛，只给状态提示）。
+    /// 未安装 / 未生效 → 橙色提示并带 Claude 版本号，便于判断是否该升级。
+    @ViewBuilder
+    private func desktopDiagnosisBanner(for tool: ProviderTool) -> some View {
+        if tool == .claudeDesktop, shouldShowDesktopDiagnosis(tool: tool) {
+            let installation = manager.desktopInstallation()
+            switch manager.desktopSetupDiagnosis(expectedBaseURL: activeDesktopExpectedBaseURL(tool: tool)) {
+            case .notInstalled:
+                PanelTintBanner(
+                    icon: "questionmark.app.dashed",
+                    tint: .orange,
+                    title: strings.providerDesktopNotInstalledTitle,
+                    message: strings.providerDesktopNotInstalledCaption
+                )
+            case .possiblyUnsupported(let version):
+                PanelTintBanner(
+                    icon: "arrow.up.circle.fill",
+                    tint: .orange,
+                    title: strings.providerDesktopUnsupportedTitle,
+                    message: String(
+                        format: strings.providerDesktopUnsupportedFormat,
+                        version ?? installation.displayVersion ?? "-"
+                    )
+                )
+            case .notApplied:
+                PanelTintBanner(
+                    icon: "exclamationmark.triangle.fill",
+                    tint: .orange,
+                    title: strings.providerDesktopNotAppliedTitle,
+                    message: strings.providerDesktopNotAppliedCaption
+                )
+            case .active, .none:
+                EmptyView()
+            }
+        }
+    }
+
+    /// 诊断是否适用：仅在「应处于我们的配置」（已激活卡 / 聚合中）或 Desktop 未安装时提示。
+    /// official / unreadable / unmanaged 下没有可比对的期望值，提示会变成误报。
+    private func shouldShowDesktopDiagnosis(tool: ProviderTool) -> Bool {
+        if !manager.desktopInstallation().isInstalled { return true }
+        if aggregation?.isAggregating(tool) == true { return true }
+        if case .profile = manager.active(tool: tool) { return true }
+        return false
+    }
+
+    /// 诊断期望的网关地址：激活卡 → 卡 baseURL；聚合中 → 本机代理投影地址。
+    private func activeDesktopExpectedBaseURL(tool: ProviderTool) -> String? {
+        guard tool == .claudeDesktop else { return nil }
+        if aggregation?.isAggregating(tool) == true {
+            // 聚合投影地址由端口决定；实际值以文件为准（传 nil → 用读到的值比对）。
+            return nil
+        }
+        switch manager.active(tool: tool) {
+        case .profile(let id):
+            return manager.profiles(for: tool).first(where: { $0.id == id })?.baseURL
+        case .official, .unmanaged, .unreadable, .aggregating:
+            return nil
         }
     }
 
