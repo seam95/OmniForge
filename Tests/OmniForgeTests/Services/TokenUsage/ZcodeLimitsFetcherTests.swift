@@ -355,4 +355,233 @@ final class ZcodeLimitsFetcherTests: XCTestCase {
         XCTAssertNil(ZcodeLimitsParsing.planTier(from: "unknown-plan"))
         XCTAssertNil(ZcodeLimitsParsing.planTier(from: nil))
     }
+
+    // MARK: - 当前布局：providerFamilyConnectionSelections
+
+    func test_connectionSelectedKeys_mapsPlanKinds() {
+        let setting: [String: Any] = [
+            "providerFamilyConnectionSelections": ["bigmodel": ["kind": "individual-coding-plan"]],
+        ]
+        XCTAssertEqual(
+            ZcodeLimitsParsing.connectionSelectedKeys(fromSetting: setting),
+            ["builtin:bigmodel-coding-plan"]
+        )
+
+        let startPlan: [String: Any] = [
+            "providerFamilyConnectionSelections": ["zai": ["kind": "start-plan"]],
+        ]
+        XCTAssertEqual(
+            ZcodeLimitsParsing.connectionSelectedKeys(fromSetting: startPlan),
+            ["builtin:zai-start-plan"]
+        )
+    }
+
+    func test_connectionSelectedKeys_skipsTeamAndUnknownFamilies() {
+        let setting: [String: Any] = [
+            "providerFamilyConnectionSelections": [
+                "bigmodel": ["kind": "team-coding-plan"],
+                "zai": ["kind": "unknown-kind"],
+                "other": ["kind": "start-plan"],
+            ],
+        ]
+        XCTAssertEqual(
+            ZcodeLimitsParsing.connectionSelectedKeys(fromSetting: setting),
+            [],
+            "团队套餐与未知域本期不取数"
+        )
+        XCTAssertEqual(ZcodeLimitsParsing.connectionSelectedKeys(fromSetting: [:]), [])
+    }
+
+    // MARK: - project key 解析
+
+    private func projectKeyName(origin: String, family: String, team: Bool) -> String {
+        let teamValue = team ? #"{"organizationId":"o","projectId":"p"}"# : "null"
+        let json = #"["\#(origin)","\#(family)","36211748339318777",\#(teamValue),1,"non-team"]"#
+        let encoded = json.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? json
+        return ZcodeLimitsParsing.projectKeyLocationPrefix + encoded
+    }
+
+    func test_projectKeyLocation_parsesOriginAndFamily() {
+        let key = projectKeyName(origin: "https://bigmodel.cn", family: "bigmodel", team: false)
+        let location = ZcodeLimitsParsing.projectKeyLocation(fromKey: key)
+        XCTAssertEqual(location?.origin, "https://bigmodel.cn")
+        XCTAssertEqual(location?.family, "bigmodel")
+        XCTAssertEqual(location?.team, false)
+    }
+
+    func test_projectKeyLocation_marksTeamPlan() {
+        let key = projectKeyName(origin: "https://api.z.ai", family: "zai", team: true)
+        let location = ZcodeLimitsParsing.projectKeyLocation(fromKey: key)
+        XCTAssertEqual(location?.family, "zai")
+        XCTAssertEqual(location?.team, true, "team 段非 null → 团队套餐")
+    }
+
+    func test_projectKeyLocation_rejectsMalformed() {
+        XCTAssertNil(ZcodeLimitsParsing.projectKeyLocation(fromKey: "oauth:active_provider"))
+        XCTAssertNil(ZcodeLimitsParsing.projectKeyLocation(
+            fromKey: ZcodeLimitsParsing.projectKeyLocationPrefix + "not-json"
+        ))
+        let other = projectKeyName(origin: "https://example.com", family: "other", team: false)
+        XCTAssertNil(ZcodeLimitsParsing.projectKeyLocation(fromKey: other), "未知域被拒绝")
+    }
+
+    func test_projectKeyMaterial_requiresAllFields() {
+        XCTAssertNotNil(ZcodeLimitsParsing.projectKeyMaterial(fromValue: [
+            "organizationId": "org-1", "projectId": "proj-1", "apiKeyId": "key-1",
+        ]))
+        XCTAssertNil(ZcodeLimitsParsing.projectKeyMaterial(fromValue: [
+            "organizationId": "org-1", "projectId": "proj-1",
+        ]), "缺 apiKeyId → nil")
+        XCTAssertNil(ZcodeLimitsParsing.projectKeyMaterial(fromValue: [
+            "organizationId": "org-1", "projectId": "proj-1", "apiKeyId": "  ",
+        ]), "空白 apiKeyId 视为缺失")
+    }
+
+    func test_projectAccessTokenURL_buildsOrgProjectPath() {
+        let location = ZcodeProjectKeyLocation(
+            origin: "https://bigmodel.cn", family: "bigmodel", team: false
+        )
+        let material = ZcodeProjectKeyMaterial(
+            organizationId: "org-1", projectId: "proj-1", apiKeyId: "key-1"
+        )
+        XCTAssertEqual(
+            ZcodeLimitsParsing.projectAccessTokenURL(
+                location: location, material: material
+            )?.absoluteString,
+            "https://bigmodel.cn/api/biz/v1/organization/org-1/projects/proj-1/api_keys/key-1/access_tokens"
+        )
+        XCTAssertEqual(
+            ZcodeLimitsParsing.projectQuotaURL(origin: "https://bigmodel.cn")?.absoluteString,
+            "https://bigmodel.cn/api/monitor/usage/quota/limit"
+        )
+    }
+
+    func test_projectKeyCandidates_requiresSelectedKeyAndAccessToken() {
+        let key = projectKeyName(origin: "https://bigmodel.cn", family: "bigmodel", team: false)
+        let value = #"{"organizationId":"org-1","projectId":"proj-1","apiKeyId":"key-1"}"#
+        let candidates = ZcodeLimitsParsing.projectKeyCandidates(
+            entries: [(key: key, value: value)],
+            selectedKeys: ["builtin:bigmodel-coding-plan"],
+            accessTokens: ["bigmodel": "access-1"]
+        )
+        XCTAssertEqual(candidates.count, 1)
+        XCTAssertEqual(candidates.first?.kind, .codingPlan)
+        XCTAssertEqual(candidates.first?.loginToken, "access-1")
+        XCTAssertEqual(
+            candidates.first?.quotaURL?.absoluteString,
+            "https://bigmodel.cn/api/monitor/usage/quota/limit"
+        )
+        XCTAssertTrue(
+            ZcodeLimitsParsing.projectKeyCandidates(
+                entries: [(key: key, value: value)],
+                selectedKeys: ["builtin:bigmodel-coding-plan"],
+                accessTokens: [:]
+            ).isEmpty,
+            "缺 OAuth access token → 无候选"
+        )
+    }
+
+    func test_projectKeyCandidates_skipsTeamPlanEntries() {
+        let key = projectKeyName(origin: "https://bigmodel.cn", family: "bigmodel", team: true)
+        let value = #"{"organizationId":"org-1","projectId":"proj-1","apiKeyId":"key-1"}"#
+        XCTAssertTrue(
+            ZcodeLimitsParsing.projectKeyCandidates(
+                entries: [(key: key, value: value)],
+                selectedKeys: [],
+                accessTokens: ["bigmodel": "access-1"]
+            ).isEmpty,
+            "团队套餐本期不取数"
+        )
+    }
+
+    // MARK: - project token 链路（当前布局）
+
+    /// 写当前布局：connectionSelections 选中 coding-plan + project key + OAuth token。
+    private func writeProjectKeyLayout(
+        origin: String = "https://bigmodel.cn",
+        family: String = "bigmodel"
+    ) throws {
+        try writeJSON(
+            #"{"providerFamilyConnectionSelections":{"\#(family)":{"kind":"individual-coding-plan"}}}"#,
+            relativePath: "v2/setting.json"
+        )
+        let rawJSON = #"["\#(origin)","\#(family)","36211748339318777",null,1,"non-team"]"#
+        let encoded = rawJSON.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? rawJSON
+        let keyName = ZcodeLimitsParsing.projectKeyLocationPrefix + encoded
+        let valueJSON = #"{\"organizationId\":\"org-1\",\"projectId\":\"proj-1\",\"apiKeyId\":\"key-1\"}"#
+        try writeCredentials(
+            #"{"oauth:active_provider":"\#(family)","oauth:\#(family):access_token":"access-plain","\#(keyName)":"\#(valueJSON)"}"#
+        )
+    }
+
+    private func projectTokenJSON(_ token: String = "project-token-1") -> Data {
+        Data(#"{"code":200,"data":{"accessToken":"\#(token)","expiresIn":2200}}"#.utf8)
+    }
+
+    func test_codingPlan_issuesProjectTokenThenFetchesQuota() async throws {
+        try writeProjectKeyLayout()
+        URLProtocolStub.handler = { request in
+            let path = request.url?.path ?? ""
+            if path.hasSuffix("/access_tokens") {
+                return .init(statusCode: 200, data: self.projectTokenJSON())
+            }
+            return .init(statusCode: 200, data: self.quotaJSON())
+        }
+        let result = try await fetcher.fetchLimits(force: false)
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.windows[.session]?.usedPercent, 2, "project token → quota 命名窗口")
+        XCTAssertEqual(URLProtocolStub.recordedRequests.count, 2, "先签发 token 再取 quota")
+
+        let issue = URLProtocolStub.recordedRequests.first
+        XCTAssertEqual(issue?.httpMethod, "POST")
+        XCTAssertEqual(
+            issue?.value(forHTTPHeaderField: "Authorization"),
+            "Bearer access-plain",
+            "签发用 OAuth access token"
+        )
+        XCTAssertTrue(issue?.url?.path.hasSuffix("/api_keys/key-1/access_tokens") == true)
+
+        let quota = URLProtocolStub.recordedRequests.last
+        XCTAssertEqual(
+            quota?.value(forHTTPHeaderField: "Authorization"),
+            "project-token-1",
+            "quota 头直接放 project token，无 Bearer"
+        )
+    }
+
+    func test_codingPlan_reusesProjectTokenWithinCache() async throws {
+        try writeProjectKeyLayout()
+        URLProtocolStub.handler = { request in
+            let path = request.url?.path ?? ""
+            if path.hasSuffix("/access_tokens") {
+                return .init(statusCode: 200, data: self.projectTokenJSON())
+            }
+            return .init(statusCode: 200, data: self.quotaJSON())
+        }
+        _ = try await fetcher.fetchLimits(force: true)
+        _ = try await fetcher.fetchLimits(force: true)
+        let issueCount = URLProtocolStub.recordedRequests
+            .filter { $0.url?.path.hasSuffix("/access_tokens") == true }
+            .count
+        XCTAssertEqual(issueCount, 1, "token 有效期内复用，只签发一次")
+    }
+
+    func test_codingPlan_tokenIssueFailure_throwsNetwork() async throws {
+        try writeProjectKeyLayout()
+        URLProtocolStub.handler = { request in
+            let path = request.url?.path ?? ""
+            if path.hasSuffix("/access_tokens") {
+                return .init(statusCode: 500, data: Data())
+            }
+            return .init(statusCode: 200, data: self.quotaJSON())
+        }
+        do {
+            _ = try await fetcher.fetchLimits(force: false)
+            XCTFail("签发失败应抛错")
+        } catch let error as LimitError {
+            guard case .network = error else {
+                return XCTFail("应为 network，实际 \(error)")
+            }
+        }
+    }
 }

@@ -6,7 +6,9 @@ import Foundation
 /// 单个套餐 provider 的取数候选（由 `~/.zcode/v2` 本地文件推导）。
 struct ZcodePlanAuth: Equatable {
     enum PlanKind: Equatable {
-        /// coding-plan：走 monitor quota 端点，config.json 明文 key 鉴权。
+        /// coding-plan：走 monitor quota 端点。凭据二选一：
+        /// ① project token 链路（当前布局，`projectLocation` + `loginToken`）；
+        /// ② config.json 明文 key（旧布局兼容）。
         case codingPlan
         /// start-plan：走 billing/balance 端点，凭据 JWT（Bearer）。
         case startPlan
@@ -14,11 +16,34 @@ struct ZcodePlanAuth: Equatable {
 
     var providerKey: String
     var kind: PlanKind
-    /// 鉴权 key：coding-plan 为 config.json 的 provider apiKey；start-plan 为
-    /// 凭据 JWT（或 config 同名 provider 的 key 兜底）。
+    /// 鉴权 key：coding-plan 为 project token 或 config.json 明文 key；
+    /// start-plan 为凭据 JWT（或 config 同名 provider 的 key 兜底）。
     var apiKey: String
     /// coding-plan quota 端点；start-plan 恒 nil（billing 端点固定）。
     var quotaURL: URL?
+    /// coding-plan 的 project key 定位（需要换取 project token 时非 nil）。
+    var projectLocation: ZcodeProjectKeyLocation?
+    /// coding-plan 的 project key 三元组（organizationId / projectId / apiKeyId）。
+    var projectMaterial: ZcodeProjectKeyMaterial?
+    /// 换取 project token 用的 OAuth access token（`oauth:{family}:access_token`）。
+    var loginToken: String?
+}
+
+/// `credentials.json` 的 key 名 `project-key-location:v1:<urlencoded JSON>` 解析结果。
+struct ZcodeProjectKeyLocation: Equatable {
+    /// 取数域 origin（如 `https://bigmodel.cn`）。
+    var origin: String
+    /// 域族：`bigmodel` / `zai`。
+    var family: String
+    /// 团队套餐标记；个人套餐为 nil。
+    var team: Bool
+}
+
+/// project key 值（`enc:v1` 解密后）的字段子集。
+struct ZcodeProjectKeyMaterial: Equatable {
+    var organizationId: String
+    var projectId: String
+    var apiKeyId: String
 }
 
 // MARK: - quota 解析结果
@@ -103,6 +128,102 @@ enum ZcodeLimitsParsing {
         return out
     }
 
+    /// 当前布局：`providerFamilyConnectionSelections` 的 `{family: {kind}}` →
+    /// 选中套餐 provider key。
+    ///
+    /// kind 三态映射：`start-plan` → start-plan 候选，`individual-coding-plan` →
+    /// coding-plan 候选，`team-coding-plan` 本期不支持取数（需要组织/项目/产品
+    /// 三元组且成员席位校验复杂），识别后跳过。
+    static func connectionSelectedKeys(fromSetting setting: [String: Any]?) -> [String] {
+        guard let selections = setting?["providerFamilyConnectionSelections"] as? [String: Any]
+        else { return [] }
+        var out: [String] = []
+        for (family, raw) in selections {
+            guard family == "bigmodel" || family == "zai",
+                  let kind = (raw as? [String: Any])?["kind"] as? String
+            else { continue }
+            let key: String?
+            switch kind {
+            case "start-plan":
+                key = "builtin:\(family)-start-plan"
+            case "individual-coding-plan":
+                key = "builtin:\(family)-coding-plan"
+            default:
+                // team-coding-plan 及未知 kind：本期不取数。
+                key = nil
+            }
+            if let key, !out.contains(key) { out.append(key) }
+        }
+        return out.sorted()
+    }
+
+    // MARK: project key（当前布局的 coding-plan 凭据来源）
+
+    /// `credentials.json` 中 `project-key-location` 键名的前缀。
+    static let projectKeyLocationPrefix = "project-key-location:v1:"
+
+    /// 解析 `project-key-location:v1:<urlencoded JSON>` 键名。
+    /// JSON 形状：`[origin, family, accountId, team, scope, projectSelection]`。
+    static func projectKeyLocation(fromKey key: String) -> ZcodeProjectKeyLocation? {
+        guard key.hasPrefix(projectKeyLocationPrefix) else { return nil }
+        let encoded = String(key.dropFirst(projectKeyLocationPrefix.count))
+        guard let decoded = encoded.removingPercentEncoding,
+              let data = decoded.data(using: .utf8),
+              let array = try? JSONSerialization.jsonObject(with: data) as? [Any],
+              array.count >= 2,
+              let origin = array[0] as? String,
+              let family = array[1] as? String,
+              family == "bigmodel" || family == "zai",
+              !origin.isEmpty
+        else { return nil }
+        // 数组第 4 项（索引 3）为 team 描述对象或 null。
+        let team = !(array[3] is NSNull) && array[3] != nil
+        return ZcodeProjectKeyLocation(origin: origin, family: family, team: team)
+    }
+
+    /// 解析 project key 值（`enc:v1` 解密后）→ 三元组；任一字段缺失即 nil。
+    static func projectKeyMaterial(fromValue value: Any?) -> ZcodeProjectKeyMaterial? {
+        guard let object = value as? [String: Any] else { return nil }
+        func field(_ name: String) -> String? {
+            guard let raw = object[name] as? String else { return nil }
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        guard let organizationId = field("organizationId"),
+              let projectId = field("projectId"),
+              let apiKeyId = field("apiKeyId")
+        else { return nil }
+        return ZcodeProjectKeyMaterial(
+            organizationId: organizationId,
+            projectId: projectId,
+            apiKeyId: apiKeyId
+        )
+    }
+
+    /// project token 签发请求的 URL：
+    /// `{origin}/api/biz/v1/organization/{org}/projects/{proj}/api_keys/{keyId}/access_tokens`
+    static func projectAccessTokenURL(location: ZcodeProjectKeyLocation,
+                                      material: ZcodeProjectKeyMaterial) -> URL? {
+        func encode(_ value: String) -> String {
+            var allowed = CharacterSet.alphanumerics
+            allowed.insert(charactersIn: "-._~")
+            return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
+        }
+        let origin = location.origin.hasSuffix("/")
+            ? String(location.origin.dropLast())
+            : location.origin
+        let path = "/api/biz/v1/organization/\(encode(material.organizationId))"
+            + "/projects/\(encode(material.projectId))"
+            + "/api_keys/\(encode(material.apiKeyId))/access_tokens"
+        return URL(string: origin + path)
+    }
+
+    /// coding-plan quota 端点（按 origin 拼 `/api/monitor/usage/quota/limit`）。
+    static func projectQuotaURL(origin: String) -> URL? {
+        let base = origin.hasSuffix("/") ? String(origin.dropLast()) : origin
+        return URL(string: base + "/api/monitor/usage/quota/limit")
+    }
+
     /// coding-plan-cache.json 的 `entryStatus.items` → provider key → status。
     static func planProviderAvailability(fromCache cache: [String: Any]?) -> [String: String] {
         let items = (cache?["entryStatus"] as? [String: Any])?["items"] as? [String: Any] ?? [:]
@@ -171,6 +292,50 @@ enum ZcodeLimitsParsing {
             }
         }
         return out
+    }
+
+    /// 当前布局的 coding-plan 候选：由 `credentials.json` 的 project key 推导。
+    ///
+    /// 每条 `project-key-location:v1:` 条目提供 origin/family，值（解密后）提供
+    /// 组织/项目/密钥三元组；换取 project token 还需同域 OAuth access token。
+    /// 三者齐备才产出候选，缺一即跳过（fail-soft）。
+    ///
+    /// - Parameters:
+    ///   - entries: 键名 → 解密后的值（明文 JSON 字符串）。
+    ///   - selectedKeys: 选中的套餐 provider key（`builtin:{family}-coding-plan`）。
+    ///   - accessToken: 域 → OAuth access token。
+    static func projectKeyCandidates(
+        entries: [(key: String, value: String)],
+        selectedKeys: [String],
+        accessTokens: [String: String]
+    ) -> [ZcodePlanAuth] {
+        var out: [ZcodePlanAuth] = []
+        for entry in entries {
+            guard let location = projectKeyLocation(fromKey: entry.key) else { continue }
+            // 团队套餐需要成员席位，本期不取数。
+            guard !location.team else { continue }
+            let providerKey = "builtin:\(location.family)-coding-plan"
+            guard selectedKeys.isEmpty || selectedKeys.contains(providerKey) else { continue }
+            guard out.allSatisfy({ $0.providerKey != providerKey }) else { continue }
+            let trimmed = entry.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty,
+                  let data = trimmed.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data),
+                  let material = projectKeyMaterial(fromValue: object),
+                  let loginToken = accessTokens[location.family], !loginToken.isEmpty,
+                  let quotaURL = projectQuotaURL(origin: location.origin)
+            else { continue }
+            out.append(ZcodePlanAuth(
+                providerKey: providerKey,
+                kind: .codingPlan,
+                apiKey: "",  // 运行时换取 project token 后填充
+                quotaURL: quotaURL,
+                projectLocation: location,
+                projectMaterial: material,
+                loginToken: loginToken
+            ))
+        }
+        return out.sorted { $0.providerKey < $1.providerKey }
     }
 
     /// 纯凭据兜底候选：active_provider 为 zai/bigmodel 且 JWT 可用时追加
@@ -363,17 +528,29 @@ final class ZcodeLimitsFetcher: LimitsFetching {
         let home = homeURL
 
         // 1. 凭据（start-plan JWT；解密失败仅表示该路径不可用，coding-plan 不依赖）。
-        let credentials = loadCredentials(at: home.appendingPathComponent("v2/credentials.json"))
+        let credentialsURL = home.appendingPathComponent("v2/credentials.json")
+        let credentials = loadCredentials(at: credentialsURL)
+        let setting = readJSONObject(home.appendingPathComponent("v2/setting.json"))
 
-        // 2. 套餐候选 + 纯凭据兜底（去重）。
-        var candidates = ZcodeLimitsParsing.authCandidates(
+        // 2. 选中套餐：新布局（connectionSelections）优先，旧布局（selectedKeys）兼容。
+        let connectionKeys = ZcodeLimitsParsing.connectionSelectedKeys(fromSetting: setting)
+        let legacyKeys = ZcodeLimitsParsing.selectedPlanProviderKeys(fromSetting: setting)
+        let selectedKeys = connectionKeys.isEmpty ? legacyKeys : connectionKeys
+
+        // 3. 当前布局的 coding-plan 候选（project key 链路），优先于旧 config.json 路径。
+        let projectCandidates = ZcodeLimitsParsing.projectKeyCandidates(
+            entries: projectKeyEntries(at: credentialsURL),
+            selectedKeys: selectedKeys,
+            accessTokens: oauthAccessTokens(at: credentialsURL)
+        )
+
+        // 4. 旧布局候选（config.json 明文 key + 凭据 JWT）。
+        var candidates = projectCandidates + ZcodeLimitsParsing.authCandidates(
             config: readJSONObject(home.appendingPathComponent("v2/config.json")),
             availability: ZcodeLimitsParsing.planProviderAvailability(
                 fromCache: readJSONObject(home.appendingPathComponent("v2/coding-plan-cache.json"))
             ),
-            selectedKeys: ZcodeLimitsParsing.selectedPlanProviderKeys(
-                fromSetting: readJSONObject(home.appendingPathComponent("v2/setting.json"))
-            ),
+            selectedKeys: selectedKeys,
             activeProvider: credentials?.activeProvider,
             jwt: credentials?.jwt
         )
@@ -385,7 +562,7 @@ final class ZcodeLimitsFetcher: LimitsFetching {
         }
         guard !candidates.isEmpty else { return nil }
 
-        // 3. 逐候选取数；成功但无窗口（如 billing 端点对 coding 套餐返回空桶）
+        // 5. 逐候选取数；成功但无窗口（如 billing 端点对 coding 套餐返回空桶）
         //    → 继续下一候选；全部报错 → 抛第一个（保留 reauth 语义）。
         var firstError: Error?
         for candidate in candidates {
@@ -405,10 +582,23 @@ final class ZcodeLimitsFetcher: LimitsFetching {
 
     private func fetchLimits(for candidate: ZcodePlanAuth) async throws -> ProviderUsageLimits? {
         if candidate.kind == .codingPlan, let quotaURL = candidate.quotaURL {
+            // project key 候选需先换 project token；旧布局直接用 config 明文 key。
+            let authValue: String
+            if let location = candidate.projectLocation,
+               let material = candidate.projectMaterial,
+               let loginToken = candidate.loginToken {
+                authValue = try await projectAccessToken(
+                    location: location,
+                    material: material,
+                    loginToken: loginToken
+                )
+            } else {
+                authValue = candidate.apiKey
+            }
             var request = URLRequest(url: quotaURL)
             request.timeoutInterval = timeout
             // quota 端点鉴权：authorization 头直接放 key，无 Bearer 前缀。
-            request.setValue(candidate.apiKey, forHTTPHeaderField: "Authorization")
+            request.setValue(authValue, forHTTPHeaderField: "Authorization")
             request.setValue("application/json", forHTTPHeaderField: "Accept")
             let payload = try await jsonBody(for: request, label: "quota")
             let result = try ZcodeLimitsParsing.quotaResult(from: payload)
@@ -511,6 +701,71 @@ final class ZcodeLimitsFetcher: LimitsFetching {
         return generated
     }
 
+    // MARK: project token 换取
+
+    /// project token 缓存项：token 与过期时刻。
+    private struct CachedProjectToken {
+        var token: String
+        var expiresAt: Date
+    }
+
+    /// project token 缓存：`family + apiKeyId` → token。token 有效期约 37 分钟，
+    /// 缓存避免每轮取数都签发；提前 60 秒失效。
+    private var projectTokenCache: [String: CachedProjectToken] = [:]
+
+    /// 换取 project token（带缓存）。
+    private func projectAccessToken(
+        location: ZcodeProjectKeyLocation,
+        material: ZcodeProjectKeyMaterial,
+        loginToken: String
+    ) async throws -> String {
+        let cacheKey = "\(location.family):\(material.apiKeyId)"
+        if let cached = projectTokenCache[cacheKey], cached.expiresAt > Date() {
+            return cached.token
+        }
+        guard let url = ZcodeLimitsParsing.projectAccessTokenURL(
+            location: location,
+            material: material
+        ) else {
+            throw LimitError.decoding("ZCode project access token URL invalid")
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = timeout
+        request.setValue("Bearer \(loginToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let body: [String: Any] = [
+            "clientType": "zcode",
+            "clientVersion": Self.appVersion,
+        ]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        let payload = try await jsonBody(for: request, label: "project token")
+        let data = payload["data"] as? [String: Any] ?? [:]
+        guard let token = (data["accessToken"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !token.isEmpty
+        else {
+            throw LimitError.decoding("ZCode project token missing accessToken")
+        }
+        let expiresIn = (data["expiresIn"] as? NSNumber)?.doubleValue
+        // 提前 60 秒失效；服务端未给时长时按 15 分钟保守估计。
+        let lifetime = max((expiresIn ?? 900) - 60, 60)
+        projectTokenCache[cacheKey] = CachedProjectToken(
+            token: token,
+            expiresAt: Date().addingTimeInterval(lifetime)
+        )
+        return token
+    }
+
+    /// 签发请求声明的客户端版本：取 ZCode 应用版本，缺失时回落固定值。
+    private static var appVersion: String {
+        (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
+            ?? "3.16.3"
+    }
+
     // MARK: 凭证读取与解密
 
     private struct ZcodeCredentials {
@@ -526,6 +781,32 @@ final class ZcodeLimitsFetcher: LimitsFetching {
             activeProvider: active,
             jwt: (jwt?.isEmpty == false) ? jwt : nil
         )
+    }
+
+    /// `credentials.json` 中所有 project key 条目：键名 → 解密后的明文 JSON。
+    /// 解密失败的条目直接跳过（fail-soft）。
+    private func projectKeyEntries(at credentialsURL: URL) -> [(key: String, value: String)] {
+        guard let parsed = readJSONObject(credentialsURL) else { return [] }
+        return parsed.compactMap { key, rawValue in
+            guard key.hasPrefix(ZcodeLimitsParsing.projectKeyLocationPrefix),
+                  let value = decrypted(rawValue)
+            else { return nil }
+            return (key: key, value: value)
+        }
+    }
+
+    /// `credentials.json` 中按域索引的 OAuth access token（`oauth:{family}:access_token`）。
+    private func oauthAccessTokens(at credentialsURL: URL) -> [String: String] {
+        guard let parsed = readJSONObject(credentialsURL) else { return [:] }
+        var out: [String: String] = [:]
+        for family in ["bigmodel", "zai"] {
+            let key = "oauth:\(family):access_token"
+            if let token = decrypted(parsed[key])?
+                .trimmingCharacters(in: .whitespacesAndNewlines), !token.isEmpty {
+                out[family] = token
+            }
+        }
+        return out
     }
 
     /// enc:v1 解密（AES-256-GCM，密钥 = sha256(secret)）或明文直通；失败 → nil。
