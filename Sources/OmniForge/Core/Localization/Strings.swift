@@ -1324,6 +1324,8 @@ struct Strings: Equatable {
     let providerDesktopRouteLabelPlaceholder: String
     /// Desktop 映射行的 1M 开关标签。
     let providerDesktopRouteOneMLabel: String
+    /// Desktop 映射行下拉箭头的提示（从连通性测试获取的模型中选择）。
+    let providerDesktopRoutePickModelHelp: String
     /// Desktop 聚合重启提示标题。
     let providerDesktopAggregationRestartTitle: String
     /// Desktop 聚合重启提示正文。

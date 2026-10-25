@@ -517,6 +517,7 @@ struct ProfileEditorView: View {
 
     private func desktopRouteRow(_ index: Int) -> some View {
         let slot = ClaudeDesktopSettingsStore.defaultRoutes[index]
+        let candidates = desktopRouteCandidateModels
         return HStack(spacing: 8) {
             Text(slot)
                 .font(.system(size: 12, design: .monospaced))
@@ -524,13 +525,7 @@ struct ProfileEditorView: View {
                 .frame(width: 118, alignment: .leading)
                 .help(slot)
 
-            TextField(strings.providerDesktopRouteModelPlaceholder, text: desktopRouteModelBinding(index))
-                .textFieldStyle(.plain)
-                .font(.system(size: 13))
-                .padding(.horizontal, 10)
-                .frame(width: 150, height: 32)
-                .background(mappingInputBackground)
-                .overlay(mappingInputBorder)
+            desktopRouteModelField(index: index, candidates: candidates)
 
             TextField(strings.providerDesktopRouteLabelPlaceholder, text: desktopRouteLabelBinding(index))
                 .textFieldStyle(.plain)
@@ -554,6 +549,68 @@ struct ProfileEditorView: View {
             .toggleStyle(.checkbox)
             .font(.system(size: 12))
             .fixedSize()
+        }
+    }
+
+    /// 上游模型名输入框：连通性测试成功拿到模型列表后，右侧内嵌下拉箭头；
+    /// 箭头只在有候选时出现，输入框本身始终可手填（上游模型可能不在返回列表里）。
+    private func desktopRouteModelField(index: Int, candidates: [String]) -> some View {
+        HStack(spacing: 0) {
+            TextField(strings.providerDesktopRouteModelPlaceholder, text: desktopRouteModelBinding(index))
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .padding(.leading, 10)
+                .padding(.trailing, candidates.isEmpty ? 10 : 2)
+
+            if !candidates.isEmpty {
+                Menu {
+                    desktopRouteModelMenu(index: index, candidates: candidates)
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color(red: 0x6E / 255.0, green: 0x6E / 255.0, blue: 0x73 / 255.0))
+                        .frame(width: 22, height: 32)
+                        .contentShape(Rectangle())
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help(strings.providerDesktopRoutePickModelHelp)
+            }
+        }
+        .frame(width: 150, height: 32)
+        .background(mappingInputBackground)
+        .overlay(mappingInputBorder)
+    }
+
+    /// 下拉候选：连通性测试成功后的模型列表，去重保序并丢弃空白项。
+    /// 未测试 / 测试失败返回空数组，四档行据此隐藏下拉箭头。
+    private var desktopRouteCandidateModels: [String] {
+        guard let result = connectivityResult, result.isSuccess else { return [] }
+        var seen = Set<String>()
+        return result.models.compactMap { raw in
+            let model = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !model.isEmpty, seen.insert(model).inserted else { return nil }
+            return model
+        }
+    }
+
+    /// 候选菜单：当前档已选中的模型打勾，点击写入该档（四档共用同一份候选）。
+    private func desktopRouteModelMenu(index: Int, candidates: [String]) -> some View {
+        let current = index < desktopRouteModels.count
+            ? desktopRouteModels[index].trimmingCharacters(in: .whitespacesAndNewlines)
+            : ""
+        return ForEach(candidates, id: \.self) { model in
+            Button {
+                guard index < desktopRouteModels.count else { return }
+                desktopRouteModels[index] = model
+            } label: {
+                if model == current {
+                    Label(model, systemImage: "checkmark")
+                } else {
+                    Text(model)
+                }
+            }
         }
     }
 

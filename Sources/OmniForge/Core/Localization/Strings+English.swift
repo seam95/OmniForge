@@ -1216,6 +1216,7 @@ extension Strings {
         providerDesktopRouteModelPlaceholder: "Upstream model, e.g. glm-5.3",
         providerDesktopRouteLabelPlaceholder: "Display name (optional)",
         providerDesktopRouteOneMLabel: "1M",
+        providerDesktopRoutePickModelHelp: "Pick from models fetched by the connectivity test",
         providerDesktopAggregationRestartTitle: "Restart Claude Desktop to apply",
         providerDesktopAggregationRestartMessage: "Restart Claude Desktop after switching providers or changing the projection; keep OmniForge running while aggregating",
         providerAggregationEnteredClaudeDesktop: "Aggregation enabled · Restart Claude Desktop to apply",

@@ -1216,6 +1216,7 @@ extension Strings {
         providerDesktopRouteModelPlaceholder: "上游模型名，如 glm-5.3",
         providerDesktopRouteLabelPlaceholder: "显示名（可选）",
         providerDesktopRouteOneMLabel: "1M",
+        providerDesktopRoutePickModelHelp: "从连通性测试获取的模型中选择",
         providerDesktopAggregationRestartTitle: "重启 Claude Desktop 后生效",
         providerDesktopAggregationRestartMessage: "切换供应商或变更投影后需重启 Claude Desktop；聚合期间请保持 OmniForge 运行",
         providerAggregationEnteredClaudeDesktop: "已进入聚合模式 · 重启 Claude Desktop 后生效",
