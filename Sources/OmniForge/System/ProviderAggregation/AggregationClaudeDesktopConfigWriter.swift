@@ -160,17 +160,36 @@ final class AggregationClaudeDesktopConfigWriter: AggregationClaudeDesktopConfig
     }
 
     /// 摘要 = 网关三键（baseURL/token/models）+ 可选 discovery 键的规范序列化 SHA-256。
+    /// **不能对单个值调 `JSONSerialization.data(withJSONObject:)`**：字符串 / 布尔等
+    /// 标量不是合法顶层类型，会抛 **ObjC 异常**（`try?` 捕不到），实测启动自愈
+    /// `recoverOnLaunch` 走这里时进程级异常中断整个启动流程（设置窗口/页面全无）。
+    /// 改为整体字典序列化（标量作为值合法）；非法值走逐键字符串兜底。
     private static func digest(of profile: [String: Any]) -> String {
-        var lines: [String] = []
-        for key in ["inferenceGatewayBaseUrl", "inferenceGatewayApiKey", "inferenceModels", "modelDiscoveryEnabled"].sorted() {
-            guard let value = profile[key] else { continue }
-            if let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]) {
-                lines.append("\(key)=\(String(decoding: data, as: UTF8.self))")
-            } else {
-                lines.append("\(key)=\(value)")
-            }
+        let keys = ["inferenceGatewayBaseUrl", "inferenceGatewayApiKey", "inferenceModels", "modelDiscoveryEnabled"]
+        var owned: [String: Any] = [:]
+        for key in keys {
+            if let value = profile[key] { owned[key] = value }
         }
-        let hash = SHA256.hash(data: Data(lines.joined(separator: "\n").utf8))
+        let canonical: String
+        if JSONSerialization.isValidJSONObject(owned),
+           let data = try? JSONSerialization.data(withJSONObject: owned, options: [.sortedKeys]) {
+            canonical = String(decoding: data, as: UTF8.self)
+        } else {
+            // 非 JSON 类型（如自定义 Value 包装）时降级为逐键字符串，避免异常。
+            canonical = owned.keys.sorted().map { key in
+                "\(key)=\(canonicalValue(owned[key]!))"
+            }.joined(separator: "\n")
+        }
+        let hash = SHA256.hash(data: Data(canonical.utf8))
         return hash.compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    /// 值的规范形态：容器走排序键 JSON；标量原值（JSONSerialization 对裸标量顶层会抛异常）。
+    private static func canonicalValue(_ value: Any) -> String {
+        if value is [String: Any] || value is [Any],
+           let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]) {
+            return String(decoding: data, as: UTF8.self)
+        }
+        return "\(value)"
     }
 }
