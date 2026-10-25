@@ -11,6 +11,14 @@ enum WhatsNewReleaseCatalog {
     /// 历次版本的更新内容，新版本在前
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            version: "4.0.0",
+            entries: [
+                WhatsNewEntry(type: .changed, text: "供应商切换与供应商聚合功能整体下线：控制中心不再有「供应商」页签，菜单栏、设置页与新手向导不再出现供应商入口"),
+                WhatsNewEntry(type: .changed, text: "已切换到第三方供应商的 Claude Code / Codex / Claude Desktop 配置继续生效，需在对应客户端中自行管理；OmniForge 不再提供切换与还原入口"),
+                WhatsNewEntry(type: .changed, text: "Token 用量监控保留且不受影响：余额、限额与用量统计照常工作"),
+            ]
+        ),
+        WhatsNewRelease(
             version: "3.18.0",
             entries: [
                 WhatsNewEntry(type: .added, text: "新增翻译工具：支持系统与 AI 双引擎，划词或快捷键唤出独立浮窗，输入停顿自动翻译，历史记录可随时回看"),
