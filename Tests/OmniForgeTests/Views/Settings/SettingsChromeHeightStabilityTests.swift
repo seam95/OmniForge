@@ -34,6 +34,8 @@ final class SettingsChromeHeightStabilityTests: XCTestCase {
         let window = NSWindow(contentViewController: hosting)
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.setContentSize(NSSize(width: 820, height: 560))
+        // 测试窗口透明上屏：布局/像素渲染/坐标系不变，但不在用户屏幕上闪现抢页面。
+        window.alphaValue = 0
         window.orderFrontRegardless()
 
         var titlebars: [SettingsToolbarTab: CGFloat] = [:]
@@ -71,6 +73,8 @@ final class SettingsChromeHeightStabilityTests: XCTestCase {
         let window = NSWindow(contentViewController: hosting)
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.setContentSize(NSSize(width: 820, height: 560))
+        // 测试窗口透明上屏：布局/像素渲染/坐标系不变，但不在用户屏幕上闪现抢页面。
+        window.alphaValue = 0
         window.orderFrontRegardless()
         hosting.view.layoutSubtreeIfNeeded()
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.8))

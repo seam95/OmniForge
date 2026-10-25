@@ -94,6 +94,8 @@ final class UtilityToolsKeepAwakeInteractionTests: XCTestCase {
         )
         let hosting = NSHostingView(rootView: rootView)
         window.contentView = hosting
+        // 测试窗口透明上屏：布局/像素渲染/坐标系不变，但不在用户屏幕上闪现抢页面。
+        window.alphaValue = 0
         window.orderFrontRegardless()
         self.window = window
         try await tick(0.15)
@@ -187,6 +189,8 @@ final class UtilityToolsKeepAwakeInteractionTests: XCTestCase {
         )
         let hosting = NSHostingView(rootView: rootView)
         window.contentView = hosting
+        // 测试窗口透明上屏：布局/像素渲染/坐标系不变，但不在用户屏幕上闪现抢页面。
+        window.alphaValue = 0
         window.orderFrontRegardless()
         self.window = window
         try await tick(0.5)

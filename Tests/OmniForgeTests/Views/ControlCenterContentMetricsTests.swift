@@ -80,6 +80,8 @@ final class ControlCenterViewportStabilityTests: XCTestCase {
             rootView: ViewportStabilityHarness(box: box, recorder: recorder, sizingContext: context)
         )
         window.contentView = hosting
+        // 测试窗口透明上屏：布局/像素渲染/坐标系不变，但不在用户屏幕上闪现抢页面。
+        window.alphaValue = 0
         window.orderFrontRegardless()
 
         func sample() {
@@ -262,6 +264,8 @@ final class ControlCenterShellSizeStabilityTests: XCTestCase {
             rootView: ControlCenterContainerView(state: state, sizingContext: context)
         )
         window.contentView = hosting
+        // 测试窗口透明上屏：布局/像素渲染/坐标系不变，但不在用户屏幕上闪现抢页面。
+        window.alphaValue = 0
         window.orderFrontRegardless()
 
         func currentHeight() -> CGFloat {

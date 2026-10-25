@@ -148,6 +148,8 @@ final class TokenUsagePanelRenderPathTests: XCTestCase {
         window.contentView = NSHostingView(
             rootView: PanelRenderHarness(manager: manager, preferences: prefs, tick: counter)
         )
+        // 测试窗口透明上屏：布局/像素渲染/坐标系不变，但不在用户屏幕上闪现抢页面。
+        window.alphaValue = 0
         window.orderFrontRegardless()
         try await waitUntil { counter.renders >= 1 }
         try await Task.sleep(nanoseconds: 50_000_000)

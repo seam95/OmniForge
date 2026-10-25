@@ -152,6 +152,8 @@ final class PageSwitchHostTests: XCTestCase {
             defer: false
         )
         window.contentView = NSHostingView(rootView: harness)
+        // 测试窗口透明上屏：布局/像素渲染/坐标系不变，但不在用户屏幕上闪现抢页面。
+        window.alphaValue = 0
         window.orderFrontRegardless()
         probe.window = window
         try await tick(0.05)

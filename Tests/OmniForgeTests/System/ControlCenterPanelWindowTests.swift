@@ -104,6 +104,8 @@ final class ControlCenterPanelSheetExemptionTests: XCTestCase {
         let controller = NSHostingController(rootView: AnyView(ProbeHost(probe: probe)))
         controller.sizingOptions = []
         panel.contentViewController = controller
+        // 测试窗口透明上屏：布局/像素渲染/坐标系不变，但不在用户屏幕上闪现抢页面。
+        panel.alphaValue = 0
         panel.orderFrontRegardless()
 
         XCTAssertTrue(panel.shouldCloseOnFocusLoss, "前置：无 sheet 时允许失焦关闭")

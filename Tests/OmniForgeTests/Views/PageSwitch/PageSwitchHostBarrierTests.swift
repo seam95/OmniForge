@@ -25,6 +25,8 @@ final class PageSwitchHostBarrierTests: XCTestCase {
             defer: false
         )
         window.contentView = host
+        // 测试窗口透明上屏：布局/像素渲染/坐标系不变，但不在用户屏幕上闪现抢页面。
+        window.alphaValue = 0
         window.orderFrontRegardless()
         try await tick(0.05)
         box.panel = .tokenUsage
@@ -47,6 +49,8 @@ final class PageSwitchHostBarrierTests: XCTestCase {
             defer: false
         )
         window.contentView = host
+        // 测试窗口透明上屏：布局/像素渲染/坐标系不变，但不在用户屏幕上闪现抢页面。
+        window.alphaValue = 0
         window.orderFrontRegardless()
         try await tick(0.05)
 
@@ -76,6 +80,8 @@ final class PageSwitchHostBarrierTests: XCTestCase {
             defer: false
         )
         window.contentView = host
+        // 测试窗口透明上屏：布局/像素渲染/坐标系不变，但不在用户屏幕上闪现抢页面。
+        window.alphaValue = 0
         window.orderFrontRegardless()
         try await tick(0.05)
 
@@ -107,6 +113,8 @@ final class PageSwitchHostBarrierTests: XCTestCase {
             defer: false
         )
         window.contentView = host
+        // 测试窗口透明上屏：布局/像素渲染/坐标系不变，但不在用户屏幕上闪现抢页面。
+        window.alphaValue = 0
         window.orderFrontRegardless()
         try await tick(0.05)
 
