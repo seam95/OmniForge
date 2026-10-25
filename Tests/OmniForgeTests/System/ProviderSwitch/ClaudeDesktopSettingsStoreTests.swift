@@ -232,12 +232,16 @@ final class ClaudeDesktopSettingsStoreTests: XCTestCase {
 
     func test_isClaudeSafeModelID_acceptsRolePrefixedNamesOnly() {
         XCTAssertTrue(ClaudeDesktopSettingsStore.isClaudeSafeModelID("claude-sonnet-5"))
+        // 回归锁：`opus-` 角色段比 `sonnet-` 短两位，曾因固定长度阈值被误判非法，
+        // 导致四档映射卡（含默认档 `claude-opus-5`）保存必失败。
+        XCTAssertTrue(ClaudeDesktopSettingsStore.isClaudeSafeModelID("claude-opus-5"))
         XCTAssertTrue(ClaudeDesktopSettingsStore.isClaudeSafeModelID("claude-fable-5"))
         XCTAssertTrue(ClaudeDesktopSettingsStore.isClaudeSafeModelID("anthropic/claude-opus-4-8"))
         XCTAssertTrue(ClaudeDesktopSettingsStore.isClaudeSafeModelID("claude-fable-om-136067"))
         XCTAssertFalse(ClaudeDesktopSettingsStore.isClaudeSafeModelID("glm-5.3"))
         XCTAssertFalse(ClaudeDesktopSettingsStore.isClaudeSafeModelID("k3"))
         XCTAssertFalse(ClaudeDesktopSettingsStore.isClaudeSafeModelID("claude-3-5-sonnet"))
+        XCTAssertFalse(ClaudeDesktopSettingsStore.isClaudeSafeModelID("claude-opus-"))
     }
 
     /// 审查回归锁：对齐 cc-switch 的 trim + 小写 + 拒 [1m] 口径。

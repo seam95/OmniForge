@@ -64,16 +64,20 @@ struct DesktopModelRoute: Codable, Equatable {
 enum DesktopModelWhitelist {
     /// 先 trim + 小写（Desktop 侧大小写不敏感），含 `[1m]` 标记一律拒绝
     /// （标记由 `prefer1m` 承载，不该出现在名字里），再要求
-    /// `claude-` / `anthropic/claude-` 前缀 + `sonnet-` / `opus-` / `haiku-` / `fable-` 角色段。
+    /// `claude-` / `anthropic/claude-` 前缀 + `sonnet-` / `opus-` / `haiku-` / `fable-` 角色段，
+    /// 且角色段之后必须还有版本内容（`claude-opus-` 无版本 → 拒绝）。
     /// 写错一个名，Desktop 拒收整组模型（fail-all），因此映射值与发布 id 都要过这道校验。
     static func isClaudeSafe(_ model: String) -> Bool {
         let normalized = model.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !normalized.contains("[1m]") else { return false }
         for prefix in ["claude-", "anthropic/claude-"] where normalized.hasPrefix(prefix) {
             let rest = String(normalized.dropFirst(prefix.count))
-            if ["sonnet-", "opus-", "haiku-", "fable-"].contains(where: rest.hasPrefix),
-               rest.count > "sonnet-".count - 1 {
-                return true
+            for role in ["sonnet-", "opus-", "haiku-", "fable-"] where rest.hasPrefix(role) {
+                // 阈值取命中角色段自身长度：`opus-` 比 `sonnet-` 短两位，
+                // 用固定阈值会把合法的 `claude-opus-5` 误判为非法。
+                if rest.count > role.count {
+                    return true
+                }
             }
         }
         return false
