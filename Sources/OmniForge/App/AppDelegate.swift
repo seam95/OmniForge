@@ -22,15 +22,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MainMenuSettingsTarget
     private var wakeObserver: AnyObject?
     private var pendingSettingsWake = false
 
-    /// 退出事务：重复 Quit 复用同一 Task。
-    private var terminationTask: Task<Bool, Never>?
-    /// 清理进行中（测试可观察）。
-    private(set) var isTerminating = false
-    /// 清理已成功完成：下一次 terminate 直接放行（cancel-then-retry 模型的第二段）。
+    /// 退出清理已成功完成：后续终止请求直接放行。
     private(set) var hasCompletedTerminationCleanup = false
-    /// 清理完成后的再次终止动作。生产为 `NSApp.terminate(nil)`；
-    /// 测试注入空实现，避免 XCTest 进程被真实终止。
-    var terminateAction: @MainActor () -> Void = { NSApp.terminate(nil) }
 
     init(
         instanceLease: SingleInstanceLease? = nil,
@@ -83,33 +76,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MainMenuSettingsTarget
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         // 清理已成功完成：本次终止直接放行。
         if hasCompletedTerminationCleanup {
+            Self.logger.notice("termination.reply.terminateNow")
             return .terminateNow
         }
-        // 清理进行中（重复 Quit）：本次终止取消，等清理完成后的重试。
-        if isTerminating {
+        // 必须同步清理后直接放行：AppKit 的 terminate 流程中不会调度
+        // Swift Concurrency 的 MainActor 任务。先前返回 `.terminateLater`
+        // 再等 Task（以及返回 `.terminateCancel` 后重试）都实测不执行——
+        // Task 主体从未获得调度，应用永远停在「终止中」或「点退出没反应」，
+        // 主线程卡死时连 SIGTERM 都无法退出（2026-10-25 实测）。
+        // keepAwake 的合盖恢复等异步收尾交给下次启动的 recoverOnLaunch 兜底。
+        Self.logger.notice("termination.sync.begin")
+        let ok = compositionRoot?.performSynchronousTerminationCleanup() ?? true
+        Self.logger.notice("termination.sync.end ok=\(ok, privacy: .public)")
+        guard ok else {
+            Self.logger.error("termination.sync.blocked cleanupRequired")
             return .terminateCancel
         }
-        isTerminating = true
-
-        if terminationTask == nil {
-            // 不能返回 .terminateLater 后再等 Task：AppKit 会在 `_shouldTerminate`
-            // 内进入等待 reply 的嵌套 runloop，MainActor 任务在该循环中不会被调度，
-            // reply 永不触发 → 应用卡在「终止中」，主线程被嵌套 runloop 占住，
-            // 整个 UI 无响应（2026-10-25 实测点面板「退出」后必现）。
-            // 改为 cancel-then-retry：先取消本次终止回到正常 runloop，清理完成后
-            // 再次 terminate，由上面的标志直接放行。清理失败则保持运行，可重试。
-            terminationTask = Task { @MainActor in
-                let ok = await self.runTerminationCleanup()
-                self.terminationTask = nil
-                self.isTerminating = false
-                if ok {
-                    self.hasCompletedTerminationCleanup = true
-                    self.terminateAction()
-                }
-                return ok
-            }
-        }
-        return .terminateCancel
+        hasCompletedTerminationCleanup = true
+        return .terminateNow
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -121,8 +105,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, MainMenuSettingsTarget
 
     /// 单一退出清理入口（可测）。
     func runTerminationCleanup() async -> Bool {
-        guard let root = compositionRoot else { return true }
-        return await root.prepareForApplicationTermination()
+        guard let root = compositionRoot else {
+            Self.logger.notice("termination.cleanup.skip noCompositionRoot")
+            return true
+        }
+        Self.logger.notice("termination.cleanup.begin")
+        let ok = await root.prepareForApplicationTermination()
+        Self.logger.notice("termination.cleanup.end ok=\(ok, privacy: .public)")
+        return ok
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {

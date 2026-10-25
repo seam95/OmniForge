@@ -58,35 +58,22 @@ final class AppDelegateTests: XCTestCase {
         XCTAssertTrue(result)
     }
 
-    /// 退出事务回归锁：不能返回 `.terminateLater` —— AppKit 会在 `_shouldTerminate`
-    /// 内进入等待 reply 的嵌套 runloop，MainActor 清理任务在该循环中不执行，
-    /// 应用会卡在「终止中」且主线程被占住（2026-10-25 实测点面板「退出」后必现）。
-    /// 现改为 cancel-then-retry：首次取消、清理完成后重试直接放行。
-    func test_applicationShouldTerminate_cancelsThenAllowsAfterCleanup() async {
+    /// 退出回归锁：清理必须同步完成并直接返回 `.terminateNow`。
+    /// 不能返回 `.terminateLater` 等异步 Task —— AppKit 的 terminate 流程不会调度
+    /// MainActor 任务，任务主体从未执行（2026-10-25 实测），应用点退出后永不退出，
+    /// 甚至 SIGTERM 都无法结束。
+    func test_applicationShouldTerminate_cleansUpSynchronouslyAndAllows() {
         let delegate = AppDelegate()
         delegate.compositionRoot = AppCompositionRoot.compose()
-        var terminateRetryCount = 0
-        delegate.terminateAction = { terminateRetryCount += 1 }
 
-        XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateCancel)
-        XCTAssertTrue(delegate.isTerminating)
-        // 清理进行中重复 Quit：仍然取消，不重启第二个事务。
-        XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateCancel)
-
-        var waited = 0
-        while delegate.isTerminating && waited < 400 {
-            try? await Task.sleep(nanoseconds: 5_000_000)
-            waited += 1
-        }
-
-        XCTAssertFalse(delegate.isTerminating, "清理完成后事务必须收尾")
-        XCTAssertTrue(delegate.hasCompletedTerminationCleanup)
-        XCTAssertEqual(terminateRetryCount, 1, "清理成功后应重试一次 terminate")
         XCTAssertEqual(
             delegate.applicationShouldTerminate(NSApplication.shared),
             .terminateNow,
-            "重试的终止请求必须直接放行"
+            "同步清理成功后必须直接放行终止"
         )
+        XCTAssertTrue(delegate.hasCompletedTerminationCleanup)
+        // 后续终止请求（AppKit 重复调用）同样直接放行。
+        XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateNow)
     }
 
     func test_runTerminationCleanup_withoutKeepAwakeManager_returnsTrueWhenClean() async {

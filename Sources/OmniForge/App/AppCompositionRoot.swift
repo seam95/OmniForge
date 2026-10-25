@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import os.log
 
 /// 启动编排阶段：恢复完成前 UI 不应暴露可操作保持唤醒开关。
 enum AppBootstrapPhase: Equatable {
@@ -88,23 +89,69 @@ final class AppCompositionRoot {
         return root
     }
 
-    /// App 退出：先终止 dsh web 子进程（独立无依赖），再优先 KeepAwakeManager.shutdown；
-    /// 无 Manager 时走 Coordinator 恢复。
-    func prepareForApplicationTermination() async -> Bool {
-        // 便签：失效全部唤起定时器并撤销通知请求（窗口随 teardown 关闭）。
+    /// App 退出：同步 best-effort 清理。**不依赖 Swift Concurrency 调度**——
+    /// AppKit 的 terminate 流程中 MainActor 任务不会被调度（2026-10-25 实测：
+    /// Task 主体从未执行，应用点退出后永不退出）。异步收尾（keepAwake 的合盖
+    /// 恢复等）由下次启动的 `recoverOnLaunch` 兜底。
+    @discardableResult
+    func performSynchronousTerminationCleanup() -> Bool {
+        Self.terminationLogger.notice("termination.sync.stickyNotes")
+        // 便签：失效全部唤起定时器并撤销通知请求（窗口随进程退出关闭）。
         FeatureRuntime.shared.manager(for: .stickyNotes, as: StickyNoteManager.self)?.teardown()
+        Self.terminationLogger.notice("termination.sync.screenshot")
         // 截图：teardown 链含 clothesline → inbox.restore，退出前还原系统截图落点。
         FeatureRuntime.shared.manager(for: .screenshot, as: ScreenshotFeatureManager.self)?.teardown()
+        Self.terminationLogger.notice("termination.sync.translation")
         // 翻译：退出时取消请求、清除未保存草稿；历史与偏好保留。
         FeatureRuntime.shared.manager(for: .translation, as: TranslationManager.self)?.teardown()
         if let manager = FeatureRuntime.shared.manager(for: .keepAwake, as: KeepAwakeManager.self) {
-            await manager.shutdown(reason: .applicationTermination)
+            Self.terminationLogger.notice("termination.sync.keepAwake")
+            // 未运行（inactive）无需清理；运行中则发起同步停止（断开定时器/指针，
+            // IOKit 断言随进程退出自动释放）。其异步收尾不等待。
+            if case .inactive = manager.state {
+                Self.terminationLogger.notice("termination.sync.keepAwake inactive")
+            } else {
+                manager.stop(reason: .applicationTermination)
+            }
             if case .cleanupRequired = manager.state {
+                Self.terminationLogger.error("termination.sync.cleanupRequired")
+                return false
+            }
+        }
+        return true
+    }
+
+    /// App 退出：先终止 dsh web 子进程（独立无依赖），再优先 KeepAwakeManager.shutdown；
+    /// 无 Manager 时走 Coordinator 恢复。
+    private static let terminationLogger = Logger(
+        subsystem: "com.omniforge.app",
+        category: "Termination"
+    )
+
+    func prepareForApplicationTermination() async -> Bool {
+        Self.terminationLogger.notice("termination.step.stickyNotes")
+        // 便签：失效全部唤起定时器并撤销通知请求（窗口随 teardown 关闭）。
+        FeatureRuntime.shared.manager(for: .stickyNotes, as: StickyNoteManager.self)?.teardown()
+        Self.terminationLogger.notice("termination.step.screenshot")
+        // 截图：teardown 链含 clothesline → inbox.restore，退出前还原系统截图落点。
+        FeatureRuntime.shared.manager(for: .screenshot, as: ScreenshotFeatureManager.self)?.teardown()
+        Self.terminationLogger.notice("termination.step.translation")
+        // 翻译：退出时取消请求、清除未保存草稿；历史与偏好保留。
+        FeatureRuntime.shared.manager(for: .translation, as: TranslationManager.self)?.teardown()
+        if let manager = FeatureRuntime.shared.manager(for: .keepAwake, as: KeepAwakeManager.self) {
+            Self.terminationLogger.notice("termination.step.keepAwake")
+            await manager.shutdown(reason: .applicationTermination)
+            Self.terminationLogger.notice("termination.step.keepAwake.done")
+            if case .cleanupRequired = manager.state {
+                Self.terminationLogger.error("termination.cleanupRequired keepAwake")
                 return false
             }
             return true
         }
-        return await clamshellRecoveryCoordinator.prepareForApplicationTermination()
+        Self.terminationLogger.notice("termination.step.clamshellRecovery")
+        let result = await clamshellRecoveryCoordinator.prepareForApplicationTermination()
+        Self.terminationLogger.notice("termination.step.clamshellRecovery.done ok=\(result, privacy: .public)")
+        return result
     }
 
     // MARK: - private construction
