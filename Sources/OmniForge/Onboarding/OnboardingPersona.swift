@@ -68,7 +68,6 @@ enum OnboardingPersona: String, CaseIterable, Identifiable {
         case .aiDeveloper:
             return [
                 .tokenUsage,
-                .providerSwitch,
                 .promptOptimizer,
                 .systemMonitor,
                 .clipboardHistory,

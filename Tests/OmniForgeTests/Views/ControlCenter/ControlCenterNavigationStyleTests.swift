@@ -13,16 +13,14 @@ final class ControlCenterNavigationStyleTests: XCTestCase {
     func test_menuPanelSymbolsAndTitles() {
         let strings = Strings.zhHans
         let panels = MenuPanel.primaryCases
-        XCTAssertEqual(panels.count, 4)
+        XCTAssertEqual(panels.count, 3)
         XCTAssertEqual(panels[0].navTitle(in: strings), "监控")
         XCTAssertEqual(panels[1].navTitle(in: strings), "Token")
-        XCTAssertEqual(panels[2].navTitle(in: strings), "供应商")
-        XCTAssertEqual(panels[3].navTitle(in: strings), "工具")
+        XCTAssertEqual(panels[2].navTitle(in: strings), "工具")
 
         XCTAssertEqual(panels[0].symbolName, "waveform.path.ecg")
         XCTAssertEqual(panels[1].symbolName, "chart.line.uptrend.xyaxis")
-        XCTAssertEqual(panels[2].symbolName, "arrow.triangle.swap")
-        XCTAssertEqual(panels[3].symbolName, "wrench.fill")
+        XCTAssertEqual(panels[2].symbolName, "wrench.fill")
     }
 
     /// 离屏渲染核对：导航区背景为全白，选中项为浅蓝药丸底（#EBF3FE），未选中项无底块。

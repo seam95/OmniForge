@@ -17,7 +17,6 @@ final class OnboardingPersonaTests: XCTestCase {
     func test_aiDeveloper_containsCoreAITools() {
         let features = OnboardingPersona.aiDeveloper.features
         XCTAssertTrue(features.contains(.tokenUsage))
-        XCTAssertTrue(features.contains(.providerSwitch))
         XCTAssertTrue(features.contains(.promptOptimizer))
         XCTAssertTrue(features.contains(.systemMonitor))
     }

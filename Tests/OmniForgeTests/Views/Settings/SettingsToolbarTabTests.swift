@@ -3,7 +3,7 @@ import XCTest
 
 final class SettingsToolbarTabTests: XCTestCase {
     func test_sidebarContainsStableTabs() {
-        // 终态 13 项：供应商切换设置页移除（唯一入口=菜单栏控制中心 tab），
+        // 终态 13 项：清理/卸载全页壳已移除（功能本体在工具详情页）；
         // 访达右键增强接入后追加 rightClick，翻译工具接入后追加 translation。
         XCTAssertEqual(SettingsToolbarTab.allCases.count, 13)
         XCTAssertEqual(

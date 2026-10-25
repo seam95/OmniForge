@@ -55,15 +55,13 @@ struct FlatSectionHeader<Trailing: View>: View {
     }
 }
 
-/// tint 提示横幅：提示色低透明底（浅 0.06 / 深 0.12），可选同色系描边。
-/// 工具页默认无描边圆角 8；供应商卡片场景传 `bordered: true` 保持原视觉。
+/// tint 提示横幅：提示色低透明底（浅 0.06 / 深 0.12），无描边圆角 8。
 struct PanelTintBanner<Action: View>: View {
     let icon: String
     let tint: Color
     let title: String
     let message: String?
     let cornerRadius: CGFloat
-    let bordered: Bool
     @ViewBuilder let action: () -> Action
 
     init(
@@ -72,7 +70,6 @@ struct PanelTintBanner<Action: View>: View {
         title: String,
         message: String? = nil,
         cornerRadius: CGFloat = Theme.Radius.row,
-        bordered: Bool = false,
         @ViewBuilder action: @escaping () -> Action = { EmptyView() }
     ) {
         self.icon = icon
@@ -80,7 +77,6 @@ struct PanelTintBanner<Action: View>: View {
         self.title = title
         self.message = message
         self.cornerRadius = cornerRadius
-        self.bordered = bordered
         self.action = action
     }
 
@@ -116,14 +112,6 @@ struct PanelTintBanner<Action: View>: View {
         .background(
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(tint.opacity(colorScheme == .dark ? 0.12 : 0.06))
-        )
-        .overlay(
-            Group {
-                if bordered {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(tint.opacity(colorScheme == .dark ? 0.25 : 0.15), lineWidth: 1)
-                }
-            }
         )
     }
 }

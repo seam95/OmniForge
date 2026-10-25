@@ -339,13 +339,13 @@ final class FeatureCatalogTests: XCTestCase {
                 "\(group.rawValue) 组内必须按使用形态升序，实测 \(FeatureGroup.features(in: group).map { "\($0.rawValue):\($0.usageForm)" })"
             )
         }
-        // ai 组是唯一混合形态的组：提示词优化（热键）应在供应商切换（面板）之前。
-        XCTAssertEqual(FeatureGroup.features(in: .ai), [.promptOptimizer, .providerSwitch])
+        // ai 组仅剩提示词优化（热键直达型）。
+        XCTAssertEqual(FeatureGroup.features(in: .ai), [.promptOptimizer])
     }
 
     /// 全部特性都必须有明确的使用形态归属（穷尽 switch 的语义保障）。
     func test_everyFeatureHasUsageForm() {
-        XCTAssertEqual(AppFeature.allCases.count, 19)
+        XCTAssertEqual(AppFeature.allCases.count, 18)
         XCTAssertEqual(
             AppFeature.allCases.filter { $0.usageForm == .hotkey }.count, 6,
             "热键直达型：剪贴板历史/快捷短语/暂存架/截图/提示词优化/翻译"
@@ -355,8 +355,8 @@ final class FeatureCatalogTests: XCTestCase {
             "参数配置型：输入法锁定/鼠标增强/访达右键增强"
         )
         XCTAssertEqual(
-            AppFeature.allCases.filter { $0.usageForm == .panel }.count, 3,
-            "面板浏览型：系统监控/Token 用量/供应商切换"
+            AppFeature.allCases.filter { $0.usageForm == .panel }.count, 2,
+            "面板浏览型：系统监控/Token 用量"
         )
         XCTAssertEqual(
             AppFeature.allCases.filter { $0.usageForm == .tool }.count, 7,
@@ -396,25 +396,10 @@ final class FeatureCatalogTests: XCTestCase {
         XCTAssertNil(AppFeature.rightClickEnhancement.permissionUsage(for: .accessibility))
     }
 
-    func test_providerSwitch_catalogContract() {
-        // 独立一级功能，归新 FeatureGroup.ai，不归 .monitor（SPEC 2.1）
-        XCTAssertEqual(AppFeature.providerSwitch.group, .ai)
-        // 组内按使用形态排序：提示词优化是热键直达型（优先级更高），排在面板型供应商切换之前。
-        XCTAssertEqual(
-            FeatureGroup.features(in: .ai),
-            [.promptOptimizer, .providerSwitch]
-        )
-        XCTAssertTrue(AppFeature.providerSwitch.enabledKeys.isEmpty)
-        XCTAssertTrue(AppFeature.providerSwitch.possiblePermissions.isEmpty)
-        XCTAssertEqual(AppFeature.providerSwitch.symbolName, "arrow.triangle.swap")
-        XCTAssertEqual(
-            AppFeature.providerSwitch.hubName(in: .zhHans),
-            Strings.zhHans.featureHubNameProviderSwitch
-        )
-        XCTAssertFalse(AppFeature.providerSwitch.hubName(in: .zhHans).isEmpty)
-        XCTAssertFalse(AppFeature.providerSwitch.hubDescription(in: .zhHans).isEmpty)
+    func test_aiGroup_hubTitleContract() {
+        // ai 组保留提示词优化；分组标题仍走本地化契约。
         XCTAssertEqual(FeatureGroup.ai.hubTitle(in: .zhHans), Strings.zhHans.featureHubGroupAI)
-        XCTAssertEqual(AppFeature.providerSwitch.availabilityKey, "featureAvailable.providerSwitch")
+        XCTAssertEqual(FeatureGroup.features(in: .ai), [.promptOptimizer])
     }
 
 }

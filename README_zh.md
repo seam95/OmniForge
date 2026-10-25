@@ -16,7 +16,7 @@
 
 <img src="Resources/Screenshots/monitor.png" width="250" alt="系统监控面板">&nbsp;&nbsp;<img src="Resources/Screenshots/token-usage.png" width="250" alt="Token 用量">&nbsp;&nbsp;<img src="Resources/Screenshots/token-balance.png" width="250" alt="供应商额度窗口">
 
-<img src="Resources/Screenshots/providers.png" width="250" alt="供应商切换">&nbsp;&nbsp;<img src="Resources/Screenshots/utilities-tab.png" width="250" alt="实用工具">
+<img src="Resources/Screenshots/utilities-tab.png" width="250" alt="实用工具">
 
 <br>
 
@@ -40,7 +40,6 @@ OmniForge 常驻菜单栏、按需生长：在 **功能中心** 逐个启用功�
 
 - **Token 用量** — 汇总十余款 AI CLI（Claude Code、Codex、Cursor、Qoder、Trae、Kimi、Grok、OpenCode、Zcode、Antigravity 等）的 Token 消耗与额度窗口（5 小时 / 7 天重置、订阅余额），支持用量告警与重置提醒。
 - **提示词优化** — 任意应用选中文本，按 `⌥⌘P` 即可一键 AI 润色增强，支持浮窗对比预览或就地直接替换。
-- **供应商切换** — 菜单栏一键切换 Claude Code / Codex 的 API 供应商与中转配置；切换前自动备份，可随时恢复。
 
 ### 🧰 生产力
 

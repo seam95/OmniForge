@@ -92,7 +92,7 @@ final class ControlCenterViewportStabilityTests: XCTestCase {
         try await tick(0.05)
         sample()
 
-        for panel in [MenuPanel.tokenUsage, .providerSwitch, .utilities, .systemMonitor] {
+        for panel in [MenuPanel.tokenUsage, .utilities, .systemMonitor] {
             box.panel = panel
             try await tick(0.03)
             sample()
@@ -207,7 +207,6 @@ private struct ViewportStabilityHarness: View {
         case .systemMonitor: 560
         case .tokenUsage: 900
         case .utilities: 120
-        case .providerSwitch: 400
         }
     }
 }
@@ -221,12 +220,12 @@ private struct HarnessNaturalHeightKey: PreferenceKey {
 }
 
 /// 真实容器自适应（SPEC §8 新契约）：挂载真实 ControlCenterContainerView，
-/// 五个主面板切换完成后外壳总高等于目标（≤ chrome+580），且切换后
+/// 三个主面板切换完成后外壳总高等于目标（≤ chrome+580），且切换后
 /// 500ms 内不再变化（无补跳）。
 @MainActor
 final class ControlCenterShellSizeStabilityTests: XCTestCase {
     func test_shellIntrinsicSize_settlesToAdaptiveTarget_noLateJump() async throws {
-        // 五个功能全部置为可用，保证五个主页面都渲染真实内容分支。
+        // 所有功能置为可用，保证三个主页面都渲染真实内容分支。
         let availabilityKeys = AppFeature.allCases.map(\.availabilityKey)
         var originals: [String: Any?] = [:]
         for key in availabilityKeys where UserDefaults.standard.object(forKey: key) != nil {
@@ -277,7 +276,7 @@ final class ControlCenterShellSizeStabilityTests: XCTestCase {
         let initial = currentHeight()
 
         var settledHeights: [CGFloat] = []
-        for panel in [MenuPanel.tokenUsage, .providerSwitch, .utilities, .systemMonitor] {
+        for panel in [MenuPanel.tokenUsage, .utilities, .systemMonitor] {
             UserDefaults.standard.set(panel.rawValue, forKey: panelKey)
             hosting.needsLayout = true
             try await tick(0.6) // 转场 + 改高 + 淡入 + 稳定

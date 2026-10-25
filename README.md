@@ -16,7 +16,7 @@
 
 <img src="Resources/Screenshots/monitor.png" width="250" alt="System monitor panel">&nbsp;&nbsp;<img src="Resources/Screenshots/token-usage.png" width="250" alt="Token usage">&nbsp;&nbsp;<img src="Resources/Screenshots/token-balance.png" width="250" alt="Provider quota windows">
 
-<img src="Resources/Screenshots/providers.png" width="250" alt="Provider switch">&nbsp;&nbsp;<img src="Resources/Screenshots/utilities-tab.png" width="250" alt="Utilities">
+<img src="Resources/Screenshots/utilities-tab.png" width="250" alt="Utilities">
 
 <br>
 
@@ -40,7 +40,6 @@ OmniForge lives in the menu bar and grows with you: enable features individually
 
 - **Token Usage** — Track token spend and quota windows (5-hour / 7-day resets, subscription balance) across a dozen-plus AI CLIs — Claude Code, Codex, Cursor, Qoder, Trae, Kimi, Grok, OpenCode, Zcode, Antigravity, and more — with usage alerts and reset reminders.
 - **Prompt Optimizer** — Polish, expand, or refine prompts anywhere with `⌥⌘P`; supports side-by-side comparison floating window or direct in-place replacement.
-- **Provider Switch** — One-click switching of API providers / relay profiles for Claude Code and Codex from the menu bar; configs are backed up before every switch and can be restored.
 
 ### 🧰 Productivity
 

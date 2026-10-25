@@ -58,55 +58,11 @@ final class StringsTranslationTests: XCTestCase {
         }
     }
 
-    /// 聚合模式字符串键在英文侧必须全部声明（中文侧由数量一致性测试兜底）。
-    func test_bothLanguagesDeclareTheSameAggregationStrings() {
-        let names = Set(Mirror(reflecting: Strings.en).children.compactMap { $0.label })
-        for key in ["providerModeDirect", "providerModeAggregation", "providerAggregationStatusLead",
-                    "providerAggregationStatusValueFormat", "providerAggregationEnter", "providerAggregationExit",
-                    "providerAggregationConfirmStack", "providerAggregationConfirmDirect",
-                    "providerAggregationNoteDefault", "providerAggregationNoteMembersFormat", "providerAggregationNoteEmpty",
-                    "providerAggregationNoteNoFailover", "providerAggregationNoteRestartCodex",
-                    "providerAggregationOfficialNote", "providerAggregationOfficialReason",
-                    "providerAggregationSectionDefault", "providerAggregationSectionAddedFormat",
-                    "providerAggregationSectionAvailableFormat", "providerAggregationAdd", "providerAggregationRemove",
-                    "providerAggregationSetDefault", "providerAggregationEnteredClaude", "providerAggregationEnteredCodex",
-                    "providerAggregationExitedFormat", "providerAggregationUndo", "providerAggregationCacheHint",
-                    "providerAggregationProxyDown", "providerAggregationStartService", "providerAggregationAttachFailed",
-                    "providerAggregationDirectLockedReason",
-                    "providerAggregationStaleDaemonTitle", "providerAggregationStaleDaemonBody",
-                    "providerAggregationStaleOthersBody", "providerAggregationStaleLoginTitle",
-                    "providerAggregationStaleUnverifiedTitle",
-                    "providerAggregationRestartDaemon",
-                    "providerAggregationRestartDaemonConfirmTitle", "providerAggregationRestartDaemonConfirmMessage",
-                    "providerAggregationDaemonRestarted", "providerAggregationDaemonNotRunning",
-                    "providerMissStackOff", "providerMissUnknown", "providerMissRemoved", "providerMissDeleted"] {
-            XCTAssertTrue(names.contains(key), "missing \(key)")
-        }
-    }
-
-    /// 聚合成员模型编辑（Claude stackModels 行 / Codex 显示名行）字符串键在英文侧必须全部声明
-    /// （中文侧由数量一致性测试兜底）。
-    func test_bothLanguagesDeclareTheSameStackModelStrings() {
-        let names = Set(Mirror(reflecting: Strings.en).children.compactMap { $0.label })
-        for key in ["providerStackModelsSectionTitle", "providerStackModelsAdd", "providerStackModelsDelete",
-                    "providerStackModelsDisplayNamePlaceholder", "providerStackModelsModelPlaceholder",
-                    "providerStackModelsOneM", "providerStackModelsEmptyHint",
-                    "providerCodexModelDisplayNamePlaceholder"] {
-            XCTAssertTrue(names.contains(key), "missing \(key)")
-        }
-    }
-
-    /// 聚合/直连模式切换已改为无确认框直切（开关与面板按钮点击即执行，结果由 toast 反馈）：
-    /// 确认框标题键必须已移除，防止回退到弹窗确认流程。
-    func test_translations_excludeRetiredAggregationConfirmTitle() {
-        let names = Set(Mirror(reflecting: Strings.en).children.compactMap { $0.label })
-        XCTAssertFalse(names.contains("providerAggregationConfirmTitle"), "残留本地化属性: providerAggregationConfirmTitle")
-    }
-
     func test_accessibilityIDs_areDistinct() {
-        let ids: [SettingsAccessibilityID] = [.providerModeDirectRow, .providerModeAggregationRow,
-                                              .providerAggregationEnter,
-                                              .providerAggregationExit, .providerAggregationRestartDaemon]
+        // 供应商功能下线后保留的样本 ID：仍须保证 rawValue 唯一（防复制粘贴重名）。
+        let ids: [SettingsAccessibilityID] = [.tokenUsagePopoverResetToast, .tokenUsagePopoverResetConfetti,
+                                              .deepSeekApiKeyField, .deepSeekSaveKey,
+                                              .keepAwakeClamshellPreferred]
         XCTAssertEqual(Set(ids.map(\.rawValue)).count, ids.count)
     }
 }

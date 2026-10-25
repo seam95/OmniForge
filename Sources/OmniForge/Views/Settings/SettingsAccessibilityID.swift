@@ -26,19 +26,6 @@ enum SettingsAccessibilityID: String, CaseIterable {
     case tokenUsagePopoverResetToast = "tokenUsage.popover.resetToast"
     case tokenUsagePopoverResetConfetti = "tokenUsage.popover.resetConfetti"
     case tokenUsagePopoverManageMore = "tokenUsage.popover.manageMore"
-    case providerSwitchGearButton = "providerSwitch.gearButton"
-    case providerSwitchPopoverAddProvider = "providerSwitch.popover.addProvider"
-    case providerSwitchPopoverEditConfig = "providerSwitch.popover.editConfig"
-    case providerSwitchPopoverRestoreBackup = "providerSwitch.popover.restoreBackup"
-    /// 模式两行：直连行 / 聚合行（替代原「直连 / 聚合」分段行）。
-    case providerModeDirectRow = "providerMode.directRow"
-    case providerModeAggregationRow = "providerMode.aggregationRow"
-    /// 进入聚合模式动作。
-    case providerAggregationEnter = "providerAggregation.enter"
-    /// 回到直连动作。
-    case providerAggregationExit = "providerAggregation.exit"
-    /// 重启 Codex 守护进程动作（陈旧客户端横幅）。
-    case providerAggregationRestartDaemon = "providerAggregation.restartDaemon"
     case deepSeekApiKeyField = "deepSeek.apiKeyField"
     case deepSeekSaveKey = "deepSeek.saveKey"
     case deepSeekClearKey = "deepSeek.clearKey"

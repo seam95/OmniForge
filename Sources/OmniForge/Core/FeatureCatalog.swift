@@ -17,7 +17,6 @@ enum AppFeature: String, CaseIterable {
     case mouse
     case keepAwake
     case screenshot
-    case providerSwitch
     case promptOptimizer
     case stickyNotes
     case cleaningMode
@@ -36,7 +35,7 @@ enum FeatureUsageForm: Int, CaseIterable, Comparable {
     case hotkey = 0
     /// 一次配置长期生效（输入法锁定、鼠标行为）。
     case configuration = 1
-    /// 驻留扫视的状态面板（系统监控、Token 用量、供应商切换）。
+    /// 驻留扫视的状态面板（系统监控、Token 用量）。
     case panel = 2
     /// 进入→操作→离开的动作工具（清理、卸载、便签、桌宠、唤醒…）。
     case tool = 3
@@ -51,7 +50,7 @@ enum FeatureUsageForm: Int, CaseIterable, Comparable {
 enum FeatureGroup: String, CaseIterable {
     // 热键直达型
     case clipboard    // 剪贴板与快捷短语
-    case ai           // AI（提示词优化为热键直达，供应商切换为面板；按较高优先级归类）
+    case ai           // AI（提示词优化为热键直达；按较高优先级归类）
     case productivity // 生产力工具（暂存架）
     case capture      // 截图与捕获
     // 参数配置型
@@ -98,7 +97,7 @@ extension AppFeature {
         case .mouse, .rightClickEnhancement: return .mouse
         case .keepAwake: return .energy
         case .screenshot: return .capture
-        case .providerSwitch, .promptOptimizer: return .ai
+        case .promptOptimizer: return .ai
         case .translation: return .productivity
         }
     }
@@ -112,7 +111,7 @@ extension AppFeature {
             return .hotkey
         case .inputLock, .mouse, .rightClickEnhancement:
             return .configuration
-        case .systemMonitor, .tokenUsage, .providerSwitch:
+        case .systemMonitor, .tokenUsage:
             return .panel
         case .networkDiagnostics, .cleaner, .uninstaller, .colorPicker,
              .keepAwake, .stickyNotes, .cleaningMode:
@@ -146,7 +145,6 @@ extension AppFeature {
             ]
         case .keepAwake: return []
         case .screenshot: return [UserDefaultsKeys.screenshotEnabled]
-        case .providerSwitch: return []
         case .promptOptimizer: return []
         case .stickyNotes: return []
         case .cleaningMode: return []
@@ -171,7 +169,6 @@ extension AppFeature {
         case .mouse: return [.accessibility]
         case .keepAwake: return [.accessibility, .notifications]
         case .screenshot: return [.screenRecording]
-        case .providerSwitch: return []
         case .promptOptimizer: return [.accessibility]
         case .stickyNotes: return [.notifications]
         case .cleaningMode: return [.accessibility]
@@ -215,8 +212,6 @@ extension AppFeature {
             return permission == .notifications ? .optional : nil
         case .cleaningMode:
             return permission == .accessibility ? .required : nil
-        case .providerSwitch:
-            return nil
         case .promptOptimizer:
             // AX 取词与合成 ⌘V 注入均依赖辅助功能。
             return permission == .accessibility ? .required : nil
@@ -251,7 +246,6 @@ extension AppFeature {
         case .mouse: return "computermouse"
         case .keepAwake: return "moon.zzz.fill"
         case .screenshot: return "camera.viewfinder"
-        case .providerSwitch: return "arrow.triangle.swap"
         case .promptOptimizer: return "wand.and.stars"
         case .stickyNotes: return "note.text"
         case .cleaningMode: return "bubbles.and.sparkles"
@@ -276,7 +270,6 @@ extension AppFeature {
         case .mouse: return strings.featureHubNameMouse
         case .keepAwake: return strings.featureHubNameKeepAwake
         case .screenshot: return strings.featureHubNameScreenshot
-        case .providerSwitch: return strings.featureHubNameProviderSwitch
         case .promptOptimizer: return strings.featureHubNamePromptOptimizer
         case .stickyNotes: return strings.featureHubNameStickyNotes
         case .cleaningMode: return strings.featureHubNameCleaningMode
@@ -301,7 +294,6 @@ extension AppFeature {
         case .mouse: return strings.featureHubDescMouse
         case .keepAwake: return strings.featureHubDescKeepAwake
         case .screenshot: return strings.featureHubDescScreenshot
-        case .providerSwitch: return strings.featureHubDescProviderSwitch
         case .promptOptimizer: return strings.featureHubDescPromptOptimizer
         case .stickyNotes: return strings.featureHubDescStickyNotes
         case .cleaningMode: return strings.featureHubDescCleaningMode

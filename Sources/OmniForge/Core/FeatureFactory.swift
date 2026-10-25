@@ -312,18 +312,6 @@ struct FeatureFactory {
                 manager.pinPipelineBridge = pinBridge
                 runtime.register(.screenshot, manager: manager)
             }
-        case .providerSwitch:
-            if runtime.manager(for: .providerSwitch, as: ProviderSwitchManager.self) == nil {
-                runtime.register(.providerSwitch, manager: ProviderSwitchManager.production())
-            }
-            // 聚合编排管理器与切换管理器同属 providerSwitch 特性（依赖沿用同一 App Support 根）。
-            // 切换管理器同时是聚合的激活态同步边界：模式切换成功后驱动它重算，
-            // 否则激活态缓存停留在旧值（退出聚合后「未托管配置」横幅残留的根因）。
-            if runtime.manager(for: .providerSwitch, as: ProviderAggregationManager.self) == nil {
-                runtime.register(.providerSwitch, manager: ProviderAggregationManager.production(
-                    activationRefresher: runtime.manager(for: .providerSwitch, as: ProviderSwitchManager.self)
-                ))
-            }
         case .promptOptimizer:
             // 轻量接线：无后台工作，install 即注册快捷键（availability 已由 FeatureRuntime 把关）。
             if runtime.manager(for: .promptOptimizer, as: PromptOptimizerManager.self) == nil {
@@ -531,9 +519,6 @@ struct FeatureFactory {
             break
         case .screenshot:
             runtime.manager(for: .screenshot, as: ScreenshotFeatureManager.self)?.teardown()
-        case .providerSwitch:
-            // 聚合代理是常驻端口占用者：卸注册即停（SPEC 6.8）。
-            runtime.manager(for: .providerSwitch, as: ProviderAggregationManager.self)?.stopProxyForTeardown()
         case .promptOptimizer:
             runtime.manager(for: .promptOptimizer, as: PromptOptimizerManager.self)?.teardown()
         case .stickyNotes:

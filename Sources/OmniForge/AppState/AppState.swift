@@ -23,9 +23,6 @@ final class AppState: ObservableObject {
     private(set) var tokenUsagePreferences: TokenUsagePreferences?
     private(set) var deepSeekBalanceManager: DeepSeekBalanceManager?
     private(set) var keepAwakeManager: KeepAwakeManager?
-    private(set) var providerSwitchManager: ProviderSwitchManager?
-    /// 聚合编排管理器（与切换管理器同属 providerSwitch 特性；缺失时降级为只显示直连页）。
-    private(set) var providerAggregationManager: ProviderAggregationManager?
     /// 始终装载；可由 composition root 注入。
     private(set) var clamshellRecoveryCoordinator: ClamshellRecoveryCoordinator?
 
@@ -187,8 +184,6 @@ final class AppState: ObservableObject {
         tokenUsagePreferences = runtime.manager(for: .tokenUsage, as: TokenUsagePreferences.self)
         deepSeekBalanceManager = runtime.manager(for: .tokenUsage, as: DeepSeekBalanceManager.self)
         keepAwakeManager = runtime.manager(for: .keepAwake, as: KeepAwakeManager.self)
-        providerSwitchManager = runtime.manager(for: .providerSwitch, as: ProviderSwitchManager.self)
-        providerAggregationManager = runtime.manager(for: .providerSwitch, as: ProviderAggregationManager.self)
 
         startClipboardMonitoring = { [weak self] in
             self?.clipboardHistory?.startMonitoring()
@@ -205,7 +200,7 @@ final class AppState: ObservableObject {
         featureCancellables.removeAll()
 
         // 转发范围（SPEC §9.4）：只转发壳层与设置窗仍以值传递消费的低频状态；
-        // 高频监控快照、Token 更新、快捷短语与供应商列表不转发——控制中心各页面
+        // 高频监控快照、Token 更新与快捷短语不转发——控制中心各页面
         // 直接观察自身管理器，菜单栏指标走 StatusBarController 直连 Combine 管线，
         // 功能安装/卸载的解包身份变化由 rebindFromRuntime 的 objectWillChange 覆盖。
         if let lockState {

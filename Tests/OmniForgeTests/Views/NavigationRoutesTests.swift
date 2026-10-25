@@ -3,15 +3,15 @@ import XCTest
 
 final class NavigationRoutesTests: XCTestCase {
     func test_menuPanels_followFeatureAvailabilityAndStableOrder() {
-        // 终态 4 tab（信息架构重构阶段③）：唤醒降级为实用工具详情页。
+        // 终态 3 tab（信息架构重构阶段③）：唤醒降级为实用工具详情页。
         XCTAssertEqual(
             MenuPanel.primaryCases,
-            [.systemMonitor, .tokenUsage, .providerSwitch, .utilities]
+            [.systemMonitor, .tokenUsage, .utilities]
         )
 
         XCTAssertEqual(
             MenuPanel.visibleCases(isAvailable: { _ in true }),
-            [.systemMonitor, .tokenUsage, .providerSwitch, .utilities]
+            [.systemMonitor, .tokenUsage, .utilities]
         )
 
         XCTAssertEqual(
@@ -33,12 +33,6 @@ final class NavigationRoutesTests: XCTestCase {
         XCTAssertEqual(
             MenuPanel.visibleCases(isAvailable: { $0 == .tokenUsage }),
             [.tokenUsage]
-        )
-
-        // 仅 providerSwitch 可用 → 独立页签出现，不并入实用工具
-        XCTAssertEqual(
-            MenuPanel.visibleCases(isAvailable: { $0 == .providerSwitch }),
-            [.providerSwitch]
         )
 
         XCTAssertEqual(
@@ -146,13 +140,9 @@ final class NavigationRoutesTests: XCTestCase {
         XCTAssertEqual(MenuPanel.utilities.id, "utilities")
         XCTAssertEqual(MenuPanel.systemMonitor.symbolName, "waveform.path.ecg")
         XCTAssertEqual(MenuPanel.tokenUsage.symbolName, "chart.line.uptrend.xyaxis")
-        XCTAssertEqual(MenuPanel.providerSwitch.symbolName, "arrow.triangle.swap")
         XCTAssertEqual(MenuPanel.utilities.symbolName, "wrench.fill")
         XCTAssertEqual(MenuPanel.systemMonitor.title(in: .zhHans), Strings.zhHans.controlcenterTabSystemMonitor)
         XCTAssertEqual(MenuPanel.utilities.title(in: .en), Strings.en.controlcenterTabUtilities)
-        XCTAssertEqual(MenuPanel.providerSwitch.title(in: .zhHans), Strings.zhHans.controlcenterTabProviderSwitch)
-        XCTAssertEqual(MenuPanel.providerSwitch.navTitle(in: .en), "Provider")
-        XCTAssertEqual(MenuPanel.providerSwitch.navTitle(in: .zhHans), "供应商")
         XCTAssertEqual(MenuPanel.tokenUsage.title(in: .en), "Token")
         XCTAssertEqual(MenuPanel.tokenUsage.navTitle(in: .zhHans), "Token")
         XCTAssertEqual(MenuPanel.systemMonitor.navTitle(in: .zhHans), "监控")
@@ -160,7 +150,7 @@ final class NavigationRoutesTests: XCTestCase {
     }
 
     func test_settingsTabs_followFeatureAvailabilityAndStableOrder() {
-        // 终态 13 项：清理/卸载全页壳移除（功能本体在工具详情页），供应商切换设置页移除；
+        // 终态 13 项：清理/卸载全页壳移除（功能本体在工具详情页）；
         // 访达右键增强接入后追加 rightClick（位于 mouse 之后），翻译工具接入后追加 translation。
         XCTAssertEqual(
             SettingsToolbarTab.visibleCases(isAvailable: { _ in true }),

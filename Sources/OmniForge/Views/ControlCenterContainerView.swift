@@ -219,8 +219,6 @@ struct ControlCenterContainerView: View {
         case .tokenUsage:
             return state.tokenUsageManager == nil || state.tokenUsagePreferences == nil
                 || !runtime.isAvailable(.tokenUsage)
-        case .providerSwitch:
-            return state.providerSwitchManager == nil || !runtime.isAvailable(.providerSwitch)
         case .utilities:
             return false
         }
@@ -318,17 +316,6 @@ struct ControlCenterContainerView: View {
                     onOpenSettings: onOpenSettings,
                     onDismissControlCenter: onDismissControlCenter
                 )
-            case .providerSwitch:
-                if let manager = state.providerSwitchManager,
-                   runtime.isAvailable(.providerSwitch) {
-                    ProviderSwitchSettingsView(
-                        manager: manager,
-                        strings: state.l10n.s,
-                        aggregation: state.providerAggregationManager
-                    )
-                } else {
-                    unavailablePanel
-                }
             }
     }
 
