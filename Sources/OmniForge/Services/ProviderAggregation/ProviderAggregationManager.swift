@@ -211,7 +211,11 @@ final class ProviderAggregationManager: ObservableObject {
         }
 
         // 1) 起代理（失败即抛，不写任何配置）。
-        try proxy.start()
+        // 代理按 App 全局共享：另一工具已在聚合时它已在跑，复用端口即可。
+        // 无条件 start 会抛 alreadyRunning，表现为「切换失败：…AggregationProxyError 错误 2」。
+        if !proxy.isRunning {
+            try proxy.start()
+        }
         guard let port = proxy.resolvedPort else { throw AggregationProxyError.allPortsTaken }
         syncProxyState()
 
@@ -282,7 +286,11 @@ final class ProviderAggregationManager: ObservableObject {
             return
         }
 
-        try proxy.start()
+        // 代理按 App 全局共享：另一工具已在聚合时它已在跑，复用端口即可。
+        // 无条件 start 会抛 alreadyRunning，表现为「切换失败：…AggregationProxyError 错误 2」。
+        if !proxy.isRunning {
+            try proxy.start()
+        }
         guard let port = proxy.resolvedPort else { throw AggregationProxyError.allPortsTaken }
         syncProxyState()
 

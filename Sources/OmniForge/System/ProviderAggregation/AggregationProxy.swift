@@ -45,6 +45,22 @@ enum AggregationProxyError: Error, Equatable {
     case startFailed(String)
 }
 
+/// 错误文案：不实现 LocalizedError 时 toast 只能显示「错误 N」，用户无从判断原因。
+extension AggregationProxyError: LocalizedError {
+    var errorDescription: String? {
+        switch self {
+        case .allPortsTaken:
+            return "聚合代理端口全部被占用"
+        case .alreadyRunning:
+            return "聚合代理已在运行"
+        case .startTimedOut:
+            return "聚合代理启动超时"
+        case .startFailed(let reason):
+            return "聚合代理启动失败：\(reason)"
+        }
+    }
+}
+
 /// 代理服务边界（编排层持此协议；测试注入「必然启动失败」的 stub）。
 protocol AggregationProxying: AnyObject {
     var isRunning: Bool { get }

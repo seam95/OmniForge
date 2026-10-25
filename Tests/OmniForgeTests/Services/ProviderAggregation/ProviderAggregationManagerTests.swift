@@ -421,6 +421,30 @@ final class ProviderAggregationManagerTests: XCTestCase {
         XCTAssertTrue(manager.isProxyRunning)
     }
 
+    /// 回归锁（2026-10-25 实测）：代理按 App 全局共享。Codex 已聚合时，Claude Desktop
+    /// 首次进入聚合必须复用运行中的代理；此前无条件 `proxy.start()` 抛 alreadyRunning，
+    /// UI 只显示「切换失败：…AggregationProxyError 错误 2」，用户无法继续。
+    func test_enterAggregation_reusesProxyWhenAnotherToolAlreadyAggregating() throws {
+        profileStore.stubProfiles.append(ProviderProfile(
+            id: "glm-desktop", name: "GLM Desktop", tool: .claudeDesktop,
+            baseURL: "https://open.bigmodel.cn/api/anthropic", token: "sk-glm",
+            desktopModelRoutes: [
+                "claude-sonnet-5": DesktopModelRoute(model: "glm-5.3", labelOverride: nil, supports1M: false),
+            ]
+        ))
+        manager = makeManager()
+        loginStash.hasNativeLogin = true
+
+        try manager.enterAggregation(tool: .codex, defaultProfileID: "deepseek")
+        XCTAssertTrue(manager.isProxyRunning)
+
+        try manager.enterAggregation(tool: .claudeDesktop, defaultProfileID: "glm-desktop")
+
+        XCTAssertTrue(manager.isProxyRunning, "复用原有代理，不得重启")
+        XCTAssertTrue(manager.isAggregating(.claudeDesktop))
+        XCTAssertTrue(manager.isAggregating(.codex), "先进聚合的工具不受影响")
+    }
+
     /// 跨工具同名卡（id 只在单工具目录内唯一）：两侧都建 DeepSeek 卡时，
     /// Codex 聚合按 (id, tool) 定位，不得误命中 Claude 那张报「不属于当前工具」。
     func test_enterAggregation_resolvesSameIDCardWithinTool() throws {
@@ -770,6 +794,9 @@ private final class StubProxy: AggregationProxying {
     var stubStartError: Error?
 
     func start() throws {
+        // 与真实 AggregationProxy 同语义：已在运行则抛 alreadyRunning。
+        // 跨工具共享代理时，无条件的 start 会让第二个工具进不了聚合。
+        if isRunning { throw AggregationProxyError.alreadyRunning }
         if let stubStartError { throw stubStartError }
         isRunning = true
         resolvedPort = 15721
