@@ -513,10 +513,10 @@ final class AggregationPanelViewTests: XCTestCase {
         XCTAssertEqual(saved.modelDisplayNames, ["Kimi K3", ""])
 
         // 一个都没配 → nil（不写键，保持既有落盘形状）。
-        XCTAssertNil(ProfileEditorView.codexDisplayNamesForSave([("kimi-k3", "", "")]))
+        XCTAssertNil(ProfileEditorView.codexDisplayNamesForSave([("kimi-k3", "", "", "", "")]))
         XCTAssertNil(ProfileEditorView.codexDisplayNamesForSave([]))
         XCTAssertEqual(
-            ProfileEditorView.codexDisplayNamesForSave([("kimi-k3", "Kimi K3", ""), ("kimi-k2", "", "")]),
+            ProfileEditorView.codexDisplayNamesForSave([("kimi-k3", "Kimi K3", "", "", ""), ("kimi-k2", "", "", "", "")]),
             ["Kimi K3", ""],
             "有任一个非空就原样写（含空串占位），保住按位对齐"
         )
@@ -552,10 +552,10 @@ final class AggregationPanelViewTests: XCTestCase {
         XCTAssertEqual(saved.codexModelEntries.map(\.contextWindow), [200_000, 128_000])
 
         // 一个窗口都没配 → nil（不写键，保持既有落盘形状）。
-        XCTAssertNil(ProfileEditorView.codexContextWindowsForSave([("glm-5.3", "", "")]))
+        XCTAssertNil(ProfileEditorView.codexContextWindowsForSave([("glm-5.3", "", "", "", "")]))
         XCTAssertNil(ProfileEditorView.codexContextWindowsForSave([]))
         XCTAssertEqual(
-            ProfileEditorView.codexContextWindowsForSave([("glm-5.3", "", "200000"), ("kimi-k2", "", "")]),
+            ProfileEditorView.codexContextWindowsForSave([("glm-5.3", "", "200000", "", ""), ("kimi-k2", "", "", "", "")]),
             ["200000", ""],
             "有任一个非空就原样写（含空串占位），保住按位对齐"
         )

@@ -12,6 +12,7 @@ final class AggregationModelDiscoveryTests: XCTestCase {
         window: UInt64 = 256_000
     ) -> AggregationPublishedModel {
         AggregationPublishedModel(
+            tool: .claudeCode,
             key: key,
             profileName: profileName,
             model: model,

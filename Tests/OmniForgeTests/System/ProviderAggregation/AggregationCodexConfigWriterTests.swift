@@ -54,6 +54,7 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
 
     private var kimiK3: AggregationPublishedModel {
         AggregationPublishedModel(
+            tool: .codex,
             key: "kimi",
             profileName: "Kimi",
             model: "kimi-k3",
@@ -225,6 +226,7 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
     func test_applyAggregation_officialDefaultUsesSameProxyShapeAsThirdParty() throws {
         try writeModelsCache()
         let officialPublished = AggregationPublishedModel(
+            tool: .codex,
             key: "openai", profileName: "OpenAI",
             model: "gpt-5.6-sol", upstream: "gpt-5.6-sol",
             displayName: "GPT 5.6 Sol", oneM: false, window: 272_000
@@ -276,6 +278,7 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
         XCTAssertNotNil(try readConfigDocument().stringValue(key: "experimental_bearer_token", table: ["model_providers", "custom"]))
 
         let officialPublished = AggregationPublishedModel(
+            tool: .codex,
             key: "openai", profileName: "OpenAI",
             model: "gpt-5.6-sol", upstream: "gpt-5.6-sol",
             displayName: "GPT 5.6 Sol", oneM: false, window: 272_000
@@ -307,6 +310,7 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
     func test_applyAggregation_officialDefaultWithoutCacheDegradesGracefully() throws {
         // 不写 models_cache（tmpDir 里本就没有）。
         let officialPublished = AggregationPublishedModel(
+            tool: .codex,
             key: "openai", profileName: "OpenAI",
             model: "gpt-5.6-sol", upstream: "gpt-5.6-sol",
             displayName: "GPT 5.6 Sol", oneM: false, window: 272_000
@@ -329,6 +333,7 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: catalogURL.path))
 
         let officialPublished = AggregationPublishedModel(
+            tool: .codex,
             key: "openai", profileName: "OpenAI",
             model: "gpt-5.6-sol", upstream: "gpt-5.6-sol",
             displayName: "GPT 5.6 Sol", oneM: false, window: 272_000
@@ -355,6 +360,7 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
     func test_projectedContractDigest_matchesDiskAfterOfficialApply() throws {
         try writeModelsCache()
         let officialPublished = AggregationPublishedModel(
+            tool: .codex,
             key: "openai", profileName: "OpenAI",
             model: "gpt-5.6-sol", upstream: "gpt-5.6-sol",
             displayName: "GPT 5.6 Sol", oneM: false, window: 272_000
@@ -382,6 +388,7 @@ final class AggregationCodexConfigWriterTests: XCTestCase {
     func test_projectedContractDigest_detectsStalePlaceholderTokenOnDisk() throws {
         try writeModelsCache()
         let officialPublished = AggregationPublishedModel(
+            tool: .codex,
             key: "openai", profileName: "OpenAI",
             model: "gpt-5.6-sol", upstream: "gpt-5.6-sol",
             displayName: "GPT 5.6 Sol", oneM: false, window: 272_000

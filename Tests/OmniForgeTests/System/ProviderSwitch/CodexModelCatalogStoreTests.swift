@@ -48,6 +48,7 @@ final class CodexModelCatalogStoreTests: XCTestCase {
         oneM: Bool = false
     ) -> AggregationPublishedModel {
         AggregationPublishedModel(
+            tool: .codex,
             key: key,
             profileName: profileName,
             model: model,

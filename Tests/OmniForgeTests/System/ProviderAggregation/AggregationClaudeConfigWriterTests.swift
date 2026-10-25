@@ -46,6 +46,7 @@ final class AggregationClaudeConfigWriterTests: XCTestCase {
         oneM: Bool = false
     ) -> AggregationPublishedModel {
         AggregationPublishedModel(
+            tool: .claudeCode,
             key: key,
             profileName: profileName,
             model: model,

@@ -357,8 +357,9 @@ final class ProfileEditorViewTests: XCTestCase {
         XCTAssertNil(saved.modelContextWindows)
 
         try manager.upsertProfile(saved)
+        let directory = try XCTUnwrap(profileStore.directory(for: .codex))
         let text = try String(
-            contentsOf: profileStore.directory(for: .codex)
+            contentsOf: directory
                 .appendingPathComponent("kimi-yue-zhi-an-mian.config.toml")
         )
         XCTAssertFalse(text.contains("model_display_names"))
