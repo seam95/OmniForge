@@ -252,10 +252,15 @@ final class UtilityToolsKeepAwakeInteractionTests: XCTestCase {
 
     /// 在 NSHostingView 本地（flipped，左上原点）坐标处派发一对真实
     /// mouseDown/mouseUp（经 NSApp.sendEvent 走 SwiftUI 命中分发路径）。
+    ///
+    /// 顺序很关键：先把 mouseUp 投递进事件队列，再同步派发 mouseDown。
+    /// AppKit 控件（NSControl）收到 mouseDown 后会进入 `NSControlTrackMouse`
+    /// 同步跟踪循环，从事件队列等待 mouseUp；若照旧先 sendEvent(down) 再
+    /// sendEvent(up)，up 永远等不到，测试会卡在事件循环里约 3 分钟（实测卡死）。
     private func sendClick(hosting: NSView, window: NSWindow, local: NSPoint) {
         let windowPoint = hosting.convert(local, to: nil)
-        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-            guard let event = NSEvent.mouseEvent(
+        func makeEvent(_ type: NSEvent.EventType) -> NSEvent? {
+            NSEvent.mouseEvent(
                 with: type,
                 location: windowPoint,
                 modifierFlags: [],
@@ -265,8 +270,19 @@ final class UtilityToolsKeepAwakeInteractionTests: XCTestCase {
                 eventNumber: 0,
                 clickCount: 1,
                 pressure: type == .leftMouseDown ? 1 : 0
-            ) else { continue }
-            NSApp.sendEvent(event)
+            )
+        }
+        guard let down = makeEvent(.leftMouseDown), let up = makeEvent(.leftMouseUp) else { return }
+        NSApp.postEvent(up, atStart: false)
+        NSApp.sendEvent(down)
+        // 兜底：SwiftUI 自行处理点击时不进入 AppKit 跟踪循环，up 仍留在队列里。
+        if let remaining = NSApp.nextEvent(
+            matching: .leftMouseUp,
+            until: Date(),
+            inMode: .default,
+            dequeue: true
+        ) {
+            NSApp.sendEvent(remaining)
         }
     }
 
