@@ -48,6 +48,28 @@ final class MenuBarMetricRendererTests: XCTestCase {
         XCTAssertEqual(uploadFirst.secondaryValue, "↓1.4 MB/s")
     }
 
+    /// 低流量淡化不能退成灰色：idle 仍保留方向色和文字色，仅降低不透明度
+    func test_networkStacked_idleRowsKeepDirectionTintAndReadableOpacity() {
+        func alpha(_ color: NSColor) -> CGFloat {
+            color.usingColorSpace(.sRGB)?.alphaComponent ?? -1
+        }
+
+        let idle = MenuBarMetricRenderer.stackedRowColors(arrow: "↓", isIdle: true)
+        let active = MenuBarMetricRenderer.stackedRowColors(arrow: "↓", isIdle: false)
+
+        XCTAssertEqual(alpha(idle.value), 0.72, accuracy: 0.01)
+        XCTAssertEqual(alpha(idle.arrow), 0.72, accuracy: 0.01)
+        XCTAssertEqual(alpha(active.value), 1.0, accuracy: 0.01)
+        XCTAssertEqual(alpha(active.arrow), 1.0, accuracy: 0.01)
+
+        // idle 与 active 的方向色相同，只是透明度不同；不会在菜单栏上变成灰色
+        let idleArrow = idle.arrow.usingColorSpace(.sRGB)
+        let activeArrow = active.arrow.usingColorSpace(.sRGB)
+        XCTAssertEqual(idleArrow?.redComponent ?? -1, activeArrow?.redComponent ?? -2, accuracy: 0.01)
+        XCTAssertEqual(idleArrow?.greenComponent ?? -1, activeArrow?.greenComponent ?? -2, accuracy: 0.01)
+        XCTAssertEqual(idleArrow?.blueComponent ?? -1, activeArrow?.blueComponent ?? -2, accuracy: 0.01)
+    }
+
     func test_attributedTitle_joinsConfiguredGroups() {
         var snapshot = SystemSnapshot()
         snapshot.memoryUsed = 1_000_000_000

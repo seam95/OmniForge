@@ -411,7 +411,7 @@ enum MenuBarMetricRenderer {
     /// - 箭头两行同 x 对齐，承担方向语义：下载 ↓ 蓝、上传 ↑ 红（uploadFirst 决定行序）
     /// - 数值画在恒定宽度的列内右对齐（个位对齐），数值/单位变化不改变块宽，
     ///   左侧图标不再随网速波动移动
-    /// - 低于 1 KB/s（近无流量）时箭头与数值淡化，复刻参考实现的弱化语义
+    /// - 低于 1 KB/s（近无流量）时箭头与数值略降不透明度，弱化但仍保持可读
     /// - 块高保持 21 与其他指标对齐
     private static func stackedValueImage(
         first: String,
@@ -441,17 +441,16 @@ enum MenuBarMetricRenderer {
         let height: CGFloat = 21
 
         func drawRow(_ row: (arrow: String, value: String, isIdle: Bool), baselineY: CGFloat) {
-            let arrowColor: NSColor = row.isIdle ? .secondaryLabelColor : arrowTint(row.arrow)
-            let valueColor: NSColor = row.isIdle ? .secondaryLabelColor : .labelColor
+            let colors = stackedRowColors(arrow: row.arrow, isIdle: row.isIdle)
 
             (row.arrow as NSString).draw(
                 at: NSPoint(x: 0, y: baselineY),
-                withAttributes: [.font: font, .foregroundColor: arrowColor]
+                withAttributes: [.font: font, .foregroundColor: colors.arrow]
             )
             let valueWidth = (row.value as NSString).size(withAttributes: [.font: font]).width
             (row.value as NSString).draw(
                 at: NSPoint(x: width - valueWidth, y: baselineY),
-                withAttributes: [.font: font, .foregroundColor: valueColor]
+                withAttributes: [.font: font, .foregroundColor: colors.value]
             )
         }
 
@@ -468,6 +467,20 @@ enum MenuBarMetricRenderer {
     }
 
     /// 方向箭头着色：下载蓝、上传红（对齐参考实现的 input/output 语义）
+    /// 网速行颜色：idle（近无流量）只下调不透明度，保留方向色与文字色。
+    /// 不能退回 secondaryLabelColor：该色在半透明菜单栏上与背景融合，
+    /// 低流量时的数值会变得难以辨认。
+    static func stackedRowColors(
+        arrow: String,
+        isIdle: Bool
+    ) -> (arrow: NSColor, value: NSColor) {
+        let alpha: CGFloat = isIdle ? 0.72 : 1
+        return (
+            arrowTint(arrow).withAlphaComponent(alpha),
+            NSColor.labelColor.withAlphaComponent(alpha)
+        )
+    }
+
     private static func arrowTint(_ arrow: String) -> NSColor {
         arrow == "↓" ? .systemBlue : .systemRed
     }
