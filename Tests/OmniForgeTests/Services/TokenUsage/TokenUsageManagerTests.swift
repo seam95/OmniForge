@@ -42,6 +42,7 @@ final class TokenUsageManagerTests: XCTestCase {
             scheduler: FakeRepeatingScheduler()
         )
         manager.start()
+        manager.demandDidAppear()
         try await waitUntil { manager.limits[.claude] != nil }
         XCTAssertEqual(manager.limits[.claude]?.configured, true)
         XCTAssertNotNil(manager.limitUpdateAt)
@@ -62,6 +63,7 @@ final class TokenUsageManagerTests: XCTestCase {
             scheduler: scheduler
         )
         manager.start()
+        manager.demandDidAppear()
         XCTAssertEqual(scheduler.lastInterval, 900, "按配置间隔调度")
     }
 
@@ -73,6 +75,7 @@ final class TokenUsageManagerTests: XCTestCase {
             scheduler: FakeRepeatingScheduler()
         )
         manager.start()
+        manager.demandDidAppear()
         try await waitUntil { manager.limits[.claude] != nil }
         XCTAssertEqual(manager.limits[.claude]?.configured, false)
         XCTAssertFalse(manager.hasAnyConfiguredProvider)
@@ -91,6 +94,7 @@ final class TokenUsageManagerTests: XCTestCase {
             scheduler: FakeRepeatingScheduler()
         )
         manager.start()
+        manager.demandDidAppear()
         try await waitUntil { manager.limits[.claude] != nil }
         XCTAssertEqual(manager.limits[.claude]?.issue, .reauthRequired)
         XCTAssertEqual(manager.limits[.claude]?.configured, true, "错误态保持已配置口径")
@@ -110,6 +114,7 @@ final class TokenUsageManagerTests: XCTestCase {
             scheduler: FakeRepeatingScheduler()
         )
         manager.start()
+        manager.demandDidAppear()
         // 等第一次进入 in-flight 后立刻再来一次
         try await waitUntil { fetcher.callCount == 1 }
         manager.refreshNow()
@@ -128,6 +133,7 @@ final class TokenUsageManagerTests: XCTestCase {
             scheduler: FakeRepeatingScheduler()
         )
         manager.start()
+        manager.demandDidAppear()
         try await waitUntil { manager.limits.count == 2 }
         XCTAssertEqual(manager.configuredProviders, [.claude, .codex], "按 allCases 目录序")
     }
@@ -143,7 +149,9 @@ final class TokenUsageManagerTests: XCTestCase {
             scheduler: FakeRepeatingScheduler()
         )
         manager.start()
+        manager.demandDidAppear()
         manager.start()
+        manager.demandDidAppear()
         try await waitUntil { manager.limits[.claude] != nil }
         XCTAssertEqual(fetcher.callCount, 1, "重复 start 不应重复取数")
         manager.stop()
@@ -174,6 +182,7 @@ final class TokenUsageManagerTests: XCTestCase {
             scheduler: FakeRepeatingScheduler()
         )
         manager.start()
+        manager.demandDidAppear()
         try await waitUntil { manager.limits[.claude] != nil }
         XCTAssertEqual(manager.limitUpdateAt, captured, "stale 回退沿用上次成功时间，不重置为取数时刻")
     }
@@ -192,6 +201,7 @@ final class TokenUsageManagerTests: XCTestCase {
             scheduler: FakeRepeatingScheduler()
         )
         manager.start()
+        manager.demandDidAppear()
         try await waitUntil { manager.limits[.claude] != nil }
         XCTAssertEqual(fetcher.requestedForce, false, "定时/启动刷新为非 force")
         manager.refreshNow(force: true)

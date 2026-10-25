@@ -33,13 +33,16 @@ enum PromptOptimizerKeychainError: Error, Equatable {
 final class PromptOptimizerKeychainAPIKeyStore: PromptOptimizerAPIKeyStoring {
     private let service: String
     private let account: String
+    private let operations: KeychainItemOperations
 
     init(
         service: String = PromptOptimizerKeychain.service,
-        account: String = PromptOptimizerKeychain.account
+        account: String = PromptOptimizerKeychain.account,
+        operations: KeychainItemOperations = .live
     ) {
         self.service = service
         self.account = account
+        self.operations = operations
     }
 
     func readAPIKey() throws -> String? {
@@ -47,13 +50,12 @@ final class PromptOptimizerKeychainAPIKeyStore: PromptOptimizerAPIKeyStoring {
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
 
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard status == errSecSuccess else {
-            if status == errSecItemNotFound { return nil }
-            throw PromptOptimizerKeychainError.keychainUnavailable(status)
+        let result = operations.copyMatching(query)
+        guard result.status == errSecSuccess else {
+            if result.status == errSecItemNotFound { return nil }
+            throw PromptOptimizerKeychainError.keychainUnavailable(result.status)
         }
-        guard let data = item as? Data,
+        guard let data = result.data,
               let apiKey = String(data: data, encoding: .utf8),
               !apiKey.isEmpty else {
             throw PromptOptimizerKeychainError.keychainUnavailable(errSecDecode)
@@ -63,12 +65,12 @@ final class PromptOptimizerKeychainAPIKeyStore: PromptOptimizerAPIKeyStoring {
 
     func writeAPIKey(_ apiKey: String) throws {
         // SecItemUpdate 的查询字典与 Delete 同构（class + service + account），不带 match limit。
-        let existsStatus = SecItemCopyMatching(baseQuery as CFDictionary, nil)
+        let existsStatus = operations.copyMatching(baseQuery).status
 
         switch existsStatus {
         case errSecSuccess:
             let attributes: [String: Any] = [kSecValueData as String: Data(apiKey.utf8)]
-            let status = SecItemUpdate(baseQuery as CFDictionary, attributes as CFDictionary)
+            let status = operations.update(baseQuery, attributes)
             guard status == errSecSuccess else {
                 throw PromptOptimizerKeychainError.keychainUnavailable(status)
             }
@@ -76,7 +78,7 @@ final class PromptOptimizerKeychainAPIKeyStore: PromptOptimizerAPIKeyStoring {
             var attributes = baseQuery
             attributes[kSecValueData as String] = Data(apiKey.utf8)
             attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            let status = SecItemAdd(attributes as CFDictionary, nil)
+            let status = operations.add(attributes)
             guard status == errSecSuccess else {
                 throw PromptOptimizerKeychainError.keychainUnavailable(status)
             }
@@ -86,7 +88,7 @@ final class PromptOptimizerKeychainAPIKeyStore: PromptOptimizerAPIKeyStoring {
     }
 
     func deleteAPIKey() throws {
-        let status = SecItemDelete(baseQuery as CFDictionary)
+        let status = operations.delete(baseQuery)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw PromptOptimizerKeychainError.keychainUnavailable(status)
         }

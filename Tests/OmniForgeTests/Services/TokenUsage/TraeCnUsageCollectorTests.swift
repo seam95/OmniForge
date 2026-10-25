@@ -160,6 +160,8 @@ final class TraeCnUsageCollectorTests: XCTestCase {
 // MARK: - 测试替身
 
 private final class FakeTraeCnKeychain: TraeCnJWTAccessing {
+    func hasJWT() -> Bool { jwt?.isEmpty == false }
+
     var jwt: String?
 
     func readJWT() throws -> String? { jwt }

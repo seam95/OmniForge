@@ -196,6 +196,7 @@ final class TokenLimitResetMonitorTests: XCTestCase {
             resetMonitor: monitor
         )
         manager.start()
+        manager.demandDidAppear()
         try await waitUntil { fetcher.callCount == 1 }
         XCTAssertFalse(celebrated, "首次取数只记基线")
         manager.refreshNow(force: true)

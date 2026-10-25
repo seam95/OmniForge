@@ -299,6 +299,7 @@ final class TokenUsageAlertManagerTests: XCTestCase {
             alerts: alertManager
         )
         manager.start()
+        manager.demandDidAppear()
         try await waitUntil { client.posted.count == 1 }
         XCTAssertEqual(client.posted[0].title, Strings.en.tokenAlertSessionTitle, "随限额刷新触发阈值告警")
         // 同窗防抖：再次刷新不重复推送。

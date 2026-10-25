@@ -45,6 +45,9 @@ final class DeepSeekBalanceManager: ObservableObject {
     private var scheduledMinutes = -1
     private var isActive = false
     private var isFetching = false
+    /// 用户需求门控：面板打开（或保存密钥/手动刷新）后才读取钥匙串；
+    /// 启动与面板关闭期间不读取，避免后台触发钥匙串授权弹窗。
+    private var hasDemand = false
     /// 低余额上报标志：跨阈值单次；恢复、save/delete 密钥或告警设置变化后复位。
     /// 内存维护不持久化——重启后若仍低于阈值会补发一次（见 SPEC 边界）。
     private var lowBalanceReported = false
@@ -73,7 +76,8 @@ final class DeepSeekBalanceManager: ObservableObject {
 
     // MARK: - 生命周期
 
-    /// 启动：立即拉取一次 + 按配置间隔定时刷新（对齐 TokenUsageManager 惯例）。
+    /// 启动：只注册偏好观察与定时器，**不读取钥匙串**。
+    /// 首次取数由用户打开 Token 面板（`refreshNow()`）或保存密钥触发。
     func start() {
         guard !isActive else { return }
         isActive = true
@@ -82,11 +86,11 @@ final class DeepSeekBalanceManager: ObservableObject {
         lastThreshold = settings.lowBalanceThreshold
         observePreferences()
         rescheduleTimer()
-        refresh()
     }
 
     func stop() {
         isActive = false
+        hasDemand = false
         timer?.cancel()
         preferencesCancellable?.cancel()
         lowBalanceReported = false
@@ -94,6 +98,7 @@ final class DeepSeekBalanceManager: ObservableObject {
 
     /// 手动刷新入口（面板/设置调用；单飞合并并发刷新）。
     func refreshNow() {
+        hasDemand = true
         refresh()
     }
 
@@ -106,6 +111,7 @@ final class DeepSeekBalanceManager: ObservableObject {
         try keyStore.writeAPIKey(sanitized)
         lowBalanceReported = false
         apiKeyConfigured = true
+        hasDemand = true
         refresh()
     }
 
@@ -278,7 +284,9 @@ final class DeepSeekBalanceManager: ObservableObject {
         scheduledMinutes = minutes
         timer?.cancel()
         timer = scheduler.schedule(every: TimeInterval(minutes * 60)) { [weak self] in
-            self?.refresh()
+            // 面板未打开（无用户需求）时不读取钥匙串，避免后台弹授权窗。
+            guard let self, self.hasDemand else { return }
+            self.refresh()
         }
     }
 }

@@ -305,6 +305,7 @@ extension Data {
 
 /// 测试用 DeepSeek API Key 替身 — 内存存储，记录调用。
 final class FakeDeepSeekKeyStore: DeepSeekAPIKeyStoring {
+    func hasAPIKey() -> Bool { storedKey?.isEmpty == false }
     var storedKey: String?
     var readError: Error?
     var writeError: Error?

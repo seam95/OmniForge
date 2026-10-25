@@ -49,6 +49,9 @@ final class TokenUsageManager: ObservableObject {
     private let alerts: TokenUsageAlertManager?
     /// 限额重置监控 — 窗口 rollover 后触发庆祝（toast/撒花，按用户开关）。
     private let resetMonitor: TokenLimitResetMonitor?
+    /// 凭证状态读取（Keychain/环境变量判定）。注入而非直接调用静态方法：
+    /// 单元测试注入空集合，避免测试进程访问真实用户钥匙串触发授权弹窗。
+    private let credentialStateReader: () -> Set<TokenUsageProvider>
 
     /// 追加订阅限额重置事件（多播；烟花走既有 `onCelebrate`，附加订阅者走此处）。
     func addLimitResetObserver(
@@ -57,6 +60,9 @@ final class TokenUsageManager: ObservableObject {
         resetMonitor?.addCelebrateObserver(observer)
     }
     private var refreshTimer: AnyCancellable?
+    /// 用户需求门控：面板打开（或手动刷新）后才允许后台定时刷新访问钥匙串。
+    /// 启动与面板关闭期间保持 false，保证后台不触发钥匙串授权弹窗。
+    private var hasDemand = false
     /// 单飞合并：并发未命中共享同一次上游拉取，避免打爆 Claude OAuth 端点。
     private var inFlight = Set<TokenUsageProvider>()
     private var cancellables = Set<AnyCancellable>()
@@ -74,7 +80,8 @@ final class TokenUsageManager: ObservableObject {
         usageStore: UsageStoring? = nil,
         usageCollectors: [TokenUsageProvider: UsageCollecting] = [:],
         alerts: TokenUsageAlertManager? = nil,
-        resetMonitor: TokenLimitResetMonitor? = nil
+        resetMonitor: TokenLimitResetMonitor? = nil,
+        credentialStateReader: @escaping () -> Set<TokenUsageProvider> = { [] }
     ) {
         self.preferences = preferences
         self.fetchers = fetchers
@@ -83,6 +90,7 @@ final class TokenUsageManager: ObservableObject {
         self.usageCollectors = usageCollectors
         self.alerts = alerts
         self.resetMonitor = resetMonitor
+        self.credentialStateReader = credentialStateReader
 
         for (provider, collector) in usageCollectors {
             collector.onUsageDidChange = { [weak self] changed in
@@ -114,12 +122,14 @@ final class TokenUsageManager: ObservableObject {
         limits.values.contains { $0.configured }
     }
 
-    /// 启用：开始限额取数与用量采集（由 FeatureRuntime binding 驱动）。
+    /// 启用：开始用量采集（由 FeatureRuntime binding 驱动）。
+    ///
+    /// 启动**不读取钥匙串**：Token 面板未打开前不刷新限额、不读凭证。这样每次启动
+    /// 不会触发系统钥匙串授权弹窗（密钥只在真正取数时读取）。首次读取由
+    /// `demandDidAppear()`（用户打开面板）或 `refreshNow()`（手动刷新）触发。
     func start() {
         guard !isActive else { return }
         isActive = true
-        refreshCredentialCache()
-        refreshLimits(force: false)
         rescheduleRefreshTimer()
         // #04：启动采集器（首次即后台全量回填），并先渲染一次已有快照。
         for collector in usageCollectors.values {
@@ -132,6 +142,7 @@ final class TokenUsageManager: ObservableObject {
     func stop() {
         guard isActive else { return }
         isActive = false
+        hasDemand = false
         refreshTimer?.cancel()
         refreshTimer = nil
         inFlight.removeAll()
@@ -145,14 +156,29 @@ final class TokenUsageManager: ObservableObject {
     /// 同时重建 Keychain 凭证缓存与仪表盘快照（用户可能刚保存/清除了凭证）。
     func refreshNow(force: Bool = false) {
         guard isActive else { return }
+        hasDemand = true
         refreshCredentialCache()
         rebuildDashboardSnapshot()
         refreshLimits(force: force)
     }
 
+    /// 用户打开 Token 面板：此时才允许访问钥匙串并刷新限额。
+    /// 面板关闭后调用 `demandDidDisappear()`，后台定时器不再读取钥匙串。
+    func demandDidAppear() {
+        guard isActive else { return }
+        hasDemand = true
+        refreshCredentialCache()
+        refreshLimits(force: false)
+    }
+
+    /// 用户离开 Token 面板：后台定时刷新不再读取钥匙串（面板打开期间才读）。
+    func demandDidDisappear() {
+        hasDemand = false
+    }
+
     /// 重建 Keychain/环境变量凭证缓存（读取较重，只在启动与显式刷新时执行）。
     private func refreshCredentialCache() {
-        credentialConfiguredProviders = TokenUsageCredentialStateReader.configuredProviders()
+        credentialConfiguredProviders = credentialStateReader()
     }
 
     // MARK: - 限额取数
@@ -363,7 +389,9 @@ final class TokenUsageManager: ObservableObject {
         guard isActive else { return }
         let interval = TimeInterval(preferences.configuration.limitRefreshMinutes * 60)
         refreshTimer = scheduler.schedule(every: interval) { [weak self] in
-            self?.refreshLimits(force: false)
+            // 面板未打开（无用户需求）时不读取钥匙串，避免后台弹授权窗。
+            guard let self, self.hasDemand else { return }
+            self.refreshLimits(force: false)
         }
     }
 }

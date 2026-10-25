@@ -11,6 +11,9 @@ private final class FakeStepfunTokenStore: StepfunTokenStoring {
     private(set) var readCount = 0
     private(set) var writeCount = 0
 
+    func hasToken() -> Bool { storedToken?.isEmpty == false }
+    func hasCredentials() -> Bool { storedCredentials?.isValid == true }
+
     func readToken() throws -> String? {
         readCount += 1
         if let readError { throw readError }

@@ -32,10 +32,17 @@ struct TokenUsagePanelView: View {
             .padding(.top, 2)
             // 凭证状态由 manager 缓存（SPEC §9.2.4）：进入页面/切换分区只读缓存，
             // 不再在 SwiftUI 生命周期中访问 Keychain。
-            .task { credentialConfiguredProviders = manager.credentialConfiguredProviders }
+            // 启动与后台不读钥匙串：打开面板时才触发首次凭证探测与限额取数。
+            .task {
+                manager.demandDidAppear()
+                balanceManager?.refreshNow()
+                credentialConfiguredProviders = manager.credentialConfiguredProviders
+            }
             .onChange(of: manager.credentialConfiguredProviders) { _, newValue in
                 credentialConfiguredProviders = newValue
             }
+            // 面板关闭 → 停止后台定时刷新，避免无用户需求时访问钥匙串。
+            .onDisappear { manager.demandDidDisappear() }
     }
 
     private var summaryCardsBlock: some View {

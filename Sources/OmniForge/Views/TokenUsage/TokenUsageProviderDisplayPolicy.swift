@@ -38,6 +38,8 @@ enum TokenUsageProviderDisplayPolicy {
 
 /// 凭证类 provider 的只读状态读取。
 ///
+/// 只在探测条目「是否存在」，不读取密码：存在性查询不带 `kSecReturnData`，
+/// 不需要钥匙串解密与 ACL 授权，因此不会弹窗。明文读取留给真正取数的 fetcher。
 /// 读取发生在 SwiftUI 生命周期事件中，不放到 body 计算链路，避免渲染期反复访问 Keychain。
 enum TokenUsageCredentialStateReader {
     static func configuredProviders(
@@ -48,15 +50,11 @@ enum TokenUsageCredentialStateReader {
     ) -> Set<TokenUsageProvider> {
         var providers: Set<TokenUsageProvider> = []
 
-        let opencodeKey = opencodeStore
-            .flatMap { try? $0.readAPIKey() }?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
         let opencodeEnvKey = environment["OPENCODE_GO_API_KEY"]?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if opencodeKey?.isEmpty == false || opencodeEnvKey?.isEmpty == false {
+        if opencodeStore?.hasAPIKey() == true || opencodeEnvKey?.isEmpty == false {
             providers.insert(.opencode)
         }
 
-        let storedArkCredentials = arkStore.flatMap { try? $0.readCredentials() }
         let arkAccessKey = environment["VOLCENGINE_ACCESS_KEY"]
             ?? environment["ARK_AK"]
             ?? environment["VOLCENGINE_AK"]
@@ -65,16 +63,12 @@ enum TokenUsageCredentialStateReader {
             ?? environment["VOLCENGINE_SK"]
         let normalizedArkAccessKey = arkAccessKey?.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedArkSecretKey = arkSecretKey?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if storedArkCredentials?.isValid == true
+        if arkStore?.hasCredentials() == true
             || (normalizedArkAccessKey?.isEmpty == false && normalizedArkSecretKey?.isEmpty == false) {
             providers.insert(.arkCodingPlan)
         }
 
-        let stepfunToken = stepfunStore
-            .flatMap { try? $0.readToken() }?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let stepfunHasCredentials = stepfunStore.flatMap { try? $0.readCredentials() }?.isValid == true
-        if stepfunToken?.isEmpty == false || stepfunHasCredentials {
+        if stepfunStore?.hasToken() == true || stepfunStore?.hasCredentials() == true {
             providers.insert(.stepfun)
         }
 

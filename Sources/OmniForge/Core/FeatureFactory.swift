@@ -662,7 +662,9 @@ struct FeatureFactory {
                 .copilot: copilotCollector,
             ],
             alerts: alerts,
-            resetMonitor: resetMonitor
+            resetMonitor: resetMonitor,
+            // 生产路径读真实 Keychain；测试构造 TokenUsageManager 时默认空集合，不触碰用户钥匙串。
+            credentialStateReader: { TokenUsageCredentialStateReader.configuredProviders() }
         )
     }
 }

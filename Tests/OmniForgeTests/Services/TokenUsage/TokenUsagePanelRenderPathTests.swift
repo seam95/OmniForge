@@ -104,6 +104,7 @@ final class TokenUsagePanelRenderPathTests: XCTestCase {
         store.upsertBucket(bucketFixture(daysAgo: 0, total: 100))
         let manager = makeManager(store: store)
         manager.start()
+        manager.demandDidAppear()
 
         try await waitUntil { manager.dashboardSnapshot != nil }
         let snapshot = try XCTUnwrap(manager.dashboardSnapshot)
@@ -132,6 +133,7 @@ final class TokenUsagePanelRenderPathTests: XCTestCase {
             usageStore: store
         )
         manager.start()
+        manager.demandDidAppear()
         // 等 limits 就位（否则面板显示骨架态，渲染不到用量分区）与快照就绪。
         try await waitUntil { !manager.limits.isEmpty && manager.dashboardSnapshot != nil }
         try await Task.sleep(nanoseconds: 100_000_000) // 让后台 rebuild 全部落定

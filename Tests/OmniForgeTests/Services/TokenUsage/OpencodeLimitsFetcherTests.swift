@@ -3,6 +3,8 @@ import XCTest
 @testable import OmniForge
 
 private final class FakeOpencodeAPIKeyStore: OpencodeAPIKeyStoring {
+    func hasAPIKey() -> Bool { storedKey?.isEmpty == false }
+
     var storedKey: String?
     func readAPIKey() throws -> String? { storedKey }
     func writeAPIKey(_ apiKey: String) throws { storedKey = apiKey }

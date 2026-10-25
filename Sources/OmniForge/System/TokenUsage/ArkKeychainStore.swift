@@ -26,6 +26,8 @@ enum ArkKeychain {
 
 /// 火山方舟凭据存取边界。
 protocol ArkCredentialsStoring: AnyObject {
+    /// 只探测条目存在性，不读取密码（不触发钥匙串授权弹窗）。
+    func hasCredentials() -> Bool
     func readCredentials() throws -> ArkCredentials?
     func writeCredentials(_ credentials: ArkCredentials) throws
     func deleteCredentials() throws
@@ -43,10 +45,20 @@ enum ArkKeychainError: Error, Equatable {
 final class ArkKeychainStore: ArkCredentialsStoring {
     private let service: String
     private let account: String
+    private let operations: KeychainItemOperations
 
-    init(service: String = ArkKeychain.service, account: String = ArkKeychain.account) {
+    init(
+        service: String = ArkKeychain.service,
+        account: String = ArkKeychain.account,
+        operations: KeychainItemOperations = .live
+    ) {
         self.service = service
         self.account = account
+        self.operations = operations
+    }
+
+    func hasCredentials() -> Bool {
+        operations.copyMatching(baseQuery).status == errSecSuccess
     }
 
     func readCredentials() throws -> ArkCredentials? {
@@ -54,16 +66,15 @@ final class ArkKeychainStore: ArkCredentialsStoring {
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
 
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard status == errSecSuccess else {
-            if status == errSecItemNotFound { return nil }
-            throw ArkKeychainError.keychainUnavailable(status)
+        let result = operations.copyMatching(query)
+        guard result.status == errSecSuccess else {
+            if result.status == errSecItemNotFound { return nil }
+            throw ArkKeychainError.keychainUnavailable(result.status)
         }
-        guard let data = item as? Data,
+        guard let data = result.data,
               let credentials = try? JSONDecoder().decode(ArkCredentials.self, from: data),
               credentials.isValid else {
-            if status == errSecDecode {
+            if result.status == errSecDecode {
                 throw ArkKeychainError.keychainUnavailable(errSecDecode)
             }
             return nil
@@ -73,12 +84,12 @@ final class ArkKeychainStore: ArkCredentialsStoring {
 
     func writeCredentials(_ credentials: ArkCredentials) throws {
         guard let data = try? JSONEncoder().encode(credentials) else { return }
-        let existsStatus = SecItemCopyMatching(baseQuery as CFDictionary, nil)
+        let existsStatus = operations.copyMatching(baseQuery).status
 
         switch existsStatus {
         case errSecSuccess:
             let attributes: [String: Any] = [kSecValueData as String: data]
-            let status = SecItemUpdate(baseQuery as CFDictionary, attributes as CFDictionary)
+            let status = operations.update(baseQuery, attributes)
             guard status == errSecSuccess else {
                 throw ArkKeychainError.keychainUnavailable(status)
             }
@@ -86,7 +97,7 @@ final class ArkKeychainStore: ArkCredentialsStoring {
             var attributes = baseQuery
             attributes[kSecValueData as String] = data
             attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            let status = SecItemAdd(attributes as CFDictionary, nil)
+            let status = operations.add(attributes)
             guard status == errSecSuccess else {
                 throw ArkKeychainError.keychainUnavailable(status)
             }
@@ -96,7 +107,7 @@ final class ArkKeychainStore: ArkCredentialsStoring {
     }
 
     func deleteCredentials() throws {
-        let status = SecItemDelete(baseQuery as CFDictionary)
+        let status = operations.delete(baseQuery)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw ArkKeychainError.keychainUnavailable(status)
         }

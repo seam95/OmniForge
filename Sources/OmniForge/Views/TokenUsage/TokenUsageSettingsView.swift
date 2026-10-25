@@ -170,13 +170,13 @@ struct TokenUsageProvidersSettingsView: View {
     /// 渲染期不直接读钥匙串：onAppear 与凭证保存/清除后刷新一次缓存。
     /// 环境变量（OPENCODE_GO_API_KEY / VOLCENGINE_ACCESS_KEY / ARK_AK）作为钥匙串的补充凭证来源。
     private func reloadCredentialStates() {
-        deepSeekHasKey = balanceManager?.apiKeyConfigured ?? false
+        // 存在性探测不读密码，不会触发钥匙串授权弹窗；明文读取只留给真正取数的 fetcher。
+        deepSeekHasKey = DeepSeekKeychainAPIKeyStore().hasAPIKey()
         let credentialProviders = TokenUsageCredentialStateReader.configuredProviders()
         opencodeHasKey = credentialProviders.contains(.opencode)
         arkHasCredentials = credentialProviders.contains(.arkCodingPlan)
         stepfunHasToken = credentialProviders.contains(.stepfun)
-        let traeCnStore = TraeCnKeychainStore()
-        traeCnHasJWT = ((try? traeCnStore.readJWT())?.isEmpty == false)
+        traeCnHasJWT = TraeCnKeychainStore().hasJWT()
     }
 
     /// 行尾状态与是否可展开。凭证类提供商恒可展开（含已配置，便于修改/清除凭证）；

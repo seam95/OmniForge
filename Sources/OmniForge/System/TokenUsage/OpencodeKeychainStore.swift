@@ -13,6 +13,8 @@ enum OpencodeKeychain {
 
 /// OpenCode Go API Key 存取边界 — 读/写/删分离；write 为「add or update」幂等。
 protocol OpencodeAPIKeyStoring: AnyObject {
+    /// 只探测条目存在性，不读取密码（不触发钥匙串授权弹窗）。
+    func hasAPIKey() -> Bool
     /// 读取 API Key；条目不存在 → nil。
     func readAPIKey() throws -> String?
     /// 写入 API Key（幂等：不存在则新增，存在则更新）。
@@ -33,10 +35,20 @@ enum OpencodeKeychainError: Error, Equatable {
 final class OpencodeKeychainAPIKeyStore: OpencodeAPIKeyStoring {
     private let service: String
     private let account: String
+    private let operations: KeychainItemOperations
 
-    init(service: String = OpencodeKeychain.service, account: String = OpencodeKeychain.account) {
+    init(
+        service: String = OpencodeKeychain.service,
+        account: String = OpencodeKeychain.account,
+        operations: KeychainItemOperations = .live
+    ) {
         self.service = service
         self.account = account
+        self.operations = operations
+    }
+
+    func hasAPIKey() -> Bool {
+        operations.copyMatching(baseQuery).status == errSecSuccess
     }
 
     func readAPIKey() throws -> String? {
@@ -44,13 +56,12 @@ final class OpencodeKeychainAPIKeyStore: OpencodeAPIKeyStoring {
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
 
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard status == errSecSuccess else {
-            if status == errSecItemNotFound { return nil }
-            throw OpencodeKeychainError.keychainUnavailable(status)
+        let result = operations.copyMatching(query)
+        guard result.status == errSecSuccess else {
+            if result.status == errSecItemNotFound { return nil }
+            throw OpencodeKeychainError.keychainUnavailable(result.status)
         }
-        guard let data = item as? Data,
+        guard let data = result.data,
               let apiKey = String(data: data, encoding: .utf8),
               !apiKey.isEmpty else {
             throw OpencodeKeychainError.keychainUnavailable(errSecDecode)
@@ -59,12 +70,12 @@ final class OpencodeKeychainAPIKeyStore: OpencodeAPIKeyStoring {
     }
 
     func writeAPIKey(_ apiKey: String) throws {
-        let existsStatus = SecItemCopyMatching(baseQuery as CFDictionary, nil)
+        let existsStatus = operations.copyMatching(baseQuery).status
 
         switch existsStatus {
         case errSecSuccess:
             let attributes: [String: Any] = [kSecValueData as String: Data(apiKey.utf8)]
-            let status = SecItemUpdate(baseQuery as CFDictionary, attributes as CFDictionary)
+            let status = operations.update(baseQuery, attributes)
             guard status == errSecSuccess else {
                 throw OpencodeKeychainError.keychainUnavailable(status)
             }
@@ -72,7 +83,7 @@ final class OpencodeKeychainAPIKeyStore: OpencodeAPIKeyStoring {
             var attributes = baseQuery
             attributes[kSecValueData as String] = Data(apiKey.utf8)
             attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            let status = SecItemAdd(attributes as CFDictionary, nil)
+            let status = operations.add(attributes)
             guard status == errSecSuccess else {
                 throw OpencodeKeychainError.keychainUnavailable(status)
             }
@@ -82,7 +93,7 @@ final class OpencodeKeychainAPIKeyStore: OpencodeAPIKeyStoring {
     }
 
     func deleteAPIKey() throws {
-        let status = SecItemDelete(baseQuery as CFDictionary)
+        let status = operations.delete(baseQuery)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw OpencodeKeychainError.keychainUnavailable(status)
         }

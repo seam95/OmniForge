@@ -13,6 +13,8 @@ enum TraeCnKeychain {
 
 /// trae-cn JWT 存取边界 — 读/写/删分离；write 为「add or update」幂等。
 protocol TraeCnJWTAccessing: AnyObject {
+    /// 只探测条目存在性，不读取密码（不触发钥匙串授权弹窗）。
+    func hasJWT() -> Bool
     func readJWT() throws -> String?
     func writeJWT(_ jwt: String) throws
     func deleteJWT() throws
@@ -29,10 +31,21 @@ enum TraeCnKeychainError: Error, Equatable {
 final class TraeCnKeychainStore: TraeCnJWTAccessing {
     private let service: String
     private let account: String
+    private let operations: KeychainItemOperations
 
-    init(service: String = TraeCnKeychain.service, account: String = TraeCnKeychain.account) {
+    init(
+        service: String = TraeCnKeychain.service,
+        account: String = TraeCnKeychain.account,
+        operations: KeychainItemOperations = .live
+    ) {
         self.service = service
         self.account = account
+        self.operations = operations
+    }
+
+    /// 存在性探测：不带 `kSecReturnData`，只判断条目是否存在，不读密码。
+    func hasJWT() -> Bool {
+        operations.copyMatching(baseQuery).status == errSecSuccess
     }
 
     func readJWT() throws -> String? {
@@ -40,13 +53,12 @@ final class TraeCnKeychainStore: TraeCnJWTAccessing {
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
 
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard status == errSecSuccess else {
-            if status == errSecItemNotFound { return nil }
-            throw TraeCnKeychainError.keychainUnavailable(status)
+        let result = operations.copyMatching(query)
+        guard result.status == errSecSuccess else {
+            if result.status == errSecItemNotFound { return nil }
+            throw TraeCnKeychainError.keychainUnavailable(result.status)
         }
-        guard let data = item as? Data,
+        guard let data = result.data,
               let jwt = String(data: data, encoding: .utf8),
               !jwt.isEmpty else {
             throw TraeCnKeychainError.keychainUnavailable(errSecDecode)
@@ -55,11 +67,11 @@ final class TraeCnKeychainStore: TraeCnJWTAccessing {
     }
 
     func writeJWT(_ jwt: String) throws {
-        let existsStatus = SecItemCopyMatching(baseQuery as CFDictionary, nil)
+        let existsStatus = operations.copyMatching(baseQuery).status
         switch existsStatus {
         case errSecSuccess:
             let attributes: [String: Any] = [kSecValueData as String: Data(jwt.utf8)]
-            let status = SecItemUpdate(baseQuery as CFDictionary, attributes as CFDictionary)
+            let status = operations.update(baseQuery, attributes)
             guard status == errSecSuccess else {
                 throw TraeCnKeychainError.keychainUnavailable(status)
             }
@@ -67,7 +79,7 @@ final class TraeCnKeychainStore: TraeCnJWTAccessing {
             var attributes = baseQuery
             attributes[kSecValueData as String] = Data(jwt.utf8)
             attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            let status = SecItemAdd(attributes as CFDictionary, nil)
+            let status = operations.add(attributes)
             guard status == errSecSuccess else {
                 throw TraeCnKeychainError.keychainUnavailable(status)
             }
@@ -77,7 +89,7 @@ final class TraeCnKeychainStore: TraeCnJWTAccessing {
     }
 
     func deleteJWT() throws {
-        let status = SecItemDelete(baseQuery as CFDictionary)
+        let status = operations.delete(baseQuery)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw TraeCnKeychainError.keychainUnavailable(status)
         }

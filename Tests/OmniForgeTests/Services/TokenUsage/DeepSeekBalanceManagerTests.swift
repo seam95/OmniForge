@@ -26,6 +26,7 @@ final class DeepSeekBalanceManagerTests: XCTestCase {
     func test_startWithConfiguredKeyFetchesAndPublishesSnapshot() async throws {
         let harness = makeHarness(fetcher: fetcher(responding: balanceResponse(cny: "18.22")))
         harness.manager.start()
+        harness.manager.refreshNow()
         await drain()
 
         XCTAssertEqual(harness.manager.apiKeyConfigured, true)
@@ -40,6 +41,7 @@ final class DeepSeekBalanceManagerTests: XCTestCase {
     func test_startWithoutKeyStaysUnconfiguredAndHidden() async throws {
         let harness = makeHarness(key: nil)
         harness.manager.start()
+        harness.manager.refreshNow()
         await drain()
 
         XCTAssertEqual(harness.manager.apiKeyConfigured, false)
@@ -51,6 +53,7 @@ final class DeepSeekBalanceManagerTests: XCTestCase {
     func test_saveAPIKeyWritesKeychainAndRefreshesImmediately() async throws {
         let harness = makeHarness(key: nil, fetcher: fetcher(responding: balanceResponse()))
         harness.manager.start()
+        harness.manager.refreshNow()
         await drain()
         XCTAssertEqual(harness.fetcher.callCount, 0)
 
@@ -74,6 +77,7 @@ final class DeepSeekBalanceManagerTests: XCTestCase {
     func test_deleteAPIKeyClearsSnapshotAndFlag() async throws {
         let harness = makeHarness(fetcher: fetcher(responding: balanceResponse()))
         harness.manager.start()
+        harness.manager.refreshNow()
         await drain()
         XCTAssertNotNil(harness.manager.snapshot)
 
@@ -93,6 +97,7 @@ final class DeepSeekBalanceManagerTests: XCTestCase {
         ]
         let harness = makeHarness(fetcher: fetcher)
         harness.manager.start()
+        harness.manager.refreshNow()
         await drain()
         let first = try XCTUnwrap(harness.manager.snapshot)
         let firstCapturedAt = first.capturedAt
@@ -115,6 +120,7 @@ final class DeepSeekBalanceManagerTests: XCTestCase {
         ]
         let harness = makeHarness(fetcher: fetcher)
         harness.manager.start()
+        harness.manager.refreshNow()
         await drain()
         harness.manager.refreshNow()
         await drain()
@@ -131,6 +137,7 @@ final class DeepSeekBalanceManagerTests: XCTestCase {
         ]
         let harness = makeHarness(fetcher: fetcher)
         harness.manager.start()
+        harness.manager.refreshNow()
         await drain()
 
         let snapshot = try XCTUnwrap(harness.manager.snapshot)
@@ -142,6 +149,7 @@ final class DeepSeekBalanceManagerTests: XCTestCase {
     func test_firstFetchErrorPublishesEmptyInfosWithIssue() async throws {
         let harness = makeHarness(fetcher: fetcher(responding: [:])) // 空字典 → 解码失败
         harness.manager.start()
+        harness.manager.refreshNow()
         await drain()
 
         let snapshot = try XCTUnwrap(harness.manager.snapshot)
@@ -154,6 +162,7 @@ final class DeepSeekBalanceManagerTests: XCTestCase {
     func test_singleFlight_doesNotDuplicateConcurrentRefreshNow() async throws {
         let harness = makeHarness(fetcher: fetcher(responding: balanceResponse(cny: "18.22")))
         harness.manager.start()
+        harness.manager.refreshNow()
         harness.manager.refreshNow() // 同步连续触发：第二次必须被单飞合并
         await drain()
 
@@ -164,6 +173,7 @@ final class DeepSeekBalanceManagerTests: XCTestCase {
     func test_timerReschedulesWhenRefreshMinutesChange() throws {
         let harness = makeHarness()
         harness.manager.start()
+        harness.manager.refreshNow()
         XCTAssertEqual(harness.scheduler.lastInterval, 300, "默认 5 分钟")
 
         try harness.preferences.setDeepSeekRefreshMinutes(15)
@@ -175,6 +185,7 @@ final class DeepSeekBalanceManagerTests: XCTestCase {
     func test_lowBalanceFiresOnceBelowThreshold() async throws {
         let harness = makeHarness(fetcher: fetcher(responding: balanceResponse(cny: "0.50")))
         harness.manager.start()
+        harness.manager.refreshNow()
         await drain()
         harness.manager.refreshNow()
         await drain()
@@ -188,6 +199,7 @@ final class DeepSeekBalanceManagerTests: XCTestCase {
     func test_lowBalanceNotFiredAboveThreshold() async throws {
         let harness = makeHarness(fetcher: fetcher(responding: balanceResponse(cny: "18.22")))
         harness.manager.start()
+        harness.manager.refreshNow()
         await drain()
         XCTAssertEqual(harness.notification.posted.count, 0)
     }
@@ -201,6 +213,7 @@ final class DeepSeekBalanceManagerTests: XCTestCase {
         ]
         let harness = makeHarness(fetcher: fetcher)
         harness.manager.start()
+        harness.manager.refreshNow()
         await drain()
         harness.manager.refreshNow()
         await drain()
@@ -219,6 +232,7 @@ final class DeepSeekBalanceManagerTests: XCTestCase {
         ]
         let harness = makeHarness(fetcher: fetcher)
         harness.manager.start()
+        harness.manager.refreshNow()
         await drain()
         harness.manager.refreshNow()
         await drain()
@@ -234,6 +248,7 @@ final class DeepSeekBalanceManagerTests: XCTestCase {
             alertEnabled: false
         )
         harness.manager.start()
+        harness.manager.refreshNow()
         await drain()
         XCTAssertEqual(harness.notification.posted.count, 0)
     }
@@ -241,6 +256,7 @@ final class DeepSeekBalanceManagerTests: XCTestCase {
     func test_lowBalanceUnauthorizedSilentlyDegradesThenPostsWhenGranted() async throws {
         let harness = makeHarness(fetcher: fetcher(responding: balanceResponse(cny: "0.50")), authorized: false)
         harness.manager.start()
+        harness.manager.refreshNow()
         await drain()
         XCTAssertEqual(harness.notification.posted.count, 0, "未授权静默")
 
@@ -254,6 +270,7 @@ final class DeepSeekBalanceManagerTests: XCTestCase {
         let harness = makeHarness(fetcher: fetcher(responding: balanceResponse(cny: "0.50")))
         harness.notification.postResult = .failure(URLError(.notConnectedToInternet))
         harness.manager.start()
+        harness.manager.refreshNow()
         await drain()
         harness.manager.refreshNow()
         await drain()
@@ -269,6 +286,7 @@ final class DeepSeekBalanceManagerTests: XCTestCase {
         ]
         let harness = makeHarness(fetcher: fetcher, threshold: 1.0)
         harness.manager.start()
+        harness.manager.refreshNow()
         await drain()
         XCTAssertEqual(harness.notification.posted.count, 0, "3.00 > 阈值 1 不报")
 
@@ -287,6 +305,7 @@ final class DeepSeekBalanceManagerTests: XCTestCase {
         ]
         let harness = makeHarness(fetcher: fetcher)
         harness.manager.start()
+        harness.manager.refreshNow()
         await drain()
         XCTAssertEqual(harness.notification.posted.count, 1)
 
@@ -302,6 +321,7 @@ final class DeepSeekBalanceManagerTests: XCTestCase {
     func test_requestHeadersContainBearerKey() async throws {
         let harness = makeHarness(fetcher: fetcher(responding: balanceResponse()))
         harness.manager.start()
+        harness.manager.refreshNow()
         await drain()
 
         XCTAssertEqual(harness.fetcher.lastHeaders?["Authorization"], "Bearer sk-test-123")
@@ -311,6 +331,7 @@ final class DeepSeekBalanceManagerTests: XCTestCase {
     func test_endpointURLIsOfficialBalanceEndpoint() async throws {
         let harness = makeHarness(fetcher: fetcher(responding: balanceResponse()))
         harness.manager.start()
+        harness.manager.refreshNow()
         await drain()
 
         XCTAssertEqual(harness.fetcher.lastURL, DeepSeekBalanceManager.endpoint)

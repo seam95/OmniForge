@@ -248,6 +248,8 @@ final class TokenUsagePanelFilteringTests: XCTestCase {
 }
 
 private final class PanelFilteringOpencodeStore: OpencodeAPIKeyStoring {
+    func hasAPIKey() -> Bool { key?.isEmpty == false }
+
     var key: String?
 
     init(key: String?) {
@@ -260,6 +262,8 @@ private final class PanelFilteringOpencodeStore: OpencodeAPIKeyStoring {
 }
 
 private final class PanelFilteringArkStore: ArkCredentialsStoring {
+    func hasCredentials() -> Bool { credentials?.isValid == true }
+
     var credentials: ArkCredentials?
 
     init(credentials: ArkCredentials?) {
@@ -273,6 +277,9 @@ private final class PanelFilteringArkStore: ArkCredentialsStoring {
 
 /// 空 StepFun 存储：让凭证探测测试确定化，不读真实钥匙串（本机可能已登录 StepFun）。
 private final class PanelFilteringStepfunStore: StepfunTokenStoring {
+    func hasToken() -> Bool { false }
+    func hasCredentials() -> Bool { false }
+
     func readToken() throws -> String? { nil }
     func writeToken(_ token: String) throws {}
     func deleteToken() throws {}

@@ -25,9 +25,13 @@ struct StepfunCredentials: Equatable, Codable {
 
 /// StepFun Oasis-Token 与凭证存取边界 — 读/写/删分离；write 为「add or update」幂等。
 protocol StepfunTokenStoring: AnyObject {
+    /// 只探测条目存在性，不读取密码（不触发钥匙串授权弹窗）。
+    func hasToken() -> Bool
     func readToken() throws -> String?
     func writeToken(_ token: String) throws
     func deleteToken() throws
+    /// 只探测条目存在性，不读取密码（不触发钥匙串授权弹窗）。
+    func hasCredentials() -> Bool
     func readCredentials() throws -> StepfunCredentials?
     func writeCredentials(_ credentials: StepfunCredentials) throws
     func deleteCredentials() throws
@@ -43,12 +47,21 @@ enum StepfunKeychainError: Error, Equatable {
 /// 仅本设备可用（`AfterFirstUnlockThisDeviceOnly`），不上 iCloud 同步。
 final class StepfunKeychainStore: StepfunTokenStoring {
     private let service: String
+    private let operations: KeychainItemOperations
 
-    init(service: String = StepfunKeychain.service) {
+    init(
+        service: String = StepfunKeychain.service,
+        operations: KeychainItemOperations = .live
+    ) {
         self.service = service
+        self.operations = operations
     }
 
     // MARK: - Token
+
+    func hasToken() -> Bool {
+        hasValue(account: StepfunKeychain.tokenAccount)
+    }
 
     func readToken() throws -> String? {
         try readString(account: StepfunKeychain.tokenAccount)
@@ -63,6 +76,10 @@ final class StepfunKeychainStore: StepfunTokenStoring {
     }
 
     // MARK: - 凭证
+
+    func hasCredentials() -> Bool {
+        hasValue(account: StepfunKeychain.credentialsAccount)
+    }
 
     func readCredentials() throws -> StepfunCredentials? {
         guard let json = try readString(account: StepfunKeychain.credentialsAccount),
@@ -100,13 +117,12 @@ final class StepfunKeychainStore: StepfunTokenStoring {
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
 
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard status == errSecSuccess else {
-            if status == errSecItemNotFound { return nil }
-            throw StepfunKeychainError.keychainUnavailable(status)
+        let result = operations.copyMatching(query)
+        guard result.status == errSecSuccess else {
+            if result.status == errSecItemNotFound { return nil }
+            throw StepfunKeychainError.keychainUnavailable(result.status)
         }
-        guard let data = item as? Data,
+        guard let data = result.data,
               let value = String(data: data, encoding: .utf8),
               !value.isEmpty else {
             throw StepfunKeychainError.keychainUnavailable(errSecDecode)
@@ -116,11 +132,11 @@ final class StepfunKeychainStore: StepfunTokenStoring {
 
     private func writeString(_ value: String, account: String) throws {
         let query = baseQuery(account: account)
-        let existsStatus = SecItemCopyMatching(query as CFDictionary, nil)
+        let existsStatus = operations.copyMatching(query).status
         switch existsStatus {
         case errSecSuccess:
             let attributes: [String: Any] = [kSecValueData as String: Data(value.utf8)]
-            let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+            let status = operations.update(query, attributes)
             guard status == errSecSuccess else {
                 throw StepfunKeychainError.keychainUnavailable(status)
             }
@@ -128,7 +144,7 @@ final class StepfunKeychainStore: StepfunTokenStoring {
             var attributes = query
             attributes[kSecValueData as String] = Data(value.utf8)
             attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            let status = SecItemAdd(attributes as CFDictionary, nil)
+            let status = operations.add(attributes)
             guard status == errSecSuccess else {
                 throw StepfunKeychainError.keychainUnavailable(status)
             }
@@ -137,8 +153,13 @@ final class StepfunKeychainStore: StepfunTokenStoring {
         }
     }
 
+    /// 存在性探测：不带 `kSecReturnData`，只判断条目是否存在，不读密码。
+    private func hasValue(account: String) -> Bool {
+        operations.copyMatching(baseQuery(account: account)).status == errSecSuccess
+    }
+
     private func delete(account: String) throws {
-        let status = SecItemDelete(baseQuery(account: account) as CFDictionary)
+        let status = operations.delete(baseQuery(account: account))
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw StepfunKeychainError.keychainUnavailable(status)
         }

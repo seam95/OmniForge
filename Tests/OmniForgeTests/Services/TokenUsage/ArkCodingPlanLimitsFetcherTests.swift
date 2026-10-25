@@ -3,6 +3,8 @@ import XCTest
 @testable import OmniForge
 
 private final class FakeArkCredentialsStore: ArkCredentialsStoring {
+    func hasCredentials() -> Bool { storedCredentials?.isValid == true }
+
     var storedCredentials: ArkCredentials?
     func readCredentials() throws -> ArkCredentials? { storedCredentials }
     func writeCredentials(_ credentials: ArkCredentials) throws { storedCredentials = credentials }
