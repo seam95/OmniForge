@@ -1,4 +1,6 @@
 import AppKit
+import ApplicationServices
+import CoreGraphics
 import Foundation
 
 public enum RightClickError: LocalizedError, Equatable {
@@ -24,69 +26,50 @@ public enum RightClickError: LocalizedError, Equatable {
     }
 }
 
-/// 访达偏好读写。以协议隔离 CoreFoundation，便于测试替身。
-public protocol FinderPreferenceStore {
-    func bool(forKey key: String, inApplicationDomain domain: String) -> Bool?
-    /// 返回是否同步成功
+/// 访达「显示/隐藏隐藏文件」切换器。以协议隔离系统事件投递，便于测试替身。
+public protocol FinderHiddenFilesToggling {
+    /// 返回是否成功投递快捷键；未获辅助功能权限时为 false。
     @discardableResult
-    func set(_ value: Bool, forKey key: String, inApplicationDomain domain: String) -> Bool
+    func toggleHiddenFiles() -> Bool
 }
 
-/// 访达重启器。隔离子进程派发，便于测试替身。
-public protocol FinderRelauncher {
-    func relaunchFinder()
-}
-
-/// 基于 CFPreferences 的访达偏好读写：与 `defaults` 命令同一路径，但不派生子进程。
-public struct CFPreferencesFinderPreferenceStore: FinderPreferenceStore {
+/// 向当前前台访达窗口发送 ⌘⇧.。
+/// 系统没有能在运行中修改 `AppleShowAllFiles` 偏好的公开接口：写入偏好后必须重启访达
+/// 才重新读取，因此这里改用访达内置快捷键，即时切换且不重启进程。
+public struct SystemFinderHiddenFilesToggler: FinderHiddenFilesToggling {
     public init() {}
 
-    public func bool(forKey key: String, inApplicationDomain domain: String) -> Bool? {
-        CFPreferencesCopyAppValue(key as CFString, domain as CFString) as? Bool
-    }
+    public func toggleHiddenFiles() -> Bool {
+        // 向其他进程投递键盘事件需要辅助功能权限，未授权时事件会被静默丢弃
+        guard AXIsProcessTrusted() else { return false }
 
-    public func set(_ value: Bool, forKey key: String, inApplicationDomain domain: String) -> Bool {
-        CFPreferencesSetAppValue(key as CFString, value as CFPropertyList, domain as CFString)
-        return CFPreferencesAppSynchronize(domain as CFString)
-    }
-}
-
-/// 通过 killall 重启访达，使其重新枚举已打开的窗口。
-/// 只启动子进程而不等待退出，避免阻塞调用方（可能是主线程）。
-public struct ProcessFinderRelauncher: FinderRelauncher {
-    private let killallPath: String
-
-    public init(killallPath: String = "/usr/bin/killall") {
-        self.killallPath = killallPath
-    }
-
-    public func relaunchFinder() {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: killallPath)
-        process.arguments = ["Finder"]
-        try? process.run()
+        // kVK_ANSI_Period = 0x2F
+        let source = CGEventSource(stateID: .hidSystemState)
+        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x2F, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0x2F, keyDown: false) else {
+            return false
+        }
+        keyDown.flags = [.maskCommand, .maskShift]
+        keyUp.flags = [.maskCommand, .maskShift]
+        keyDown.post(tap: .cghidEventTap)
+        keyUp.post(tap: .cghidEventTap)
+        return true
     }
 }
 
 /// 访达右键操作执行器
 public final class RightClickActionExecutor {
-    /// Finder 偏好域与「显示隐藏文件」键名
-    public static let finderPreferenceDomain = "com.apple.finder"
-    public static let showAllFilesPreferenceKey = "AppleShowAllFiles"
-
     private let fileManager: FileManager
     private let pasteboard: NSPasteboard
     private let workspace: NSWorkspace
-    private let preferences: FinderPreferenceStore
-    private let relauncher: FinderRelauncher
+    private let hiddenFilesToggler: FinderHiddenFilesToggling
     private let fileRevealer: ([URL]) -> Void
 
     public init(
         fileManager: FileManager = .default,
         pasteboard: NSPasteboard = .general,
         workspace: NSWorkspace = .shared,
-        preferences: FinderPreferenceStore = CFPreferencesFinderPreferenceStore(),
-        relauncher: FinderRelauncher = ProcessFinderRelauncher(),
+        hiddenFilesToggler: FinderHiddenFilesToggling = SystemFinderHiddenFilesToggler(),
         fileRevealer: @escaping ([URL]) -> Void = { urls in
             DispatchQueue.main.async {
                 NSWorkspace.shared.activateFileViewerSelecting(urls)
@@ -96,8 +79,7 @@ public final class RightClickActionExecutor {
         self.fileManager = fileManager
         self.pasteboard = pasteboard
         self.workspace = workspace
-        self.preferences = preferences
-        self.relauncher = relauncher
+        self.hiddenFilesToggler = hiddenFilesToggler
         self.fileRevealer = fileRevealer
     }
 
@@ -289,24 +271,11 @@ public final class RightClickActionExecutor {
 
     // MARK: - 5. 切换隐藏文件可见性
 
-    /// 切换 macOS Finder 中隐藏文件的可见性
-    ///
-    /// Finder 只在重新枚举文件夹时读取 `AppleShowAllFiles`，已经打开的窗口不会自动重读，
-    /// 因此写入偏好后必须重启访达（访达被 relaunchd 拉起时会自动恢复原有窗口）。
-    /// 返回切换后的可见性；写入失败时返回原值且不重启访达。
+    /// 切换访达隐藏文件可见性。
+    /// 走访达内置快捷键 ⌘⇧.：即时生效、不重启访达，也不改动用户的 `AppleShowAllFiles` 偏好。
+    /// 返回 false 表示未获辅助功能权限，快捷键未投递。
     @discardableResult
     public func toggleHiddenFiles() -> Bool {
-        let domain = Self.finderPreferenceDomain
-        let key = Self.showAllFilesPreferenceKey
-
-        let current = preferences.bool(forKey: key, inApplicationDomain: domain) ?? false
-        let nextValue = !current
-
-        guard preferences.set(nextValue, forKey: key, inApplicationDomain: domain) else {
-            return current
-        }
-
-        relauncher.relaunchFinder()
-        return nextValue
+        hiddenFilesToggler.toggleHiddenFiles()
     }
 }

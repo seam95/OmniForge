@@ -172,7 +172,8 @@ extension AppFeature {
         case .promptOptimizer: return [.accessibility]
         case .stickyNotes: return [.notifications]
         case .cleaningMode: return [.accessibility]
-        case .rightClickEnhancement: return []
+        // 仅「切换显示隐藏文件」需要模拟访达快捷键，其余右键动作不需要。
+        case .rightClickEnhancement: return [.accessibility]
         case .translation: return [.accessibility]
         }
     }
@@ -218,7 +219,8 @@ extension AppFeature {
         case .clipboardHistory, .quickPhrase, .shelf:
             return nil
         case .rightClickEnhancement:
-            return nil
+            // 只有隐藏文件切换依赖辅助功能（模拟 ⌘⇧.）；未授权时其他右键动作照常可用。
+            return permission == .accessibility ? .optional : nil
         case .translation:
             // 手动输入与粘贴不要求辅助功能；仅全局快捷键取词需要，故为可选。
             return permission == .accessibility ? .optional : nil

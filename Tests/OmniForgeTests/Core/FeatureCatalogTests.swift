@@ -392,8 +392,13 @@ final class FeatureCatalogTests: XCTestCase {
         XCTAssertEqual(AppFeature.rightClickEnhancement.usageForm, .configuration)
         XCTAssertEqual(AppFeature.rightClickEnhancement.symbolName, "cursorarrow.click.2")
         XCTAssertTrue(AppFeature.rightClickEnhancement.enabledKeys.isEmpty)
-        XCTAssertTrue(AppFeature.rightClickEnhancement.possiblePermissions.isEmpty)
-        XCTAssertNil(AppFeature.rightClickEnhancement.permissionUsage(for: .accessibility))
+        // 只有「切换显示隐藏文件」依赖辅助功能（模拟 ⌘⇧.），因此为可选权限
+        XCTAssertEqual(AppFeature.rightClickEnhancement.possiblePermissions, [.accessibility])
+        XCTAssertEqual(
+            AppFeature.rightClickEnhancement.permissionUsage(for: .accessibility),
+            .optional
+        )
+        XCTAssertNil(AppFeature.rightClickEnhancement.permissionUsage(for: .notifications))
     }
 
     func test_aiGroup_hubTitleContract() {
