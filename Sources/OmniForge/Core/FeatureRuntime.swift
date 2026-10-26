@@ -357,10 +357,15 @@ final class FeatureRuntime: ObservableObject {
             }
         },
         .rightClickEnhancement: {
+            // 必须操作 registry 中的实例。此处曾改用另一个单例，导致同一右键动作
+            // 被执行两次（两个实例各自注册了同一分布式通知）。
+            guard let manager = shared.manager(for: .rightClickEnhancement, as: RightClickService.self) else {
+                return
+            }
             if shared.isAvailable(.rightClickEnhancement) {
-                RightClickService.shared.start()
+                manager.start()
             } else {
-                RightClickService.shared.stop()
+                manager.stop()
             }
         },
         .translation: {

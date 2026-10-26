@@ -6,22 +6,25 @@ import Foundation
 // 与 DesktopPetManager 一致保持 internal：stringsProvider 依赖 internal 的 Strings/L10n，
 // 且本类型没有模块外使用者。
 final class RightClickService: ObservableObject {
-    static let shared = RightClickService()
-
+    // 不要提供 static shared：本服务由 FeatureFactory 创建并注册到 FeatureRuntime，
+    // 启停统一走注册表实例。曾因 binding 另启一个单例，导致同一通知被处理两次。
     @Published private(set) var isRunning = false
 
     private let executor: RightClickActionExecutor
     private let configuration: RightClickConfiguration
     private let stringsProvider: () -> Strings
+    private let notificationCenter: NotificationCenter
     private var observerToken: NSObjectProtocol?
 
     init(
         executor: RightClickActionExecutor = RightClickActionExecutor(),
         configuration: RightClickConfiguration = .shared,
+        notificationCenter: NotificationCenter = DistributedNotificationCenter.default(),
         stringsProvider: @escaping () -> Strings = { L10n(userDefaults: .standard).s }
     ) {
         self.executor = executor
         self.configuration = configuration
+        self.notificationCenter = notificationCenter
         self.stringsProvider = stringsProvider
     }
 
@@ -41,10 +44,9 @@ final class RightClickService: ObservableObject {
 
     private func registerNotificationObserver() {
         unregisterNotificationObserver()
-        let center = DistributedNotificationCenter.default()
         let name = NSNotification.Name(RightClickIPCMessage.notificationName)
 
-        observerToken = center.addObserver(
+        observerToken = notificationCenter.addObserver(
             forName: name,
             object: nil,
             queue: .main
@@ -57,7 +59,7 @@ final class RightClickService: ObservableObject {
 
     private func unregisterNotificationObserver() {
         if let token = observerToken {
-            DistributedNotificationCenter.default().removeObserver(token)
+            notificationCenter.removeObserver(token)
             observerToken = nil
         }
     }
