@@ -656,6 +656,39 @@ final class SystemMonitorManagerTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(samplers.cpu.callCount, 4, "CPU stride=1 仍每 tick 采样")
     }
 
+    func test_samplingDecisionSnapshotsTickAtDispatch() async throws {
+        // 回归锁（数据竞争闪退修复）：一轮采样采哪些指标必须在发起时（主线程）判定，
+        // 不得延迟到采样队列闭包执行时再读 tickCount——闭包执行前主线程可能已推进到
+        // 下一个 tick，且跨线程读取主线程状态本身是未定义行为。
+        // 场景：gpu 后台 stride=5（baseTick=2），tick5 发起时应采 gpu，紧接 tick6
+        // 发起（不采）。两轮闭包入队后串行执行，执行时 tickCount 已是 6，判定必须
+        // 仍按各自发起轮的快照——否则 tick5 轮的 gpu 采样会凭空丢失。
+        let scheduler = FakeRepeatingScheduler()
+        let samplers = FakeSamplerSet()
+        let manager = makeManager(scheduler: scheduler, samplers: samplers)
+
+        manager.setMenuBarMetrics([.cpu, .gpu])
+        try await waitForSnapshot(manager) { $0.gpuUsage != nil }
+        XCTAssertEqual(samplers.gpu.callCount, 1, "首轮全采应采 gpu 一次")
+
+        // 推进 tick2~tick4（非 stride 点，gpu 不采），并等队列排空
+        for _ in 0..<3 {
+            scheduler.fire()
+            try await waitForCPUSampleCount(samplers.cpu, atLeast: samplers.cpu.callCount + 1)
+        }
+
+        // 关键时序：连续发起 tick5 与 tick6，两次 fire 之间不等待。
+        // 采样闭包尚未执行，执行时 tickCount 必已推进到 6。
+        scheduler.fire()
+        scheduler.fire()
+        try await waitForCPUSampleCount(samplers.cpu, atLeast: 6)
+
+        XCTAssertEqual(
+            samplers.gpu.callCount, 2,
+            "tick5 轮的 gpu 采样不得因闭包执行时 tickCount 已推进到 6 而丢失"
+        )
+    }
+
     func test_menuBarNetworkGetsRapidFollowUpWithoutPanelDemand() async throws {
         // 网速是 delta 指标：首轮只建基线、速率必为 nil。启动时面板未打开，
         // 0.5s 补采必须放行，否则要干等 2s 后的下一个定时 tick 才出速率。
@@ -1112,6 +1145,20 @@ private func waitForSnapshot(
         try await Task.sleep(nanoseconds: 20_000_000)
     }
     XCTFail("Timed out waiting for snapshot condition")
+}
+
+@MainActor
+private func waitForCPUSampleCount(
+    _ sampler: FakeCPUSampler,
+    atLeast count: Int,
+    timeout: TimeInterval = 1.0
+) async throws {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if sampler.callCount >= count { return }
+        try await Task.sleep(nanoseconds: 20_000_000)
+    }
+    XCTFail("Timed out waiting for CPU sample count >= \(count); got \(sampler.callCount)")
 }
 
 @MainActor

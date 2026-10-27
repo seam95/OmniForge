@@ -288,9 +288,15 @@ final class SystemMonitorManager: ObservableObject {
         let now = Date()
         // 捕获当次 generation：停止采样（generation 变化）后，在途结果回写被丢弃。
         let capturedGeneration = generation
-        // 强制采样集合在主线程判定（只读上一轮快照 + 会话内计数），采样队列只消费结果，
-        // 避免把 @MainActor 状态丢进后台队列读写。
         let forced = forcedMetrics(in: needed, previous: previousSnapshot, isFirstTick: tickCount == 1)
+        // 本轮采样判定（policy / tickCount 均为主线程可变状态）全部在主线程完成并快照：
+        // 采样队列闭包若跨线程读取这些状态属于数据竞争（未定义行为，曾致菜单栏面板
+        // 打开后随机闪退）。闭包只消费这份不可变集合，不再触碰任何 @MainActor 状态。
+        let metricsToSample = isForeground
+            ? needed
+            : needed.filter {
+                forced.contains($0) || tickCount % policy.backgroundTickStride(for: $0) == 0
+            }
 
         queue.async { [weak self] in
             guard let self else { return }
@@ -298,12 +304,9 @@ final class SystemMonitorManager: ObservableObject {
             newSnapshot.sampledAt = now
             newSnapshot.issues = [:] // 清空上一轮问题记录
 
-            for metric in needed {
-                let stride = self.policy.backgroundTickStride(for: metric)
-                // 前台面板每 tick 全采；后台由 forced（启动首轮/缺读数，已封顶）与
-                // stride 共同决定。
-                let shouldSample = isForeground || forced.contains(metric) || self.tickCount % stride == 0
-                guard shouldSample else { continue }
+            // 前台面板每 tick 全采；后台由 forced（启动首轮/缺读数，已封顶）与
+            // stride 共同决定——判定已在主线程随本轮发起一并完成。
+            for metric in metricsToSample {
 
                 switch metric {
                 case .cpu:
