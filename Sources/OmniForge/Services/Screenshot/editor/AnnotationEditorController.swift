@@ -19,7 +19,8 @@ import QuartzCore
 /// - 输出动作：confirm(复制)/save/pin 经 `ScreenshotResultRunning` 统一副作用；
 ///   编辑器负责合成图、`makeResult` 构造 `ScreenshotResult`、成功/失败 UI。
 ///   - confirm：composite → makeResult → `run(.copy)`；失败保留 UI，成功 onComplete(image)。
-///   - save：先 tearDown，再 `run(.save)`；失败仍呈现错误并 onComplete(nil)。
+///   - save：composite → makeResult → `run(.save)`；成功才 tearDown + onComplete(nil)，
+///     失败保留 UI 可重试（与 confirm 顺序契约一致）。
 ///   - pin：composite → makeResult → `run(.pin, pinOrigin:)`；失败保留 UI。
 ///   错误反馈用 NSAlert（capcap 用 ToastWindow，OmniForge 暂用 NSAlert）。
 ///   长截图裁切直出仍暂走 encoder/clipboard（不在本期 pipeline 迁入范围）。
@@ -69,6 +70,10 @@ final class AnnotationEditorController {
     private var subToolbarView: NSView?
 
     private(set) var activeTool: EditTool = .none
+    /// 当前是否处于文字编辑态（画布存在活跃文字输入框）。
+    /// overlay 层的 ESC 监听据此放行按键：由 EditableTextField 自身的
+    /// cancelOperation 仅退出输入框，而不是取消整个截图会话。
+    var isEditingText: Bool { canvasView?.isEditingText == true }
     /// 移动模式：无标注工具，选区内按住拖动即移动选区（工具栏手柄点击切换）。
     private var isMoveModeActive = false
 
@@ -891,7 +896,11 @@ final class AnnotationEditorController {
         }
     }
 
-    /// 静默保存到文件。先 tearDown，再 pipeline `.save`；失败仍呈现错误并 onComplete(nil)。
+    /// 静默保存到文件。pipeline `.save` 成功后才 tearDown + onComplete(nil)；
+    /// 失败呈现错误并保留编辑器现场（工具栏/画布仍在，用户可重试），
+    /// 顺序契约与 confirm()/pin() 一致。
+    /// 注：写盘（含编码）在主线程同步执行，与 confirm/pin 相同；
+    /// 若需把编码移出主线程，应经 pipeline 的异步出口改造，顺序契约不变。
     func save() {
         Self.logger.info("editor.save 进入")
         canvasView?.commitActiveTextEditing()
@@ -905,16 +914,18 @@ final class AnnotationEditorController {
             presentError(\.annotationErrorNoResultMetadata)
             return
         }
-        // 先拆除 UI（参照 capcap L1669-1670，避免编码阻塞主线程造成卡顿）。
-        tearDown()
         do {
             _ = try resultRunner.run(result: result, intent: .save, pinOrigin: nil)
-            Self.logger.info("editor.save 成功 → onComplete(nil)")
+            // 写盘成功才收尾：先 run 成功、再拆 UI、再结束会话。
+            // 若先 tearDown 再写盘，失败时 UI 已拆、错误弹窗挂在将关窗口上，
+            // 已标注的成果不可恢复（数据丢失）。
+            Self.logger.info("editor.save 成功 → tearDown + onComplete(nil)")
+            tearDown()
             onComplete(nil)
         } catch {
-            Self.logger.notice("editor.save 抛错 → onComplete(nil)")
+            // 失败保留现场可重试：不 tearDown、不 onComplete（会话继续）。
+            Self.logger.notice("editor.save 抛错 → 保留状态，未 onComplete")
             presentError(error)
-            onComplete(nil)
         }
     }
 

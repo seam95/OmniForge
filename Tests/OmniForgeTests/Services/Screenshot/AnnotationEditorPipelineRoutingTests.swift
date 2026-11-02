@@ -92,23 +92,58 @@ final class AnnotationEditorPipelineRoutingTests: XCTestCase {
         XCTAssertNotNil(editor.lastError)
     }
 
-    func test_save_pipelineFailure_stillCompletesWithErrorRecorded() {
+    func test_save_pipelineFailure_keepsEditorForRetryWithoutCompleting() {
         let runner = FakeScreenshotResultRunner()
         runner.errorToThrow = ScreenshotPipelineError.writeFailed("/tmp/x.png")
-        var completedCalled = false
+        var completeCount = 0
         let editor = AnnotationEditorController(
             baseImage: makeImage(width: 2, height: 2),
             document: AnnotationDocument(),
             resultRunner: runner,
             makeResult: { self.makeScreenshotResult(from: $0) },
-            onComplete: { _ in completedCalled = true }
+            onComplete: { _ in completeCount += 1 }
         )
+        // 嵌入宿主视图建立真实编辑器现场（画布/工具栏），再触发保存失败。
+        let host = SelectionView(frame: NSRect(x: 0, y: 0, width: 200, height: 150))
+        editor.show(in: host, selectionRect: NSRect(x: 0, y: 0, width: 200, height: 150))
+        XCTAssertNotNil(editor.canvasView, "前置条件：编辑器现场已建立")
 
         editor.save()
 
+        // 顺序契约（与 confirm/pin 一致）：写盘失败不拆 UI、不结束会话，可重试。
         XCTAssertEqual(runner.calls.count, 1)
-        XCTAssertTrue(completedCalled)
+        XCTAssertEqual(completeCount, 0, "保存失败不得 onComplete（会话保留）")
+        XCTAssertNotNil(editor.canvasView, "保存失败不得 tearDown（编辑器现场保留供重试）")
         XCTAssertNotNil(editor.lastError)
+    }
+
+    func test_save_success_tearsDownAndCompletesExactlyOnce() {
+        let runner = FakeScreenshotResultRunner()
+        var completeCount = 0
+        var completedImages: [NSImage?] = []
+        let editor = AnnotationEditorController(
+            baseImage: makeImage(width: 2, height: 2),
+            document: AnnotationDocument(),
+            resultRunner: runner,
+            makeResult: { self.makeScreenshotResult(from: $0) },
+            onComplete: { image in
+                completeCount += 1
+                completedImages.append(image)
+            }
+        )
+        let host = SelectionView(frame: NSRect(x: 0, y: 0, width: 200, height: 150))
+        editor.show(in: host, selectionRect: NSRect(x: 0, y: 0, width: 200, height: 150))
+        XCTAssertNotNil(editor.canvasView, "前置条件：编辑器现场已建立")
+
+        editor.save()
+
+        // 写盘成功后才收尾：恰好一次 onComplete(nil)，UI 已拆除。
+        XCTAssertEqual(runner.calls.count, 1)
+        XCTAssertEqual(runner.calls[0].intent, .save)
+        XCTAssertEqual(completeCount, 1, "保存成功应恰好 onComplete 一次")
+        XCTAssertNil(completedImages.first ?? nil, "save 的 onComplete 载荷为 nil")
+        XCTAssertNil(editor.canvasView, "保存成功后应 tearDown（画布已拆）")
+        XCTAssertNil(editor.lastError)
     }
 
     func test_pin_pipelineFailure_keepsEditorAndRecordsError() {

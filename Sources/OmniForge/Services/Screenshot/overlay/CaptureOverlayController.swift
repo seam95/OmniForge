@@ -480,17 +480,15 @@ final class CaptureOverlayController {
     private func installCancellationMonitors() {
         // ESC 本地监听
         escLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 { // ESC
-                self?.handleCancel()
-                return nil
-            }
-            return event
+            guard let self else { return event }
+            // 路由消费则吞掉事件；放行则交还系统继续派发给文本输入框。
+            return self.routeEscKeyDown(keyCode: Int(event.keyCode)) ? nil : event
         }
         // ESC 全局监听
         escGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 {
-                self?.handleCancel()
-            }
+            guard let self else { return }
+            // 全局监听无法吞事件，仅复用同一路由决策决定是否取消会话。
+            _ = self.routeEscKeyDown(keyCode: Int(event.keyCode))
         }
         // 右键监听（仅选区阶段；编辑器嵌入后由编辑器自身接管）
         rightMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: .rightMouseDown) { [weak self] _ in
@@ -498,6 +496,18 @@ final class CaptureOverlayController {
             guard self.editorController == nil else { return }
             self.handleCancel()
         }
+    }
+
+    /// ESC 按键路由决策（keyCode 53 = ESC）。
+    /// 返回 true 表示事件已消费（取消会话）；false 表示放行继续派发。
+    private func routeEscKeyDown(keyCode: Int) -> Bool {
+        guard keyCode == 53 else { return false }
+        // 与右键监听同构的守卫：编辑器处于文字编辑态时放行 ESC，
+        // 由 EditableTextField 自身的 cancelOperation 仅退出输入框，
+        // 避免误取消整个会话丢掉已标注截图。
+        if editorController?.isEditingText == true { return false }
+        handleCancel()
+        return true
     }
 
     /// 多屏吸附路由：以 `NSEvent.mouseLocation` 选当前屏 SelectionView 更新 hover。
@@ -1017,6 +1027,18 @@ extension CaptureOverlayController {
     /// 测试用：是否已 tearDown（apply 守卫可读）。
     var isTornDownForTesting: Bool {
         isTornDown
+    }
+
+    /// 测试用：当前嵌入的标注编辑器（ESC 路由测试驱动其文字编辑态）。
+    var editorControllerForTesting: AnnotationEditorController? {
+        editorController
+    }
+
+    /// 测试用：ESC 按键路由决策（与 ESC 本地/全局监听同一入口）。
+    /// 返回 true 表示事件被消费（取消会话）；false 表示放行。
+    @discardableResult
+    func routeEscKeyDownForTesting(keyCode: Int) -> Bool {
+        routeEscKeyDown(keyCode: keyCode)
     }
 
     /// 测试用：读取当前嵌入编辑器实际使用的字符串目录。
