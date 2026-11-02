@@ -304,7 +304,7 @@ final class ClipboardHistoryManager: ObservableObject {
         }
 
         if let text = pasteboard.readText() {
-            if let url = URL(string: text), url.scheme != nil {
+            if let url = URL(string: text), Self.isWhitelistedURL(url) {
                 return makeEntry(
                     type: .url,
                     preview: text,
@@ -327,6 +327,23 @@ final class ClipboardHistoryManager: ObservableObject {
         }
 
         return nil
+    }
+
+    /// 文本 URL 分类白名单：仅常见 scheme（https/http/mailto/file）才按 URL 归档。
+    /// 坑：macOS 14 起 Foundation 的 URL(string:) 对含冒号的普通文本也能解析成功
+    /// 并自动百分号编码（"Re: Meeting tomorrow" → "Re:%20Meeting%20tomorrow"），
+    /// 因此不能只看 scheme != nil；https/http 还要求 host 非空（"http://" 残缺串按文本原样保存），
+    /// 其余 scheme（如自定义 myapp://）一律归 .text，保证粘贴回原文不被破坏。
+    private static func isWhitelistedURL(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased() else { return false }
+        switch scheme {
+        case "https", "http":
+            return url.host != nil
+        case "mailto", "file":
+            return true
+        default:
+            return false
+        }
     }
 
     @objc private func handleTimerTick() {
