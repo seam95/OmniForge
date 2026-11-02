@@ -126,17 +126,17 @@ enum TraeCnUsageProcessing {
 
     /// 秒时间戳 → UTC 半小时桶起点（坏值 → nil，行被丢弃）。
     static func bucketStart(fromSeconds seconds: Double?) -> Date? {
-        guard let intSeconds = seconds.flatMap({ UsageTimestampSanitizer.epochSeconds($0) }) else { return nil }
-        return Date(timeIntervalSince1970: Double((intSeconds / 1800) * 1800))
+        seconds
+            .flatMap { UsageTimestampSanitizer.epochSeconds($0) }
+            .map { UsageTimestampSanitizer.halfHourBucket(fromSeconds: Double($0)) }
     }
 
     /// 毫秒时间戳 → 半小时桶起点（窗口对齐用；坏值回退当前时间桶）。
     static func bucketStart(fromMilliseconds ms: Double) -> Date {
-        guard let seconds = UsageTimestampSanitizer.epochSeconds(fromMilliseconds: ms) else {
-            let now = Int(Date().timeIntervalSince1970)
-            return Date(timeIntervalSince1970: Double((now / 1800) * 1800))
+        guard let bucket = UsageTimestampSanitizer.halfHourBucket(fromMilliseconds: ms) else {
+            return UsageTimestampSanitizer.halfHourBucket(fromSeconds: Date().timeIntervalSince1970)
         }
-        return Date(timeIntervalSince1970: Double((seconds / 1800) * 1800))
+        return bucket
     }
 
     /// 安全整数（API 返回 JSON 数字；非法/负值/超出 Int64 表示 → nil）。

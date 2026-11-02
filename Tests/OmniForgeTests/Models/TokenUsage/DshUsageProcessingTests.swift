@@ -173,17 +173,13 @@ final class DshUsageProcessingTests: XCTestCase {
         XCTAssertNil(DshUsageProcessing.inheritedCut(untagged))
     }
 
-    func test_requestConfig_andStepSlotAndRetrySlot() {
+    func test_requestConfig_andRetrySlot() {
         let header = event(type: "request/header", seq: 1, time: 1, data: [
             "header": ["config": ["provider": "deepseek-account", "model": "deepseek-v4.1-flash"]],
         ])
         let config = DshUsageProcessing.requestConfig(header)
         XCTAssertEqual(config?.provider, "deepseek-account")
         XCTAssertEqual(config?.model, "deepseek-v4.1-flash")
-
-        let step = event(type: "step/start", seq: 2, time: 1, data: ["turn": 1, "step": 2])
-        XCTAssertEqual(DshUsageProcessing.stepSlot(step)?.turn, 1)
-        XCTAssertEqual(DshUsageProcessing.stepSlot(step)?.step, 2)
 
         let retry = event(type: "llm/retry-started", seq: 3, time: 1, data: ["turn": 1, "step": 2])
         XCTAssertEqual(DshUsageProcessing.retrySlot(retry)?.step, 2)

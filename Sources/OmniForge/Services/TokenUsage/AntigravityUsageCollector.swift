@@ -1,4 +1,3 @@
-import Combine
 import Foundation
 import GRDB
 
@@ -16,17 +15,12 @@ import GRDB
 /// - 去重 key 持久化在 `message_seen`：同一 responseId 跨扫描只计一次；
 /// - 任何库解析失败（坏库/缺表/坏列/坏 blob）静默跳过：不写库、不报错、不打印内容。
 ///
+/// 调度骨架（定时兜底、信号合并、回填标记、通知）复用 `JSONLUsageCollectorBase`；
+/// 本类只覆盖 `performScan`（指纹跳过 + 无游标语义）。
+///
 /// 隐私红线（SPEC 2.6）：生成 blob 含对话正文；本采集器只按字段号读取数值字段，
 /// blob 永不落库、永不打印。
-final class AntigravityUsageCollector: UsageCollecting {
-    let provider: TokenUsageProvider = .antigravity
-
-    var onUsageDidChange: ((TokenUsageProvider) -> Void)?
-    var onBackfillStateChange: ((Bool) -> Void)?
-
-    /// 定时兜底间隔（与本地采集器一致：5 分钟）。
-    static let defaultScanInterval: TimeInterval = 5 * 60
-
+final class AntigravityUsageCollector: JSONLUsageCollectorBase {
     /// CLI 会话库默认目录。
     static var defaultCLIConversationsDirectory: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -39,27 +33,12 @@ final class AntigravityUsageCollector: UsageCollecting {
             .appendingPathComponent(".gemini/antigravity/conversations", isDirectory: true)
     }
 
-    /// 扫描轮次计数（测试断言）。
-    private(set) var scanCount = 0
     /// 实际打开解析的库文件数（指纹未变的库被跳过；测试断言）。
     private(set) var parsedFileCount = 0
-
-    private let store: UsageStoring
-    private let cliConversationsDirectory: URL
-    private let ideConversationsDirectory: URL
-    private let scheduler: RepeatingScheduling
-    private let scanInterval: TimeInterval
-    private let fileManager: FileManager
-    private let queue: DispatchQueue
-    private let triggerLock = NSLock()
-    private var timer: AnyCancellable?
-    private var started = false
-    /// 扫描信号合并：scanning = 已排队/正在执行的扫描；扫描中收到的信号置 rescanRequested。
-    private var scanning = false
-    private var rescanRequested = false
-    private var backfillCompleted = false
     /// 库文件 → (size, mtime) 指纹；未变化则跳过解析（首次全部解析）。
     private var fileSignatures: [String: FileSignature] = [:]
+    private let cliConversationsDirectory: URL
+    private let ideConversationsDirectory: URL
 
     /// 单个库文件的版本指纹。
     struct FileSignature: Equatable {
@@ -75,113 +54,39 @@ final class AntigravityUsageCollector: UsageCollecting {
         scanInterval: TimeInterval = AntigravityUsageCollector.defaultScanInterval,
         fileManager: FileManager = .default
     ) {
-        self.store = store
         self.cliConversationsDirectory = cliConversationsDirectory
         self.ideConversationsDirectory = ideConversationsDirectory
-        self.scheduler = scheduler
-        self.scanInterval = scanInterval
-        self.fileManager = fileManager
-        self.queue = DispatchQueue(
-            label: "omniForge.tokenUsage.antigravityCollector",
-            qos: .utility
+        super.init(
+            provider: .antigravity,
+            store: store,
+            scanInterval: scanInterval,
+            fileManager: fileManager,
+            scheduler: scheduler
         )
     }
 
-    // MARK: - UsageCollecting
-
-    /// 测试进程检测（仓库既有约定：与 Cursor/Claude/Codex 采集器一致）。
-    private var isRunningUnitTests: Bool {
-        let hasXCTestEnvironment = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
-        return hasXCTestEnvironment || ProcessInfo.processInfo.processName == "xctest"
-    }
+    // MARK: - 测试进程守护
 
     /// 是否以默认（真实用户）目录构造。
-    private var usesRealDirectories: Bool {
+    override var usesRealDirectories: Bool {
         cliConversationsDirectory.standardizedFileURL == Self.defaultCLIConversationsDirectory.standardizedFileURL
             || ideConversationsDirectory.standardizedFileURL == Self.defaultIDEConversationsDirectory.standardizedFileURL
-    }
-
-    /// 启动：立即返回；首次扫描即后台回填（首尾回填标记）。
-    func start() {
-        guard !started else { return }
-        started = true
-        // 测试进程用真实目录构造时不得扫描：避免测试读用户真实会话库。
-        guard !(isRunningUnitTests && usesRealDirectories) else { return }
-        timer = scheduler.schedule(every: scanInterval) { [weak self] in
-            self?.triggerScan()
-        }
-        triggerScan()
-    }
-
-    func stop() {
-        guard started else { return }
-        started = false
-        timer?.cancel()
-        timer = nil
-    }
-
-    /// 线程安全：等待串行队列排空（测试用）。
-    func waitForIdle() {
-        queue.sync {}
-    }
-
-    // MARK: - 扫描调度（信号合并）
-
-    /// 触发一次扫描：扫描中到达的多个信号只追加一次「重新扫描」。
-    private func triggerScan() {
-        triggerLock.lock()
-        if scanning {
-            rescanRequested = true
-            triggerLock.unlock()
-            return
-        }
-        scanning = true
-        triggerLock.unlock()
-        queue.async { [weak self] in
-            self?.performScanCycle()
-        }
-    }
-
-    /// 串行队列上执行完整一轮扫描（含回填状态与回调通知）。
-    private func performScanCycle() {
-        scanCount += 1
-        let isBackfill = !backfillCompleted
-        if isBackfill {
-            notifyBackfill(true)
-        }
-
-        performScan()
-
-        if isBackfill {
-            backfillCompleted = true
-            notifyBackfill(false)
-        }
-        notifyUsageChanged()
-
-        // 锁内直接续跑 rescan：避免 scanning=false 到再次触发之间的空隙产生双触发竞态。
-        triggerLock.lock()
-        scanning = false
-        let again = rescanRequested && started
-        rescanRequested = false
-        if again {
-            scanning = true
-        }
-        triggerLock.unlock()
-        if again {
-            queue.async { [weak self] in
-                self?.performScanCycle()
-            }
-        }
     }
 
     // MARK: - 扫描
 
     /// 全量一轮：枚举 → 指纹跳过未变库 → 只读解析 → 内存聚合 → 单事务提交。
-    private func performScan() {
+    override func performScan() {
         let files = enumerateDatabaseFiles()
         guard !files.isEmpty else { return }
 
-        let accumulator = ScanAccumulator(provider: provider, store: store)
+        let scan = ScanContext(
+            provider: provider,
+            aggregator: UsageAggregator { [store] key in
+                store.loadBucket(key)
+            },
+            seen: store.loadSeenKeys()
+        )
         var pendingSignatures: [String: FileSignature] = [:]
 
         for file in files {
@@ -194,14 +99,20 @@ final class AntigravityUsageCollector: UsageCollecting {
                 continue // 坏库/缺表/被锁：静默跳过，不缓存指纹 → 下轮重试
             }
             for generation in generations {
-                accumulator.ingest(generation)
+                scan.ingest(
+                    dedupKey: generation.deduplicationKey,
+                    usage: generation.usage,
+                    conversationDelta: generation.conversationDelta,
+                    model: generation.model,
+                    bucketStart: generation.bucketStart
+                )
             }
             if let signature {
                 pendingSignatures[file.url.path] = signature
             }
         }
 
-        let buckets = accumulator.drainBuckets()
+        let buckets = scan.aggregator.drainTouched()
         guard !buckets.isEmpty else {
             // 解析成功但无新增（重复扫描/空库）：只推进文件指纹，不写事务。
             fileSignatures.merge(pendingSignatures) { _, latest in latest }
@@ -210,7 +121,7 @@ final class AntigravityUsageCollector: UsageCollecting {
 
         var commit = ScanCommit()
         commit.buckets = buckets
-        commit.newSeenKeys = accumulator.drainNewSeen()
+        commit.newSeenKeys = scan.drainNewSeen()
         commit.seenAt = Date()
         do {
             try store.commitScan(commit)
@@ -335,69 +246,5 @@ final class AntigravityUsageCollector: UsageCollecting {
         var configuration = Configuration()
         configuration.readonly = true
         return try? DatabaseQueue(path: url.path, configuration: configuration)
-    }
-
-    // MARK: - 单轮去重与聚合
-
-    /// 单轮扫描的共享累加器：已见 key 去重 + 半小时桶内存聚合。
-    private final class ScanAccumulator {
-        private let provider: TokenUsageProvider
-        private let aggregator: UsageAggregator
-        /// 扫描开始时持久化的已见 key（跨扫描去重）。
-        private let seenKeys: Set<String>
-        /// 本轮新见 key（随 commitScan 落库）。
-        private var newSeenKeys: Set<String> = []
-
-        init(provider: TokenUsageProvider, store: UsageStoring) {
-            self.provider = provider
-            self.aggregator = UsageAggregator { [store] key in
-                store.loadBucket(key)
-            }
-            self.seenKeys = store.loadSeenKeys()
-        }
-
-        /// 去重通过后累加到对应半小时桶。
-        func ingest(_ generation: AntigravityGeneration) {
-            let key = generation.deduplicationKey
-            guard !seenKeys.contains(key), !newSeenKeys.contains(key) else { return }
-            newSeenKeys.insert(key)
-            aggregator.ingest(
-                usage: generation.usage,
-                conversationDelta: generation.conversationDelta,
-                key: UsageBucketKey(
-                    provider: provider,
-                    model: generation.model,
-                    bucketStart: generation.bucketStart
-                )
-            )
-        }
-
-        /// 取出本轮被触碰桶的累计快照（写库后复用聚合器也安全）。
-        func drainBuckets() -> [UsageBucketState] {
-            aggregator.drainTouched()
-        }
-
-        /// 取出本轮新见 key 并清空。
-        func drainNewSeen() -> Set<String> {
-            let drained = newSeenKeys
-            newSeenKeys.removeAll()
-            return drained
-        }
-    }
-
-    // MARK: - 通知
-
-    private func notifyUsageChanged() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.onUsageDidChange?(self.provider)
-        }
-    }
-
-    private func notifyBackfill(_ value: Bool) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.onBackfillStateChange?(value)
-        }
     }
 }

@@ -104,8 +104,7 @@ enum CursorUsageProcessing {
 
     /// 半小时桶起点（UTC 对齐，与既有桶复用口径一致）。
     static func bucketFloor(for date: Date) -> Date {
-        let seconds = Int(date.timeIntervalSince1970)
-        return Date(timeIntervalSince1970: Double((seconds / 1800) * 1800))
+        UsageTimestampSanitizer.halfHourBucket(fromSeconds: date.timeIntervalSince1970)
     }
 
     /// CSV 行 → 半小时桶累计快照：同 (model, 桶) 合并求和；行数记入会话数（每行一条云端用量记录）。
@@ -179,14 +178,6 @@ enum CursorUsageProcessing {
 
     // MARK: 日期
 
-    private static let isoFractional: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
-    private static let isoPlain = ISO8601DateFormatter()
-
     private static let dayFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -197,6 +188,6 @@ enum CursorUsageProcessing {
 
     /// 行时间解析：带小数秒 ISO / 无小数秒 ISO / `yyyy-MM-dd`（UTC 当天 0 点）。
     static func parseDate(_ string: String) -> Date? {
-        isoFractional.date(from: string) ?? isoPlain.date(from: string) ?? dayFormatter.date(from: string)
+        UsageTimestampSanitizer.isoDate(string) ?? dayFormatter.date(from: string)
     }
 }

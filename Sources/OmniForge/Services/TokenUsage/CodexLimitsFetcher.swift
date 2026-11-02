@@ -13,16 +13,6 @@ enum CodexWhamResponseDecoder {
     static let sessionWindowSeconds: Double = 18000
     static let weeklyWindowSeconds: Double = 604800
 
-    /// ISO 解析：优先带小数秒（wham 的 `expires_at` 形如 `2027-08-22T10:00:00.000Z`），
-    /// 失败回退无小数秒格式。
-    private static let isoFractional: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
-    private static let isoPlain = ISO8601DateFormatter()
-
     static func decode(_ object: [String: Any]) -> [LimitWindowKind: UsageWindow] {
         var windows: [LimitWindowKind: UsageWindow] = [:]
 
@@ -198,12 +188,12 @@ enum CodexWhamResponseDecoder {
             return nil
         }
         guard let expires = row["expires_at"] as? String,
-              let expiresAt = isoFractional.date(from: expires) ?? isoPlain.date(from: expires),
+              let expiresAt = UsageTimestampSanitizer.isoDate(expires),
               expiresAt > now else {
             return nil
         }
         let grantedAt = (row["granted_at"] as? String).flatMap {
-            isoFractional.date(from: $0) ?? isoPlain.date(from: $0)
+            UsageTimestampSanitizer.isoDate($0)
         }
         return UsageResetCreditEntry(grantedAt: grantedAt, expiresAt: expiresAt)
     }

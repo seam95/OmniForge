@@ -152,11 +152,11 @@ enum PiUsageProcessing {
     /// ISO8601 行时间戳 → UTC 半小时桶起点；非法/缺失返回 nil。
     static func bucketStart(from timestamp: String?) -> Date? {
         guard let timestamp = normalized(timestamp),
-              let date = isoDate(from: timestamp),
+              let date = UsageTimestampSanitizer.isoDate(timestamp),
               let seconds = UsageTimestampSanitizer.epochSeconds(date.timeIntervalSince1970) else {
             return nil
         }
-        return Date(timeIntervalSince1970: Double((seconds / 1800) * 1800))
+        return UsageTimestampSanitizer.halfHourBucket(fromSeconds: Double(seconds))
     }
 
     // MARK: 路径归属
@@ -199,17 +199,5 @@ enum PiUsageProcessing {
             return nil
         }
         return String(identifier)
-    }
-
-    private static let isoFractional: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
-    private static let isoPlain = ISO8601DateFormatter()
-
-    private static func isoDate(from string: String) -> Date? {
-        isoFractional.date(from: string) ?? isoPlain.date(from: string)
     }
 }

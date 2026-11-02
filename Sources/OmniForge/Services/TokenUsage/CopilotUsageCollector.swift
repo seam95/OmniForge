@@ -1,4 +1,3 @@
-import Combine
 import Foundation
 import GRDB
 import SQLite3
@@ -39,7 +38,7 @@ private enum CopilotOTELFileReadResult {
 /// 2. **OTEL JSONL**（可选）：`~/.copilot/otel/**/*.jsonl` 与
 ///    `COPILOT_OTEL_FILE_EXPORTER_PATH` 指定的导出文件。
 ///
-/// 采集语义（对齐 AntigravityUsageCollector，独立实现 UsageCollecting）：
+/// 采集语义（对齐 AntigravityUsageCollector，复用 JSONLUsageCollectorBase 调度骨架）：
 /// - 每轮枚举并解析，内存 `(size, mtime)` 指纹跳过未变化文件；数据库指纹额外包含
 ///   `-wal/-shm` 侧文件——WAL 模式下主库 mtime 可能不变，只看主库会漏掉新写入；
 /// - GRDB 只读打开（`Configuration.readonly = true`）；失败时用 SQLite3 `immutable=1`
@@ -50,15 +49,7 @@ private enum CopilotOTELFileReadResult {
 ///
 /// 隐私红线（SPEC 2.6）：只读取 token 数字、时间、模型与身份字段；prompt/正文/工具输出
 /// 从不物化，数据库只读打开、绝不写入。
-final class CopilotUsageCollector: UsageCollecting {
-    let provider: TokenUsageProvider = .copilot
-
-    var onUsageDidChange: ((TokenUsageProvider) -> Void)?
-    var onBackfillStateChange: ((Bool) -> Void)?
-
-    /// 定时兜底间隔（与其它本地采集器一致：5 分钟）。
-    static let defaultScanInterval: TimeInterval = 5 * 60
-
+final class CopilotUsageCollector: JSONLUsageCollectorBase {
     /// OTEL JSONL 单文件大小上限（超过则跳过，避免把超大导出整体读入内存）。
     static let maximumOTELFileBytes = 64 * 1024 * 1024
 
@@ -103,30 +94,15 @@ final class CopilotUsageCollector: UsageCollecting {
 
     // MARK: - 状态
 
-    /// 扫描轮次计数（测试断言）。
-    private(set) var scanCount = 0
     /// 实际打开解析的数据库数（指纹未变的库被跳过；测试断言）。
     private(set) var parsedDatabaseCount = 0
     /// 实际打开解析的 OTEL 文件数（指纹未变的文件被跳过；测试断言）。
     private(set) var parsedOTELFileCount = 0
-
-    private let store: UsageStoring
+    /// 文件路径 → 指纹；未变化则跳过解析（首次全部解析）。
+    private var fileSignatures: [String: FileFingerprint] = [:]
     private let databaseURLs: [URL]
     private let otelDirectories: [URL]
     private let otelExporterFile: URL?
-    private let scheduler: RepeatingScheduling
-    private let scanInterval: TimeInterval
-    private let fileManager: FileManager
-    private let queue: DispatchQueue
-    private let triggerLock = NSLock()
-    private var timer: AnyCancellable?
-    private var started = false
-    /// 扫描信号合并：scanning = 已排队/正在执行的扫描；扫描中收到的信号置 rescanRequested。
-    private var scanning = false
-    private var rescanRequested = false
-    private var backfillCompleted = false
-    /// 文件路径 → 指纹；未变化则跳过解析（首次全部解析）。
-    private var fileSignatures: [String: FileFingerprint] = [:]
 
     // MARK: - 指纹
 
@@ -155,112 +131,38 @@ final class CopilotUsageCollector: UsageCollecting {
         scanInterval: TimeInterval = CopilotUsageCollector.defaultScanInterval,
         fileManager: FileManager = .default
     ) {
-        self.store = store
         self.databaseURLs = databaseURLs.map(\.standardizedFileURL)
         self.otelDirectories = otelDirectories.map(\.standardizedFileURL)
         self.otelExporterFile = otelExporterFile?.standardizedFileURL
-        self.scheduler = scheduler
-        self.scanInterval = scanInterval
-        self.fileManager = fileManager
-        self.queue = DispatchQueue(
-            label: "omniForge.tokenUsage.copilotCollector",
-            qos: .utility
+        super.init(
+            provider: .copilot,
+            store: store,
+            scanInterval: scanInterval,
+            fileManager: fileManager,
+            scheduler: scheduler
         )
     }
 
-    // MARK: - UsageCollecting
-
-    /// 测试进程检测（仓库既有约定：与 Cursor/Claude/Codex 采集器一致）。
-    private var isRunningUnitTests: Bool {
-        let hasXCTestEnvironment = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
-        return hasXCTestEnvironment || ProcessInfo.processInfo.processName == "xctest"
-    }
+    // MARK: - 测试进程守护
 
     /// 是否以默认（真实用户）路径构造。
-    private var usesRealPaths: Bool {
+    override var usesRealDirectories: Bool {
         databaseURLs == Self.defaultDatabaseURLs().map(\.standardizedFileURL)
             && otelDirectories == Self.defaultOTELDirectories().map(\.standardizedFileURL)
             && otelExporterFile == Self.defaultOTELExporterFile()?.standardizedFileURL
     }
 
-    /// 启动：立即返回；首次扫描即后台回填（首尾回填标记）。
-    func start() {
-        guard !started else { return }
-        started = true
-        // 测试进程用真实路径构造时不得扫描：避免测试读用户真实会话库。
-        guard !(isRunningUnitTests && usesRealPaths) else { return }
-        timer = scheduler.schedule(every: scanInterval) { [weak self] in
-            self?.triggerScan()
-        }
-        triggerScan()
-    }
-
-    func stop() {
-        guard started else { return }
-        started = false
-        timer?.cancel()
-        timer = nil
-    }
-
-    /// 线程安全：等待串行队列排空（测试用）。
-    func waitForIdle() {
-        queue.sync {}
-    }
-
-    // MARK: - 扫描调度（信号合并）
-
-    /// 触发一次扫描：扫描中到达的多个信号只追加一次「重新扫描」。
-    private func triggerScan() {
-        triggerLock.lock()
-        if scanning {
-            rescanRequested = true
-            triggerLock.unlock()
-            return
-        }
-        scanning = true
-        triggerLock.unlock()
-        queue.async { [weak self] in
-            self?.performScanCycle()
-        }
-    }
-
-    /// 串行队列上执行完整一轮扫描（含回填状态与回调通知）。
-    private func performScanCycle() {
-        scanCount += 1
-        let isBackfill = !backfillCompleted
-        if isBackfill {
-            notifyBackfill(true)
-        }
-
-        performScan()
-
-        if isBackfill {
-            backfillCompleted = true
-            notifyBackfill(false)
-        }
-        notifyUsageChanged()
-
-        // 锁内直接续跑 rescan：避免 scanning=false 到再次触发之间的空隙产生双触发竞态。
-        triggerLock.lock()
-        scanning = false
-        let again = rescanRequested && started
-        rescanRequested = false
-        if again {
-            scanning = true
-        }
-        triggerLock.unlock()
-        if again {
-            queue.async { [weak self] in
-                self?.performScanCycle()
-            }
-        }
-    }
-
     // MARK: - 扫描
 
     /// 全量一轮：枚举 → 指纹跳过未变文件 → 只读解析 → 内存聚合 → 单事务提交。
-    private func performScan() {
-        let accumulator = ScanAccumulator(provider: provider, store: store)
+    override func performScan() {
+        let scan = ScanContext(
+            provider: provider,
+            aggregator: UsageAggregator { [store] key in
+                store.loadBucket(key)
+            },
+            seen: store.loadSeenKeys()
+        )
         var pendingSignatures: [String: FileFingerprint] = [:]
 
         // 1. session-store.db（主源）。
@@ -279,7 +181,13 @@ final class CopilotUsageCollector: UsageCollecting {
             guard case .unavailable = result else {
                 if case let .rows(rows) = result {
                     for event in CopilotUsageProcessing.sessionStoreEvents(rows) {
-                        accumulator.ingest(event)
+                        scan.ingest(
+                            dedupKey: event.deduplicationKey,
+                            usage: event.usage,
+                            conversationDelta: event.conversationDelta,
+                            model: event.model,
+                            bucketStart: event.bucketStart
+                        )
                     }
                 }
                 // .missingTable 与 .rows 都代表库可读：缓存指纹，避免每轮重开 VS Code 索引库。
@@ -306,21 +214,27 @@ final class CopilotUsageCollector: UsageCollecting {
                 pendingSignatures[path] = fingerprint
             case let .events(events):
                 for event in events {
-                    accumulator.ingest(event)
+                    scan.ingest(
+                        dedupKey: event.deduplicationKey,
+                        usage: event.usage,
+                        conversationDelta: event.conversationDelta,
+                        model: event.model,
+                        bucketStart: event.bucketStart
+                    )
                 }
                 pendingSignatures[path] = fingerprint
             }
         }
 
         // 3. 单事务提交桶 + 新见 key；提交失败不推进任何指纹，下轮重扫重算。
-        let buckets = accumulator.drainBuckets()
+        let buckets = scan.aggregator.drainTouched()
         guard !buckets.isEmpty else {
             fileSignatures.merge(pendingSignatures) { _, latest in latest }
             return
         }
         var commit = ScanCommit()
         commit.buckets = buckets
-        commit.newSeenKeys = accumulator.drainNewSeen()
+        commit.newSeenKeys = scan.drainNewSeen()
         commit.seenAt = Date()
         do {
             try store.commitScan(commit)
@@ -481,72 +395,6 @@ final class CopilotUsageCollector: UsageCollecting {
             records: records,
             fallbackTimestampMilliseconds: fallbackTimestamp
         ))
-    }
-
-    // MARK: - 单轮去重与聚合
-
-    /// 单轮扫描的共享累加器：已见 key 去重 + 半小时桶内存聚合。
-    private final class ScanAccumulator {
-        private let provider: TokenUsageProvider
-        private let aggregator: UsageAggregator
-        /// 扫描开始时持久化的已见 key（跨扫描去重）。
-        private let seenKeys: Set<String>
-        /// 本轮新见 key（随 commitScan 落库）。
-        private var newSeenKeys: Set<String> = []
-
-        init(provider: TokenUsageProvider, store: UsageStoring) {
-            self.provider = provider
-            self.aggregator = UsageAggregator { [store] key in
-                store.loadBucket(key)
-            }
-            self.seenKeys = store.loadSeenKeys()
-        }
-
-        /// 去重通过后累加到对应半小时桶。
-        func ingest(_ event: CopilotUsageEvent) {
-            guard !seenKeys.contains(event.deduplicationKey),
-                  !newSeenKeys.contains(event.deduplicationKey) else {
-                return
-            }
-            newSeenKeys.insert(event.deduplicationKey)
-            aggregator.ingest(
-                usage: event.usage,
-                conversationDelta: event.conversationDelta,
-                key: UsageBucketKey(
-                    provider: provider,
-                    model: event.model,
-                    bucketStart: event.bucketStart
-                )
-            )
-        }
-
-        /// 取出本轮被触碰桶的累计快照（写库后复用聚合器也安全）。
-        func drainBuckets() -> [UsageBucketState] {
-            aggregator.drainTouched()
-        }
-
-        /// 取出本轮新见 key 并清空。
-        func drainNewSeen() -> Set<String> {
-            let drained = newSeenKeys
-            newSeenKeys.removeAll()
-            return drained
-        }
-    }
-
-    // MARK: - 通知
-
-    private func notifyUsageChanged() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.onUsageDidChange?(self.provider)
-        }
-    }
-
-    private func notifyBackfill(_ value: Bool) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.onBackfillStateChange?(value)
-        }
     }
 }
 

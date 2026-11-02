@@ -253,10 +253,7 @@ enum AntigravityUsageProcessing {
 
     /// epoch 毫秒 → UTC 半小时桶起点；非法 → nil。
     static func bucketStart(fromMilliseconds milliseconds: Double) -> Date? {
-        guard let seconds = UsageTimestampSanitizer.epochSeconds(fromMilliseconds: milliseconds) else {
-            return nil
-        }
-        return Date(timeIntervalSince1970: Double((seconds / 1800) * 1800))
+        UsageTimestampSanitizer.halfHourBucket(fromMilliseconds: milliseconds)
     }
 
     // MARK: - 文件级组装

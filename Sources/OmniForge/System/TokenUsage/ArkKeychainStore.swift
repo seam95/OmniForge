@@ -43,83 +43,42 @@ enum ArkKeychainError: Error, Equatable {
 /// 用 Security 框架读写本应用自有的火山方舟 AK/SK 条目。
 /// 仅本设备可用（`AfterFirstUnlockThisDeviceOnly`），不上 iCloud 同步。
 final class ArkKeychainStore: ArkCredentialsStoring {
-    private let service: String
-    private let account: String
-    private let operations: KeychainItemOperations
+    private let store: KeychainItemStore<ArkCredentials>
 
     init(
         service: String = ArkKeychain.service,
         account: String = ArkKeychain.account,
         operations: KeychainItemOperations = .live
     ) {
-        self.service = service
-        self.account = account
-        self.operations = operations
+        store = KeychainItemStore(
+            service: service,
+            account: account,
+            operations: operations,
+            // 数据缺失、解码失败或字段无效：一律按「未配置」处理，不上抛。
+            decode: { data in
+                data
+                    .flatMap { try? JSONDecoder().decode(ArkCredentials.self, from: $0) }
+                    .flatMap { $0.isValid ? $0 : nil }
+            },
+            // 编码失败：静默跳过写入。
+            encode: { try? JSONEncoder().encode($0) },
+            failure: { ArkKeychainError.keychainUnavailable($0) }
+        )
     }
 
     func hasCredentials() -> Bool {
-        operations.copyMatching(baseQuery).status == errSecSuccess
+        store.hasItem()
     }
 
     func readCredentials() throws -> ArkCredentials? {
-        var query = baseQuery
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-
-        let result = operations.copyMatching(query)
-        guard result.status == errSecSuccess else {
-            if result.status == errSecItemNotFound { return nil }
-            throw ArkKeychainError.keychainUnavailable(result.status)
-        }
-        guard let data = result.data,
-              let credentials = try? JSONDecoder().decode(ArkCredentials.self, from: data),
-              credentials.isValid else {
-            if result.status == errSecDecode {
-                throw ArkKeychainError.keychainUnavailable(errSecDecode)
-            }
-            return nil
-        }
-        return credentials
+        try store.read()
     }
 
     func writeCredentials(_ credentials: ArkCredentials) throws {
-        guard let data = try? JSONEncoder().encode(credentials) else { return }
-        let existsStatus = operations.copyMatching(baseQuery).status
-
-        switch existsStatus {
-        case errSecSuccess:
-            let attributes: [String: Any] = [kSecValueData as String: data]
-            let status = operations.update(baseQuery, attributes)
-            guard status == errSecSuccess else {
-                throw ArkKeychainError.keychainUnavailable(status)
-            }
-        case errSecItemNotFound:
-            var attributes = baseQuery
-            attributes[kSecValueData as String] = data
-            attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            let status = operations.add(attributes)
-            guard status == errSecSuccess else {
-                throw ArkKeychainError.keychainUnavailable(status)
-            }
-        default:
-            throw ArkKeychainError.keychainUnavailable(existsStatus)
-        }
+        try store.write(credentials)
     }
 
     func deleteCredentials() throws {
-        let status = operations.delete(baseQuery)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw ArkKeychainError.keychainUnavailable(status)
-        }
-    }
-
-    // MARK: - 私有
-
-    private var baseQuery: [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
+        try store.delete()
     }
 }

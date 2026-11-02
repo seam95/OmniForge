@@ -156,21 +156,13 @@ enum GrokLimitsParsing {
 
     private static func resetDate(_ value: String?) -> Date? {
         guard let value else { return nil }
-        return isoFractional.date(from: value) ?? isoPlain.date(from: value)
+        return UsageTimestampSanitizer.isoDate(value)
     }
 
     static func clamp(_ value: Double?) -> Double? {
         guard let value, value.isFinite else { return nil }
         return min(max(value, 0), 100)
     }
-
-    private static let isoFractional: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
-    private static let isoPlain = ISO8601DateFormatter()
 }
 
 // MARK: - Fetcher

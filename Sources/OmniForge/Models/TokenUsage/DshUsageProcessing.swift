@@ -85,20 +85,10 @@ enum DshUsageProcessing {
         return (nonEmpty(config["provider"] as? String), nonEmpty(config["model"] as? String))
     }
 
-    /// step/start：turn/step 槽位（用于 settlement 替换语义）。
-    static func stepSlot(_ event: [String: Any]) -> (turn: Int64, step: Int64)? {
-        guard eventType(event) == "step/start" else { return nil }
-        return slot(from: event)
-    }
-
     /// llm/retry-started：同一 (turn, step) 的重试开启新调用。
     static func retrySlot(_ event: [String: Any]) -> (turn: Int64, step: Int64)? {
         guard eventType(event) == "llm/retry-started" else { return nil }
         return slot(from: event)
-    }
-
-    static func isUserMessage(_ event: [String: Any]) -> Bool {
-        eventType(event) == "user/message"
     }
 
     // MARK: 用量事件
@@ -161,8 +151,7 @@ enum DshUsageProcessing {
     /// UTC 半小时桶起点（epoch 毫秒 → 1800 秒对齐）。
     static func bucketStart(fromMilliseconds milliseconds: Double) -> Date? {
         guard milliseconds > 0, milliseconds.isFinite else { return nil }
-        let seconds = milliseconds / 1000
-        return Date(timeIntervalSince1970: (seconds / 1800).rounded(.down) * 1800)
+        return UsageTimestampSanitizer.halfHourBucket(fromSeconds: milliseconds / 1000)
     }
 
     // MARK: - 内部

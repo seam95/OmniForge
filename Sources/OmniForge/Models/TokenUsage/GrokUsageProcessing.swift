@@ -137,40 +137,29 @@ enum GrokUsageProcessing {
 
     /// 事件时间戳（毫秒）→ UTC 半小时桶起点。
     static func bucketStart(fromMilliseconds ms: Double?) -> Date? {
-        guard let seconds = ms.flatMap(UsageTimestampSanitizer.epochSeconds(fromMilliseconds:)) else { return nil }
-        return Date(timeIntervalSince1970: Double((seconds / 1800) * 1800))
+        ms.flatMap { UsageTimestampSanitizer.halfHourBucket(fromMilliseconds: $0) }
     }
 
     /// 毫秒时间戳 → 桶起点（语义与 bucketStart 相同，供兜底路径复用）。
     /// 坏值（非有限/超界）回退当前时间桶，杜绝 Int(Double) trap。
     static func bucketStart(forEpochMs ms: Double) -> Date {
-        guard let seconds = UsageTimestampSanitizer.epochSeconds(fromMilliseconds: ms) else {
-            let now = Int(Date().timeIntervalSince1970)
-            return Date(timeIntervalSince1970: Double((now / 1800) * 1800))
+        guard let bucket = UsageTimestampSanitizer.halfHourBucket(fromMilliseconds: ms) else {
+            return UsageTimestampSanitizer.halfHourBucket(fromSeconds: Date().timeIntervalSince1970)
         }
-        return Date(timeIntervalSince1970: Double((seconds / 1800) * 1800))
+        return bucket
     }
-
-    private static let isoFractional: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
-    private static let isoPlain = ISO8601DateFormatter()
 
     /// ISO8601 快照时间（如 lastActiveAt）→ 毫秒；解析失败 nil。
     static func isoToMilliseconds(_ value: String?) -> Double? {
         guard let value, !value.isEmpty else { return nil }
-        let date = isoFractional.date(from: value) ?? isoPlain.date(from: value)
-        return date.flatMap { $0.timeIntervalSince1970 * 1000 }
+        return UsageTimestampSanitizer.isoDate(value).map { $0.timeIntervalSince1970 * 1000 }
     }
 
     // MARK: turn 用量 → 六列
 
     /// 六列归一化：
     /// grok 的 `inputTokens` 含缓存命中 → 拆分出纯非缓存 input 与 cached；
-    /// total 取「input + cached + creation + output」四列之和（OmniForge 桶语义）。
+    /// total 取「input + output + reasoning」三列之和（缓存不计入，OmniForge 桶语义）。
     static func tokenUsage(from usage: GrokTurnUsage?) -> TokenUsage? {
         guard let usage else { return nil }
         let inputRaw = max(0, usage.inputTokens ?? 0)

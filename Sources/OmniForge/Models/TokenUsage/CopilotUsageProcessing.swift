@@ -751,10 +751,7 @@ enum CopilotUsageProcessing {
     /// 无时区 `YYYY-MM-DD HH:MM:SS(.SSS)`（按 UTC 解释）与纯数字秒/毫秒。
     static func timestampMilliseconds(from string: String?) -> Double? {
         guard let value = trimmedNonEmpty(string) else { return nil }
-        if let date = isoFractional.date(from: value) {
-            return date.timeIntervalSince1970 * 1000
-        }
-        if let date = isoPlain.date(from: value) {
+        if let date = UsageTimestampSanitizer.isoDate(value) {
             return date.timeIntervalSince1970 * 1000
         }
         for formatter in utcDateTimeFormatters {
@@ -770,10 +767,7 @@ enum CopilotUsageProcessing {
 
     /// epoch 毫秒 → UTC 半小时桶起点；非法/超界 → nil（统一走 UsageTimestampSanitizer）。
     static func bucketStart(fromMilliseconds milliseconds: Double) -> Date? {
-        guard let seconds = UsageTimestampSanitizer.epochSeconds(fromMilliseconds: milliseconds) else {
-            return nil
-        }
-        return Date(timeIntervalSince1970: Double((seconds / 1800) * 1800))
+        UsageTimestampSanitizer.halfHourBucket(fromMilliseconds: milliseconds)
     }
 
     /// 外部时间戳清洗：非法（NaN/负数/超界）→ nil。
@@ -820,18 +814,6 @@ enum CopilotUsageProcessing {
         let (result, overflow) = lhs.addingReportingOverflow(rhs)
         return overflow ? Int.max : result
     }
-
-    private static let isoFractional: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
-    private static let isoPlain: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter
-    }()
 
     /// 无时区日期时间按 UTC 解释（SQLite / Copilot CLI 均写 UTC）。
     private static let utcDateTimeFormatters: [DateFormatter] = [

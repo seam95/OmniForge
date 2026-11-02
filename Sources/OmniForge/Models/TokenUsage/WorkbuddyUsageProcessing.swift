@@ -160,19 +160,11 @@ private enum TraceTimestamp {
         if let number = Double(trimmed) {
             return number
         }
-        guard let date = isoFractional.date(from: trimmed) ?? isoPlain.date(from: trimmed) else {
+        guard let date = UsageTimestampSanitizer.isoDate(trimmed) else {
             return nil
         }
         return date.timeIntervalSince1970 * 1000
     }
-
-    private static let isoFractional: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
-    private static let isoPlain = ISO8601DateFormatter()
 }
 
 // MARK: - trace 解析纯函数

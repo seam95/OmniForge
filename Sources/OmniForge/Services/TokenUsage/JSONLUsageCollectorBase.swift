@@ -218,7 +218,10 @@ class JSONLUsageCollectorBase: UsageCollecting {
     /// 全量一轮：增量游标读 → 行解析 → 聚合 → **原子提交**（桶/游标/新见 key/
     /// 消息状态同一事务，审查 R14）。提交失败不推进任何进度：下轮从旧游标
     /// 重读重算，配合去重与差分幂等，不产生漏计或重复计数。
-    fileprivate func performScan() {
+    ///
+    /// 非游标型采集器（如 SQLite/指纹跳过的 Antigravity、Copilot）覆盖本方法，
+    /// 复用基类的调度骨架（信号合并、回填标记、通知）与 `ScanContext`。
+    func performScan() {
         let files = enumerateFiles()
         guard !files.isEmpty else { return }
 

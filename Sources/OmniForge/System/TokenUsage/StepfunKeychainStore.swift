@@ -46,122 +46,92 @@ enum StepfunKeychainError: Error, Equatable {
 /// 用 Security 框架读写 StepFun 的 Oasis-Token 与账号密码凭证。
 /// 仅本设备可用（`AfterFirstUnlockThisDeviceOnly`），不上 iCloud 同步。
 final class StepfunKeychainStore: StepfunTokenStoring {
-    private let service: String
-    private let operations: KeychainItemOperations
+    private let tokenStore: KeychainItemStore<String>
+    private let credentialsStore: KeychainItemStore<StepfunCredentials>
 
     init(
         service: String = StepfunKeychain.service,
         operations: KeychainItemOperations = .live
     ) {
-        self.service = service
-        self.operations = operations
+        // 两个条目共享同一 service，仅 account 不同；字符串值语义一致。
+        let makeStringStore: (String) -> KeychainItemStore<String> = { account in
+            KeychainItemStore(
+                service: service,
+                account: account,
+                operations: operations,
+                // 数据存在但缺失/为空/不可解码：按不可读处理，不静默当成「未配置」。
+                decode: { data in
+                    guard let data,
+                          let value = String(data: data, encoding: .utf8),
+                          !value.isEmpty else {
+                        throw StepfunKeychainError.keychainUnavailable(errSecDecode)
+                    }
+                    return value
+                },
+                encode: { Data($0.utf8) },
+                failure: { StepfunKeychainError.keychainUnavailable($0) }
+            )
+        }
+        tokenStore = makeStringStore(StepfunKeychain.tokenAccount)
+        credentialsStore = KeychainItemStore(
+            service: service,
+            account: StepfunKeychain.credentialsAccount,
+            operations: operations,
+            // 值缺失/为空/不可解码 → 抛 errSecDecode；JSON 结构不符 → nil（按未配置处理）。
+            decode: { data in
+                guard let data,
+                      let json = String(data: data, encoding: .utf8),
+                      !json.isEmpty else {
+                    throw StepfunKeychainError.keychainUnavailable(errSecDecode)
+                }
+                return try? JSONDecoder().decode(StepfunCredentials.self, from: data)
+            },
+            // 凭证以 JSON 字符串的 UTF-8 字节落盘；编码失败 → errSecParam。
+            encode: { credentials in
+                guard let data = try? JSONEncoder().encode(credentials),
+                      let json = String(data: data, encoding: .utf8),
+                      let bytes = json.data(using: .utf8) else {
+                    throw StepfunKeychainError.keychainUnavailable(errSecParam)
+                }
+                return bytes
+            },
+            failure: { StepfunKeychainError.keychainUnavailable($0) }
+        )
     }
 
     // MARK: - Token
 
     func hasToken() -> Bool {
-        hasValue(account: StepfunKeychain.tokenAccount)
+        tokenStore.hasItem()
     }
 
     func readToken() throws -> String? {
-        try readString(account: StepfunKeychain.tokenAccount)
+        try tokenStore.read()
     }
 
     func writeToken(_ token: String) throws {
-        try writeString(token, account: StepfunKeychain.tokenAccount)
+        try tokenStore.write(token)
     }
 
     func deleteToken() throws {
-        try delete(account: StepfunKeychain.tokenAccount)
+        try tokenStore.delete()
     }
 
     // MARK: - 凭证
 
     func hasCredentials() -> Bool {
-        hasValue(account: StepfunKeychain.credentialsAccount)
+        credentialsStore.hasItem()
     }
 
     func readCredentials() throws -> StepfunCredentials? {
-        guard let json = try readString(account: StepfunKeychain.credentialsAccount),
-              let data = json.data(using: .utf8),
-              let decoded = try? JSONDecoder().decode(StepfunCredentials.self, from: data) else {
-            return nil
-        }
-        return decoded
+        try credentialsStore.read()
     }
 
     func writeCredentials(_ credentials: StepfunCredentials) throws {
-        guard let data = try? JSONEncoder().encode(credentials),
-              let json = String(data: data, encoding: .utf8) else {
-            throw StepfunKeychainError.keychainUnavailable(errSecParam)
-        }
-        try writeString(json, account: StepfunKeychain.credentialsAccount)
+        try credentialsStore.write(credentials)
     }
 
     func deleteCredentials() throws {
-        try delete(account: StepfunKeychain.credentialsAccount)
-    }
-
-    // MARK: - 私有通用读写
-
-    private func baseQuery(account: String) -> [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
-    }
-
-    private func readString(account: String) throws -> String? {
-        var query = baseQuery(account: account)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-
-        let result = operations.copyMatching(query)
-        guard result.status == errSecSuccess else {
-            if result.status == errSecItemNotFound { return nil }
-            throw StepfunKeychainError.keychainUnavailable(result.status)
-        }
-        guard let data = result.data,
-              let value = String(data: data, encoding: .utf8),
-              !value.isEmpty else {
-            throw StepfunKeychainError.keychainUnavailable(errSecDecode)
-        }
-        return value
-    }
-
-    private func writeString(_ value: String, account: String) throws {
-        let query = baseQuery(account: account)
-        let existsStatus = operations.copyMatching(query).status
-        switch existsStatus {
-        case errSecSuccess:
-            let attributes: [String: Any] = [kSecValueData as String: Data(value.utf8)]
-            let status = operations.update(query, attributes)
-            guard status == errSecSuccess else {
-                throw StepfunKeychainError.keychainUnavailable(status)
-            }
-        case errSecItemNotFound:
-            var attributes = query
-            attributes[kSecValueData as String] = Data(value.utf8)
-            attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            let status = operations.add(attributes)
-            guard status == errSecSuccess else {
-                throw StepfunKeychainError.keychainUnavailable(status)
-            }
-        default:
-            throw StepfunKeychainError.keychainUnavailable(existsStatus)
-        }
-    }
-
-    /// 存在性探测：不带 `kSecReturnData`，只判断条目是否存在，不读密码。
-    private func hasValue(account: String) -> Bool {
-        operations.copyMatching(baseQuery(account: account)).status == errSecSuccess
-    }
-
-    private func delete(account: String) throws {
-        let status = operations.delete(baseQuery(account: account))
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw StepfunKeychainError.keychainUnavailable(status)
-        }
+        try credentialsStore.delete()
     }
 }

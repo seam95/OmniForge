@@ -139,24 +139,11 @@ enum ClaudeUsageProcessing {
     /// 行时间戳 → UTC 半小时桶起点（`toUtcHalfHourStart` 的等价实现）。
     static func bucketStart(from timestamp: String?) -> Date? {
         guard let timestamp, !timestamp.isEmpty else { return nil }
-        guard let date = isoDate(from: timestamp) else { return nil }
+        guard let date = UsageTimestampSanitizer.isoDate(timestamp) else { return nil }
         return halfHourStart(for: date)
     }
 
     static func halfHourStart(for date: Date) -> Date {
-        let seconds = Int(date.timeIntervalSince1970)
-        return Date(timeIntervalSince1970: Double((seconds / 1800) * 1800))
-    }
-
-    private static let isoFractional: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
-    private static let isoPlain = ISO8601DateFormatter()
-
-    private static func isoDate(from string: String) -> Date? {
-        isoFractional.date(from: string) ?? isoPlain.date(from: string)
+        UsageTimestampSanitizer.halfHourBucket(fromSeconds: date.timeIntervalSince1970)
     }
 }

@@ -343,19 +343,10 @@ enum AntigravityUsageDecoder {
             if let double = Double(string), double > 0 {
                 return Date(timeIntervalSince1970: double)
             }
-            if let fractional = isoFractional.date(from: string) { return fractional }
-            return isoPlain.date(from: string)
+            return UsageTimestampSanitizer.isoDate(string)
         }
         return nil
     }
-
-    private static let isoFractional: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
-    private static let isoPlain = ISO8601DateFormatter()
 
     private static func numeric(_ value: Any?) -> Double? {
         UsageWindowParsing.numeric(value)

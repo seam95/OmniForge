@@ -33,79 +33,44 @@ enum OpencodeKeychainError: Error, Equatable {
 /// 用 Security 框架读写本应用自有的 OpenCode Go API Key 条目。
 /// 仅本设备可用（`AfterFirstUnlockThisDeviceOnly`），不上 iCloud 同步。
 final class OpencodeKeychainAPIKeyStore: OpencodeAPIKeyStoring {
-    private let service: String
-    private let account: String
-    private let operations: KeychainItemOperations
+    private let store: KeychainItemStore<String>
 
     init(
         service: String = OpencodeKeychain.service,
         account: String = OpencodeKeychain.account,
         operations: KeychainItemOperations = .live
     ) {
-        self.service = service
-        self.account = account
-        self.operations = operations
+        store = KeychainItemStore(
+            service: service,
+            account: account,
+            operations: operations,
+            // 数据存在但缺失/为空/不可解码：按不可读处理，不静默当成「未配置」。
+            decode: { data in
+                guard let data,
+                      let apiKey = String(data: data, encoding: .utf8),
+                      !apiKey.isEmpty else {
+                    throw OpencodeKeychainError.keychainUnavailable(errSecDecode)
+                }
+                return apiKey
+            },
+            encode: { Data($0.utf8) },
+            failure: { OpencodeKeychainError.keychainUnavailable($0) }
+        )
     }
 
     func hasAPIKey() -> Bool {
-        operations.copyMatching(baseQuery).status == errSecSuccess
+        store.hasItem()
     }
 
     func readAPIKey() throws -> String? {
-        var query = baseQuery
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-
-        let result = operations.copyMatching(query)
-        guard result.status == errSecSuccess else {
-            if result.status == errSecItemNotFound { return nil }
-            throw OpencodeKeychainError.keychainUnavailable(result.status)
-        }
-        guard let data = result.data,
-              let apiKey = String(data: data, encoding: .utf8),
-              !apiKey.isEmpty else {
-            throw OpencodeKeychainError.keychainUnavailable(errSecDecode)
-        }
-        return apiKey
+        try store.read()
     }
 
     func writeAPIKey(_ apiKey: String) throws {
-        let existsStatus = operations.copyMatching(baseQuery).status
-
-        switch existsStatus {
-        case errSecSuccess:
-            let attributes: [String: Any] = [kSecValueData as String: Data(apiKey.utf8)]
-            let status = operations.update(baseQuery, attributes)
-            guard status == errSecSuccess else {
-                throw OpencodeKeychainError.keychainUnavailable(status)
-            }
-        case errSecItemNotFound:
-            var attributes = baseQuery
-            attributes[kSecValueData as String] = Data(apiKey.utf8)
-            attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            let status = operations.add(attributes)
-            guard status == errSecSuccess else {
-                throw OpencodeKeychainError.keychainUnavailable(status)
-            }
-        default:
-            throw OpencodeKeychainError.keychainUnavailable(existsStatus)
-        }
+        try store.write(apiKey)
     }
 
     func deleteAPIKey() throws {
-        let status = operations.delete(baseQuery)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw OpencodeKeychainError.keychainUnavailable(status)
-        }
-    }
-
-    // MARK: - 私有
-
-    private var baseQuery: [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
+        try store.delete()
     }
 }

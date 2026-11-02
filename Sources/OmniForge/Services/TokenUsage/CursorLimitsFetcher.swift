@@ -131,16 +131,8 @@ enum CursorUsageSummaryDecoder {
         return (end, seconds)
     }
 
-    private static let isoFractional: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
-    private static let isoPlain = ISO8601DateFormatter()
-
     private static func parseISO(_ value: String) -> Date? {
-        isoFractional.date(from: value) ?? isoPlain.date(from: value)
+        UsageTimestampSanitizer.isoDate(value)
     }
 
     private static func percent(_ value: Any?) -> Double? {

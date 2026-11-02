@@ -223,9 +223,8 @@ enum CodexUsageProcessing {
     /// 行时间戳 → UTC 半小时桶起点（参考 02 `toUtcHalfHourStart`）。
     static func bucketStart(from timestamp: String?) -> Date? {
         guard let timestamp, !timestamp.isEmpty else { return nil }
-        guard let date = isoDate(from: timestamp) else { return nil }
-        let seconds = Int(date.timeIntervalSince1970)
-        return Date(timeIntervalSince1970: Double((seconds / 1800) * 1800))
+        guard let date = UsageTimestampSanitizer.isoDate(timestamp) else { return nil }
+        return UsageTimestampSanitizer.halfHourBucket(fromSeconds: date.timeIntervalSince1970)
     }
 
     /// 模型名：trim 后非空，否则回退 `unknown`。
@@ -240,18 +239,6 @@ enum CodexUsageProcessing {
     private static func canonical(_ value: Int?) -> Int {
         guard let value else { return 0 }
         return max(0, value)
-    }
-
-    private static let isoFractional: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-
-    private static let isoPlain = ISO8601DateFormatter()
-
-    private static func isoDate(from string: String) -> Date? {
-        isoFractional.date(from: string) ?? isoPlain.date(from: string)
     }
 }
 

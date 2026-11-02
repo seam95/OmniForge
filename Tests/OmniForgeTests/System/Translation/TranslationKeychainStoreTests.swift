@@ -24,8 +24,8 @@ private final class InMemoryKeychainOperations {
     private(set) var updateAttributes: [[String: Any]] = []
     private(set) var deleteQueries: [[String: Any]] = []
 
-    var operations: TranslationKeychainOperations {
-        TranslationKeychainOperations(
+    var operations: KeychainItemOperations {
+        KeychainItemOperations(
             copyMatching: { [unowned self] query in
                 self.copyQueries.append(query)
                 if let readFailureStatus = self.readFailureStatus {
