@@ -208,7 +208,13 @@ final class FeatureRuntimeBindingTests: XCTestCase {
 private final class BindingTestStore: ClipboardStore {
     private var entries: [ClipboardEntry]
     init(entries: [ClipboardEntry]) { self.entries = entries }
+    var storageErrorMessage: String? { nil }
     func loadEntries() -> [ClipboardEntry] { entries }
-    func saveEntries(_ entries: [ClipboardEntry]) { self.entries = entries }
+    func saveEntry(_ entry: ClipboardEntry) {
+        entries.removeAll { $0.id == entry.id }
+        entries.insert(entry, at: 0)
+    }
+    func deleteEntries(ids: Set<UUID>) { entries.removeAll { ids.contains($0.id) } }
+    func loadFullContent(for entryID: UUID) -> ClipboardContent? { entries.first { $0.id == entryID }?.content }
     func releaseMemory() {}
 }

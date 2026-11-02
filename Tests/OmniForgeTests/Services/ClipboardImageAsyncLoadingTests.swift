@@ -135,8 +135,8 @@ private final class PerKeyDelayBlobStore: ClipboardStore {
         self.delayByID = delayByID
     }
 
+    var storageErrorMessage: String? { nil }
     func loadEntries() -> [ClipboardEntry] { [] }
-    func saveEntries(_ entries: [ClipboardEntry]) {}
     func saveEntry(_ entry: ClipboardEntry) {}
     func deleteEntries(ids: Set<UUID>) {}
     func releaseMemory() {}

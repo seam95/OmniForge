@@ -74,8 +74,11 @@ final class StatusBarSettingsRoutingTests: XCTestCase {
 }
 
 private final class RoutingClipboardStore: ClipboardStore {
+    var storageErrorMessage: String? { nil }
     func loadEntries() -> [ClipboardEntry] { [] }
-    func saveEntries(_ entries: [ClipboardEntry]) {}
+    func saveEntry(_ entry: ClipboardEntry) {}
+    func deleteEntries(ids: Set<UUID>) {}
+    func loadFullContent(for entryID: UUID) -> ClipboardContent? { nil }
     func releaseMemory() {}
 }
 

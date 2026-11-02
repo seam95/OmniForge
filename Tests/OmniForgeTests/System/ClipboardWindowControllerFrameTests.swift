@@ -135,8 +135,11 @@ final class ClipboardWindowControllerFrameTests: XCTestCase {
 }
 
 private final class FrameTestClipboardStore: ClipboardStore {
+    var storageErrorMessage: String? { nil }
     func loadEntries() -> [ClipboardEntry] { [] }
-    func saveEntries(_ entries: [ClipboardEntry]) {}
+    func saveEntry(_ entry: ClipboardEntry) {}
+    func deleteEntries(ids: Set<UUID>) {}
+    func loadFullContent(for entryID: UUID) -> ClipboardContent? { nil }
     func releaseMemory() {}
 }
 

@@ -104,25 +104,6 @@ final class GRDBClipboardStore: ClipboardStore {
         }
     }
 
-    func saveEntries(_ entries: [ClipboardEntry]) {
-        guard let databaseQueue else {
-            return
-        }
-
-        do {
-            try databaseQueue.write { db in
-                try ClipboardEntryDBRecord.deleteAll(db)
-                for entry in entries {
-                    var record = ClipboardEntryDBRecord.from(entry)
-                    try record.insert(db)
-                }
-            }
-        } catch {
-            Self.logger.error("saveEntries failed: \(error.localizedDescription, privacy: .public)")
-            storageErrorMessage = error.localizedDescription
-        }
-    }
-
     // MARK: - 增量方法
 
     func saveEntry(_ entry: ClipboardEntry) {

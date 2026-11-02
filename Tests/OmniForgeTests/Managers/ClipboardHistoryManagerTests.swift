@@ -388,12 +388,10 @@ private final class FakeClipboardStore: ClipboardStore {
         self.entries = entries
     }
 
+    var storageErrorMessage: String? { nil }
+
     func loadEntries() -> [ClipboardEntry] {
         entries
-    }
-
-    func saveEntries(_ entries: [ClipboardEntry]) {
-        self.entries = entries
     }
 
     func saveEntry(_ entry: ClipboardEntry) {

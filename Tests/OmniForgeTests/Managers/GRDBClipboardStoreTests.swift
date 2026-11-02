@@ -85,7 +85,7 @@ final class GRDBClipboardStoreTests: XCTestCase {
         XCTAssertEqual(loaded[0].blobSize, Int64(imageData.count))
     }
 
-    func test_saveRewritesEntries() {
+    func test_saveEntryRewritesExistingEntry() {
         let tempDB = FileManager.default.temporaryDirectory
             .appendingPathComponent("GRDBClipboardStoreTests_rewrite_\(UUID().uuidString).sqlite")
         defer {
@@ -94,9 +94,10 @@ final class GRDBClipboardStoreTests: XCTestCase {
 
         let store = GRDBClipboardStore(databaseURL: tempDB)
         let createdAt = Date(timeIntervalSince1970: 1_700_000_100)
+        let entryID = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
 
         let first = ClipboardEntry(
-            id: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,
+            id: entryID,
             createdAt: createdAt,
             type: .image,
             preview: "Image",
@@ -106,8 +107,9 @@ final class GRDBClipboardStoreTests: XCTestCase {
             thumbnailData: Data([0x09])
         )
 
+        // 同 id 再次保存（生产「移动到最前」路径）：应更新原行，而不是新增重复行。
         let second = ClipboardEntry(
-            id: UUID(uuidString: "66666666-7777-8888-9999-aaaaaaaaaaaa")!,
+            id: entryID,
             createdAt: createdAt.addingTimeInterval(5),
             type: .text,
             preview: "Hello",
@@ -116,12 +118,13 @@ final class GRDBClipboardStoreTests: XCTestCase {
             content: .text("Hello")
         )
 
-        store.saveEntries([first])
-        store.saveEntries([second])
+        store.saveEntry(first)
+        store.saveEntry(second)
 
         let loaded = store.loadEntries()
         XCTAssertEqual(loaded.count, 1)
         XCTAssertEqual(loaded[0].id, second.id)
+        XCTAssertEqual(loaded[0].type, .text)
     }
 
     func test_saveAndLoadRoundTrip_forAdditionalContentTypes() {
@@ -179,7 +182,9 @@ final class GRDBClipboardStoreTests: XCTestCase {
             thumbnailData: Data([0x01, 0x02])
         )
 
-        store.saveEntries([urlEntry, fileEntry, rtfEntry, unknownEntry])
+        for entry in [urlEntry, fileEntry, rtfEntry, unknownEntry] {
+            store.saveEntry(entry)
+        }
         let loaded = store.loadEntries()
 
         // 轻量加载：url 和 file 完整，rtf 和 unknown 的 blob 为 nil
@@ -302,7 +307,7 @@ final class GRDBClipboardStoreTests: XCTestCase {
             content: .text("cleanup")
         )
 
-        store.saveEntries([entry])
+        store.saveEntry(entry)
         let loaded = store.loadEntries()
         XCTAssertEqual(loaded.count, 1)
         XCTAssertEqual(loaded[0].content, .text(nil))
