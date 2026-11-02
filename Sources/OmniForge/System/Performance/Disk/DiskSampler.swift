@@ -231,21 +231,18 @@ final class DiskSampler: DiskSampling {
         return (meta, true)
     }
 
-    private static func runDiskutilInfo(_ mountPath: String) -> [String: Any]? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/diskutil")
-        process.arguments = ["info", "-plist", mountPath]
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = Pipe()
-        do {
-            try process.run()
-        } catch {
-            return nil
-        }
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else { return nil }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
+    /// diskutil 经有界执行器（超时 8s）：并发排空两路管道防等待环死锁，
+    /// 子进程挂起时到点 SIGKILL 回收。runner 可注入供测试。
+    static func runDiskutilInfo(
+        _ mountPath: String,
+        runner: (URL, [String], BoundedProcessRunner.Options) -> BoundedProcessOutput? = BoundedProcessRunner.runBlocking
+    ) -> [String: Any]? {
+        guard let result = runner(
+                URL(fileURLWithPath: "/usr/sbin/diskutil"),
+                ["info", "-plist", mountPath],
+                .init(timeout: 8)
+        ), result.succeeded,
+            let data = result.stdout.data(using: .utf8) else { return nil }
         var format = PropertyListSerialization.PropertyListFormat.xml
         guard let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: &format),
               let dict = plist as? [String: Any] else { return nil }

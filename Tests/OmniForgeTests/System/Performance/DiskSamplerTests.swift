@@ -111,6 +111,50 @@ final class DiskSamplerTests: XCTestCase {
         XCTAssertLessThanOrEqual(reading.physicalDisks.count, reading.devices.count)
     }
 
+    // MARK: - runDiskutilInfo: 有界执行器边界
+
+    func test_runDiskutilInfo_passesCommandAndTimeoutToBoundedRunner() throws {
+        // 命令拼接保持不变：diskutil info -plist <mountPath>，且必须带 8s 超时
+        var capturedExecutable: URL?
+        var capturedArguments: [String]?
+        var capturedOptions: BoundedProcessRunner.Options?
+        let plistXML = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>DeviceIdentifier</key>
+            <string>disk3s5</string>
+            <key>Internal</key>
+            <true/>
+        </dict>
+        </plist>
+        """
+        let dict = try XCTUnwrap(DiskSampler.runDiskutilInfo("/Volumes/Data") { executable, arguments, options in
+            capturedExecutable = executable
+            capturedArguments = arguments
+            capturedOptions = options
+            return BoundedProcessOutput(exitCode: 0, stdout: plistXML, stderr: "", truncated: false)
+        })
+        XCTAssertEqual(capturedExecutable?.path, "/usr/sbin/diskutil")
+        XCTAssertEqual(capturedArguments, ["info", "-plist", "/Volumes/Data"])
+        XCTAssertEqual(capturedOptions?.timeout, 8, "diskutil 必须经带超时执行器，子进程挂起时由其 SIGKILL 回收")
+        XCTAssertEqual(dict["DeviceIdentifier"] as? String, "disk3s5")
+        XCTAssertEqual(dict["Internal"] as? Bool, true)
+    }
+
+    func test_runDiskutilInfo_returnsNilWhenRunnerFailsTimesOutOrOutputInvalid() {
+        // 启动失败（nil）与超时 SIGKILL（退出码 9）都返回 nil：不抛错、不挂起，采样走空 metadata 回退
+        XCTAssertNil(DiskSampler.runDiskutilInfo("/") { _, _, _ in nil })
+        XCTAssertNil(DiskSampler.runDiskutilInfo("/") { _, _, _ in
+            BoundedProcessOutput(exitCode: 9, stdout: "", stderr: "", truncated: false)
+        })
+        // 输出不是合法 plist 时同样返回 nil
+        XCTAssertNil(DiskSampler.runDiskutilInfo("/") { _, _, _ in
+            BoundedProcessOutput(exitCode: 0, stdout: "not-a-plist", stderr: "", truncated: false)
+        })
+    }
+
     func test_bestCapacity_keepsVolumeFreeZeroAsFullDisk() {
         let volume = DiskSupport.MountedVolume(
             name: "Full",

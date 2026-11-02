@@ -77,7 +77,7 @@ final class NetworkIdentityProvider: NetworkIdentityProviding {
         dnsGlobalProvider: @escaping () -> [String: Any]? = {
             NetworkIdentityProvider.copyDynamicStoreDictionary(key: "State:/Network/Global/DNS")
         },
-        scutilDNSProvider: @escaping () -> String? = NetworkIdentityProvider.runScutilDNS
+        scutilDNSProvider: @escaping () -> String? = { NetworkIdentityProvider.runScutilDNS() }
     ) {
         self.hostnameProvider = hostnameProvider
         self.interfaceSamplesProvider = interfaceSamplesProvider
@@ -297,22 +297,17 @@ final class NetworkIdentityProvider: NetworkIdentityProviding {
         return value as? [String: Any]
     }
 
-    static func runScutilDNS() -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/scutil")
-        process.arguments = ["--dns"]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        do {
-            try process.run()
-            process.waitUntilExit()
-            guard process.terminationStatus == 0 else { return nil }
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            return String(data: data, encoding: .utf8)
-        } catch {
-            return nil
-        }
+    /// scutil --dns 经有界执行器（超时 5s）：并发排空两路管道防等待环死锁，
+    /// 子进程挂起时到点 SIGKILL 回收。runner 可注入供测试。
+    static func runScutilDNS(
+        runner: (URL, [String], BoundedProcessRunner.Options) -> BoundedProcessOutput? = BoundedProcessRunner.runBlocking
+    ) -> String? {
+        guard let result = runner(
+            URL(fileURLWithPath: "/usr/sbin/scutil"),
+            ["--dns"],
+            .init(timeout: 5)
+        ), result.succeeded else { return nil }
+        return result.stdout
     }
 
     // MARK: Helpers

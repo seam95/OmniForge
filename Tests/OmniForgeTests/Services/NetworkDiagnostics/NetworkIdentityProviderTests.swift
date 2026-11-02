@@ -149,6 +149,39 @@ final class NetworkIdentityProviderTests: XCTestCase {
         )
     }
 
+    // MARK: - runScutilDNS: 有界执行器边界
+
+    func test_runScutilDNS_passesCommandAndTimeoutToBoundedRunner() {
+        // 命令拼接保持不变：/usr/sbin/scutil --dns，且必须带 5s 超时
+        var capturedExecutable: URL?
+        var capturedArguments: [String]?
+        var capturedOptions: BoundedProcessRunner.Options?
+        let output = NetworkIdentityProvider.runScutilDNS { executable, arguments, options in
+            capturedExecutable = executable
+            capturedArguments = arguments
+            capturedOptions = options
+            return BoundedProcessOutput(
+                exitCode: 0, stdout: "nameserver[0] : 9.9.9.9", stderr: "", truncated: false
+            )
+        }
+        XCTAssertEqual(capturedExecutable?.path, "/usr/sbin/scutil")
+        XCTAssertEqual(capturedArguments, ["--dns"])
+        XCTAssertEqual(capturedOptions?.timeout, 5, "scutil 必须经带超时执行器，子进程挂起时由其 SIGKILL 回收")
+        XCTAssertEqual(output, "nameserver[0] : 9.9.9.9")
+    }
+
+    func test_runScutilDNS_returnsNilWhenRunnerFailsTimesOutOrTruncates() {
+        // 启动失败（nil）与超时 SIGKILL（退出码 9）都返回 nil：不抛错、不挂起，调用方继续采样
+        XCTAssertNil(NetworkIdentityProvider.runScutilDNS { _, _, _ in nil })
+        XCTAssertNil(NetworkIdentityProvider.runScutilDNS { _, _, _ in
+            BoundedProcessOutput(exitCode: 9, stdout: "", stderr: "", truncated: false)
+        })
+        // 截断输出不完整，不得当完整结果返回
+        XCTAssertNil(NetworkIdentityProvider.runScutilDNS { _, _, _ in
+            BoundedProcessOutput(exitCode: 0, stdout: "nameserver[0] : 1.1.1.1", stderr: "", truncated: true)
+        })
+    }
+
     // MARK: - makeIdentity injection
 
     func test_makeIdentity_usesInjectedProviders() {
