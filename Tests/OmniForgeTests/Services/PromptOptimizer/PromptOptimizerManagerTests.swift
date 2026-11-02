@@ -153,9 +153,12 @@ final class PromptOptimizerManagerTests: XCTestCase {
     private func makeManager(
         isFeatureAvailable: @escaping () -> Bool = { true },
         isAccessibilityGranted: @escaping () -> Bool = { true },
-        autoReplaceRestoreDelay: TimeInterval = 0
+        autoReplaceRestoreDelay: TimeInterval = 0,
+        conflictProvider: ((HotkeyDefinition) -> HotkeyDefinition?)? = nil
     ) -> PromptOptimizerManager {
-        PromptOptimizerManager(
+        // 测试统一注入确定性 checker：占用清单读 suite，系统热键置空。
+        let checker = TranslationHotkeyConflictChecker(userDefaults: defaults, systemHotkeys: { [] })
+        return PromptOptimizerManager(
             userDefaults: defaults,
             isFeatureAvailable: isFeatureAvailable,
             isAccessibilityGranted: isAccessibilityGranted,
@@ -174,7 +177,8 @@ final class PromptOptimizerManagerTests: XCTestCase {
                     self?.restoreCount += 1
                 }
             },
-            autoReplaceRestoreDelay: autoReplaceRestoreDelay
+            autoReplaceRestoreDelay: autoReplaceRestoreDelay,
+            conflictProvider: conflictProvider ?? { checker.conflict(for: $0) }
         )
     }
 
@@ -225,6 +229,52 @@ final class PromptOptimizerManagerTests: XCTestCase {
         XCTAssertEqual(manager.hotkey.keyCode, Int(kVK_ANSI_O))
         XCTAssertEqual(defaults.integer(forKey: UserDefaultsKeys.promptOptimizerHotkeyKeyCode), Int(kVK_ANSI_O))
         XCTAssertEqual(shortcuts.appliedShortcuts[.promptOptimizer].flatMap { $0 }?.carbonKeyCode, Int(kVK_ANSI_O))
+    }
+
+    // MARK: - 录键冲突检测
+
+    func test_handleRecorderChange_rejectsConflictingShortcutAndNotifies() {
+        // 录到与翻译相同的键位：不写 UserDefaults、不注册，并经 HUD 提示键位被占用。
+        let occupied = HotkeyDefinition(keyCode: Int(kVK_ANSI_T), modifiers: [.option, .command])
+        defaults.set(occupied.keyCode, forKey: UserDefaultsKeys.translationHotkeyKeyCode)
+        defaults.set(occupied.modifiers.rawValue, forKey: UserDefaultsKeys.translationHotkeyModifiers)
+        let manager = makeManager()
+        manager.syncWithPreferences()
+        let appliedBefore = shortcuts.appliedShortcuts[.promptOptimizer].flatMap { $0 }?.carbonKeyCode
+
+        manager.handleRecorderChange(occupied.keyboardShortcut)
+
+        XCTAssertEqual(manager.hotkey, .defaultPromptOptimizer, "冲突键位不得写入 UserDefaults")
+        XCTAssertEqual(
+            shortcuts.appliedShortcuts[.promptOptimizer].flatMap { $0 }?.carbonKeyCode,
+            appliedBefore,
+            "冲突键位不得注册到 KeyboardShortcuts"
+        )
+        XCTAssertEqual(hud.outcomes.count, 1, "必须经现有 HUD 回调路径提示用户")
+        XCTAssertTrue(hud.outcomes.first?.isFailure ?? false, "冲突提示必须是失败态")
+        XCTAssertTrue(
+            hud.outcomes.first?.text.contains("已被占用") ?? false,
+            "冲突提示应说明键位被占用，实际：\(hud.outcomes.first?.text ?? "")"
+        )
+    }
+
+    func test_handleRecorderChange_allowsReRecordingOwnCurrentHotkey() {
+        // 重录自身当前键位不视为冲突：占用清单含优化器自身键位，需排除后比较。
+        let manager = makeManager()
+        manager.syncWithPreferences()
+        let own = HotkeyDefinition(keyCode: Int(kVK_ANSI_O), modifiers: [.option, .command])
+        manager.handleRecorderChange(own.keyboardShortcut)
+        XCTAssertTrue(hud.outcomes.isEmpty, "首次录制无冲突键位不应提示")
+
+        manager.handleRecorderChange(own.keyboardShortcut)
+
+        XCTAssertTrue(hud.outcomes.isEmpty, "重录自身当前键位不得误报冲突")
+        XCTAssertEqual(manager.hotkey, own, "重录自身键位应正常写入")
+        XCTAssertEqual(
+            shortcuts.appliedShortcuts[.promptOptimizer].flatMap { $0 }?.carbonKeyCode,
+            own.keyCode,
+            "重录自身键位应保持注册"
+        )
     }
 
     func test_success_writesClipboardShowsOutcomeWithoutPaste() async {

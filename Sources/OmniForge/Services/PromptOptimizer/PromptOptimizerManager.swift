@@ -55,6 +55,8 @@ final class PromptOptimizerManager: ObservableObject {
     private let captureSuspender: ClipboardCaptureSuspending?
     private let snapshotter: () -> (() -> Void)
     private let autoReplaceRestoreDelay: TimeInterval
+    /// 录键冲突检查（与翻译侧共用占用清单语义）。
+    private let conflictProvider: (HotkeyDefinition) -> HotkeyDefinition?
 
     @Published private(set) var isListening = false
     private var registeredHandler = false
@@ -73,7 +75,8 @@ final class PromptOptimizerManager: ObservableObject {
         keyboardShortcuts: PromptOptimizerKeyboardShortcutsClient = LivePromptOptimizerKeyboardShortcutsClient(),
         captureSuspender: ClipboardCaptureSuspending? = nil,
         snapshotter: (() -> (() -> Void))? = nil,
-        autoReplaceRestoreDelay: TimeInterval = 0.1
+        autoReplaceRestoreDelay: TimeInterval = 0.1,
+        conflictProvider: ((HotkeyDefinition) -> HotkeyDefinition?)? = nil
     ) {
         self.userDefaults = userDefaults
         self.isFeatureAvailable = isFeatureAvailable
@@ -94,6 +97,9 @@ final class PromptOptimizerManager: ObservableObject {
             }
         }
         self.autoReplaceRestoreDelay = autoReplaceRestoreDelay
+        // 默认复用翻译域冲突检查器：占用清单以注入的 UserDefaults 为真源。
+        let checker = TranslationHotkeyConflictChecker(userDefaults: userDefaults)
+        self.conflictProvider = conflictProvider ?? { checker.conflict(for: $0) }
     }
 
     // MARK: - 生命周期
@@ -132,6 +138,18 @@ final class PromptOptimizerManager: ObservableObject {
     func handleRecorderChange(_ shortcut: KeyboardShortcuts.Shortcut?) {
         guard let definition = HotkeyDefinition(shortcut: shortcut) else {
             // 清空录键回退当前生效快捷键，避免「录一半」留下空窗。
+            if isListening {
+                keyboardShortcuts.setShortcut(hotkey.keyboardShortcut, for: .promptOptimizer)
+            }
+            return
+        }
+        // 冲突检测（排除自身当前键位后比较）：重录同一键位视为确认，不判冲突；
+        // 撞上其他功能键位时不写 UserDefaults、不注册，并经 HUD 提示用户换键。
+        if definition != hotkey, let conflict = conflictProvider(definition) {
+            hud.showOutcome(
+                String(format: stringsProvider().translationHotkeyConflictFormat, conflict.displayString),
+                isFailure: true
+            )
             if isListening {
                 keyboardShortcuts.setShortcut(hotkey.keyboardShortcut, for: .promptOptimizer)
             }

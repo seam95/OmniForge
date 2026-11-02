@@ -1,3 +1,4 @@
+import Carbon.HIToolbox
 import KeyboardShortcuts
 import XCTest
 @testable import OmniForge
@@ -167,5 +168,34 @@ final class TranslationHotkeyManagerTests: XCTestCase {
 
         XCTAssertEqual(preferences.hotkey, custom)
         XCTAssertEqual(client.shortcuts.last ?? nil, custom.keyboardShortcut)
+    }
+
+    // MARK: - 占用清单（TranslationHotkeyConflictChecker）
+
+    func test_conflictChecker_includesClotheslineHangInOccupiedList() {
+        // 回归：占用清单曾漏掉「截图挂绳」键位，撞键时翻译热键静默失效。
+        let hang = HotkeyDefinition(keyCode: Int(kVK_ANSI_H), modifiers: [.control, .option, .command])
+        userDefaults.set(hang.keyCode, forKey: UserDefaultsKeys.screenshotClotheslineHotkeyHangKeyCode)
+        userDefaults.set(hang.modifiers.rawValue, forKey: UserDefaultsKeys.screenshotClotheslineHotkeyHangModifiers)
+
+        let checker = TranslationHotkeyConflictChecker(userDefaults: userDefaults, systemHotkeys: { [] })
+
+        XCTAssertEqual(checker.conflict(for: hang), hang, "截图挂绳键位必须计入应用占用清单")
+    }
+
+    func test_conflictChecker_excludesOwnCurrentHotkeyOnReRecord() {
+        // 清单已含翻译自身键位：重录同键必须经 excluding 放行，否则误报冲突。
+        let checker = TranslationHotkeyConflictChecker(userDefaults: userDefaults, systemHotkeys: { [] })
+        let own = HotkeyDefinition.defaultTranslation
+
+        XCTAssertNil(
+            checker.conflict(for: own, excluding: own),
+            "重录自身当前键位不得误报冲突"
+        )
+        XCTAssertEqual(
+            checker.conflict(for: own),
+            own,
+            "未排除自身时清单应能识别翻译键位被占用（供其他功能检测）"
+        )
     }
 }

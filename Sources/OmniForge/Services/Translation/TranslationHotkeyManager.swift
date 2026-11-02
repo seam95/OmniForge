@@ -44,9 +44,15 @@ struct TranslationHotkeyConflictChecker {
     }
 
     /// 返回与 `definition` 冲突的既有快捷键；无冲突返回 nil。
-    func conflict(for definition: HotkeyDefinition) -> HotkeyDefinition? {
+    ///
+    /// - Parameter excluding: 调用方自身当前键位——占用清单含全部功能键位（含翻译自身），
+    ///   调用方必须排除自己，重录同一键位才不会误报冲突。
+    func conflict(
+        for definition: HotkeyDefinition,
+        excluding excluded: HotkeyDefinition? = nil
+    ) -> HotkeyDefinition? {
         let occupied = appHotkeys() + systemHotkeys().map(Self.definition(from:))
-        return occupied.first { $0.keyCode == definition.keyCode && $0.modifiers == definition.modifiers }
+        return occupied.first { $0 == definition && $0 != excluded }
     }
 
     /// 应用内各功能当前使用的快捷键（UserDefaults 真源）。
@@ -66,6 +72,9 @@ struct TranslationHotkeyConflictChecker {
             )
         }
 
+        // 占用清单必须覆盖全部功能键位（含翻译自身），
+        // 调用方经 excluding 排除自己；遗漏任何一组都会造成撞键静默失效。
+        append(UserDefaultsKeys.translationHotkeyKeyCode, UserDefaultsKeys.translationHotkeyModifiers)
         append(UserDefaultsKeys.clipboardHotkeyKeyCode, UserDefaultsKeys.clipboardHotkeyModifiers)
         append(UserDefaultsKeys.shelfHotkeyKeyCode, UserDefaultsKeys.shelfHotkeyModifiers)
         append(UserDefaultsKeys.stickyNoteHotkeyKeyCode, UserDefaultsKeys.stickyNoteHotkeyModifiers)
@@ -74,7 +83,7 @@ struct TranslationHotkeyConflictChecker {
             UserDefaultsKeys.promptOptimizerHotkeyModifiers
         )
         append(UserDefaultsKeys.keepAwakeHotkeyKeyCode, UserDefaultsKeys.keepAwakeHotkeyModifiers)
-        // 截图 8 组快捷键。
+        // 截图 7 组快捷键（5 组截图动作 + 晾衣绳显示/挂绳）。
         append(
             UserDefaultsKeys.screenshotHotkeyAllInOneKeyCode,
             UserDefaultsKeys.screenshotHotkeyAllInOneModifiers
@@ -92,6 +101,11 @@ struct TranslationHotkeyConflictChecker {
         append(
             UserDefaultsKeys.screenshotClotheslineHotkeyToggleKeyCode,
             UserDefaultsKeys.screenshotClotheslineHotkeyToggleModifiers
+        )
+        // 回归：曾漏掉「截图挂绳」键位，导致撞键时翻译热键静默失效。
+        append(
+            UserDefaultsKeys.screenshotClotheslineHotkeyHangKeyCode,
+            UserDefaultsKeys.screenshotClotheslineHotkeyHangModifiers
         )
         return hotkeys
     }
@@ -139,8 +153,9 @@ final class TranslationHotkeyManager {
         self.preferences = preferences
         self.keyboardShortcuts = keyboardShortcuts
         self.isFeatureAvailable = isFeatureAvailable
-        self.conflictProvider = conflictProvider ?? { definition in
-            TranslationHotkeyConflictChecker().conflict(for: definition)
+        self.conflictProvider = conflictProvider ?? { [preferences] definition in
+            // 排除翻译自身当前键位：重录同键视为确认，不判冲突。
+            TranslationHotkeyConflictChecker().conflict(for: definition, excluding: preferences.hotkey)
         }
         self.onTrigger = onTrigger
     }
