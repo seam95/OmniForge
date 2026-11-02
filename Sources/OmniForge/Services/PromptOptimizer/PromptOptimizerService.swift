@@ -93,14 +93,12 @@ final class PromptOptimizerService: PromptOptimizing {
 
     // MARK: - 纯函数（可单测）
 
-    /// 规范化 chat/completions endpoint：去首尾空白与全部尾斜杠；
-    /// 未以 `/chat/completions` 结尾则拼接；空 baseURL → nil。
+    /// 规范化 chat/completions endpoint：统一走 `SecureHTTPEndpoint` 安全校验
+    /// （仅 https、回环放行 http、拒绝 query/fragment 等），未通过时返回 nil。
+    /// 返回 nil 时由 `send` 映射为 `PromptOptimizerErrorKind.generic`（配置无效，
+    /// 设置页提示「连接失败」，提醒用户检查 Base URL）。
     static func endpointURL(forBaseURL raw: String) -> URL? {
-        var base = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        while base.hasSuffix("/") { base.removeLast() }
-        guard !base.isEmpty else { return nil }
-        let full = base.hasSuffix("/chat/completions") ? base : base + "/chat/completions"
-        return URL(string: full)
+        try? SecureHTTPEndpoint.endpointURL(baseURL: raw, path: "/chat/completions")
     }
 
     /// 从 OpenAI 兼容响应提取 `choices[0].message.content`；形状异常或内容为空 → generic。

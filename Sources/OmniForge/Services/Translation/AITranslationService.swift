@@ -91,46 +91,14 @@ final class AITranslationService: TranslationEngine {
     /// - 接受含 `/v1` 等前缀的 Base URL，也接受已含 `/chat/completions` 的完整端点，不重复追加；
     /// - 仅接受 HTTP/HTTPS；远程地址必须 HTTPS，本机回环地址允许 HTTP；
     /// - 拒绝无 host、带 user/password、query 或 fragment 的地址。
+    ///
+    /// 校验逻辑统一收敛到 `SecureHTTPEndpoint`，与 PromptOptimizer 共享同一套规则。
     static func endpointURL(forBaseURL raw: String) throws -> URL {
-        var base = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        while base.hasSuffix("/") { base.removeLast() }
-        guard !base.isEmpty else { throw TranslationError.configurationIncomplete }
-
-        let full = base.hasSuffix("/chat/completions") ? base : base + "/chat/completions"
-        guard let components = URLComponents(string: full),
-              let url = components.url,
-              let host = components.host,
-              !host.isEmpty else {
+        do {
+            return try SecureHTTPEndpoint.endpointURL(baseURL: raw, path: "/chat/completions")
+        } catch {
             throw TranslationError.configurationIncomplete
         }
-        guard let scheme = components.scheme?.lowercased(),
-              scheme == "http" || scheme == "https" else {
-            throw TranslationError.configurationIncomplete
-        }
-        // 凭据、query 或 fragment 可能把密钥与参数带进日志，直接拒绝。
-        guard components.user == nil,
-              components.password == nil,
-              components.query == nil,
-              components.fragment == nil else {
-            throw TranslationError.configurationIncomplete
-        }
-        // 远程接口必须 HTTPS；仅回环地址允许明文 HTTP，便于本机无鉴权服务。
-        if scheme == "http", !isLoopbackHost(host) {
-            throw TranslationError.configurationIncomplete
-        }
-        return url
-    }
-
-    /// 是否为回环主机名：`localhost`、`127.0.0.1`、IPv6 回环 `[::1]`。
-    private static func isLoopbackHost(_ host: String) -> Bool {
-        var normalized = host.lowercased()
-        // URLComponents 对 IPv6 主机保留方括号。
-        if normalized.hasPrefix("["), normalized.hasSuffix("]") {
-            normalized = String(normalized.dropFirst().dropLast())
-        }
-        return normalized == "localhost"
-            || normalized == "127.0.0.1"
-            || normalized == "::1"
     }
 
     /// 系统提示：约束只返回目标语言译文并保留段落；原文只作为待翻译数据处理。
