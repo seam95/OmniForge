@@ -689,6 +689,46 @@ final class SystemMonitorManagerTests: XCTestCase {
         )
     }
 
+    // MARK: - 调度回调线程契约（修复：定时采样回调切回主线程）
+
+    /// 回归锁（2d80ab8 同族残留根因）：`TimerRepeatingScheduler` 的
+    /// DispatchSourceTimer 未指定 target queue，定时回调（action）在全局并发
+    /// 队列直调 `@MainActor` 的 sampleAll()——tickCount / forcedSampleAttempts /
+    /// snapshot 被跨线程写入（Swift 5 模式无运行时隔离检查，静默数据竞争）。
+    ///
+    /// 线程契约：调度闭包必须把 sampleAll 派回主队列执行。
+    /// 暴露方式：在全局队列 fire 一次定时 tick 后阻塞主线程——
+    /// 旧缺陷下 sampleAll 已在 fire 线程同步发起采样（不依赖主线程），
+    /// CPU 采样照常发生；契约满足时它必须等主队列恢复才执行。
+    func test_scheduledTickFromGlobalQueueDispatchesSampleToMainThread() async throws {
+        let scheduler = GlobalQueueFiringScheduler()
+        let samplers = FakeSamplerSet()
+        let manager = makeManager(scheduler: scheduler, samplers: samplers)
+
+        manager.setMenuBarMetrics([.cpu])
+        try await waitForSnapshot(manager) { $0.cpuUsage != nil }
+        let baseline = samplers.cpu.callCount
+
+        // 在全局并发队列上触发一次定时 tick（复刻 TimerRepeatingScheduler 的回调线程）
+        scheduler.fireOnGlobalQueue()
+        // 阻塞主线程：派回主队列的 sampleAll 尚无法执行；
+        // 若调度闭包未切回主线程（旧缺陷），采样已在全局队列同步发起。
+        Thread.sleep(forTimeInterval: 0.3)
+        XCTAssertEqual(
+            samplers.cpu.callCount, baseline,
+            "主线程阻塞期间定时 tick 不得发起采样：sampleAll 必须经主队列派发"
+        )
+
+        // 主线程恢复后采样正常完成，状态更新对主线程可见
+        try await waitForSnapshot(manager, timeout: 2.0) { _ in
+            samplers.cpu.callCount > baseline
+        }
+        // 契约断言：更新后的状态在主 actor 上读取（不崩溃即通过）
+        MainActor.assumeIsolated {
+            XCTAssertNotNil(manager.snapshot.cpuUsage)
+        }
+    }
+
     func test_menuBarNetworkGetsRapidFollowUpWithoutPanelDemand() async throws {
         // 网速是 delta 指标：首轮只建基线、速率必为 nil。启动时面板未打开，
         // 0.5s 补采必须放行，否则要干等 2s 后的下一个定时 tick 才出速率。
@@ -853,6 +893,34 @@ final class FakeRepeatingScheduler: RepeatingScheduling {
     /// 手动推进一次定时采样（不触发 startSampling 时的即时 sampleAll）
     func fire() {
         action?()
+    }
+}
+
+/// 模拟 TimerRepeatingScheduler 的真实线程行为：DispatchSourceTimer 未指定
+/// target queue 时，定时回调（action）在全局并发队列上被执行。
+/// 用于验证调度闭包把 sampleAll 派回主队列的线程契约。
+final class GlobalQueueFiringScheduler: RepeatingScheduling {
+    private var action: (() -> Void)?
+    private let lock = NSLock()
+
+    func schedule(every interval: TimeInterval, _ action: @escaping () -> Void) -> AnyCancellable {
+        lock.lock()
+        self.action = action
+        lock.unlock()
+        return AnyCancellable { [weak self] in
+            guard let self else { return }
+            self.lock.lock()
+            self.action = nil
+            self.lock.unlock()
+        }
+    }
+
+    /// 在全局并发队列上触发一次定时回调（复刻 TimerRepeatingScheduler 的回调线程）。
+    func fireOnGlobalQueue() {
+        lock.lock()
+        let action = action
+        lock.unlock()
+        DispatchQueue.global().async { action?() }
     }
 }
 

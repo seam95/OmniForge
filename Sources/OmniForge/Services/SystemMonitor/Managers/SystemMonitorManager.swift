@@ -196,8 +196,16 @@ final class SystemMonitorManager: ObservableObject {
         // 异步预热 GPU/网络 delta 基线，使首次展开排行直接出数据而非先返回空。
         primeProcessBaselines()
         scheduleRapidFollowUp()
-        scheduler.schedule(every: refreshInterval, { [weak self] in self?.sampleAll() })
-            .store(in: &cancellables)
+        // 线程契约：TimerRepeatingScheduler 的 DispatchSourceTimer 未指定 target
+        // queue，定时回调在全局并发队列直调本闭包。sampleAll 会读写 tickCount、
+        // forcedSampleAttempts、snapshot 等 @MainActor 状态，直接在回调线程执行
+        // 属跨线程写入（Swift 5 模式无运行时隔离检查，曾致面板打开后随机闪退，
+        // 2d80ab8 的同族残留根因）。此处把 sampleAll 派回主队列执行；不改
+        // TimerRepeatingScheduler 本身（TokenUsage 等 15+ 采集器共用，避免扩散影响面）。
+        scheduler.schedule(every: refreshInterval) { [weak self] in
+            DispatchQueue.main.async { self?.sampleAll() }
+        }
+        .store(in: &cancellables)
     }
 
     /// 面板打开后或菜单栏网速待建基线时 ~0.5s 的追加采样：delta 类指标（网速/磁盘速率）首轮只建基线，
