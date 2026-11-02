@@ -189,9 +189,10 @@ class SQLiteUsageCollectorBase: JSONLUsageCollectorBase {
     }
 
     /// 毫秒时间戳 → UTC 半小时桶起点。
+    /// 统一先经清洗器：巨值（如 1e22 级脏 REAL）直接 Int(Double) 会运行时 trap，
+    /// 崩掉常驻应用（与 GrokUsageProcessing.bucketStart 同构）。
     static func bucketStart(fromMilliseconds ms: Double?) -> Date? {
-        guard let ms, ms > 0, ms.isFinite else { return nil }
-        let seconds = Int(ms / 1000)
+        guard let seconds = ms.flatMap(UsageTimestampSanitizer.epochSeconds(fromMilliseconds:)) else { return nil }
         return Date(timeIntervalSince1970: Double((seconds / 1800) * 1800))
     }
 }
