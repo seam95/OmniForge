@@ -43,7 +43,6 @@ OmniForge lives in the menu bar and grows with you: enable features individually
 
 ### 🧰 Productivity
 
-- **Desktop Pet** — Pixel cat and Doraemon companions living on your desktop with physics tossing, cursor gaze tracking, reaction to system states (copy, low battery, high temperature), speech bubbles, and community pet importing.
 - **Sticky Notes** — Colorful sticky notes pinned to your desktop for quick capture, with custom font size and line height.
 - **Shelf** — Park files, images, links, and text, then drag them into another app later.
 - **Cleaner** — Scan leftovers, caches, logs, and other junk; confirm before cleaning.

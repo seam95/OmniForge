@@ -9,7 +9,6 @@ final class SystemMonitorManager: ObservableObject {
     @Published private(set) var history = MetricHistory()
     @Published private(set) var processState = ProcessBreakdownState.collapsed
     @Published private(set) var isSampling = false
-    @Published private(set) var speedTestState: SpeedTestState = .idle
 
     private let scheduler: RepeatingScheduling
     private let queue = DispatchQueue(label: "com.omniforge.system-monitor", qos: .utility)
@@ -18,8 +17,6 @@ final class SystemMonitorManager: ObservableObject {
     /// ProcessUsageSampler 内部已用 NSLock 保护基线状态，跨队列调用安全。
     private let processQueue = DispatchQueue(label: "app.omniforge.monitor.process", qos: .utility)
     private var cancellables = Set<AnyCancellable>()
-    /// 测速状态订阅，独立于采样 scheduler，避免 stopSampling 清掉
-    private var speedTestCancellable: AnyCancellable?
     private var demand = MonitorDemand.none
     /// 停止采样令牌：stopSampling 时自增，使在途采样的主线程回写失效。
     private var generation = 0
@@ -66,7 +63,6 @@ final class SystemMonitorManager: ObservableObject {
     private let powerSampler: PowerSampling
     private let peripheralBatterySampler: PeripheralBatterySampling
     private let processSampler: ProcessUsageSampling
-    private let speedTest: SpeedTest
 
     init(
         scheduler: RepeatingScheduling,
@@ -78,8 +74,7 @@ final class SystemMonitorManager: ObservableObject {
         diskSampler: DiskSampling,
         powerSampler: PowerSampling,
         peripheralBatterySampler: PeripheralBatterySampling,
-        processSampler: ProcessUsageSampling,
-        speedTest: SpeedTest = SpeedTest()
+        processSampler: ProcessUsageSampling
     ) {
         self.scheduler = scheduler
         self.cpuSampler = cpuSampler
@@ -91,17 +86,6 @@ final class SystemMonitorManager: ObservableObject {
         self.powerSampler = powerSampler
         self.peripheralBatterySampler = peripheralBatterySampler
         self.processSampler = processSampler
-        self.speedTest = speedTest
-        speedTestCancellable = speedTest.$state
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] state in
-                self?.speedTestState = state
-            }
-    }
-
-    /// 触发网速测试（下载测速）
-    func startSpeedTest() {
-        speedTest.start()
     }
 
     func setPanelDemand(_ demand: MonitorDemand) {

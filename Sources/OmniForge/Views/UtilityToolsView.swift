@@ -373,7 +373,7 @@ private struct UtilityToolRow: View {
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(tool.title(in: strings))
+                    Text(tool.hubName(in: strings))
                         .font(Theme.Stats.font13SemiBold)
                         .foregroundStyle(colorScheme == .light ? Theme.Stats.text1 : Color.primary)
                         .lineLimit(1)
@@ -401,7 +401,7 @@ private struct UtilityToolRow: View {
         .onHover { hovering in
             isHovered = hovering
         }
-        .accessibilityLabel(tool.title(in: strings))
+        .accessibilityLabel(tool.hubName(in: strings))
         .accessibilityHint(tool.hubDescription(in: strings))
     }
 }

@@ -111,8 +111,6 @@ struct Strings: Equatable {
     let runStateFailed: String
     let actionRetry: String
     let permissionOpenSettings: String
-    let utilityCleaner: String
-    let utilityUninstaller: String
     let utilityUninstallBusy: String
     let utilityCleanerSubtitle: String
     let utilityKeepAwakeSubtitle: String
@@ -172,10 +170,6 @@ struct Strings: Equatable {
     let monitorProcessLoading: String
     let monitorProcessUsage: String
     let monitorProcessEmpty: String
-    // 网速测试
-    let monitorSpeedTestStart: String
-    let monitorSpeedTestRunning: String
-    let monitorSpeedTestFailed: String
     // 监控面板卡片/排行榜文案
     let monitorDeviceFallbackName: String
     let monitorStatusNormal: String

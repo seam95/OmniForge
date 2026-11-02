@@ -36,14 +36,6 @@ enum MenuBarMetricSpacing: String, CaseIterable, Codable {
     case standard, compact
 }
 
-/// 测速状态
-enum SpeedTestState: Equatable {
-    case idle
-    case running(progress: Double)
-    case finished(downBytesPerSec: Double, upBytesPerSec: Double)
-    case failed(String)
-}
-
 /// 温度单位
 enum TemperatureUnit: String, CaseIterable, Equatable, Codable {
     case celsius, fahrenheit
@@ -89,12 +81,6 @@ enum MenuBarPreset: String, CaseIterable, Codable {
 }
 
 // MARK: - 子读数类型
-
-/// 温度读数
-struct TemperatureReading: Equatable {
-    let value: Double
-    let unit: TemperatureUnit
-}
 
 /// 内存读数
 struct MemoryReading: Equatable {

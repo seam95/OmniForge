@@ -283,7 +283,6 @@ struct ControlCenterContainerView: View {
                             onExpandedMetric: { [monitor] kind in
                                 monitor.setExpandedProcessMetric(kind)
                             },
-                            onStartSpeedTest: { monitor.startSpeedTest() },
                             onOpenSettings: { onOpenSettings(nil) },
                             showsSettingsAction: false,
                             onRefresh: { forceProcess in

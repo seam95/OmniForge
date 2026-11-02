@@ -45,27 +45,6 @@ enum UtilityTool: String, CaseIterable, Identifiable {
         return selection
     }
 
-    func title(in strings: Strings) -> String {
-        switch self {
-        case .stickyNotes:
-            return strings.featureHubNameStickyNotes
-        case .translation:
-            return strings.featureHubNameTranslation
-        case .networkDiagnostics:
-            return strings.featureHubNameNetworkDiagnostics
-        case .colorPicker:
-            return strings.colorPickerName
-        case .uninstaller:
-            return strings.utilityUninstaller
-        case .cleaner:
-            return strings.utilityCleaner
-        case .cleaningMode:
-            return strings.featureHubNameCleaningMode
-        case .keepAwake:
-            return strings.featureHubNameKeepAwake
-        }
-    }
-
     /// 对应的功能目录项，用于复用图标 / 名称 / 描述，避免重复定义展示元数据。
     var feature: AppFeature {
         switch self {

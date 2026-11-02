@@ -198,17 +198,6 @@ extension MetricFormat {
         return (down, up)
     }
 
-    static func diskSpeed(previous: DiskIOCounters,
-                          current: DiskIOCounters,
-                          elapsed: Double) -> (read: Double, write: Double) {
-        guard elapsed > 0 else { return (0, 0) }
-        let read = current.read >= previous.read
-            ? Double(current.read - previous.read) / elapsed : 0
-        let write = current.written >= previous.written
-            ? Double(current.written - previous.written) / elapsed : 0
-        return (read, write)
-    }
-
     /// 物理网络接口过滤：排除 lo/gif/awdl/utun/bridge 等虚拟接口
     static func includeNetworkInterface(_ name: String) -> Bool {
         guard !name.isEmpty else { return false }

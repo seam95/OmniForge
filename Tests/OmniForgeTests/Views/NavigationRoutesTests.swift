@@ -290,14 +290,14 @@ final class NavigationRoutesTests: XCTestCase {
     }
 
     func test_utilityToolTitles_useStringsContract() {
-        XCTAssertEqual(UtilityTool.cleaner.title(in: .en), Strings.en.utilityCleaner)
-        XCTAssertEqual(UtilityTool.uninstaller.title(in: .zhHans), Strings.zhHans.utilityUninstaller)
+        XCTAssertEqual(UtilityTool.cleaner.hubName(in: .en), Strings.en.cleanerName)
+        XCTAssertEqual(UtilityTool.uninstaller.hubName(in: .zhHans), Strings.zhHans.uninstallerName)
         XCTAssertEqual(
-            UtilityTool.networkDiagnostics.title(in: .zhHans),
+            UtilityTool.networkDiagnostics.hubName(in: .zhHans),
             Strings.zhHans.featureHubNameNetworkDiagnostics
         )
         XCTAssertEqual(
-            UtilityTool.networkDiagnostics.title(in: .en),
+            UtilityTool.networkDiagnostics.hubName(in: .en),
             Strings.en.featureHubNameNetworkDiagnostics
         )
     }

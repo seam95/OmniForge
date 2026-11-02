@@ -27,6 +27,8 @@ enum FinderSyncStrings {
     static var terminalFallback: String { pick("终端 (Terminal)", "Terminal") }
     /// 在此处打开编辑器
     static var openEditor: String { pick("在此处打开编辑器", "Open in Editor") }
+    /// 未检出任何编辑器时的禁用兜底项
+    static var editorFallback: String { pick("未检测到编辑器", "No Editor Detected") }
     /// 复制路径
     static var copyPath: String { pick("复制路径", "Copy Path") }
     /// 移动到...

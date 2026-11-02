@@ -152,16 +152,6 @@ enum TemperatureSensorSelector {
         }
     }
 
-    /// Compatibility wrapper: collect known CPU key readings and select via platform core set.
-    static func cpuTemperature(from smc: SMCReading,
-                               platform: CPUTemperaturePlatform = TemperatureSensorSelector.currentPlatform()) -> Double? {
-        let readings = knownCPUKeys.compactMap { key -> (key: String, value: Double)? in
-            guard let value = smc.value(forKey: key) else { return nil }
-            return (key, value)
-        }
-        return displayedCPUTemperature(readings: readings, platform: platform)
-    }
-
     /// Max of known GPU keys (no first-success).
     static func gpuTemperature(from smc: SMCReading) -> Double? {
         maxPlausible(keys: knownGPUKeys, smc: smc)

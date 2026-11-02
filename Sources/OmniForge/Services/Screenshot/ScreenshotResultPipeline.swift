@@ -137,16 +137,6 @@ final class ScreenshotResultPipeline: ScreenshotResultRunning {
     }
 
     @discardableResult
-    func runAsync(
-        result: ScreenshotResult,
-        intent: ScreenshotEntryIntent,
-        pinOrigin: NSPoint? = nil,
-        hangOrigin: NSPoint? = nil
-    ) async throws -> ScreenshotPipelineOutcome {
-        try run(result: result, intent: intent, pinOrigin: pinOrigin, hangOrigin: hangOrigin)
-    }
-
-    @discardableResult
     func run(
         result: ScreenshotResult,
         intent: ScreenshotEntryIntent,

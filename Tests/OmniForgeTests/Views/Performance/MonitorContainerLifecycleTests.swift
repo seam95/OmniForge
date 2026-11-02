@@ -118,7 +118,6 @@ private struct LifecycleHostHarness: View {
             strings: .en,
             onDemandChange: { _ in },
             onExpandedMetric: { state.handleExpandedMetric($0) },
-            onStartSpeedTest: {},
             showsSettingsAction: false
         )
         .onAppear { state.mounted() }

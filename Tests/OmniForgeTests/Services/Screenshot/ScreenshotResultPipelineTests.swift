@@ -206,20 +206,6 @@ final class ScreenshotResultPipelineTests: XCTestCase {
         }
     }
 
-    // MARK: - runAsync
-
-    func test_runAsync_copy_delegatesToRun() async throws {
-        let encoder = FakeImageOutputEncoder()
-        let clipboard = FakeClipboardImageWriter()
-        let pipeline = makePipeline(encoder: encoder, clipboard: clipboard)
-        let result = try makeResult()
-
-        let outcome = try await pipeline.runAsync(result: result, intent: .copy)
-
-        XCTAssertTrue(outcome.didCopy)
-        XCTAssertEqual(clipboard.writes.count, 1)
-    }
-
     // MARK: - Helpers
 
     private func makePipeline(

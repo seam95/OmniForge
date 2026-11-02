@@ -68,10 +68,6 @@ protocol RepeatingScheduling: AnyObject {
     func schedule(every interval: TimeInterval, _ action: @escaping () -> Void) -> AnyCancellable
 }
 
-protocol MonitorExecuting: AnyObject {
-    func execute(_ action: @escaping () -> Void)
-}
-
 protocol MaxCapacityProbing: AnyObject {
     var percent: Int? { get }
     func refreshIfStale()

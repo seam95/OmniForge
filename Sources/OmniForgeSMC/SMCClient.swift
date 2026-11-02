@@ -1,23 +1,6 @@
 import Foundation
 import IOKit
 
-/// SMC 访问错误 — 读路径与诊断使用
-public enum SMCError: Error, LocalizedError {
-    case driverNotFound
-    case connectionClosed
-    case keyNotFound(String)
-    case readFailed(kern_return_t)
-
-    public var errorDescription: String? {
-        switch self {
-        case .driverNotFound: return "AppleSMC driver not found"
-        case .connectionClosed: return "SMC connection is closed"
-        case .keyNotFound(let key): return "SMC key not found: \(key)"
-        case .readFailed(let code): return "SMC read failed with code: \(code)"
-        }
-    }
-}
-
 public final class SMCClient: SMCReading {
     public struct Key {
         public let code: UInt32

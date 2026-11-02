@@ -148,6 +148,13 @@ if [[ -f "$FINDER_EXT_EXECUTABLE" ]]; then
     cp Sources/OmniForgeFinderSync/Resources/Info.plist "$FINDER_EXT_STAGE/Contents/Info.plist"
     printf 'BNDL????' > "$FINDER_EXT_STAGE/Contents/PkgInfo"
 
+    # 扩展版本与宿主同步：仓库内的 appex plist 不随发版维护（曾停在 3.13.0
+    # 而宿主已是 4.0.0），系统设置与诊断信息里会显示版本错位。
+    # 每次出包以宿主 Resources/Info.plist 为准，覆盖写入 stage 中的扩展 plist。
+    HOST_SHORT_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $HOST_SHORT_VERSION" \
+        "$FINDER_EXT_STAGE/Contents/Info.plist"
+
     # appex 与宿主不共享 bundle，需自带 App 图标，否则右键菜单只能用系统通用图标。
     # 取 64px 源（@1x 4.5 倍/@3x 1.5 倍余量，各密度都清晰），拷为 appicon_menu.png；
     # 只拷这一个文件，不复制整个 xcassets，避免资产重复维护。

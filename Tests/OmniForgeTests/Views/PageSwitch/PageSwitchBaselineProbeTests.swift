@@ -149,7 +149,6 @@ private struct MonitorHostHarness: View {
             strings: .en,
             onDemandChange: { _ in },
             onExpandedMetric: { _ in },
-            onStartSpeedTest: {},
             pageMountObserver: { page, delta in mounts.bump(page, delta) }
         )
     }

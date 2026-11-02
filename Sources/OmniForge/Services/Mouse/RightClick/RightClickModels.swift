@@ -8,18 +8,6 @@ public enum RightClickPathFormat: String, Codable, CaseIterable {
     case fileName
 }
 
-/// 右键增强操作类型
-public enum RightClickAction: Equatable {
-    case newFile(extension: String)
-    case openTerminal(bundleId: String?)
-    case openEditor(bundleId: String?)
-    case copyPath(format: RightClickPathFormat)
-    case moveTo(targetPath: String)
-    case copyTo(targetPath: String)
-    case quickJump(targetPath: String)
-    case toggleHiddenFiles
-}
-
 /// 常用目录条目
 public struct RightClickDirectoryItem: Identifiable, Codable, Equatable {
     public var id: UUID

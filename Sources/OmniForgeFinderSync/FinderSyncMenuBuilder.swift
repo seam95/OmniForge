@@ -43,6 +43,9 @@ final class FinderSyncMenuBuilder {
 
         let isCollapsed = defaults.object(forKey: "rightClick_isSubmenuCollapsed") as? Bool ?? true
         let promotedKeys = Set(defaults.stringArray(forKey: "rightClick_promotedActionKeys") ?? [])
+        // 常用目录一次解析、三处复用（移动到/复制到/直达共享同一份），
+        // 避免每次构建菜单重复读磁盘与反序列化收藏目录。
+        let directories = getDirectories()
 
         // 1. 新建文件
         let newFileItem = makeNewFileMenuItem()
@@ -62,14 +65,14 @@ final class FinderSyncMenuBuilder {
 
         // 5. 快捷文件操作（移动到/复制到/直达）
         if !isContainer && !targetURLs.isEmpty {
-            let moveItem = makeMoveToMenuItem()
+            let moveItem = makeMoveToMenuItem(directories: directories)
             attachMenuItem(moveItem, actionKey: "moveTo", promotedKeys: promotedKeys, isCollapsed: isCollapsed, rootMenu: rootMenu, subMenu: subMenu)
 
-            let copyItem = makeCopyToMenuItem()
+            let copyItem = makeCopyToMenuItem(directories: directories)
             attachMenuItem(copyItem, actionKey: "copyTo", promotedKeys: promotedKeys, isCollapsed: isCollapsed, rootMenu: rootMenu, subMenu: subMenu)
         }
 
-        let jumpItem = makeQuickJumpMenuItem()
+        let jumpItem = makeQuickJumpMenuItem(directories: directories)
         attachMenuItem(jumpItem, actionKey: "quickJump", promotedKeys: promotedKeys, isCollapsed: isCollapsed, rootMenu: rootMenu, subMenu: subMenu)
 
         // 6. 切换显示隐藏文件
@@ -121,7 +124,8 @@ final class FinderSyncMenuBuilder {
     /// 源图 64px，显式缩到 14×14pt：菜单行高约 20pt，超过 16pt 就会顶满整行糊成一团。
     /// 彩色图标不做 isTemplate——模板渲染会把它压成纯黑剪影。
     /// 资源缺失时退回该功能在应用内使用的 SF Symbol。
-    static func brandMenuIcon() -> NSImage? {
+    /// 惰性缓存：图标只与 bundle 资源相关、进程内不变，避免每次构建菜单都读盘解码。
+    private static let cachedBrandIcon: NSImage? = {
         if let url = Bundle.main.url(forResource: "appicon_menu", withExtension: "png"),
            let image = NSImage(contentsOf: url) {
             image.size = NSSize(width: 14, height: 14)
@@ -132,7 +136,9 @@ final class FinderSyncMenuBuilder {
             return fallback
         }
         return nil
-    }
+    }()
+
+    static func brandMenuIcon() -> NSImage? { cachedBrandIcon }
 
     // MARK: - 构建具体子菜单
 
@@ -192,6 +198,18 @@ final class FinderSyncMenuBuilder {
             }
         }
 
+        // 未检出任何编辑器时给禁用兜底项（对齐 terminal 的 fallback 模式），
+        // 避免出现空子菜单；禁用项不注册动作、不进 tag 快照。
+        if sub.items.isEmpty {
+            let fallback = NSMenuItem(
+                title: FinderSyncStrings.editorFallback,
+                action: nil,
+                keyEquivalent: ""
+            )
+            fallback.isEnabled = false
+            sub.addItem(fallback)
+        }
+
         parentItem.submenu = sub
         return parentItem
     }
@@ -215,11 +233,10 @@ final class FinderSyncMenuBuilder {
         return parentItem
     }
 
-    private func makeMoveToMenuItem() -> NSMenuItem {
+    private func makeMoveToMenuItem(directories: [(String, String)]) -> NSMenuItem {
         let parentItem = NSMenuItem(title: FinderSyncStrings.moveTo, action: nil, keyEquivalent: "")
         let sub = NSMenu(title: FinderSyncStrings.moveTo)
 
-        let directories = getDirectories()
         for dir in directories {
             sub.addItem(makeActionItem(title: dir.0, actionType: "moveTo", parameter: dir.1))
         }
@@ -228,11 +245,10 @@ final class FinderSyncMenuBuilder {
         return parentItem
     }
 
-    private func makeCopyToMenuItem() -> NSMenuItem {
+    private func makeCopyToMenuItem(directories: [(String, String)]) -> NSMenuItem {
         let parentItem = NSMenuItem(title: FinderSyncStrings.copyTo, action: nil, keyEquivalent: "")
         let sub = NSMenu(title: FinderSyncStrings.copyTo)
 
-        let directories = getDirectories()
         for dir in directories {
             sub.addItem(makeActionItem(title: dir.0, actionType: "copyTo", parameter: dir.1))
         }
@@ -241,11 +257,10 @@ final class FinderSyncMenuBuilder {
         return parentItem
     }
 
-    private func makeQuickJumpMenuItem() -> NSMenuItem {
+    private func makeQuickJumpMenuItem(directories: [(String, String)]) -> NSMenuItem {
         let parentItem = NSMenuItem(title: FinderSyncStrings.quickJump, action: nil, keyEquivalent: "")
         let sub = NSMenu(title: FinderSyncStrings.quickJump)
 
-        let directories = getDirectories()
         for dir in directories {
             sub.addItem(makeActionItem(title: dir.0, actionType: "quickJump", parameter: dir.1))
         }

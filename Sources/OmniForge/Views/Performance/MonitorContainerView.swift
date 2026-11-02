@@ -17,7 +17,7 @@ struct MonitorContainerView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.controlCenterSizing) private var sizingContext
 
-    /// 监控运行时直连观察（SPEC §9.4.2）：快照/历史/进程/测速状态由本页面
+    /// 监控运行时直连观察（SPEC §9.4.2）：快照/历史/进程状态由本页面
     /// 自行订阅刷新，不再经 AppState 转发驱动控制中心根视图重算。
     @ObservedObject var monitor: SystemMonitorManager
     let configuration: MonitorConfiguration
@@ -26,7 +26,6 @@ struct MonitorContainerView: View {
     /// 由控制中心宿主协调（SPEC §9.1.1）。
     let onDemandChange: (MonitorDemand) -> Void
     let onExpandedMetric: (ProcessMetricKind?) -> Void
-    let onStartSpeedTest: () -> Void
     var onOpenSettings: () -> Void = {}
     var showsSettingsAction = true
     /// Refresh callback; `forceProcess` is true on ranking so process Top re-samples past the 4s throttle.

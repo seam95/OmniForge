@@ -249,21 +249,24 @@ struct RightClickSettingsView: View {
     }
 
     private func checkExtensionStatus() {
-        // 尝试通过 pluginkit 检测插件启用状态
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/pluginkit")
-        process.arguments = ["-m", "-p", "com.apple.FinderSync", "-i", "app.omniforge.FinderSync"]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        try? process.run()
-        process.waitUntilExit()
+        // pluginkit 子进程在后台队列执行，避免 onAppear 时阻塞主线程卡设置页；
+        // extensionStatus 是视图状态，结果回主线程写入。
+        DispatchQueue.global(qos: .utility).async {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/pluginkit")
+            process.arguments = ["-m", "-p", "com.apple.FinderSync", "-i", "app.omniforge.FinderSync"]
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            try? process.run()
+            process.waitUntilExit()
 
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        if let output = String(data: data, encoding: .utf8), output.contains("app.omniforge.FinderSync") {
-            extensionStatus = true
-        } else {
-            // 若应用未安装至 /Applications，pluginkit 查不到，默认显示提示
-            extensionStatus = false
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let isEnabled = (String(data: data, encoding: .utf8) ?? "")
+                .contains("app.omniforge.FinderSync")
+            DispatchQueue.main.async {
+                // 若应用未安装至 /Applications，pluginkit 查不到，默认显示提示
+                extensionStatus = isEnabled
+            }
         }
     }
 }

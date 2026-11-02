@@ -35,23 +35,31 @@ final class DiskSupportTests: XCTestCase {
     }
 
     func test_ioCounterResetReturnsNilRates() {
-        let speed = DiskSupport.speed(
+        // 计数器回退（IO 驱动重置）：速率作废，会话累计不前进
+        let result = DiskSampler.accumulate(
             previous: .init(read: 200, written: 100),
             current: .init(read: 10, written: 5),
-            elapsed: 2
+            session: .init(read: 64, written: 32),
+            elapsed: 2,
+            maxGap: 15
         )
-        XCTAssertNil(speed.read)
-        XCTAssertNil(speed.write)
+        XCTAssertNil(result.rates.read)
+        XCTAssertNil(result.rates.write)
+        XCTAssertEqual(result.session, DiskIOCounters(read: 64, written: 32))
     }
 
     func test_ioCounterNormalReturnsRates() {
-        let speed = DiskSupport.speed(
+        // 正常采样：速率 = delta / elapsed，会话累计只加有效 delta
+        let result = DiskSampler.accumulate(
             previous: .init(read: 100, written: 50),
             current: .init(read: 300, written: 150),
-            elapsed: 2
+            session: .init(read: 0, written: 0),
+            elapsed: 2,
+            maxGap: 15
         )
-        XCTAssertEqual(speed.read, 100)
-        XCTAssertEqual(speed.write, 50)
+        XCTAssertEqual(result.rates.read, 100)
+        XCTAssertEqual(result.rates.write, 50)
+        XCTAssertEqual(result.session, DiskIOCounters(read: 200, written: 100))
     }
 
     func test_freeSpaceNonNil() {

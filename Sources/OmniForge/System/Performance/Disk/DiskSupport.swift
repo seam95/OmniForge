@@ -153,26 +153,6 @@ enum DiskSupport {
         return reading.hasDetails ? reading : nil
     }
 
-    struct IOCounters {
-        let read: UInt64
-        let written: UInt64
-    }
-
-    struct DiskSpeed {
-        let read: Double?
-        let write: Double?
-    }
-
-    /// 计算 IO 速率；计数器重置返回 nil
-    static func speed(previous: IOCounters, current: IOCounters, elapsed: TimeInterval) -> DiskSpeed {
-        guard elapsed > 0 else { return DiskSpeed(read: nil, write: nil) }
-        let readRate: Double? = current.read >= previous.read
-            ? Double(current.read - previous.read) / elapsed : nil
-        let writeRate: Double? = current.written >= previous.written
-            ? Double(current.written - previous.written) / elapsed : nil
-        return DiskSpeed(read: readRate, write: writeRate)
-    }
-
     /// 获取卷可用空间
     static func freeSpace(at path: String = "/") -> UInt64? {
         guard let attrs = try? FileManager.default.attributesOfFileSystem(forPath: path) else { return nil }

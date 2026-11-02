@@ -51,7 +51,7 @@ final class TemperatureSensorSelectorTests: XCTestCase {
         XCTAssertFalse(TemperatureSensorSelector.isCPUCoreKey("Te05", platform: .appleM1Family))
     }
 
-    func test_cpuTemperatureReadsModernM1Keys() {
+    func test_cpuTemperatureReadsModernM1Keys() throws {
         // 旧 Tp0* 全无读时，应能读到现代 Tc*/Tp2* 键
         let smc = MockSMCReading([
             "Tc0a": 65.5,
@@ -59,7 +59,8 @@ final class TemperatureSensorSelectorTests: XCTestCase {
             "Tp2a": 70.0,
             "TB0T": 37.0
         ])
-        let temp = TemperatureSensorSelector.cpuTemperature(from: smc, platform: .appleM1Family)
+        let sampler = TemperatureSampler(smc: smc, platform: .appleM1Family)
+        let temp = try sampler.sampleCPU()
         XCTAssertEqual(temp, 70.0)
     }
 
@@ -129,30 +130,34 @@ final class TemperatureSensorSelectorTests: XCTestCase {
         )
     }
 
-    // MARK: - Compatibility wrappers (no first-key-wins across channels)
+    // MARK: - CPU sampling via TemperatureSampler (no first-key-wins across channels)
 
-    func test_cpuTemperatureUsesPlatformCoreSelection() {
+    func test_cpuTemperatureUsesPlatformCoreSelection() throws {
         // On M4, Te05 is core; TG0P is GPU and must not be selected via CPU path
         let smc = MockSMCReading(["Te05": 47.0, "TG0P": 90.0, "TB0T": 30.0])
-        let temp = TemperatureSensorSelector.cpuTemperature(from: smc, platform: .appleM4Family)
+        let sampler = TemperatureSampler(smc: smc, platform: .appleM4Family)
+        let temp = try sampler.sampleCPU()
         XCTAssertEqual(temp, 47.0)
     }
 
-    func test_cpuTemperatureReturnsMaxOfCoreKeys() {
+    func test_cpuTemperatureReturnsMaxOfCoreKeys() throws {
         let smc = MockSMCReading(["Te05": 41.0, "Te0S": 60.0, "Tp01": 99.0])
-        let temp = TemperatureSensorSelector.cpuTemperature(from: smc, platform: .appleM3Family)
+        let sampler = TemperatureSampler(smc: smc, platform: .appleM3Family)
+        let temp = try sampler.sampleCPU()
         XCTAssertEqual(temp, 60.0)
     }
 
-    func test_cpuTemperatureSkipsOutOfRangeValues() {
+    func test_cpuTemperatureSkipsOutOfRangeValues() throws {
         let smc = MockSMCReading(["Tp09": 0])
-        let temp = TemperatureSensorSelector.cpuTemperature(from: smc, platform: .appleM1Family)
+        let sampler = TemperatureSampler(smc: smc, platform: .appleM1Family)
+        let temp = try sampler.sampleCPU()
         XCTAssertNil(temp)
     }
 
-    func test_cpuTemperatureReturnsNilWhenNoKeysPresent() {
+    func test_cpuTemperatureReturnsNilWhenNoKeysPresent() throws {
         let smc = MockSMCReading([:])
-        let temp = TemperatureSensorSelector.cpuTemperature(from: smc)
+        let sampler = TemperatureSampler(smc: smc)
+        let temp = try sampler.sampleCPU()
         XCTAssertNil(temp)
     }
 

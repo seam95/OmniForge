@@ -74,7 +74,6 @@ class SelectionView: NSView {
     /// 待确认的窗口选区：mouseDown 在 hover 上时存入，mouseUp 确认；
     /// 拖拽超过 windowClickThreshold 则丢弃转自由框选。参照 capcap。
     private var pendingRect: NSRect?
-    private var pendingWindowID: CGWindowID?
     /// 待确认选区的拖拽阈值（pt）：阈值内 mouseDragged 不更新视觉。
     private let windowClickThreshold: CGFloat = 4
 
@@ -441,7 +440,6 @@ class SelectionView: NSView {
         // mouseUp 时若仍持有 pending 则确认；mouseDragged 超阈值则丢弃转自由框选。参照 capcap。
         if state == .idle, let hover = hoverRect {
             pendingRect = hover
-            pendingWindowID = nil
             hoverRect = nil
             hoverTask?.cancel()
             selectionRect = NSRect(origin: point, size: .zero)
@@ -513,7 +511,6 @@ class SelectionView: NSView {
                     return  // 阈值内：不更新视觉
                 }
                 pendingRect = nil
-                pendingWindowID = nil
             }
             NSCursor.crosshair.set()
             let newRect = dragRect(from: dragStart, to: point)
@@ -558,7 +555,6 @@ class SelectionView: NSView {
             // 持有待确认窗口选区（mouseDown 时命中 hover 且未拖出阈值）→ 确认为最终选区。参照 capcap。
             if let pending = pendingRect {
                 pendingRect = nil
-                pendingWindowID = nil
                 selectionRect = pending
                 state = .selected
                 delegate?.selectionDidComplete(rect: pending)
@@ -677,7 +673,6 @@ class SelectionView: NSView {
         hoverTask?.cancel()
         hoverRect = nil
         pendingRect = nil
-        pendingWindowID = nil
         selectionRect = nil
         state = .idle
         dragAction = .none
