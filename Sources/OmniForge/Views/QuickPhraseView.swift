@@ -39,8 +39,6 @@ struct QuickPhraseView: View {
 
             footer
         }
-        .onAppear { setupKeyMonitor() }
-        .onDisappear { removeKeyMonitor() }
         .onChange(of: uiState.searchFocusToken) { _, _ in focusSearchField() }
         .onChange(of: uiState.sessionResetToken) { _, _ in resetSession() }
         .sheet(isPresented: $showEditor) {
@@ -205,23 +203,12 @@ struct QuickPhraseView: View {
         return l10n.s.quickphrasePasteHint
     }
 
-    private var headerBackground: Color {
-        Color.clear
-    }
-
     private var listBackground: Color {
         Color.clear
     }
 
     private var footerBackground: Color {
         Color.clear
-    }
-
-    private var dividerColor: Color {
-        if colorScheme == .dark {
-            return Color(.sRGB, red: 0.27, green: 0.29, blue: 0.34, opacity: 1)
-        }
-        return Color(.sRGB, red: 0.74, green: 0.76, blue: 0.80, opacity: 1)
     }
 
     private func focusSearchField() {
@@ -234,14 +221,6 @@ struct QuickPhraseView: View {
         uiState.searchText = ""
         uiState.selectedGroup = nil
         uiState.selectedPhraseID = nil
-    }
-
-    private func setupKeyMonitor() {
-        // Key handling in ClipboardWindowController
-    }
-
-    private func removeKeyMonitor() {
-        // Key handling in ClipboardWindowController
     }
 
     private func paste(_ phrase: QuickPhraseEntry) {

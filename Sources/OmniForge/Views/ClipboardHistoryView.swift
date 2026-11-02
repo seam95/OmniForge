@@ -525,20 +525,6 @@ struct ClipboardHistoryView: View {
             .textCase(.uppercase)
     }
 
-    private func detailRow(title: String, value: String) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(title)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 80, alignment: .leading)
-
-            Text(value)
-                .font(.system(size: 12))
-                .foregroundStyle(.primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
     private func metadataDescription(for entry: ClipboardEntry) -> String {
         switch entry.content {
         case .text:
@@ -646,25 +632,6 @@ struct ClipboardHistoryView: View {
         guard loadedEntryCount < filteredCount else { return }
 
         loadedEntryCount = min(loadedEntryCount + Self.loadMoreBatchCount, filteredCount)
-    }
-
-    private func scrollToSelectedEntry(proxy: ScrollViewProxy, animated: Bool) {
-        guard let selectedEntryID = uiState.selectedEntryID,
-              visibleEntries.contains(where: { $0.id == selectedEntryID }) else {
-            return
-        }
-
-        let action = {
-            proxy.scrollTo(selectedEntryID, anchor: .center)
-        }
-
-        if animated {
-            withAnimation(.easeInOut(duration: 0.12)) {
-                action()
-            }
-        } else {
-            action()
-        }
     }
 
     private func scrollToTop(proxy: ScrollViewProxy, animated: Bool) {
@@ -810,77 +777,6 @@ private struct ClipboardHistoryRow: View {
     }
 }
 
-@MainActor
-struct ClipboardHistoryRowActionHandler {
-    let select: (UUID) -> Void
-    let paste: (ClipboardEntry) -> Void
-
-    func handleClick(entry: ClipboardEntry, clickCount: Int) {
-        if clickCount >= 2 {
-            paste(entry)
-        } else {
-            select(entry.id)
-        }
-    }
-}
-
-@MainActor
-struct ClipboardHistoryKeyHandler {
-    let moveSelection: (Int) -> Void
-    let paste: () -> Void
-
-    nonisolated static func scrollAnchor(forMoveDirection direction: Int) -> ClipboardHistoryScrollAnchor {
-        direction > 0 ? .bottom : .top
-    }
-
-    func handleKeyDown(keyCode: UInt16) -> Bool {
-        switch keyCode {
-        case UInt16(kVK_UpArrow):
-            moveSelection(-1)
-            return true
-        case UInt16(kVK_DownArrow):
-            moveSelection(1)
-            return true
-        case UInt16(kVK_Return), UInt16(kVK_ANSI_KeypadEnter):
-            paste()
-            return true
-        default:
-            return false
-        }
-    }
-}
-
-enum ClipboardHistoryScrollAnchor: Equatable {
-    case top
-    case bottom
-
-    var unitPoint: UnitPoint {
-        switch self {
-        case .top:
-            return .top
-        case .bottom:
-            return .bottom
-        }
-    }
-}
-
-struct ClipboardHistoryScrollPlanner {
-    static func plannedAnchor(
-        oldSelectedID: UUID?,
-        newSelectedID: UUID,
-        entries: [ClipboardEntry]
-    ) -> ClipboardHistoryScrollAnchor? {
-        guard let oldSelectedID else { return nil }
-        guard let oldIndex = entries.firstIndex(where: { $0.id == oldSelectedID }) else { return nil }
-        guard let newIndex = entries.firstIndex(where: { $0.id == newSelectedID }) else { return nil }
-
-        let direction = newIndex - oldIndex
-        guard direction != 0 else { return nil }
-
-        return ClipboardHistoryKeyHandler.scrollAnchor(forMoveDirection: direction)
-    }
-}
-
 private struct ContentHeightPreferenceKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
@@ -895,29 +791,6 @@ private struct ScrollOffsetPreferenceKey: PreferenceKey {
     }
 }
 
-struct ClipboardHistoryScrollDecider {
-    static func shouldScroll(selectedID: UUID, visibleIDs: Set<UUID>) -> Bool {
-        guard !visibleIDs.isEmpty else { return false }
-        return visibleIDs.contains(selectedID) == false
-    }
-}
-
-struct ThinScrollIndicatorVisibilityTracker {
-    private(set) var isVisible = false
-
-    mutating func requestShow() -> Bool {
-        guard !isVisible else { return false }
-        isVisible = true
-        return true
-    }
-
-    mutating func requestHide() -> Bool {
-        guard isVisible else { return false }
-        isVisible = false
-        return true
-    }
-}
-
 private extension ClipboardContentType {
     /// 返回该内容类型的本地化标签
     func label(in strings: Strings) -> String {
@@ -929,136 +802,6 @@ private extension ClipboardContentType {
         case .rtf: return strings.clipboardFilterRtf
         case .unknown: return strings.clipboardFilterUnknown
         }
-    }
-}
-
-private struct ThinScrollIndicatorModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content.background(ThinScrollIndicatorApplier())
-    }
-}
-
-private struct ThinScrollIndicatorApplier: NSViewRepresentable {
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
-        view.isHidden = true
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            guard let scrollView = nsView.enclosingScrollView else { return }
-            context.coordinator.attach(to: scrollView)
-        }
-    }
-
-    final class Coordinator: NSObject {
-        private weak var scrollView: NSScrollView?
-        private var hideTask: DispatchWorkItem?
-        private var isObserving = false
-        private var visibilityTracker = ThinScrollIndicatorVisibilityTracker()
-
-        func attach(to scrollView: NSScrollView) {
-            if self.scrollView !== scrollView {
-                detach()
-                self.scrollView = scrollView
-                prepare(scrollView)
-            }
-            showTemporarily()
-        }
-
-        private func prepare(_ scrollView: NSScrollView) {
-            scrollView.scrollerStyle = .overlay
-            scrollView.hasVerticalScroller = true
-            scrollView.hasHorizontalScroller = true
-            configure(scroller: scrollView.verticalScroller)
-            configure(scroller: scrollView.horizontalScroller)
-
-            scrollView.contentView.postsBoundsChangedNotifications = true
-            NotificationCenter.default.addObserver(
-                self,
-                selector: #selector(contentBoundsDidChange),
-                name: NSView.boundsDidChangeNotification,
-                object: scrollView.contentView
-            )
-            isObserving = true
-            setIndicatorsVisible(false, animated: false)
-        }
-
-        private func configure(scroller: NSScroller?) {
-            scroller?.controlSize = .mini
-        }
-
-        @objc private func contentBoundsDidChange() {
-            showTemporarily()
-        }
-
-        private func showTemporarily() {
-            if visibilityTracker.requestShow() {
-                setIndicatorsVisible(true, animated: true)
-            }
-            scheduleHide()
-        }
-
-        private func scheduleHide() {
-            hideTask?.cancel()
-            let task = DispatchWorkItem { [weak self] in
-                guard let self else { return }
-                if self.visibilityTracker.requestHide() {
-                    self.setIndicatorsVisible(false, animated: true)
-                }
-            }
-            hideTask = task
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.1, execute: task)
-        }
-
-        private func setIndicatorsVisible(_ isVisible: Bool, animated: Bool) {
-            guard let scrollView else { return }
-            let alpha: CGFloat = isVisible ? 0.9 : 0
-            let animator: (NSScroller?) -> Void = { scroller in
-                guard let scroller else { return }
-                if animated {
-                    scroller.animator().alphaValue = alpha
-                } else {
-                    scroller.alphaValue = alpha
-                }
-            }
-
-            if animated {
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = 0.18
-                    animator(scrollView.verticalScroller)
-                    animator(scrollView.horizontalScroller)
-                }
-            } else {
-                animator(scrollView.verticalScroller)
-                animator(scrollView.horizontalScroller)
-            }
-        }
-
-        private func detach() {
-            hideTask?.cancel()
-            if isObserving, let contentView = scrollView?.contentView {
-                NotificationCenter.default.removeObserver(self, name: NSView.boundsDidChangeNotification, object: contentView)
-            }
-            isObserving = false
-            visibilityTracker = ThinScrollIndicatorVisibilityTracker()
-            scrollView = nil
-        }
-
-        deinit {
-            detach()
-        }
-    }
-}
-
-private extension View {
-    func thinScrollIndicators() -> some View {
-        modifier(ThinScrollIndicatorModifier())
     }
 }
 

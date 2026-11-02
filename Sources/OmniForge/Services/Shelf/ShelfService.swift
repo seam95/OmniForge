@@ -1627,14 +1627,6 @@ final class ShelfService: ObservableObject {
         expandedBatches.formIntersection(batchIDs(in: items))
     }
 
-    private func cleanTemporaryFiles(keeping keptPaths: Set<String>) {
-        guard let entries = try? fileManager.contentsOfDirectory(at: tempDir,
-                                                                 includingPropertiesForKeys: nil) else { return }
-        for url in entries where isShelfOwnedFile(url) && !keptPaths.contains(url.standardizedFileURL.path) {
-            try? fileManager.removeItem(at: url)
-        }
-    }
-
     private func isShelfOwnedFile(_ url: URL) -> Bool {
         let path = url.standardizedFileURL.path
         if path.hasPrefix(tempDir.standardizedFileURL.path + "/") { return true }
