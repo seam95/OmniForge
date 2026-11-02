@@ -1,4 +1,7 @@
 import XCTest
+#if canImport(Darwin)
+import Darwin
+#endif
 @testable import OmniForge
 
 final class NetworkIdentityProviderTests: XCTestCase {
@@ -188,5 +191,49 @@ final class NetworkIdentityProviderTests: XCTestCase {
         let identity = provider.makeIdentity()
         XCTAssertEqual(identity.dnsServers, ["208.67.222.222"])
         XCTAssertTrue(identity.interfaces.isEmpty)
+    }
+
+    // MARK: - macString: sockaddr_dl 变长结构
+
+    /// 构造 AF_LINK 的 sockaddr_dl 原始字节缓冲：8 字节固定头部 + 接口名数据 + MAC。
+    /// sockaddr_dl 是变长结构，sdl_data 名义 12 字节只是最小工作区，实际长度由 sdl_len 决定。
+    private func makeLinkLayerBuffer(nameBytes: [UInt8], mac: [UInt8]) -> [UInt8] {
+        var buffer = [UInt8](repeating: 0, count: 8 + nameBytes.count + mac.count)
+        buffer[0] = UInt8(buffer.count) // sdl_len = 总长度
+        buffer[1] = UInt8(AF_LINK) // sdl_family
+        // 偏移 2..<4 为 sdl_index，保持 0
+        buffer[4] = 6 // sdl_type = IFT_ETHER
+        buffer[5] = UInt8(nameBytes.count) // sdl_nlen = 接口名数据长度
+        buffer[6] = UInt8(mac.count) // sdl_alen = 链路层地址长度
+        buffer[7] = 0 // sdl_slen
+        buffer.replaceSubrange(8..<(8 + nameBytes.count), with: nameBytes)
+        buffer.replaceSubrange((8 + nameBytes.count)..., with: mac)
+        return buffer
+    }
+
+    private func macStringFromBuffer(_ buffer: [UInt8]) -> String? {
+        buffer.withUnsafeBytes { raw -> String? in
+            guard let base = raw.baseAddress else { return nil }
+            return NetworkIdentityProvider.macString(
+                from: base.assumingMemoryBound(to: sockaddr.self)
+            )
+        }
+    }
+
+    func test_macString_longInterfaceNameReadsMACFromOriginalBuffer() {
+        // nlen=15："bridge100"（9 字符）+ 6 字节额外长度字段；MAC 位于 8+15=23 偏移。
+        // 旧实现把 sockaddr_dl 拷贝到固定 20 字节栈变量后按 8+nlen 偏移读，
+        // nlen>6 即读到栈拷贝之外的垃圾；新实现应直接从原缓冲区读取。
+        let nameBytes = Array("bridge100".utf8) + [UInt8](repeating: 0xAB, count: 6)
+        let mac: [UInt8] = [0xde, 0xad, 0xbe, 0xef, 0x12, 0x34]
+        let result = macStringFromBuffer(makeLinkLayerBuffer(nameBytes: nameBytes, mac: mac))
+        XCTAssertEqual(result, "de:ad:be:ef:12:34")
+    }
+
+    func test_macString_regularInterfaceNameStillParses() {
+        // nlen=3（"en0"）常规路径回归：确保改为直读原缓冲区后原有解析不受影响。
+        let mac: [UInt8] = [0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]
+        let result = macStringFromBuffer(makeLinkLayerBuffer(nameBytes: Array("en0".utf8), mac: mac))
+        XCTAssertEqual(result, "aa:bb:cc:dd:ee:ff")
     }
 }

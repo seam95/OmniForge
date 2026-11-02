@@ -272,18 +272,18 @@ final class NetworkIdentityProvider: NetworkIdentityProviding {
         return samples
     }
 
-    private static func macString(from addr: UnsafePointer<sockaddr>) -> String? {
+    static func macString(from addr: UnsafePointer<sockaddr>) -> String? {
         addr.withMemoryRebound(to: sockaddr_dl.self, capacity: 1) { sdl in
-            let link = sdl.pointee
-            let macLen = Int(link.sdl_alen)
+            let macLen = Int(sdl.pointee.sdl_alen)
             guard macLen == 6 else { return nil }
-            let offset = Int(link.sdl_nlen)
-            return withUnsafePointer(to: link.sdl_data) { dataPtr in
-                dataPtr.withMemoryRebound(to: UInt8.self, capacity: offset + macLen) { bytes in
-                    let macBytes = (0..<macLen).map { bytes[offset + $0] }
-                    return macBytes.map { String(format: "%02x", $0) }.joined(separator: ":")
-                }
-            }
+            // sockaddr_dl 是变长结构：8 字节固定头部之后的 sdl_data 实际长度由 sdl_len 决定，
+            // 名义 12 字节只是最小工作区；接口名可超过 6 字符（如 bridge100 报告 nlen=15）。
+            // 因此不能把结构体拷贝到固定 20 字节栈变量再按 8+nlen 偏移读（会越界读栈垃圾），
+            // 必须直接从原缓冲区按 8+nlen 偏移读取 MAC 字节。
+            let macBytes = UnsafeRawPointer(addr)
+                .advanced(by: 8 + Int(sdl.pointee.sdl_nlen))
+                .assumingMemoryBound(to: UInt8.self)
+            return (0..<macLen).map { String(format: "%02x", macBytes[$0]) }.joined(separator: ":")
         }
     }
 
