@@ -13,6 +13,10 @@ final class SystemMonitorManager: ObservableObject {
 
     private let scheduler: RepeatingScheduling
     private let queue = DispatchQueue(label: "com.omniforge.system-monitor", qos: .utility)
+    /// 进程排行采样独立队列：nettop/ps 子进程耗时 1-3s 起，与指标采样共用串行队列
+    /// 会在展开排行期间阻塞菜单栏指标更新（实测停更最长 5.5s）。
+    /// ProcessUsageSampler 内部已用 NSLock 保护基线状态，跨队列调用安全。
+    private let processQueue = DispatchQueue(label: "app.omniforge.monitor.process", qos: .utility)
     private var cancellables = Set<AnyCancellable>()
     /// 测速状态订阅，独立于采样 scheduler，避免 stopSampling 清掉
     private var speedTestCancellable: AnyCancellable?
@@ -224,8 +228,9 @@ final class SystemMonitorManager: ObservableObject {
     }
 
     /// 后台预热 delta 类指标基线（GPU/网络）。仅建基线，不触发 UI 状态变更。
+    /// 网络基线预热同样要跑 nettop 子进程，放独立进程队列，不占指标采样队列。
     private func primeProcessBaselines() {
-        queue.async { [weak self] in
+        processQueue.async { [weak self] in
             self?.processSampler.primeProcessBaselines(for: [.gpu, .network])
         }
     }
@@ -522,7 +527,10 @@ final class SystemMonitorManager: ObservableObject {
         // 采样前记录基线状态：delta 类指标（GPU/网络）首采仅建基线、必返回空。
         // 据此识别"首开刚建基线"场景并调度短间隔补采，避免空态干等 4s 节流 tick。
         let hadBaseline = processSampler.hasProcessBaseline(for: kind)
-        queue.async { [weak self] in
+        // nettop/ps 子进程耗时 1-3s 起：放独立进程队列执行，避免阻塞共享采样
+        // 队列上的指标采样（展开网络排行期间菜单栏指标停更最长 5.5s 的根因）。
+        // 结果仍回主线程合并（processState 回写），不在此处触碰 @MainActor 状态。
+        processQueue.async { [weak self] in
             guard let self else { return }
             do {
                 let rows = try self.processSampler.sample(kind, limit: Self.processDisplayLimit)

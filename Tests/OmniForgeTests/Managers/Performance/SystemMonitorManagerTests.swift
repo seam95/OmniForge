@@ -489,6 +489,78 @@ final class SystemMonitorManagerTests: XCTestCase {
         XCTAssertEqual(process.sampleCount, 1)
     }
 
+    // MARK: - 进程采样队列隔离（修复：nettop 阻塞共享采样队列，菜单栏指标停更）
+
+    /// 共享指标采样串行队列的 label（SystemMonitorManager 内部常量）。
+    private static let sharedSamplingQueueLabel = "com.omniforge.system-monitor"
+
+    func test_processSampleRunsOffSharedSamplingQueue() async throws {
+        // 回归锁（批次 E 性能）：进程排行采样内部跑 nettop 子进程（1-3s 起），
+        // 曾与全部指标采样共用一条串行队列——展开网络排行期间菜单栏指标
+        // 停更最长 5.5s。断言：sample 执行不在共享采样队列上；
+        // loaded 状态在主 actor 可见即证明结果仍回主线程回写。
+        let process = QueueRecordingProcessUsageSampler()
+        let manager = SystemMonitorManager(
+            scheduler: FakeRepeatingScheduler(),
+            cpuSampler: FakeCPUSampler(),
+            gpuSampler: FakeGPUSampler(),
+            memorySampler: FakeMemorySampler(),
+            temperatureSampler: FakeTemperatureSampler(),
+            networkSampler: FakeNetworkSampler(),
+            diskSampler: FakeDiskSampler(),
+            powerSampler: FakePowerSampler(),
+            peripheralBatterySampler: FakePeripheralBatterySampler(),
+            processSampler: process
+        )
+
+        manager.setPanelDemand(.init(network: true))
+        manager.setExpandedProcessMetric(.network)
+
+        // 等待采样完成且回写主线程（loaded 在主 actor 上轮询可见）
+        try await waitForProcessState(manager, timeout: 2.0) { state in
+            if case .loaded(.network, _) = state { return true }
+            return false
+        }
+        let labels = process.recordedLabels(for: "sample")
+        XCTAssertFalse(labels.isEmpty, "进程排行采样应已执行")
+        for label in labels {
+            XCTAssertNotEqual(
+                label, Self.sharedSamplingQueueLabel,
+                "进程排行采样不得在共享采样串行队列上执行（nettop 会阻塞菜单栏指标更新），实际队列: \(label)"
+            )
+        }
+    }
+
+    func test_processBaselinePrimingRunsOffSharedSamplingQueue() async throws {
+        // 基线预热同样会跑 nettop（网络 delta 基线）与 IORegistry 枚举（GPU），
+        // 也不得占用共享采样队列——否则面板一打开菜单栏指标就停更 1-3s。
+        let process = QueueRecordingProcessUsageSampler()
+        let manager = SystemMonitorManager(
+            scheduler: FakeRepeatingScheduler(),
+            cpuSampler: FakeCPUSampler(),
+            gpuSampler: FakeGPUSampler(),
+            memorySampler: FakeMemorySampler(),
+            temperatureSampler: FakeTemperatureSampler(),
+            networkSampler: FakeNetworkSampler(),
+            diskSampler: FakeDiskSampler(),
+            powerSampler: FakePowerSampler(),
+            peripheralBatterySampler: FakePeripheralBatterySampler(),
+            processSampler: process
+        )
+
+        manager.setPanelDemand(.init(system: true))
+        try await waitForQueueRecordedCalls(process, atLeast: 1)
+
+        let labels = process.recordedLabels(for: "prime")
+        XCTAssertFalse(labels.isEmpty, "基线预热应已执行")
+        for label in labels {
+            XCTAssertNotEqual(
+                label, Self.sharedSamplingQueueLabel,
+                "基线预热不得在共享采样串行队列上执行，实际队列: \(label)"
+            )
+        }
+    }
+
     func test_memorySampleFailureClearsPressureToUnknown() async throws {
         let memory = ScriptedMemorySampler(results: [
             .success(MemoryReading(used: 4_000_000_000, total: 8_000_000_000, pressure: .critical)),
@@ -1151,6 +1223,46 @@ final class FirstEmptyThenRowsProcessUsageSampler: ProcessUsageSampling {
     }
 }
 
+/// 记录 sample / prime 执行时所在 dispatch 队列 label 的 fake 采样器。
+/// 用于验证进程排行采样（nettop 子进程）不占用共享指标采样串行队列。
+final class QueueRecordingProcessUsageSampler: ProcessUsageSampling {
+    private let lock = NSLock()
+    private var labels: [(call: String, label: String)] = []
+
+    func sample(_ kind: ProcessMetricKind, limit: Int) throws -> [ProcessUsage] {
+        record("sample")
+        return [ProcessUsage(pid: 1, name: "test", value: 0.5)]
+    }
+
+    func stop(_ kind: ProcessMetricKind) {}
+
+    func primeProcessBaselines(for kinds: [ProcessMetricKind]) {
+        record("prime")
+    }
+
+    func hasProcessBaseline(for kind: ProcessMetricKind) -> Bool { true }
+
+    private func record(_ call: String) {
+        let label = String(cString: __dispatch_queue_get_label(nil))
+        lock.lock()
+        labels.append((call, label))
+        lock.unlock()
+    }
+
+    /// 指定调用类型（"sample" / "prime"）记录到的队列 label 列表。
+    func recordedLabels(for call: String) -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return labels.filter { $0.call == call }.map(\.label)
+    }
+
+    var totalRecordedCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return labels.count
+    }
+}
+
 final class SequencedCPUSampler: CPUUsageSampling {
     var results: [Result<CPUUsageReading?, MetricSamplingError>]
     var index = 0
@@ -1299,6 +1411,20 @@ private func waitForFirstEmptySampleCount(
     XCTFail("Timed out waiting for process sample count >= \(count); got \(sampler.sampleCount)")
 }
 
+
+@MainActor
+private func waitForQueueRecordedCalls(
+    _ sampler: QueueRecordingProcessUsageSampler,
+    atLeast count: Int,
+    timeout: TimeInterval = 2.0
+) async throws {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if sampler.totalRecordedCount >= count { return }
+        try await Task.sleep(nanoseconds: 20_000_000)
+    }
+    XCTFail("Timed out waiting for recorded process sampler calls >= \(count); got \(sampler.totalRecordedCount)")
+}
 
 /// 慢 CPU 采样器：模拟真实 GPU/proc 采样耗时，阻塞串行采样队列。
 final class SlowTestCPUSampler: CPUUsageSampling {
