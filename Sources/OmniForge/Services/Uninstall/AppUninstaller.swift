@@ -202,7 +202,9 @@ final class AppUninstaller: ObservableObject {
 
     // MARK: - 扫描
 
-    static func performScan(target: Target, reader: any UtilityFileReading) -> ScanResult {
+    static func performScan(target: Target,
+                            reader: any UtilityFileReading,
+                            installedBundleIDs: () -> Set<String> = { JunkCleaner.installedBundleIDs() }) -> ScanResult {
         let bundleID = target.bundleID
         let name = target.name
         let appURL = target.url
@@ -215,11 +217,21 @@ final class AppUninstaller: ObservableObject {
             let url = URL(fileURLWithPath: path)
             if reader.fileExists(at: url) { paths.append((url, category)) }
         }
+        // Chrome Canary 案例：卸载 Chrome 时，仍在安装的 Chrome Canary（com.google.Chrome.canary）
+        // 的偏好、ByHost、Group Container、LaunchAgent 文件都以 "com.google.Chrome." 开头，
+        // 会被 matchesBundleScopedName 误认成 Chrome 的子资源。命中名字若同时构成另一个在装
+        // bundleID 的 scope 展开（前缀/后缀/包含），说明它属于那个应用的数据，必须跳过。
+        var otherInstalledBundleIDs: Set<String> = []
+        func ownedByOtherInstalledApp(_ name: String) -> Bool {
+            otherInstalledBundleIDs.contains { matchesBundleScopedName(name, bundleID: $0) }
+        }
         func addMatches(in dir: String, _ category: Category, where matches: (String) -> Bool) {
             let directory = URL(fileURLWithPath: dir)
             guard reader.fileExists(at: directory) else { return }
             do {
-                for entry in try reader.directoryEntries(at: directory) where matches(entry.lastPathComponent) {
+                for entry in try reader.directoryEntries(at: directory) {
+                    let name = entry.lastPathComponent
+                    guard matches(name), !ownedByOtherInstalledApp(name) else { continue }
                     paths.append((entry, category))
                 }
             } catch {
@@ -228,6 +240,9 @@ final class AppUninstaller: ObservableObject {
         }
 
         if let id = bundleID {
+            // 在装应用集合只在 scan 入口取一次（默认接 JunkCleaner 真实现，测试注入 fake）。
+            // 目标自身此刻仍安装着，先排除，避免目标自己的文件被当成"其他应用"的数据过滤掉。
+            otherInstalledBundleIDs = installedBundleIDs().subtracting([id])
             add("\(lib)/Application Support/\(id)", .support)
             add("\(lib)/Containers/\(id)", .containers)
             add("\(lib)/Caches/\(id)", .caches)
@@ -310,12 +325,15 @@ protocol AppUninstallerScanning {
 
 final class DefaultAppUninstallerScanner: AppUninstallerScanning {
     private let reader: any UtilityFileReading
+    private let installedBundleIDs: () -> Set<String>
 
-    init(reader: any UtilityFileReading = DefaultUtilityFileReader()) {
+    init(reader: any UtilityFileReading = DefaultUtilityFileReader(),
+         installedBundleIDs: @escaping () -> Set<String> = { JunkCleaner.installedBundleIDs() }) {
         self.reader = reader
+        self.installedBundleIDs = installedBundleIDs
     }
 
     func scan(target: AppUninstaller.Target) -> AppUninstaller.ScanResult {
-        AppUninstaller.performScan(target: target, reader: reader)
+        AppUninstaller.performScan(target: target, reader: reader, installedBundleIDs: installedBundleIDs)
     }
 }
