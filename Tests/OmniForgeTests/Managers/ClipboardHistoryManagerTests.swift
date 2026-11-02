@@ -243,6 +243,89 @@ final class ClipboardHistoryManagerTests: XCTestCase {
         XCTAssertEqual(manager.entries.count, 1)
     }
 
+    // MARK: - 敏感内容跳过（密码管理器 concealed 标记）
+
+    func test_poll_skipsConcealedContent_andAdvancesChangeCount() {
+        let pasteboard = FakeHistoryPasteboardClient()
+        let defaults = UserDefaults(suiteName: "ClipboardHistoryManagerTests_concealed")!
+        defaults.removePersistentDomain(forName: "ClipboardHistoryManagerTests_concealed")
+        let manager = ClipboardHistoryManager(
+            store: FakeClipboardStore(entries: []),
+            userDefaults: defaults,
+            pasteboard: pasteboard
+        )
+
+        // 模拟密码管理器复制密码：明文与 concealed 标记同时存在于剪贴板。
+        pasteboard.isConcealed = true
+        pasteboard.text = "s3cret-password"
+        pasteboard.changeCountValue += 1
+        manager.pollPasteboard()
+
+        XCTAssertTrue(manager.entries.isEmpty, "concealed 标记的内容不得进入历史")
+        XCTAssertEqual(pasteboard.contentReadCount, 0, "concealed 检查必须发生在读取任何剪贴板内容之前")
+
+        // lastChangeCount 应已推进：即使密码管理器随后清除 concealed 标记，
+        // 同一 changeCount 对应的这轮内容也不得在后续 poll 中被补采集。
+        pasteboard.isConcealed = false
+        manager.pollPasteboard()
+        XCTAssertTrue(manager.entries.isEmpty, "已跳过的变更不得重复判定")
+
+        // 标记清除后的新一轮变更恢复正常采集。
+        pasteboard.changeCountValue += 1
+        pasteboard.text = "正常复制"
+        manager.pollPasteboard()
+        XCTAssertEqual(manager.entries.count, 1)
+        XCTAssertEqual(manager.entries.first?.preview, "正常复制")
+    }
+
+    // MARK: - 文本 URL 分类（scheme 白名单）
+
+    /// 表驱动：含冒号的普通文本不得因 Foundation 的宽容解析被误判为 URL
+    /// （否则粘贴回会变成 "Re:%20Meeting%20tomorrow" 这类被百分号编码的乱码）。
+    func test_capture_classifiesTextBySchemeWhitelist() {
+        let cases: [(text: String, expected: ClipboardContentType, note: String)] = [
+            ("Re: Meeting tomorrow", .text, "含冒号的普通文本不得判为 URL"),
+            ("TODO: fix", .text, "含冒号的普通文本不得判为 URL"),
+            ("https://a.b/c", .url, "白名单 https 且有 host"),
+            ("mailto:a@b.c", .url, "白名单 mailto 直接收"),
+            ("file:///tmp/x", .url, "白名单 file 直接收"),
+            ("myapp://x", .text, "非白名单 scheme 归文本原样保存"),
+            ("http://", .text, "http 无 host 归文本原样保存"),
+        ]
+
+        for testCase in cases {
+            let pasteboard = FakeHistoryPasteboardClient()
+            let defaults = UserDefaults(suiteName: "ClipboardHistoryManagerTests_urlclass")!
+            defaults.removePersistentDomain(forName: "ClipboardHistoryManagerTests_urlclass")
+            let store = FakeClipboardStore(entries: [])
+            let manager = ClipboardHistoryManager(
+                store: store,
+                userDefaults: defaults,
+                pasteboard: pasteboard
+            )
+
+            pasteboard.text = testCase.text
+            pasteboard.changeCountValue += 1
+            manager.pollPasteboard()
+
+            XCTAssertEqual(manager.entries.count, 1, "「\(testCase.text)」应被采集：\(testCase.note)")
+            XCTAssertEqual(manager.entries.first?.type, testCase.expected, "「\(testCase.text)」\(testCase.note)")
+
+            // 入库内容验证：.text 必须原样保存（不被百分号编码），.url 保持解析结果。
+            let saved = store.savedEntries.last?.content
+            switch testCase.expected {
+            case .text:
+                XCTAssertEqual(saved, .text(testCase.text), "「\(testCase.text)」必须原样保存为文本")
+            case .url:
+                guard case .url = saved else {
+                    return XCTFail("「\(testCase.text)」应保存为 URL")
+                }
+            default:
+                break
+            }
+        }
+    }
+
     private func makeTextEntry(id: UUID, text: String) -> ClipboardEntry {
         ClipboardEntry(
             id: id,
@@ -262,14 +345,37 @@ private final class FakeHistoryPasteboardClient: PasteboardClient {
     var text: String?
     var imageData: Data?
     var fileURLs: [URL] = []
+    /// 模拟 org.nspasteboard.ConcealedType 标记（密码管理器声明的敏感内容）。
+    var isConcealed = false
+    /// 内容读取调用计数：验证 concealed 检查先于任何内容读取。
+    private(set) var contentReadCount = 0
 
     var changeCount: Int { changeCountValue }
 
-    func readFileURLs() -> [URL] { fileURLs }
-    func readURL() -> URL? { nil }
-    func readImageData() -> Data? { imageData }
-    func readText() -> String? { text }
-    func readRTFData() -> Data? { nil }
+    func readFileURLs() -> [URL] {
+        contentReadCount += 1
+        return fileURLs
+    }
+
+    func readURL() -> URL? {
+        contentReadCount += 1
+        return nil
+    }
+
+    func readImageData() -> Data? {
+        contentReadCount += 1
+        return imageData
+    }
+
+    func readText() -> String? {
+        contentReadCount += 1
+        return text
+    }
+
+    func readRTFData() -> Data? {
+        contentReadCount += 1
+        return nil
+    }
 }
 
 private final class FakeClipboardStore: ClipboardStore {

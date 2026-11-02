@@ -196,6 +196,15 @@ final class ClipboardHistoryManager: ObservableObject {
         }
         lastChangeCount = changeCount
 
+        // 敏感内容拦截：按 nspasteboard.org 联盟约定，密码管理器（1Password / Bitwarden 等）
+        // 复制密码时会声明 org.nspasteboard.ConcealedType 标记，剪贴板工具不得记录该内容。
+        // 威胁：若不拦截，密码明文会随历史持久化入库，任何能读到历史库的进程都可取回。
+        // 检查必须发生在读取任何剪贴板内容之前（连明文都不进内存）；
+        // 命中时仅推进 lastChangeCount 基线并返回，后续同一变更不再重复判定。
+        if pasteboard.isConcealed {
+            return
+        }
+
         guard let entry = captureEntry() else { return }
         addEntry(entry)
     }

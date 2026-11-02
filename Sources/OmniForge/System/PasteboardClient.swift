@@ -2,6 +2,8 @@ import AppKit
 
 protocol PasteboardClient {
     var changeCount: Int { get }
+    /// 当前剪贴板内容是否被标记为敏感（org.nspasteboard.ConcealedType）。
+    var isConcealed: Bool { get }
     func readFileURLs() -> [URL]
     func readURL() -> URL?
     func readImageData() -> Data?
@@ -18,6 +20,13 @@ final class SystemPasteboardClient: PasteboardClient {
 
     var changeCount: Int {
         pasteboard.changeCount
+    }
+
+    /// nspasteboard.org 联盟约定：1Password / Bitwarden 等密码管理器复制敏感数据时，
+    /// 会向剪贴板额外声明 org.nspasteboard.ConcealedType 类型标记，
+    /// 要求粘贴板类工具跳过该内容、不写入历史。只检查类型声明，不触碰数据本身。
+    var isConcealed: Bool {
+        pasteboard.types?.contains(NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")) == true
     }
 
     func readFileURLs() -> [URL] {
