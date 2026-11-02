@@ -63,17 +63,25 @@ final class SystemStickyNoteReminderScheduler: StickyNoteReminderScheduling {
         content.title = title
         content.body = body
         content.sound = .default
-        let components = Calendar.current.dateComponents(
-            [.year, .month, .day, .hour, .minute, .second],
-            from: date
-        )
-        let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+        guard let trigger = trigger(for: date) else { return }
         let request = UNNotificationRequest(
             identifier: StickyNoteReminderRequestID.make(for: id),
             content: content,
             trigger: trigger
         )
         UNUserNotificationCenter.current().add(request)
+    }
+
+    /// 组装通知触发器：绝对时刻语义，与内部唤起 Timer 对齐。
+    ///
+    /// 旧实现用无时区 DateComponents 组装 `UNCalendarNotificationTrigger`（墙上时间语义）：
+    /// 跨时区 / 夏令时变化后，系统按新的墙上时间重算触发点，通知横幅与窗口唤起
+    /// 便在两个不同绝对时刻各响一次。改用自挂载时刻起算的固定偏移，跨时区 / DST 不再漂移。
+    /// 过去时刻返回 nil：沿用恢复语义——过期未触发的提醒走唤醒标记，不补发通知。
+    func trigger(for date: Date) -> UNNotificationTrigger? {
+        let interval = date.timeIntervalSinceNow
+        guard interval > 0 else { return nil }
+        return UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
     }
 
     func cancelNotification(id: UUID) {
