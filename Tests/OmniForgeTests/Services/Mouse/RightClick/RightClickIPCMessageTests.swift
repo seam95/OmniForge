@@ -53,4 +53,44 @@ final class RightClickIPCMessageTests: XCTestCase {
         // 与 RightClickService.handleNotification 的还原路径一致
         XCTAssertEqual(urls.first?.path, "/tmp/of probe")
     }
+
+    // MARK: - IPC 共享令牌（防伪造分布式通知）
+
+    /// 宿主要求载荷携带 App Group 共享令牌：带 token 的 JSON 必须能解码出原值。
+    func test_decodesPayloadWithToken() throws {
+        let json = """
+        {"actionType":"copyTo","parameter":"/Users/seam/Desktop","targetURLs":["file:///tmp/a.txt"],"token":"11111111-2222-3333-4444-555555555555"}
+        """
+
+        let message = try JSONDecoder().decode(RightClickIPCMessage.self, from: Data(json.utf8))
+
+        XCTAssertEqual(message.token, "11111111-2222-3333-4444-555555555555")
+    }
+
+    /// 向后兼容旧版扩展的一次发布窗口：不含 token 字段的 JSON 解码为 nil，而非解码失败。
+    /// （宿主侧对 nil token 一律拒绝执行；此兼容只保证解码不崩。）
+    func test_decodesPayloadWithoutToken_tokenIsNil() throws {
+        let json = """
+        {"actionType":"moveTo","parameter":"/Users/seam/Desktop","targetURLs":[]}
+        """
+
+        let message = try JSONDecoder().decode(RightClickIPCMessage.self, from: Data(json.utf8))
+
+        XCTAssertNil(message.token)
+    }
+
+    /// 锁定扩展产出的载荷形状：编码后的 JSON 必须携带 token 字段上链。
+    func test_encodesTokenIntoPayloadJSON() throws {
+        let message = RightClickIPCMessage(
+            actionType: "copyPath",
+            parameter: "posix",
+            targetURLs: ["file:///tmp/a.txt"],
+            token: "11111111-2222-3333-4444-555555555555"
+        )
+
+        let data = try JSONEncoder().encode(message)
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        XCTAssertEqual(object["token"] as? String, "11111111-2222-3333-4444-555555555555")
+    }
 }

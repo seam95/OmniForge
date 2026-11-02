@@ -42,11 +42,16 @@ public struct RightClickIPCMessage: Codable {
     public var actionType: String
     public var parameter: String?
     public var targetURLs: [String]
+    /// 共享令牌：宿主借此校验发送方身份。分布式通知是系统全局总线，任何本地
+    /// 进程都能发同名通知；令牌由宿主启动时写入 App Group，只有真正的扩展读得到。
+    /// 设为可选仅为兼容旧版扩展的一次发布窗口（解码不失败），宿主对 nil 一律拒绝执行。
+    public var token: String?
 
-    public init(actionType: String, parameter: String? = nil, targetURLs: [String] = []) {
+    public init(actionType: String, parameter: String? = nil, targetURLs: [String] = [], token: String? = nil) {
         self.actionType = actionType
         self.parameter = parameter
         self.targetURLs = targetURLs
+        self.token = token
     }
 
     public static let notificationName = "app.omniforge.rightclick.action"
