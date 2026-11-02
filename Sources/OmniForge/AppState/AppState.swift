@@ -272,6 +272,10 @@ final class AppState: ObservableObject {
 
     var inputMethodRunState: FeatureRunState {
         guard lockState?.isLocked == true else { return .stopped }
+        // 纠正重试耗尽后暴露失败原因，不再恒显示运行中
+        if let error = inputMethods?.lastCorrectionError {
+            return .failed(error)
+        }
         return inputMethods?.isObservingInputSourceChanges == true ? .running : .stopped
     }
 
