@@ -21,6 +21,8 @@ final class RecordingSessionCoordinator: RecordingSessionCoordinating {
     private let stringsProvider: () -> Strings
     private let engineFactory: () -> RecordingEngine
     private let fileManager: FileManager
+    /// 访达定位出口，默认直接调用 NSWorkspace；测试注入以断言调用。
+    private let fileViewerActivator: ([URL]) -> Void
 
     private var engine: RecordingEngine?
     private var borderPanel: RecordingBorderPanel?
@@ -35,6 +37,9 @@ final class RecordingSessionCoordinator: RecordingSessionCoordinating {
     /// Optional observation for tests / manager busy state.
     var onRecordingStateChanged: ((Bool) -> Void)?
 
+    /// Optional observation for tests: status toast 已呈现时回调（不参与 UI 流程）。
+    var onStatusPresented: ((String) -> Void)?
+
     var isRecording: Bool { engine != nil }
 
     let suppressesWindowDisplay: Bool
@@ -44,13 +49,15 @@ final class RecordingSessionCoordinator: RecordingSessionCoordinating {
         stringsProvider: @escaping () -> Strings = { .en },
         engineFactory: @escaping () -> RecordingEngine = { RecordingEngine() },
         fileManager: FileManager = .default,
-        suppressesWindowDisplay: Bool = (NSClassFromString("XCTestCase") != nil)
+        suppressesWindowDisplay: Bool = (NSClassFromString("XCTestCase") != nil),
+        fileViewerActivator: @escaping ([URL]) -> Void = { NSWorkspace.shared.activateFileViewerSelecting($0) }
     ) {
         self.userDefaults = userDefaults
         self.stringsProvider = stringsProvider
         self.engineFactory = engineFactory
         self.fileManager = fileManager
         self.suppressesWindowDisplay = suppressesWindowDisplay
+        self.fileViewerActivator = fileViewerActivator
     }
 
     func begin(rect: NSRect, screen: NSScreen) {
@@ -147,7 +154,8 @@ final class RecordingSessionCoordinator: RecordingSessionCoordinating {
         }
     }
 
-    private func finishRecording(url: URL?, error: Error?) {
+    // internal 供测试驱动「引擎完成 → 保存」落点；运行时由 onCompletion 回调进入。
+    func finishRecording(url: URL?, error: Error?) {
         let wasCancelled = cancelRequested
         cancelRequested = false
         stopUI()
@@ -281,11 +289,13 @@ final class RecordingSessionCoordinator: RecordingSessionCoordinating {
             let destination = try uniqueFileURL(in: directory, fileName: fileName)
             saveRecording(tmpURL: tmpURL, destination: destination, format: format)
         } catch {
-            try? fileManager.removeItem(at: tmpURL)
+            // 静默保存失败时不删除已录制的临时文件：保留 tmpURL 并在访达中定位，
+            // 与下方 GIF 导出失败路径保持一致，避免用户录制内容直接丢失。
             presentStatus(
                 String(format: stringsProvider().recordingFailedFormat, error.localizedDescription),
                 duration: 3.5
             )
+            fileViewerActivator([tmpURL])
         }
     }
 
@@ -322,7 +332,7 @@ final class RecordingSessionCoordinator: RecordingSessionCoordinating {
                             String(format: self.stringsProvider().recordingFailedFormat, error.localizedDescription),
                             duration: 3.5
                         )
-                        NSWorkspace.shared.activateFileViewerSelecting([tmpURL])
+                        self.fileViewerActivator([tmpURL])
                     }
                 }
             }
@@ -352,6 +362,7 @@ final class RecordingSessionCoordinator: RecordingSessionCoordinating {
     }
 
     private func presentStatus(_ message: String, duration: TimeInterval = 2.0) {
+        onStatusPresented?(message)
         let toast = statusToast ?? EditorInfoToastWindow()
         statusToast = toast
         toast.present(message, near: recordingScreen ?? NSScreen.main, duration: duration)
