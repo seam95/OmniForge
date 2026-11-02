@@ -31,6 +31,11 @@ final class PromptOptimizerService: PromptOptimizing {
         }
     }
 
+    deinit {
+        // Foundation 的 session 在显式 invalidate 前不释放底层资源：实例销毁时收尾，防常驻进程累积。
+        session.finishTasksAndInvalidate()
+    }
+
     func optimize(selectedText: String) async throws -> String {
         let messages = PromptOptimizerTemplate.compose(input: selectedText).map { message in
             ["role": message.role, "content": message.content]

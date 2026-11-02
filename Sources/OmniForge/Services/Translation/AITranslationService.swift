@@ -45,6 +45,11 @@ final class AITranslationService: TranslationEngine {
         }
     }
 
+    deinit {
+        // Foundation 的 session 在显式 invalidate 前不释放底层资源：实例销毁时收尾，防常驻进程累积。
+        session.finishTasksAndInvalidate()
+    }
+
     // MARK: - TranslationEngine
 
     func translate(_ request: TranslationRequest) async throws -> TranslationResult {
