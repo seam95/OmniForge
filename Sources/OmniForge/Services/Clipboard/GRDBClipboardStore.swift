@@ -24,10 +24,23 @@ final class GRDBClipboardStore: ClipboardStore {
             var configuration = Configuration()
             configuration.foreignKeysEnabled = true
 
-            let queue = try DatabaseQueue(path: databaseURL.path, configuration: configuration)
-            try Self.makeMigrator().migrate(queue)
-            Self.pruneUndecodableImageEntries(in: queue)
-            self.databaseQueue = queue
+            do {
+                self.databaseQueue = try Self.setupDatabase(at: databaseURL, configuration: configuration)
+            } catch {
+                // 库文件损坏（如 SQLITE_NOTADB / SQLITE_CORRUPT）时，界面上的「重试」
+                // 永远走同一条失败路径，等于功能报废。这里把损坏文件改名保留现场，
+                // 再以空库重建重试一次；改名失败或非损坏类错误（磁盘满、权限等）
+                // 重建也救不了，维持原来的报错现状交给用户处理。
+                guard Self.isDatabaseCorruption(error),
+                      let renamedURL = Self.quarantineCorruptedDatabase(at: databaseURL, fileManager: fileManager)
+                else {
+                    throw error
+                }
+                Self.logger.error(
+                    "clipboard database corrupted; moved aside to \(renamedURL.lastPathComponent, privacy: .public) and rebuilt an empty store"
+                )
+                self.databaseQueue = try Self.setupDatabase(at: databaseURL, configuration: configuration)
+            }
 
             if removeLegacyStoreFiles {
                 let legacyDirectoryURL = legacyStoreDirectoryURL ?? databaseURL.deletingLastPathComponent()
@@ -170,6 +183,48 @@ final class GRDBClipboardStore: ClipboardStore {
 
     // MARK: - Private
 
+    /// 建库三步（建队列 → 迁移 → 清理占位图片）。首次打开与损坏重建共用。
+    private static func setupDatabase(at databaseURL: URL, configuration: Configuration) throws -> DatabaseQueue {
+        let queue = try DatabaseQueue(path: databaseURL.path, configuration: configuration)
+        try Self.makeMigrator().migrate(queue)
+        Self.pruneUndecodableImageEntries(in: queue)
+        return queue
+    }
+
+    /// 仅库文件损坏类错误才值得自动重建：SQLITE_NOTADB（文件根本不是数据库）、
+    /// SQLITE_CORRUPT（磁盘镜像损坏）。其他错误（磁盘满、权限等）重建空库无济于事。
+    private static func isDatabaseCorruption(_ error: Error) -> Bool {
+        guard let dbError = error as? DatabaseError else { return false }
+        return dbError.resultCode == .SQLITE_NOTADB || dbError.resultCode == .SQLITE_CORRUPT
+    }
+
+    /// 把损坏库文件改名保留现场：`entries.sqlite` → `entries.sqlite.corrupt-<yyyyMMdd-HHmmss>`。
+    /// 不直接删除：保留现场让用户有机会找回历史数据，也便于事后排查损坏原因。
+    /// 残留的 `-wal` / `-shm` 一并改名，避免旧日志干扰新库重建。
+    /// 任一步失败（如目标名已存在）返回 nil，调用方维持报错现状。
+    private static func quarantineCorruptedDatabase(at databaseURL: URL, fileManager: FileManager) -> URL? {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        let stamp = formatter.string(from: Date())
+
+        var movedURLs: [URL] = []
+        let sidecarSuffixes = ["", "-wal", "-shm"]
+        for suffix in sidecarSuffixes {
+            let sourceURL = URL(fileURLWithPath: databaseURL.path + suffix)
+            guard fileManager.fileExists(atPath: sourceURL.path) else { continue }
+
+            let targetURL = URL(fileURLWithPath: sourceURL.path + ".corrupt-" + stamp)
+            guard !fileManager.fileExists(atPath: targetURL.path),
+                  (try? fileManager.moveItem(at: sourceURL, to: targetURL)) != nil else {
+                // 已改名的文件不回滚：同样是保留现场，无副作用。
+                return nil
+            }
+            movedURLs.append(targetURL)
+        }
+        return movedURLs.first
+    }
+
     private static func ensureParentDirectory(for databaseURL: URL, fileManager: FileManager) throws {
         let directoryURL = databaseURL.deletingLastPathComponent()
         if fileManager.fileExists(atPath: directoryURL.path) {
@@ -219,13 +274,16 @@ final class GRDBClipboardStore: ClipboardStore {
         }
 
         migrator.registerMigration("backfillBlobMetadata") { db in
-            let rows = try Row.fetchAll(db, sql: """
+            // 旧库升级时待回填的行可能携带大量 blobData；fetchCursor 逐行流式处理，
+            // 避免一次把全部行（含 blob）载入内存，造成升级瞬间的内存尖峰。
+            // 游标在本迁移事务内耗尽后才提交（DatabaseMigrator 以事务包裹迁移闭包）。
+            let cursor = try Row.fetchCursor(db, sql: """
                 SELECT id, type, blobData, textValue, urlValue, filesJSON
                 FROM clipboard_entries
                 WHERE blobSize IS NULL
                 """)
 
-            for row in rows {
+            while let row = try cursor.next() {
                 let id: String = row["id"]
                 let type: String = row["type"]
                 let blobData: Data? = row["blobData"]
