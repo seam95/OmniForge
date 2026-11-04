@@ -69,4 +69,27 @@ final class CaptureOverlayHintTests: XCTestCase {
         controller.tearDown()
         XCTAssertEqual(controller.selectionPurpose, .screenshot)
     }
+
+    func test_会话启动后注入提示不再重复读取字符串目录() {
+        // routeHover 在 mouseMoved 高频路径上调用 applyHint，文案必须在会话开始时固化。
+        var stringsReadCount = 0
+        let controller = CaptureOverlayController(stringsProvider: {
+            stringsReadCount += 1
+            return .zhHans
+        })
+        // headless 测试环境不建遮罩，但 startCapture 仍应固化本次会话文案。
+        controller.startCapture { _ in }
+        let readsAfterStart = stringsReadCount
+
+        let view = makeView()
+        controller.registerSelectionViewsForTesting([view])
+        controller.applyHint(to: view)
+
+        XCTAssertEqual(
+            stringsReadCount,
+            readsAfterStart,
+            "鼠标移动路径不应重复构造字符串目录"
+        )
+        XCTAssertEqual(view.hintText, Strings.zhHans.screenshotSelectionHint)
+    }
 }

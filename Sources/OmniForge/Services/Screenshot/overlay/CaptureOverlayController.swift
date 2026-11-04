@@ -3,7 +3,7 @@ import CoreGraphics
 import QuartzCore
 import os.log
 
-/// 选区会话用途：决定顶部提示文案与后续出口语义。
+/// 选区会话用途：决定顶部提示文案（出口语义仍由 `entryIntent` / `onDirectRegionSelection` 决定）。
 enum CaptureSelectionPurpose {
     case screenshot
     case recording
@@ -65,12 +65,19 @@ final class CaptureOverlayController {
     }
 
     /// 只给目标屏注入提示，其余屏清空；`nil` 表示全部清空。
+    ///
+    /// `routeHover` 在 mouseMoved 高频路径上调用本方法，文案取 `startCapture` 时固化的缓存，
+    /// 避免每次移动鼠标都重建字符串目录（生产装配会在闭包里新建 `L10n`）。
     func applyHint(to target: SelectionView?) {
-        let text = Self.hintText(for: selectionPurpose, strings: stringsProvider())
+        let text = sessionHintText
+            ?? Self.hintText(for: selectionPurpose, strings: stringsProvider())
         for view in selectionViews.values {
             view.hintText = (view === target) ? text : nil
         }
     }
+
+    /// 本次会话固化的提示文案；`startCapture` 写入，`tearDown` 清空。
+    private var sessionHintText: String?
 
     /// 当前嵌入的标注编辑器（编辑器模式下非空）。
     private var editorController: AnnotationEditorController?
@@ -273,6 +280,8 @@ final class CaptureOverlayController {
         editorHostView = nil
         self.screenSnapshots = preSnapshots
         self.onComplete = completion
+        // 会话开始时固化提示文案：后续 mouseMoved 不再触碰字符串目录。
+        self.sessionHintText = Self.hintText(for: selectionPurpose, strings: stringsProvider())
 
         if !suppressesWindowDisplay {
             // 先建齐所有屏的遮罩面板：吸附排除集要收齐全部面板窗口 ID，
@@ -437,8 +446,9 @@ final class CaptureOverlayController {
 
     /// 清理遮罩和监听器。
     func tearDown() {
-        // 会话用途随会话结束重置，避免录屏文案残留到下一次截图。
+        // 会话用途与固化文案随会话结束重置，避免录屏文案残留到下一次截图。
         selectionPurpose = .screenshot
+        sessionHintText = nil
         // Always drop direct-record callback so a cancelled dedicated-record
         // selection cannot hijack the next all-in-one region complete.
         onDirectRegionSelection = nil

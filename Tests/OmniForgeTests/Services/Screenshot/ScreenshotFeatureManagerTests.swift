@@ -198,6 +198,25 @@ final class ScreenshotFeatureManagerTests: XCTestCase {
         XCTAssertNil(manager.lastError, "首次 fullScreen 触发不应记录 busy 错误")
     }
 
+    // MARK: - 录屏入口
+
+    func test_handleRecord将会话用途标记为录制() {
+        // 录屏入口必须在 startCapture 之前写入用途，遮罩才能显示「录制」文案。
+        let overlay = CaptureOverlayController(stringsProvider: { .en })
+        let recordManager = ScreenshotFeatureManager(
+            userDefaults: userDefaults,
+            isFeatureAvailable: { true },
+            isScreenRecordingGranted: { true },
+            stringsProvider: { .en },
+            keyboardShortcuts: keyboardShortcuts,
+            captureClient: captureClient,
+            overlayController: overlay
+        )
+        recordManager.startListening()
+        recordManager.handleRecord()
+        XCTAssertEqual(overlay.selectionPurpose, .recording)
+    }
+
     // MARK: - handleHotkey 模式分发
 
     func test_handleHotkey_allInOne模式走AllInOne路径() {

@@ -54,6 +54,9 @@ class SelectionView: NSView {
         didSet { if oldValue != hintText { needsDisplay = true } }
     }
 
+    /// 提示是否已被拖动收起：一次会话内只收不放，避免松手后重新出现。
+    private var hintDismissed = false
+
     /// 宽高比约束（nil 为自由）。
     var aspectRatio: CGFloat?
 
@@ -65,6 +68,9 @@ class SelectionView: NSView {
     /// 视图所在屏 visibleFrame 来源（已扣除菜单栏/Dock，用于边缘条带吸附）。
     /// 生产用 `window?.screen?.visibleFrame`；测试可注入固定值。
     var visibleFrameProvider: (() -> NSRect?)?
+    /// 刘海安全区顶部高度来源。生产用 `window?.screen?.safeAreaInsets.top`，测试可注入。
+    /// 「自动隐藏菜单栏」时 visibleFrame 等于 frame，只能靠它避让刘海。
+    var safeAreaTopInsetProvider: (() -> CGFloat?)?
     /// 主屏高度来源（CG 全局 Y 翻转基准）。生产用 `NSScreen.screens.first?.frame.maxY`。
     var primaryDisplayHeightProvider: (() -> CGFloat?)?
     /// 视图 backingScale 来源；生产用 `window?.backingScaleFactor`，测试可注入。
@@ -248,27 +254,35 @@ class SelectionView: NSView {
         (label as NSString).draw(at: textPoint, withAttributes: attributes)
     }
 
-    /// 提示可见性：仅空闲态、未锁定、无选区、有非空文案时显示。
+    /// 提示可见性：未锁定、已有文案，且用户还没真正开始拖动时显示。
+    /// 按下鼠标但未越过拖拽阈值仍算「未开始」（SPEC 4.2）。
     internal var isHintVisible: Bool {
-        guard state == .idle, !selectionLocked, selectionRect == nil else { return false }
+        guard !selectionLocked, !hintDismissed else { return false }
         guard let hintText, !hintText.isEmpty else { return false }
-        return true
+        return state == .idle || state == .drawing
     }
 
-    /// 提示条中心的视图局部 y：可见区顶部下移 `topInset`，避开菜单栏与刘海。
-    static func hintCenterY(
-        visibleFrameTopGlobal: CGFloat,
+    /// 提示条顶部（胶囊上沿）的视图局部 y。
+    ///
+    /// 顶部预留取菜单栏高度与刘海安全区的较大值：菜单栏常显时 `visibleFrame` 已扣除菜单栏；
+    /// 开启「自动隐藏菜单栏」时 `visibleFrame` 等于 `frame`，必须退化到 `safeAreaInsets.top`，
+    /// 否则水平居中的提示会被硬件刘海切掉。
+    static func hintTopY(
+        screenFrameMaxY: CGFloat,
         screenFrameMinY: CGFloat,
+        visibleFrameMaxY: CGFloat,
+        safeAreaTopInset: CGFloat,
         topInset: CGFloat = 28
     ) -> CGFloat {
-        visibleFrameTopGlobal - screenFrameMinY - topInset
+        let topReserve = max(screenFrameMaxY - visibleFrameMaxY, safeAreaTopInset)
+        return screenFrameMaxY - screenFrameMinY - topReserve - topInset
     }
 
-    /// 绘制顶部操作提示：深色圆角胶囊底 + 白色文字。
+    /// 绘制顶部操作提示：深色圆角胶囊底 + 白色文字（字号与尺寸标签一致）。
     private func drawHint(in ctx: CGContext) {
         guard isHintVisible, let hintText else { return }
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+            .font: NSFont.systemFont(ofSize: 12, weight: .medium),
             .foregroundColor: NSColor.white,
         ]
         let textSize = (hintText as NSString).size(withAttributes: attributes)
@@ -277,13 +291,16 @@ class SelectionView: NSView {
         // screenFrame / visibleFrame 均为 AppKit 全局坐标；减去屏 frame 底部得到视图局部 y。
         let screenFrame = screenFrameProvider?() ?? window?.screen?.frame ?? frame
         let visibleFrame = visibleFrameProvider?() ?? window?.screen?.visibleFrame ?? screenFrame
-        let centerY = Self.hintCenterY(
-            visibleFrameTopGlobal: visibleFrame.maxY,
-            screenFrameMinY: screenFrame.minY
+        let safeAreaTop = safeAreaTopInsetProvider?() ?? window?.screen?.safeAreaInsets.top ?? 0
+        let topY = Self.hintTopY(
+            screenFrameMaxY: screenFrame.maxY,
+            screenFrameMinY: screenFrame.minY,
+            visibleFrameMaxY: visibleFrame.maxY,
+            safeAreaTopInset: safeAreaTop
         )
         let capsule = NSRect(
             x: bounds.midX - (textSize.width + horizontalPadding * 2) / 2,
-            y: centerY - (textSize.height + verticalPadding * 2) / 2,
+            y: topY - (textSize.height + verticalPadding * 2),
             width: textSize.width + horizontalPadding * 2,
             height: textSize.height + verticalPadding * 2
         )
@@ -573,6 +590,8 @@ class SelectionView: NSView {
                 }
                 pendingRect = nil
             }
+            // 已真正开始拖动（越过阈值或自由框选）：收起顶部提示。
+            hintDismissed = true
             NSCursor.crosshair.set()
             let newRect = dragRect(from: dragStart, to: point)
             selectionRect = constrainToBounds(newRect)
