@@ -49,6 +49,11 @@ class SelectionView: NSView {
         didSet { needsDisplay = true }
     }
 
+    /// 选区阶段顶部操作提示；nil 或空串时不绘制。
+    var hintText: String? {
+        didSet { if oldValue != hintText { needsDisplay = true } }
+    }
+
     /// 宽高比约束（nil 为自由）。
     var aspectRatio: CGFloat?
 
@@ -144,6 +149,8 @@ class SelectionView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        // 提示恒在最上层：hover/选区分支会提前 return，用 defer 保证不被跳过。
+        defer { drawHint(in: ctx) }
 
         // 绘制底图。滚动捕获期间跳过冻结快照，让选区 dig-out 露出底层实时页面
         //（对齐 CapCap：!scrollCaptureActive 才画 snapshot）。
@@ -239,6 +246,60 @@ class SelectionView: NSView {
         // 文字
         let textPoint = CGPoint(x: labelRect.origin.x + 4, y: labelRect.origin.y + 2)
         (label as NSString).draw(at: textPoint, withAttributes: attributes)
+    }
+
+    /// 提示可见性：仅空闲态、未锁定、无选区、有非空文案时显示。
+    internal var isHintVisible: Bool {
+        guard state == .idle, !selectionLocked, selectionRect == nil else { return false }
+        guard let hintText, !hintText.isEmpty else { return false }
+        return true
+    }
+
+    /// 提示条中心的视图局部 y：可见区顶部下移 `topInset`，避开菜单栏与刘海。
+    static func hintCenterY(
+        visibleFrameTopGlobal: CGFloat,
+        screenFrameMinY: CGFloat,
+        topInset: CGFloat = 28
+    ) -> CGFloat {
+        visibleFrameTopGlobal - screenFrameMinY - topInset
+    }
+
+    /// 绘制顶部操作提示：深色圆角胶囊底 + 白色文字。
+    private func drawHint(in ctx: CGContext) {
+        guard isHintVisible, let hintText else { return }
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+            .foregroundColor: NSColor.white,
+        ]
+        let textSize = (hintText as NSString).size(withAttributes: attributes)
+        let horizontalPadding: CGFloat = 14
+        let verticalPadding: CGFloat = 8
+        // screenFrame / visibleFrame 均为 AppKit 全局坐标；减去屏 frame 底部得到视图局部 y。
+        let screenFrame = screenFrameProvider?() ?? window?.screen?.frame ?? frame
+        let visibleFrame = visibleFrameProvider?() ?? window?.screen?.visibleFrame ?? screenFrame
+        let centerY = Self.hintCenterY(
+            visibleFrameTopGlobal: visibleFrame.maxY,
+            screenFrameMinY: screenFrame.minY
+        )
+        let capsule = NSRect(
+            x: bounds.midX - (textSize.width + horizontalPadding * 2) / 2,
+            y: centerY - (textSize.height + verticalPadding * 2) / 2,
+            width: textSize.width + horizontalPadding * 2,
+            height: textSize.height + verticalPadding * 2
+        )
+        let path = CGPath(
+            roundedRect: capsule,
+            cornerWidth: capsule.height / 2,
+            cornerHeight: capsule.height / 2,
+            transform: nil
+        )
+        ctx.addPath(path)
+        ctx.setFillColor(NSColor.black.withAlphaComponent(0.72).cgColor)
+        ctx.fillPath()
+        (hintText as NSString).draw(
+            at: NSPoint(x: capsule.minX + horizontalPadding, y: capsule.minY + verticalPadding),
+            withAttributes: attributes
+        )
     }
 
     private func drawHandles(rect: NSRect, in ctx: CGContext) {

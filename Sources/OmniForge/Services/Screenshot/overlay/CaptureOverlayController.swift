@@ -3,6 +3,12 @@ import CoreGraphics
 import QuartzCore
 import os.log
 
+/// 选区会话用途：决定顶部提示文案与后续出口语义。
+enum CaptureSelectionPurpose {
+    case screenshot
+    case recording
+}
+
 /// 多屏遮罩总编排。
 ///
 /// 职责：预抓快照 → 建每屏遮罩面板 → 选区交互 →（可选）嵌入标注编辑器 →
@@ -50,6 +56,22 @@ final class CaptureOverlayController {
         overlayPanels.map { CGWindowID($0.windowNumber) }
     }
 
+    /// 会话用途 → 顶部提示文案。
+    static func hintText(for purpose: CaptureSelectionPurpose, strings: Strings) -> String {
+        switch purpose {
+        case .screenshot: return strings.screenshotSelectionHint
+        case .recording: return strings.screenshotSelectionHintRecording
+        }
+    }
+
+    /// 只给目标屏注入提示，其余屏清空；`nil` 表示全部清空。
+    func applyHint(to target: SelectionView?) {
+        let text = Self.hintText(for: selectionPurpose, strings: stringsProvider())
+        for view in selectionViews.values {
+            view.hintText = (view === target) ? text : nil
+        }
+    }
+
     /// 当前嵌入的标注编辑器（编辑器模式下非空）。
     private var editorController: AnnotationEditorController?
     /// 编辑器嵌入所在的 SelectionView（编辑器模式下非空）。
@@ -95,6 +117,9 @@ final class CaptureOverlayController {
     /// 入口意图：`.copy` / `.pin` 时选区确认后直出到 `onDirectCaptureResult`，不进编辑器。
     /// 与录屏 `onDirectRegionSelection` 语义解耦；会话结束 / tearDown 时清空。
     var entryIntent: ScreenshotEntryIntent?
+
+    /// 本次选区会话用途；tearDown 时重置为截图，避免录屏文案残留到下一次会话。
+    var selectionPurpose: CaptureSelectionPurpose = .screenshot
 
     /// copy/pin 选区直出：裁切图 + `ScreenshotResult` + 可选 pinOrigin（选区屏幕左下）。
     /// 与 `onDirectRegionSelection`（rect-only 录屏）互不覆盖。
@@ -369,6 +394,8 @@ final class CaptureOverlayController {
             selectionView.selectionLocked = true
             selectionView.selectionInteractionEnabled = true
             selectionView.annotationToolActive = true
+            // 无选区阶段，直接进入编辑器：不显示操作提示。
+            applyHint(to: nil)
             editorHostView = selectionView
             // 禁用其余屏的选区交互（当前 startEditor 虽只建单屏 panel，保留防御）。
             disableSelectionInteractionOnOtherScreens(keeping: selectionView)
@@ -410,6 +437,8 @@ final class CaptureOverlayController {
 
     /// 清理遮罩和监听器。
     func tearDown() {
+        // 会话用途随会话结束重置，避免录屏文案残留到下一次截图。
+        selectionPurpose = .screenshot
         // Always drop direct-record callback so a cancelled dedicated-record
         // selection cannot hijack the next all-in-one region complete.
         onDirectRegionSelection = nil
@@ -540,6 +569,8 @@ final class CaptureOverlayController {
                 view.clearHoverFromRouter()
             }
             lastHoverPanel = nil
+            // 鼠标不在任何遮罩内：清空提示，避免残留在上一屏。
+            applyHint(to: nil)
             return
         }
 
@@ -550,6 +581,8 @@ final class CaptureOverlayController {
         lastHoverPanel = targetPanel
         guard let panel = targetPanel, let view = selectionViews[panel] else { return }
         view.updateHoverFromRouter(at: NSPoint(x: target.localPoint.x, y: target.localPoint.y))
+        // 提示只跟随鼠标所在屏，切换屏时旧屏自动清空。
+        applyHint(to: view)
     }
 
     private func handleCancel() {
@@ -927,6 +960,8 @@ extension CaptureOverlayController: SelectionViewDelegate {
         selectionView.selectionLocked = true
         selectionView.selectionInteractionEnabled = true
         selectionView.annotationToolActive = true
+        // 编辑器已接管交互：收起顶部操作提示。
+        applyHint(to: nil)
         editorHostView = selectionView
         // 禁用其余屏的选区交互，避免跨屏点击污染宿主屏编辑器几何。
         disableSelectionInteractionOnOtherScreens(keeping: selectionView)

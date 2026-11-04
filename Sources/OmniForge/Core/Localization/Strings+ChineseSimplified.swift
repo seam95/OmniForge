@@ -872,6 +872,8 @@ extension Strings {
         screenshotInvalidResultFormat: "无效的捕获结果：%@",
         screenshotInvalidSelectionFormat: "无效选区：%@",
         screenshotPipelineFailedFormat: "结果管线失败：%@",
+        screenshotSelectionHint: "拖动选择区域 · 点击窗口可选整窗 · ESC 取消",
+        screenshotSelectionHintRecording: "拖动选择录制区域 · 点击窗口可选整窗 · ESC 取消",
         screenshotElementRoleWindow: "窗口",
         screenshotElementRoleButton: "按钮",
         screenshotElementRoleMenu: "菜单",

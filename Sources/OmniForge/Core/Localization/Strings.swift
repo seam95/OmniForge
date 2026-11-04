@@ -914,6 +914,10 @@ struct Strings: Equatable {
     let screenshotInvalidResultFormat: String
     let screenshotInvalidSelectionFormat: String
     let screenshotPipelineFailedFormat: String
+    /// 选区阶段顶部操作提示（截图入口）
+    let screenshotSelectionHint: String
+    /// 选区阶段顶部操作提示（录屏入口）
+    let screenshotSelectionHintRecording: String
 
     // MARK: - Element Detection
     let screenshotElementRoleWindow: String

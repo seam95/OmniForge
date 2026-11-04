@@ -325,6 +325,8 @@ final class ScreenshotFeatureManager: ObservableObject {
 
         Self.logger.info("handleRecord: start region selection session")
         isSessionRunning = true
+        // 录屏入口使用「拖动选择录制区域」提示文案。
+        overlayController.selectionPurpose = .recording
         // 与 copy/pin 直出互斥：录屏只走 rect-only 回调。
         overlayController.entryIntent = nil
         overlayController.onDirectCaptureResult = nil

@@ -872,6 +872,8 @@ extension Strings {
         screenshotInvalidResultFormat: "Invalid capture result: %@",
         screenshotInvalidSelectionFormat: "Invalid selection: %@",
         screenshotPipelineFailedFormat: "Result pipeline failed: %@",
+        screenshotSelectionHint: "Drag to select · Click a window to snap · ESC to cancel",
+        screenshotSelectionHintRecording: "Drag to select the recording area · Click a window to snap · ESC to cancel",
         screenshotElementRoleWindow: "Window",
         screenshotElementRoleButton: "Button",
         screenshotElementRoleMenu: "Menu",
