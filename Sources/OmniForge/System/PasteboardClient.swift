@@ -5,7 +5,10 @@ protocol PasteboardClient {
     /// 当前剪贴板内容是否被标记为敏感（org.nspasteboard.ConcealedType）。
     var isConcealed: Bool { get }
     func readFileURLs() -> [URL]
-    func readURL() -> URL?
+    /// public.url 槽位的原始字符串（未编码）。返回原始串而非 URL 对象：
+    /// 部分源应用（如 Otty）会把「单词+冒号」的普通文本塞进该槽位，
+    /// 归档层需要先做白名单校验、不过时按纯文本保存原文，解析放采集层做。
+    func readURLString() -> String?
     func readImageData() -> Data?
     func readText() -> String?
     func readRTFData() -> Data?
@@ -37,11 +40,8 @@ final class SystemPasteboardClient: PasteboardClient {
         return objects ?? []
     }
 
-    func readURL() -> URL? {
-        if let string = pasteboard.string(forType: .URL), let url = URL(string: string) {
-            return url
-        }
-        return nil
+    func readURLString() -> String? {
+        pasteboard.string(forType: .URL)
     }
 
     func readImageData() -> Data? {

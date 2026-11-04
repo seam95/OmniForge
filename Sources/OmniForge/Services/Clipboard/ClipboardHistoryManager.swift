@@ -295,10 +295,16 @@ final class ClipboardHistoryManager: ObservableObject {
             )
         }
 
-        if let url = pasteboard.readURL() {
+        // public.url 槽位同样要过白名单：源应用（如 Otty）会把「单词+冒号」的
+        // 普通文本塞进该槽位，URL(string:) 解析后自动百分号编码会破坏原文
+        // （"INFO: …" → "INFO:%20…"）。不过白名单时落回纯文本分支，保住原文。
+        // preview 用槽位原始串而非 absoluteString，避免含非 ASCII 字符的合法 URL 被二次编码。
+        if let urlString = pasteboard.readURLString(),
+           let url = URL(string: urlString),
+           Self.isWhitelistedURL(url) {
             return makeEntry(
                 type: .url,
-                preview: url.absoluteString,
+                preview: urlString,
                 content: .url(url)
             )
         }
@@ -323,6 +329,16 @@ final class ClipboardHistoryManager: ObservableObject {
                 type: .rtf,
                 preview: "RTF",
                 content: .rtf(rtfData)
+            )
+        }
+
+        // 兜底：剪贴板只有 public.url 槽位且内容非标准 URL（无纯文本槽位可回退），
+        // 用槽位原始串按纯文本归档，不丢内容。
+        if let urlString = pasteboard.readURLString(), !urlString.isEmpty {
+            return makeEntry(
+                type: .text,
+                preview: previewForText(urlString),
+                content: .text(urlString)
             )
         }
 

@@ -326,6 +326,78 @@ final class ClipboardHistoryManagerTests: XCTestCase {
         }
     }
 
+    // MARK: - public.url 槽位分类（scheme 白名单 + 原文回退）
+
+    /// 表驱动：public.url 槽位同样要过 scheme 白名单。
+    /// 坑：源应用（如 Otty）会把「单词+冒号」的普通文本塞进 public.url 槽位，
+    /// 若不校验就按 URL 归档，URL(string:) 的自动百分号编码会把原文毁掉
+    /// （"INFO: …" → "INFO:%20…"），且原文不再落库、粘贴回也是编码串。
+    func test_capture_classifiesURLSlotBySchemeWhitelist() {
+        let cases: [(urlString: String, expected: ClipboardContentType, note: String)] = [
+            ("INFO:     127.0.0.1:50280 - \"GET /utils/model_info\" 404 Not Found", .text, "Otty 案例：日志文本塞进 URL 槽位必须按纯文本归档"),
+            ("Re: Meeting tomorrow", .text, "含冒号的普通文本塞进 URL 槽位按纯文本归档"),
+            ("myapp://x", .text, "非白名单 scheme 塞进 URL 槽位按纯文本归档"),
+            ("http://", .text, "http 无 host 塞进 URL 槽位按纯文本归档"),
+            ("https://a.b/c", .url, "白名单 https 且有 host 按 URL 归档"),
+            ("mailto:a@b.c", .url, "白名单 mailto 按 URL 归档"),
+        ]
+
+        for testCase in cases {
+            let pasteboard = FakeHistoryPasteboardClient()
+            let defaults = UserDefaults(suiteName: "ClipboardHistoryManagerTests_urlslot")!
+            defaults.removePersistentDomain(forName: "ClipboardHistoryManagerTests_urlslot")
+            let store = FakeClipboardStore(entries: [])
+            let manager = ClipboardHistoryManager(
+                store: store,
+                userDefaults: defaults,
+                pasteboard: pasteboard
+            )
+
+            pasteboard.urlString = testCase.urlString
+            pasteboard.changeCountValue += 1
+            manager.pollPasteboard()
+
+            XCTAssertEqual(manager.entries.count, 1, "「\(testCase.urlString)」应被采集：\(testCase.note)")
+            XCTAssertEqual(manager.entries.first?.type, testCase.expected, "「\(testCase.urlString)」\(testCase.note)")
+
+            // 入库内容验证：.text 必须原样保存（不被百分号编码），preview 保留原文。
+            let saved = store.savedEntries.last?.content
+            switch testCase.expected {
+            case .text:
+                XCTAssertEqual(saved, .text(testCase.urlString), "「\(testCase.urlString)」必须原样保存为文本，不得被百分号编码")
+                XCTAssertEqual(manager.entries.first?.preview, testCase.urlString, "preview 应为槽位原始串")
+            case .url:
+                guard case .url = saved else {
+                    return XCTFail("「\(testCase.urlString)」应保存为 URL")
+                }
+                XCTAssertEqual(manager.entries.first?.preview, testCase.urlString, "URL 条目 preview 也应用槽位原始串")
+            default:
+                break
+            }
+        }
+    }
+
+    /// 兜底：剪贴板只有 public.url 槽位且内容非标准 URL（无纯文本槽位可回退）时，
+    /// 用槽位原始串按纯文本归档，不丢内容。
+    func test_capture_fallsBackToTextWhenOnlyNonWhitelistedURLSlot() {
+        let pasteboard = FakeHistoryPasteboardClient()
+        let store = FakeClipboardStore(entries: [])
+        let manager = ClipboardHistoryManager(
+            store: store,
+            userDefaults: UserDefaults(suiteName: "ClipboardHistoryManagerTests_urlslot2")!,
+            pasteboard: pasteboard
+        )
+        pasteboard.urlString = "INFO: only url slot, no text slot"
+
+        pasteboard.changeCountValue += 1
+        manager.pollPasteboard()
+
+        XCTAssertEqual(manager.entries.count, 1)
+        XCTAssertEqual(manager.entries.first?.type, .text, "无纯文本槽位时应用 URL 槽位原始串兜底")
+        // 内存条目是 lightweight 版（content 清空），完整内容看 DB 保存值。
+        XCTAssertEqual(store.savedEntries.last?.content, .text("INFO: only url slot, no text slot"))
+    }
+
     private func makeTextEntry(id: UUID, text: String) -> ClipboardEntry {
         ClipboardEntry(
             id: id,
@@ -345,6 +417,8 @@ private final class FakeHistoryPasteboardClient: PasteboardClient {
     var text: String?
     var imageData: Data?
     var fileURLs: [URL] = []
+    /// public.url 槽位的原始字符串（模拟源应用写入的槽位内容）。
+    var urlString: String?
     /// 模拟 org.nspasteboard.ConcealedType 标记（密码管理器声明的敏感内容）。
     var isConcealed = false
     /// 内容读取调用计数：验证 concealed 检查先于任何内容读取。
@@ -357,9 +431,9 @@ private final class FakeHistoryPasteboardClient: PasteboardClient {
         return fileURLs
     }
 
-    func readURL() -> URL? {
+    func readURLString() -> String? {
         contentReadCount += 1
-        return nil
+        return urlString
     }
 
     func readImageData() -> Data? {
