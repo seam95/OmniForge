@@ -11,6 +11,23 @@ enum WhatsNewReleaseCatalog {
     /// 历次版本的更新内容，新版本在前
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            version: "4.1.0",
+            entries: [
+                WhatsNewEntry(type: .added, text: "截图框选时遮罩显示操作提示，确认、取消等快捷键一目了然，并自动避开刘海区域"),
+                WhatsNewEntry(type: .fixed, text: "修复复制含冒号的普通文本（如日志、Re: 回复）被剪贴板历史当作网址保存，粘贴回变成百分号编码乱码"),
+                WhatsNewEntry(type: .fixed, text: "修复密码管理器复制的密码被记录进剪贴板历史，现按联盟约定自动跳过敏感内容"),
+                WhatsNewEntry(type: .fixed, text: "修复剪贴板历史数据库损坏后一直显示空列表，现保留损坏现场并自动重建可用空库"),
+                WhatsNewEntry(type: .fixed, text: "修复打开监控面板偶发闪退，以及部分系统信息查询可能卡住界面的问题"),
+                WhatsNewEntry(type: .fixed, text: "修复右键增强动作被重复执行、切换显示隐藏文件需要重启访达的问题"),
+                WhatsNewEntry(type: .fixed, text: "修复便签提醒在跨时区或睡眠唤醒后不触发的问题"),
+                WhatsNewEntry(type: .fixed, text: "修复截图保存失败后文件丢失，现保留现场并可在访达定位；标注文字编辑态按 Esc 仅退出输入框"),
+                WhatsNewEntry(type: .fixed, text: "修复长时间运行内存缓慢增长（AI 服务会话用后即释放）"),
+                WhatsNewEntry(type: .fixed, text: "修复快捷键冲突检测未覆盖截图晾衣绳与翻译键位的问题"),
+                WhatsNewEntry(type: .fixed, text: "修复 Token 用量统计的异常时间戳导致崩溃的问题"),
+                WhatsNewEntry(type: .fixed, text: "修复卸载器误扫其他应用正在安装的文件"),
+            ]
+        ),
+        WhatsNewRelease(
             version: "4.0.0",
             entries: [
                 WhatsNewEntry(type: .changed, text: "供应商切换与供应商聚合功能整体下线：控制中心不再有「供应商」页签，菜单栏、设置页与新手向导不再出现供应商入口"),
