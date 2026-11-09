@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// 便签窗口呈现生产实现：按便签 id 持有窗口控制器（字典强引用，对齐贴图 Registry）。
@@ -10,10 +11,45 @@ final class StickyNoteWindowRegistry: StickyNoteWindowPresenting {
 
     private let stringsProvider: () -> Strings
     private var controllers: [UUID: StickyNoteWindowController] = [:]
+    /// 用户点击监听（global 覆盖其他应用，local 覆盖本应用其他窗口）。
+    private var mouseMonitors: [Any] = []
 
     init(stringsProvider: @escaping () -> Strings) {
         self.stringsProvider = stringsProvider
         StickyNoteDiagnostics.shared?.record("registry.created")
+        installMouseMonitor()
+    }
+
+    deinit {
+        for monitor in mouseMonitors {
+            NSEvent.removeMonitor(monitor)
+        }
+    }
+
+    /// 安装点击监听：选中态抬升的回落触发器。系统退场的过渡性失焦不可靠
+    /// （见 Controller.windowDidResignKey 注释），用户点击便签以外的窗口
+    /// 才是「想操作别的窗口」的确切信号。
+    private func installMouseMonitor() {
+        let global = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            MainActor.assumeIsolated {
+                self?.handleUserMouseDown(windowNumber: event.windowNumber)
+            }
+        }
+        let local = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            MainActor.assumeIsolated {
+                self?.handleUserMouseDown(windowNumber: event.windowNumber)
+            }
+            return event
+        }
+        mouseMonitors = [global, local].compactMap { $0 }
+    }
+
+    /// 用户 mouseDown：被点击的不是某便签时，撤销全部便签的选中抬升；
+    /// 点击的是便签（切换选中另一张）时只降其余便签，被点击的保持。
+    func handleUserMouseDown(windowNumber: Int) {
+        for controller in controllers.values where controller.windowNumber != windowNumber {
+            controller.demoteSelection()
+        }
     }
 
     func show(note: StickyNote) {

@@ -258,6 +258,8 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
 
     func hide() {
         trace("window.hide.before")
+        // 隐藏即退出选中态：窗口不可见时抬升无意义，避免下次 show 带出旧层级。
+        isSelectionPromoted = false
         panel.orderOut(nil)
         trace("window.hide.after")
     }
@@ -281,6 +283,11 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
 
     var isVisible: Bool {
         panel.isVisible
+    }
+
+    /// 窗口服务器编号：Registry 用它判定用户点击是否落在便签内。
+    var windowNumber: Int {
+        panel.windowNumber
     }
 
     // MARK: - 激活（正文点击）
@@ -401,17 +408,27 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
     // MARK: - 选中态层级
 
     /// 窗口成为 key：用户点击，或调度中心 / Exposé 等系统路径选中窗口。
-    /// 未置顶便签临时抬升层级，使系统退场重排后仍保持在前面；失焦即回落。
+    /// 未置顶便签临时抬升层级，使系统退场重排后仍保持在前面。
     func windowDidBecomeKey(_ notification: Notification) {
         trace("window.didBecomeKey.before")
         setSelectionPromoted(true)
         trace("window.didBecomeKey.after")
     }
 
+    /// 失焦不再直接撤销抬升：调度中心 / Exposé 退场时系统会把前台还给原
+    /// 应用，便签随之过渡性失焦——诊断日志（2026-11-09）实证该失焦发生在
+    /// becomeKey 后约 250ms，且期间没有任何用户输入，据此降级会让便签被
+    /// 原窗口重新覆盖。真正的回落由用户点击便签以外的窗口触发
+    /// （Registry 的鼠标监听 → demoteSelection）。
+    /// shortcut: Cmd+Tab 等无鼠标的应用切换不会触发回落，便签将保持在前，
+    /// 直至用户点击任何便签以外的窗口。
     func windowDidResignKey(_ notification: Notification) {
-        trace("window.didResignKey.before")
+        trace("window.didResignKey")
+    }
+
+    /// 用户点击了便签以外的窗口：撤销选中态抬升，恢复可被遮挡语义。
+    func demoteSelection() {
         setSelectionPromoted(false)
-        trace("window.didResignKey.after")
     }
 
     func windowDidChangeOcclusionState(_ notification: Notification) {

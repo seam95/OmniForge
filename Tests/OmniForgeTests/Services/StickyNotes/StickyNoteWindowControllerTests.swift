@@ -35,15 +35,39 @@ final class StickyNoteWindowControllerTests: XCTestCase {
         )
     }
 
-    func test_resignKey_restoresNormalLevel() {
+    func test_resignKey_withoutUserInput_keepsPromotedLevel() {
         let controller = makeController(note: StickyNote())
         guard let panel = panel(of: controller) else { return XCTFail("便签窗口未创建") }
         controller.windowDidBecomeKey(Notification(name: NSWindow.didBecomeKeyNotification))
 
+        // 调度中心退场：系统把前台还给原应用导致过渡性失焦，期间没有任何
+        // 用户输入（诊断日志 2026-11-09 实证：becomeKey 后约 250ms 无鼠标
+        // 事件即 resignKey）。该失焦不得撤销抬升，否则便签被原窗口重新覆盖。
         controller.windowDidResignKey(Notification(name: NSWindow.didResignKeyNotification))
 
+        XCTAssertTrue(controller.isSelectionPromoted)
+        XCTAssertEqual(panel.level, StickyNoteWindowLevelPolicy.selectionPromotedLevel)
+    }
+
+    func test_demoteSelection_restoresNormalLevel() {
+        let controller = makeController(note: StickyNote())
+        guard let panel = panel(of: controller) else { return XCTFail("便签窗口未创建") }
+        controller.windowDidBecomeKey(Notification(name: NSWindow.didBecomeKeyNotification))
+
+        // 用户点击便签以外的窗口：撤销抬升，恢复「可被其他窗口遮挡」语义。
+        controller.demoteSelection()
+
         XCTAssertFalse(controller.isSelectionPromoted)
-        XCTAssertEqual(panel.level, .normal, "失焦回落普通层级，恢复「可被其他窗口遮挡」语义")
+        XCTAssertEqual(panel.level, .normal)
+    }
+
+    func test_hide_resetsSelectionPromoted() {
+        let controller = makeController(note: StickyNote())
+        controller.windowDidBecomeKey(Notification(name: NSWindow.didBecomeKeyNotification))
+
+        controller.hide()
+
+        XCTAssertFalse(controller.isSelectionPromoted, "隐藏即退出选中态，下次 show 不得带出旧抬升层级")
     }
 
     func test_repeatedBecomeKey_keepsPromotedLevel() {
