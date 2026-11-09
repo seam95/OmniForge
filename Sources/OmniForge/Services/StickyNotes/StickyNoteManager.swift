@@ -551,6 +551,7 @@ final class StickyNoteManager: ObservableObject {
 
     /// 将最新状态同步到窗口（颜色换肤 / 置顶层级 / 正文等）。
     private func syncWindow(id: UUID) {
+        StickyNoteDiagnostics.shared?.record("manager.syncWindow", noteID: id)
         guard let note = notes.first(where: { $0.id == id }) else { return }
         if note.completed || note.hidden {
             windowPresenter.hide(id: id)
@@ -560,6 +561,8 @@ final class StickyNoteManager: ObservableObject {
     }
 
     private func schedulePersist(id: UUID) {
+        StickyNoteDiagnostics.shared?.record("manager.persist.scheduled", noteID: id,
+                                             fields: ["delay": persistDebounce])
         persistTasks[id]?.cancel()
         let delay = persistDebounce
         persistTasks[id] = Task { [weak self] in
@@ -570,6 +573,7 @@ final class StickyNoteManager: ObservableObject {
     }
 
     private func flushPersist(id: UUID) {
+        StickyNoteDiagnostics.shared?.record("manager.persist.flush", noteID: id)
         persistTasks[id] = nil
         guard let note = notes.first(where: { $0.id == id }) else {
             dirtyNoteIDs.remove(id)

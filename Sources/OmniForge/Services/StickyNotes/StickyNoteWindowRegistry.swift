@@ -13,6 +13,7 @@ final class StickyNoteWindowRegistry: StickyNoteWindowPresenting {
 
     init(stringsProvider: @escaping () -> Strings) {
         self.stringsProvider = stringsProvider
+        StickyNoteDiagnostics.shared?.record("registry.created")
     }
 
     func show(note: StickyNote) {

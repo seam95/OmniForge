@@ -82,6 +82,25 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
     /// 由窗口服务器代选的路径（调度中心 / Exposé）也会让窗口成为 key，
     /// 因此这里能接住应用内点击事件之外的「选中」时机。见 StickyNoteWindowLevelPolicy。
     private(set) var isSelectionPromoted = false
+    private var diagnosticsTimer: Timer?
+
+    private func trace(_ event: String, changesOnly: Bool = false) {
+        StickyNoteDiagnostics.shared?.capture(event, noteID: noteID, panel: panel,
+            pinned: viewModel.note.pinned, promoted: isSelectionPromoted, changesOnly: changesOnly)
+    }
+
+    private func startDiagnostics() {
+        guard StickyNoteDiagnostics.shared != nil else { return }
+        trace("window.created")
+        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard let self else { timer.invalidate(); return }
+                self.trace("window.sample", changesOnly: true)
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        diagnosticsTimer = timer
+    }
 
     init(
         note: StickyNote,
@@ -127,6 +146,7 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
         let host = NSHostingController(rootView: AnyView(view))
         panel.contentViewController = host
         apply(note: note)
+        startDiagnostics()
     }
 
     // MARK: - 状态同步
@@ -136,6 +156,8 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
     /// 回写会把窗口拽回旧位置（正文防抖落库触发的同步即此场景）。
     /// 折叠态目标为折叠条（顶边对齐收缩）；折叠 / 展开切换带收缩动画。
     func apply(note: StickyNote) {
+        trace("window.apply.begin")
+        defer { trace("window.apply.end") }
         viewModel.apply(note)
         applyWindowLevel(pinned: note.pinned)
         let isInteracting = dragStartOrigin != nil || resizeStartFrame != nil
@@ -229,18 +251,27 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
     /// 显示窗口：用 orderFrontRegardless——app 未激活时（如在最大化前台 app 中
     /// 触发新建/恢复显示）也要压到前台 app 窗口之上；不激活 app、不抢焦点。
     func show() {
+        trace("window.show.before")
         panel.orderFrontRegardless()
+        trace("window.show.after")
     }
 
     func hide() {
+        trace("window.hide.before")
         panel.orderOut(nil)
+        trace("window.hide.after")
     }
 
     func bringToFront() {
+        trace("window.bringToFront.before")
         panel.orderFrontRegardless()
+        trace("window.bringToFront.after")
     }
 
     func close() {
+        trace("window.close")
+        diagnosticsTimer?.invalidate()
+        diagnosticsTimer = nil
         frameAnimationTimer?.invalidate()
         frameAnimationTimer = nil
         isAnimatingFrame = false
@@ -257,9 +288,11 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
     /// 点正文 / 新建进入编辑：激活应用并聚焦文本，保证中文输入法可用。
     /// 新建路径由 Registry 的 showAndFocus 复用。
     func activateForTyping() {
+        trace("window.activateForTyping.before")
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         makeTextViewFirstResponder()
+        trace("window.activateForTyping.after")
     }
 
     private func makeTextViewFirstResponder() {
@@ -269,6 +302,7 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
             guard let host = self.panel.contentViewController as? NSHostingController<AnyView> else { return }
             let textView = Self.firstTextView(in: host.view)
             self.panel.makeFirstResponder(textView)
+            self.trace("window.firstResponder.applied")
         }
     }
 
@@ -355,6 +389,8 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
 
     /// 层级统一裁决：置顶 / 选中态临时抬升 / 普通，见 StickyNoteWindowLevelPolicy。
     private func applyWindowLevel(pinned: Bool) {
+        trace("window.applyLevel.before")
+        defer { trace("window.applyLevel.after") }
         panel.level = StickyNoteWindowLevelPolicy.level(
             pinned: pinned,
             selectionPromoted: isSelectionPromoted
@@ -367,11 +403,19 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
     /// 窗口成为 key：用户点击，或调度中心 / Exposé 等系统路径选中窗口。
     /// 未置顶便签临时抬升层级，使系统退场重排后仍保持在前面；失焦即回落。
     func windowDidBecomeKey(_ notification: Notification) {
+        trace("window.didBecomeKey.before")
         setSelectionPromoted(true)
+        trace("window.didBecomeKey.after")
     }
 
     func windowDidResignKey(_ notification: Notification) {
+        trace("window.didResignKey.before")
         setSelectionPromoted(false)
+        trace("window.didResignKey.after")
+    }
+
+    func windowDidChangeOcclusionState(_ notification: Notification) {
+        trace("window.occlusionChanged")
     }
 
     /// 选中态切换：重算层级；抬升后在新层级内前置一次。
@@ -390,11 +434,13 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
     /// 拖动 / 系统路径导致的窗口变化兜底持久化。
     /// 折叠切换动画期间与折叠态（折叠条不可缩放）不回写。
     func windowDidMove(_ notification: Notification) {
+        trace("window.didMove")
         guard !isAnimatingFrame, dragStartOrigin == nil else { return }
         onFrameChanged?(noteID, reportableFrame())
     }
 
     func windowDidResize(_ notification: Notification) {
+        trace("window.didResize")
         guard !isAnimatingFrame, resizeStartFrame == nil, !lastCollapsed else { return }
         onFrameChanged?(noteID, reportableFrame())
     }
