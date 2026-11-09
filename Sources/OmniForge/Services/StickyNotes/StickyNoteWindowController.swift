@@ -78,6 +78,10 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
     private var isAnimatingFrame = false
     /// 折叠切换的逐步 setFrame 定时器。
     private var frameAnimationTimer: Timer?
+    /// 选中态（窗口成为 key）：未置顶便签临时抬升层级。
+    /// 由窗口服务器代选的路径（调度中心 / Exposé）也会让窗口成为 key，
+    /// 因此这里能接住应用内点击事件之外的「选中」时机。见 StickyNoteWindowLevelPolicy。
+    private(set) var isSelectionPromoted = false
 
     init(
         note: StickyNote,
@@ -349,14 +353,35 @@ final class StickyNoteWindowController: NSObject, NSWindowDelegate {
         )
     }
 
+    /// 层级统一裁决：置顶 / 选中态临时抬升 / 普通，见 StickyNoteWindowLevelPolicy。
     private func applyWindowLevel(pinned: Bool) {
-        if pinned {
-            panel.level = .floating
-            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
-        } else {
-            // 未置顶：普通层级、归属当前 Space，可被其他窗口遮挡
-            panel.level = .normal
-            panel.collectionBehavior = [.fullScreenAuxiliary, .ignoresCycle]
+        panel.level = StickyNoteWindowLevelPolicy.level(
+            pinned: pinned,
+            selectionPromoted: isSelectionPromoted
+        )
+        panel.collectionBehavior = StickyNoteWindowLevelPolicy.collectionBehavior(pinned: pinned)
+    }
+
+    // MARK: - 选中态层级
+
+    /// 窗口成为 key：用户点击，或调度中心 / Exposé 等系统路径选中窗口。
+    /// 未置顶便签临时抬升层级，使系统退场重排后仍保持在前面；失焦即回落。
+    func windowDidBecomeKey(_ notification: Notification) {
+        setSelectionPromoted(true)
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        setSelectionPromoted(false)
+    }
+
+    /// 选中态切换：重算层级；抬升后在新层级内前置一次。
+    /// 置顶便签恒为 `.floating`，选中态变化不改变其层级，无需重复前置。
+    private func setSelectionPromoted(_ promoted: Bool) {
+        guard isSelectionPromoted != promoted else { return }
+        isSelectionPromoted = promoted
+        applyWindowLevel(pinned: viewModel.note.pinned)
+        if promoted, !viewModel.note.pinned {
+            panel.orderFrontRegardless()
         }
     }
 
