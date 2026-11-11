@@ -308,6 +308,44 @@ final class MenuBarMetricRendererTests: XCTestCase {
         XCTAssertEqual(afterSpike, "888%")
     }
 
+    /// 回归：合并温度开关改变 value 形状，关闭后不得沿用带温度的水位
+    func test_compactReserve_temperatureShapeUsesIndependentWatermark() {
+        MenuBarMetricLayout.resetCompactHighWaterForTesting()
+        // 带温度："20% 45°" 共 4 位数字 → 水位 4
+        let withTemp = MenuBarMetricLayout.compactReserve(label: "CPU", value: "20% 45°")
+        XCTAssertEqual(withTemp, "88% 88°")
+
+        // 关闭温度后回到单段形状，按自身水位只预留 2 位
+        let withoutTemp = MenuBarMetricLayout.compactReserve(label: "CPU", value: "20%")
+        XCTAssertEqual(withoutTemp, "88%")
+    }
+
+    /// 回归：先开启再关闭温度，块宽必须回到从未开启温度时的紧凑宽度
+    func test_compactMetricBlockWidth_restoresAfterTemperatureRemoved() {
+        MenuBarMetricLayout.resetCompactHighWaterForTesting()
+        let baseline = MenuBarMetricRenderer.metricBlockImage(
+            label: "CPU",
+            value: "20%",
+            minimumValue: "100%",
+            spacing: .compact
+        )
+
+        MenuBarMetricLayout.resetCompactHighWaterForTesting()
+        _ = MenuBarMetricRenderer.metricBlockImage(
+            label: "CPU",
+            value: "20% 45°",
+            minimumValue: "100% 999°",
+            spacing: .compact
+        )
+        let afterTemp = MenuBarMetricRenderer.metricBlockImage(
+            label: "CPU",
+            value: "20%",
+            minimumValue: "100%",
+            spacing: .compact
+        )
+        XCTAssertEqual(baseline.size.width, afterTemp.size.width, accuracy: 1.0)
+    }
+
     /// compact 与 standard 占位行为一致（位数高水位）；网速堆叠块走定宽布局不参与水位
     func test_compactMetricBlockWidth_usesDigitWatermark() {
         MenuBarMetricLayout.resetCompactHighWaterForTesting()

@@ -25,9 +25,18 @@ enum MenuBarMetricLayout {
     /// 两种间距模式共用（仅 spacer 不同）；块宽只在位数首次跨越时变一次。
     static func compactReserve(label: String, value: String) -> String {
         let digits = value.filter(\.isNumber).count
-        let floor = compactFloor(currentDigits: digits, highWater: digitHighWater[label])
-        digitHighWater[label] = floor
+        let key = highWaterKey(label: label, value: value)
+        let floor = compactFloor(currentDigits: digits, highWater: digitHighWater[key])
+        digitHighWater[key] = floor
         return digitMatchedReserve(for: value, minimumDigits: floor)
+    }
+
+    /// 水位键 = label + 非数字骨架，例如 "20% 45°" → "CPU|% °"，"20%" → "CPU|%"。
+    /// 合并温度开关会改变 value 形状；若只按 label 记水位，关闭温度后仍按
+    /// 带温度的 4 位形态预留，块宽永久变宽且不会回落。
+    /// 数字不参与键，同一形状内跨位数仍共享水位，保留防抖行为。
+    private static func highWaterKey(label: String, value: String) -> String {
+        label + "|" + value.filter { !$0.isNumber }
     }
 
     static func compactFloor(currentDigits: Int, highWater: Int?) -> Int {
