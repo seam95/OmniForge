@@ -584,4 +584,128 @@ final class ZcodeLimitsFetcherTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - enc:v2 凭据（ZCode 3.18+）
+
+    /// 测试用钥匙串：返回预设密码，并记录查询参数。
+    private final class FakeKeychain: KeychainPasswordReading {
+        var storedPassword: String?
+        private(set) var requestedService: String?
+        private(set) var requestedAccount: String?
+
+        func password(service: String, account: String) -> String? {
+            requestedService = service
+            requestedAccount = account
+            return storedPassword
+        }
+    }
+
+    /// 按 ZCode 3.18 格式构造 enc:v2:os 值。
+    private func encryptedV2(_ plaintext: String, key: Data) throws -> String {
+        let sealed = try AES.GCM.seal(
+            Data(plaintext.utf8),
+            using: SymmetricKey(data: key)
+        )
+        func encode(_ data: Data) -> String {
+            data.base64EncodedString()
+                .replacingOccurrences(of: "+", with: "-")
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "=", with: "")
+        }
+        let nonce = sealed.nonce.withUnsafeBytes { Data($0) }
+        return "enc:v2:os:\(ZcodeCredentialCipher.keyFingerprint(key)):"
+            + "\(encode(nonce)).\(encode(sealed.tag)).\(encode(sealed.ciphertext))"
+    }
+
+    /// 写 3.18 布局：connectionSelections 选中 + 全部凭据用 v2 加密。
+    private func writeV2ProjectKeyLayout(key: Data) throws {
+        try writeJSON(
+            #"{"providerFamilyConnectionSelections":{"bigmodel":{"kind":"individual-coding-plan"}}}"#,
+            relativePath: "v2/setting.json"
+        )
+        let rawJSON = #"["https://bigmodel.cn","bigmodel","36211748339318777",null,1,"non-team"]"#
+        let encoded = rawJSON.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? rawJSON
+        let keyName = ZcodeLimitsParsing.projectKeyLocationPrefix + encoded
+        let material = #"{"organizationId":"org-1","projectId":"proj-1","apiKeyId":"key-1"}"#
+        let active = try encryptedV2("bigmodel", key: key)
+        let access = try encryptedV2("access-plain", key: key)
+        let projectKey = try encryptedV2(material, key: key)
+        try writeCredentials(
+            #"{"oauth:active_provider":"\#(active)","oauth:bigmodel:access_token":"\#(access)","\#(keyName)":"\#(projectKey)"}"#
+        )
+    }
+
+    func test_v2Credentials_decryptedViaKeychain() async throws {
+        let key = Data((0..<32).map { UInt8($0) })
+        let keychain = FakeKeychain()
+        keychain.storedPassword = key.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        let v2Fetcher = ZcodeLimitsFetcher(
+            session: URLProtocolStub.makeSession(),
+            keychain: keychain
+        )
+        v2Fetcher.homeOverride = homeDir
+        try writeV2ProjectKeyLayout(key: key)
+        URLProtocolStub.handler = { request in
+            let path = request.url?.path ?? ""
+            if path.hasSuffix("/access_tokens") {
+                return .init(statusCode: 200, data: self.projectTokenJSON())
+            }
+            return .init(statusCode: 200, data: self.quotaJSON())
+        }
+
+        let result = try await v2Fetcher.fetchLimits(force: false)
+
+        XCTAssertNotNil(result, "v2 凭据应解密成功并取到 quota")
+        XCTAssertEqual(result?.windows[.session]?.usedPercent, 2)
+        XCTAssertEqual(keychain.requestedService, ZcodeCredentialCipher.keychainService)
+        XCTAssertEqual(
+            keychain.requestedAccount,
+            ZcodeCredentialCipher.keychainAccount(
+                credentialsPath: homeDir.appendingPathComponent("v2/credentials.json").path
+            ),
+            "钥匙串 account 为 credentials.json 路径的 SHA256"
+        )
+        let issue = URLProtocolStub.recordedRequests.first
+        XCTAssertEqual(
+            issue?.value(forHTTPHeaderField: "Authorization"),
+            "Bearer access-plain",
+            "v2 解出的 OAuth token 用于签发"
+        )
+    }
+
+    func test_v2Credentials_keychainUnavailable_returnsNilWithoutRequests() async throws {
+        let key = Data((0..<32).map { UInt8($0) })
+        let keychain = FakeKeychain()  // 无密码：钥匙串不可用
+        let v2Fetcher = ZcodeLimitsFetcher(
+            session: URLProtocolStub.makeSession(),
+            keychain: keychain
+        )
+        v2Fetcher.homeOverride = homeDir
+        try writeV2ProjectKeyLayout(key: key)
+
+        let result = try await v2Fetcher.fetchLimits(force: false)
+
+        XCTAssertNil(result, "密钥缺失 → 未配置，不应崩溃")
+        XCTAssertTrue(URLProtocolStub.recordedRequests.isEmpty, "无可用凭据不应发请求")
+    }
+
+    func test_v2FingerprintMismatch_treatedAsUnconfigured() async throws {
+        let key = Data((0..<32).map { UInt8($0) })
+        let keychain = FakeKeychain()
+        keychain.storedPassword = Data(repeating: 7, count: 32).base64EncodedString()
+        let v2Fetcher = ZcodeLimitsFetcher(
+            session: URLProtocolStub.makeSession(),
+            keychain: keychain
+        )
+        v2Fetcher.homeOverride = homeDir
+        try writeV2ProjectKeyLayout(key: key)
+
+        let result = try await v2Fetcher.fetchLimits(force: false)
+
+        XCTAssertNil(result, "指纹不匹配的凭据应跳过")
+        XCTAssertTrue(URLProtocolStub.recordedRequests.isEmpty)
+    }
 }

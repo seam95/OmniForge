@@ -495,7 +495,7 @@ enum ZcodeLimitsParsing {
 /// zcode 限额取数：按 `~/.zcode/v2` 本地文件定位当前套餐（setting 选中 →
 /// cache 可用 → 内置默认），coding-plan 走 monitor quota 端点（config.json 明文
 /// key 鉴权），start-plan 走 `zcode.z.ai` billing/balance（credentials.json 的
-/// `zcodejwttoken`，enc:v1 AES-256-GCM 解密或明文）。
+/// `zcodejwttoken`，enc:v1 / enc:v2 AES-256-GCM 解密或明文）。
 ///
 /// 解密失败/凭证缺失 → 该候选不可用（fail-soft，SPEC R5：私有实现可能漂移，
 /// 绝不崩溃）；所有候选耗尽 → nil（未配置）。
@@ -510,10 +510,17 @@ final class ZcodeLimitsFetcher: LimitsFetching {
 
     private let session: URLSession
     private let fileManager: FileManager
+    /// 系统钥匙串读取（enc:v2:os 的密钥来源）。
+    private let keychain: KeychainPasswordReading
 
-    init(session: URLSession = .shared, fileManager: FileManager = .default) {
+    init(
+        session: URLSession = .shared,
+        fileManager: FileManager = .default,
+        keychain: KeychainPasswordReading = SystemKeychainPasswordReader()
+    ) {
         self.session = session
         self.fileManager = fileManager
+        self.keychain = keychain
     }
 
     /// zcode home 目录（测试可覆盖）。
@@ -775,8 +782,8 @@ final class ZcodeLimitsFetcher: LimitsFetching {
 
     private func loadCredentials(at credentialsURL: URL) -> ZcodeCredentials? {
         guard let parsed = readJSONObject(credentialsURL) else { return nil }
-        let active = decrypted(parsed["oauth:active_provider"])
-        let jwt = decrypted(parsed["zcodejwttoken"])
+        let active = decrypted(parsed["oauth:active_provider"], credentialsURL: credentialsURL)
+        let jwt = decrypted(parsed["zcodejwttoken"], credentialsURL: credentialsURL)
         return ZcodeCredentials(
             activeProvider: active,
             jwt: (jwt?.isEmpty == false) ? jwt : nil
@@ -789,7 +796,7 @@ final class ZcodeLimitsFetcher: LimitsFetching {
         guard let parsed = readJSONObject(credentialsURL) else { return [] }
         return parsed.compactMap { key, rawValue in
             guard key.hasPrefix(ZcodeLimitsParsing.projectKeyLocationPrefix),
-                  let value = decrypted(rawValue)
+                  let value = decrypted(rawValue, credentialsURL: credentialsURL)
             else { return nil }
             return (key: key, value: value)
         }
@@ -801,7 +808,7 @@ final class ZcodeLimitsFetcher: LimitsFetching {
         var out: [String: String] = [:]
         for family in ["bigmodel", "zai"] {
             let key = "oauth:\(family):access_token"
-            if let token = decrypted(parsed[key])?
+            if let token = decrypted(parsed[key], credentialsURL: credentialsURL)?
                 .trimmingCharacters(in: .whitespacesAndNewlines), !token.isEmpty {
                 out[family] = token
             }
@@ -812,9 +819,18 @@ final class ZcodeLimitsFetcher: LimitsFetching {
     /// enc:v1 解密（AES-256-GCM，密钥 = sha256(secret)）或明文直通；失败 → nil。
     /// secret 的 home 段是**用户主目录**（写入侧与 ZCODE_HOME 覆盖无关）；载荷
     /// 分段为 base64url 无 padding（兼容标准 base64）。
-    private func decrypted(_ value: Any?) -> String? {
+    private func decrypted(_ value: Any?, credentialsURL: URL) -> String? {
         guard let value = value as? String, !value.isEmpty else { return nil }
-        guard value.hasPrefix("enc:v1:") else { return value }
+        // v2（ZCode 3.18+）：钥匙串 / 环境变量密钥 + AES-256-GCM。
+        if value.hasPrefix(ZcodeCredentialCipher.v2Prefix) {
+            return ZcodeCredentialCipher.decryptV2(value) { source in
+                credentialKey(source: source, credentialsURL: credentialsURL)
+            }
+        }
+        guard value.hasPrefix("enc:v1:") else {
+            // 未知加密前缀不得当明文使用，否则密文会被当作 token 发往服务端。
+            return value.hasPrefix("enc:") ? nil : value
+        }
         let parts = value.dropFirst("enc:v1:".count).split(separator: ".")
         guard parts.count == 3,
               let iv = Self.base64Decoded(parts[0]),
@@ -833,6 +849,48 @@ final class ZcodeLimitsFetcher: LimitsFetching {
         }
         let string = String(data: decrypted, encoding: .utf8) ?? ""
         return string.isEmpty ? nil : string
+    }
+
+    // MARK: enc:v2 密钥解析
+
+    /// 系统钥匙串密钥缓存：一次读取（含失败）后复用，避免每轮触发授权提示。
+    private var cachedSystemKey: Data?
+    private var systemKeyAttempted = false
+
+    /// 按 v2 载荷声明的 source 解析密钥。
+    private func credentialKey(source: String, credentialsURL: URL) -> Data? {
+        switch source {
+        case "os":
+            if !systemKeyAttempted {
+                systemKeyAttempted = true
+                cachedSystemKey = Self.systemKey(
+                    credentialsURL: credentialsURL,
+                    keychain: keychain
+                )
+            }
+            return cachedSystemKey
+        case "env":
+            return ZcodeCredentialCipher.environmentKey(
+                environment: ProcessInfo.processInfo.environment
+            )
+        default:
+            return nil
+        }
+    }
+
+    /// 读取钥匙串密钥：service 固定，account 为 credentials.json 绝对路径的 SHA256。
+    private static func systemKey(
+        credentialsURL: URL,
+        keychain: KeychainPasswordReading
+    ) -> Data? {
+        let account = ZcodeCredentialCipher.keychainAccount(
+            credentialsPath: credentialsURL.path
+        )
+        guard let password = keychain.password(
+            service: ZcodeCredentialCipher.keychainService,
+            account: account
+        ) else { return nil }
+        return ZcodeCredentialCipher.key(fromKeychainPassword: password)
     }
 
     /// 凭据 secret 的 home 段：真实用户主目录。
