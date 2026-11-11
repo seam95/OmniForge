@@ -222,6 +222,143 @@ final class TokenUsageManagerTests: XCTestCase {
         )]
     }
 
+    // MARK: - 重置静默闹钟接线
+
+    /// 带未来 resetAt 的快照 — 供闹钟接线测试建立基线。
+    private func alarmWindows(percent: Double, resetOffset: TimeInterval = 3600) -> [LimitWindowKind: UsageWindow] {
+        [.weekly: UsageWindow(
+            usedPercent: percent,
+            resetAt: Date().addingTimeInterval(resetOffset)
+        )]
+    }
+
+    @MainActor
+    func test_applyAfterFetch_syncsResetAlarmScheduler() async throws {
+        let scheduling = FakeOneShotScheduler()
+        let defaults = makeDefaults()
+        let alarmScheduler = TokenResetAlarmScheduler(
+            scheduling: scheduling,
+            defaults: defaults,
+            stringsProvider: { .en }
+        )
+        let fetcher = StubLimitsFetcher(
+            provider: .claude,
+            results: [.success(makeSnapshot(provider: .claude, windows: alarmWindows(percent: 90)))]
+        )
+        let manager = TokenUsageManager(
+            preferences: TokenUsagePreferences(userDefaults: defaults),
+            fetchers: [.claude: fetcher],
+            scheduler: FakeRepeatingScheduler(),
+            resetAlarmScheduler: alarmScheduler
+        )
+        manager.start()
+        manager.demandDidAppear()
+
+        try await waitUntil { manager.limits[.claude] != nil }
+        XCTAssertFalse(scheduling.activeDeadlines.isEmpty, "限额回包后闹钟已布防")
+    }
+
+    @MainActor
+    func test_alarmCalibratePoint_refreshesProviderWithForce() async throws {
+        let scheduling = FakeOneShotScheduler()
+        let defaults = makeDefaults()
+        let alarmScheduler = TokenResetAlarmScheduler(
+            scheduling: scheduling,
+            defaults: defaults,
+            stringsProvider: { .en }
+        )
+        let fetcher = StubLimitsFetcher(
+            provider: .claude,
+            results: [
+                .success(makeSnapshot(provider: .claude, windows: alarmWindows(percent: 90))),
+                .success(makeSnapshot(provider: .claude, windows: alarmWindows(percent: 85))),
+            ]
+        )
+        let manager = TokenUsageManager(
+            preferences: TokenUsagePreferences(userDefaults: defaults),
+            fetchers: [.claude: fetcher],
+            scheduler: FakeRepeatingScheduler(),
+            resetAlarmScheduler: alarmScheduler
+        )
+        manager.start()
+        manager.demandDidAppear()
+        try await waitUntil { fetcher.callCount == 1 }
+
+        // 推进到校准点（resetAt − 60s）：仅触发该 provider 的 force 拉取。
+        let calibrateDeadline = scheduling.activeDeadlines.min()!
+        scheduling.fire(through: calibrateDeadline)
+        try await waitUntil { fetcher.callCount == 2 }
+        XCTAssertEqual(fetcher.requestedForce, true, "校准拉取穿透缓存")
+    }
+
+    @MainActor
+    func test_alarmFirePoint_celebratesAndRefetchesForNextCycle() async throws {
+        let scheduling = FakeOneShotScheduler()
+        let defaults = makeDefaults()
+        let alarmScheduler = TokenResetAlarmScheduler(
+            scheduling: scheduling,
+            defaults: defaults,
+            stringsProvider: { .en }
+        )
+        let monitor = TokenLimitResetMonitor(
+            configuration: { TokenUsageConfiguration() },
+            stringsProvider: { .en },
+            userDefaults: defaults,
+            now: { Date() }
+        )
+        var celebrated: LimitResetEvent?
+        monitor.onCelebrate = { event, _, _ in celebrated = event }
+        let fetcher = StubLimitsFetcher(
+            provider: .claude,
+            results: [.success(makeSnapshot(provider: .claude, windows: alarmWindows(percent: 90)))]
+        )
+        let manager = TokenUsageManager(
+            preferences: TokenUsagePreferences(userDefaults: defaults),
+            fetchers: [.claude: fetcher],
+            scheduler: FakeRepeatingScheduler(),
+            resetMonitor: monitor,
+            resetAlarmScheduler: alarmScheduler
+        )
+        manager.start()
+        manager.demandDidAppear()
+        try await waitUntil { fetcher.callCount == 1 }
+
+        // 推进到触发点：静默庆祝 + 到点后拉取建立下一周期基线。
+        let fireDeadline = scheduling.activeDeadlines.max()!
+        scheduling.fire(through: fireDeadline)
+
+        XCTAssertNotNil(celebrated, "到点触发庆祝")
+        XCTAssertEqual(celebrated?.provider, .claude)
+        try await waitUntil { fetcher.callCount == 2 }
+    }
+
+    @MainActor
+    func test_stop_suspendsResetAlarms() async throws {
+        let scheduling = FakeOneShotScheduler()
+        let defaults = makeDefaults()
+        let alarmScheduler = TokenResetAlarmScheduler(
+            scheduling: scheduling,
+            defaults: defaults,
+            stringsProvider: { .en }
+        )
+        let fetcher = StubLimitsFetcher(
+            provider: .claude,
+            results: [.success(makeSnapshot(provider: .claude, windows: alarmWindows(percent: 90)))]
+        )
+        let manager = TokenUsageManager(
+            preferences: TokenUsagePreferences(userDefaults: defaults),
+            fetchers: [.claude: fetcher],
+            scheduler: FakeRepeatingScheduler(),
+            resetAlarmScheduler: alarmScheduler
+        )
+        manager.start()
+        manager.demandDidAppear()
+        try await waitUntil { scheduling.activeDeadlines.isEmpty == false }
+
+        manager.stop()
+        XCTAssertTrue(scheduling.activeDeadlines.isEmpty, "功能停用 → 闹钟全部挂起")
+    }
+
     // MARK: - 工具
 
     private func waitUntil(

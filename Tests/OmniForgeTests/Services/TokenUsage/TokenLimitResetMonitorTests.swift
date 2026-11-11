@@ -161,6 +161,100 @@ final class TokenLimitResetMonitorTests: XCTestCase {
         XCTAssertEqual(callCount, 1, "重启后冷却记忆仍在 → 不重复庆祝")
     }
 
+    // MARK: - 静默闹钟路径（fireAlarm）
+
+    func test_fireAlarm_firesWithDefaults() {        let monitor = makeMonitor()
+        var celebrated: (event: LimitResetEvent, toast: Bool, confetti: Bool)?
+        monitor.onCelebrate = { event, toast, confetti in
+            celebrated = (event, toast, confetti)
+        }
+
+        monitor.fireAlarm(
+            provider: .claude,
+            windowKey: "claude.weekly",
+            windowLabel: "7d",
+            previousPercent: 90
+        )
+
+        XCTAssertNotNil(celebrated)
+        XCTAssertEqual(celebrated?.event.provider, .claude)
+        XCTAssertEqual(celebrated?.event.windowKey, "claude.weekly")
+        XCTAssertEqual(celebrated?.event.windowLabel, "7d")
+        XCTAssertEqual(celebrated?.event.previousPercent, 90)
+        XCTAssertTrue(celebrated!.toast)
+        XCTAssertTrue(celebrated!.confetti)
+    }
+
+    func test_fireAlarm_lowPreviousUsage_noCallback() {
+        let monitor = makeMonitor()
+        var callCount = 0
+        monitor.onCelebrate = { _, _, _ in callCount += 1 }
+
+        monitor.fireAlarm(
+            provider: .claude,
+            windowKey: "claude.weekly",
+            windowLabel: "7d",
+            previousPercent: 3
+        )
+
+        XCTAssertEqual(callCount, 0, "上一窗口几乎没用（< minDrop）→ 不打扰")
+    }
+
+    func test_fireAlarm_togglesOff_noCallback() {
+        var config = TokenUsageConfiguration()
+        config.resetToastEnabled = false
+        config.resetConfettiEnabled = false
+        let monitor = makeMonitor(config: config)
+        var callCount = 0
+        monitor.onCelebrate = { _, _, _ in callCount += 1 }
+
+        monitor.fireAlarm(
+            provider: .claude,
+            windowKey: "claude.weekly",
+            windowLabel: "7d",
+            previousPercent: 90
+        )
+
+        XCTAssertEqual(callCount, 0)
+    }
+
+    func test_fireAlarm_cooldownSuppressesRepeat() {
+        let monitor = makeMonitor()
+        var callCount = 0
+        monitor.onCelebrate = { _, _, _ in callCount += 1 }
+
+        monitor.fireAlarm(provider: .claude, windowKey: "claude.weekly", windowLabel: "7d", previousPercent: 90)
+        monitor.fireAlarm(provider: .claude, windowKey: "claude.weekly", windowLabel: "7d", previousPercent: 90)
+
+        XCTAssertEqual(callCount, 1, "cooldown 内同一窗口不重复")
+    }
+
+    func test_fireAlarm_thenPollingRollover_doesNotDoubleCelebrate() {
+        let monitor = makeMonitor()
+        var callCount = 0
+        monitor.onCelebrate = { _, _, _ in callCount += 1 }
+
+        // 静默闹钟先报；随后用户打开面板，轮询路径检出同一 rollover。
+        monitor.fireAlarm(provider: .codex, windowKey: "codex.weekly", windowLabel: "7d", previousPercent: 90)
+        monitor.evaluate(limits: makeBaselineLimits(), at: Date(timeIntervalSince1970: 1_704_799_900))
+        monitor.evaluate(limits: makeRolledOverLimits(), at: Date(timeIntervalSince1970: 1_704_800_100))
+
+        XCTAssertEqual(callCount, 1, "两条路径共享 cooldown — 闹钟先报则轮询不重报")
+    }
+
+    func test_pollingRollover_thenFireAlarm_doesNotDoubleCelebrate() {
+        let monitor = makeMonitor()
+        var callCount = 0
+        monitor.onCelebrate = { _, _, _ in callCount += 1 }
+
+        // 反序：面板轮询先报（用户开着面板），闹钟到点不再重复。
+        monitor.evaluate(limits: makeBaselineLimits(), at: Date(timeIntervalSince1970: 1_704_799_900))
+        monitor.evaluate(limits: makeRolledOverLimits(), at: Date(timeIntervalSince1970: 1_704_800_100))
+        monitor.fireAlarm(provider: .codex, windowKey: "codex.weekly", windowLabel: "7d", previousPercent: 90)
+
+        XCTAssertEqual(callCount, 1)
+    }
+
     // MARK: - 与 TokenUsageManager 同频接线
 
     @MainActor

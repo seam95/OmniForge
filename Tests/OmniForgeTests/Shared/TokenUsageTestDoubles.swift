@@ -287,6 +287,41 @@ final class FakeCursorCSVFetcher: CursorCSVFetching {
 
 // MARK: - 共享测试辅助
 
+/// 测试用单发闹钟调度替身 — 记录布防条目并支持按时间手动触发（模拟墙钟推进）。
+final class FakeOneShotScheduler: OneShotAlarmScheduling {
+    final class Entry {
+        let deadline: Date
+        let action: () -> Void
+        var cancelled = false
+        init(deadline: Date, action: @escaping () -> Void) {
+            self.deadline = deadline
+            self.action = action
+        }
+    }
+
+    private(set) var entries: [Entry] = []
+
+    func schedule(at deadline: Date, _ action: @escaping () -> Void) -> AnyCancellable {
+        let entry = Entry(deadline: deadline, action: action)
+        entries.append(entry)
+        return AnyCancellable { entry.cancelled = true }
+    }
+
+    /// 触发所有 deadline 已到且未取消的条目（单发：触发后移除）。
+    func fire(through date: Date) {
+        let due = entries.filter { !$0.cancelled && $0.deadline <= date }
+        for entry in due {
+            entries.removeAll { $0 === entry }
+            entry.action()
+        }
+    }
+
+    /// 仍在等待的 deadline 列表（按时间排序，断言布防用）。
+    var activeDeadlines: [Date] {
+        entries.filter { !$0.cancelled }.map(\.deadline).sorted()
+    }
+}
+
 extension Data {
     /// 解析 application/x-www-form-urlencoded 请求体（Gemini/Kimi 刷新断言共用）。
     func dictionaryFromFormURLEncoded() -> [String: String]? {

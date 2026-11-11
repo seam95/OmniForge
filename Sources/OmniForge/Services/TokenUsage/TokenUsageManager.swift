@@ -49,6 +49,8 @@ final class TokenUsageManager: ObservableObject {
     private let alerts: TokenUsageAlertManager?
     /// 限额重置监控 — 窗口 rollover 后触发庆祝（toast/撒花，按用户开关）。
     private let resetMonitor: TokenLimitResetMonitor?
+    /// 重置静默闹钟 — 面板关闭期间按窗口 resetAt 到点校准/提醒（SPEC 2026-11-11）。
+    private let resetAlarmScheduler: TokenResetAlarmScheduler?
     /// 凭证状态读取（Keychain/环境变量判定）。注入而非直接调用静态方法：
     /// 单元测试注入空集合，避免测试进程访问真实用户钥匙串触发授权弹窗。
     private let credentialStateReader: () -> Set<TokenUsageProvider>
@@ -81,6 +83,7 @@ final class TokenUsageManager: ObservableObject {
         usageCollectors: [TokenUsageProvider: UsageCollecting] = [:],
         alerts: TokenUsageAlertManager? = nil,
         resetMonitor: TokenLimitResetMonitor? = nil,
+        resetAlarmScheduler: TokenResetAlarmScheduler? = nil,
         credentialStateReader: @escaping () -> Set<TokenUsageProvider> = { [] }
     ) {
         self.preferences = preferences
@@ -90,7 +93,22 @@ final class TokenUsageManager: ObservableObject {
         self.usageCollectors = usageCollectors
         self.alerts = alerts
         self.resetMonitor = resetMonitor
+        self.resetAlarmScheduler = resetAlarmScheduler
         self.credentialStateReader = credentialStateReader
+
+        // 静默闹钟接线：校准点单 provider force 拉取；到点先提醒再拉取建新周期基线。
+        resetAlarmScheduler?.onCalibrate = { [weak self] provider in
+            self?.refreshProvider(provider, force: true)
+        }
+        resetAlarmScheduler?.onFire = { [weak self] record in
+            self?.resetMonitor?.fireAlarm(
+                provider: record.provider,
+                windowKey: record.windowKey,
+                windowLabel: record.windowLabel,
+                previousPercent: record.usedPercent
+            )
+            self?.refreshProvider(record.provider, force: true)
+        }
 
         for (provider, collector) in usageCollectors {
             collector.onUsageDidChange = { [weak self] changed in
@@ -131,6 +149,8 @@ final class TokenUsageManager: ObservableObject {
         guard !isActive else { return }
         isActive = true
         rescheduleRefreshTimer()
+        // 重置闹钟：冷启动从持久化记录恢复（不触网、不读 Keychain）。
+        resetAlarmScheduler?.restore()
         // #04：启动采集器（首次即后台全量回填），并先渲染一次已有快照。
         for collector in usageCollectors.values {
             collector.start()
@@ -147,6 +167,7 @@ final class TokenUsageManager: ObservableObject {
         refreshTimer = nil
         inFlight.removeAll()
         usageBackfilling = false
+        resetAlarmScheduler?.suspend()
         for collector in usageCollectors.values {
             collector.stop()
         }
@@ -184,14 +205,20 @@ final class TokenUsageManager: ObservableObject {
     // MARK: - 限额取数
 
     private func refreshLimits(force: Bool) {
-        for (provider, fetcher) in fetchers where !inFlight.contains(provider) {
-            inFlight.insert(provider)
-            Task { [weak self] in
-                guard let self else { return }
-                let result = await self.fetchOne(provider: provider, fetcher: fetcher, force: force)
-                self.apply(result, provider: provider)
-                self.inFlight.remove(provider)
-            }
+        for provider in fetchers.keys {
+            refreshProvider(provider, force: force)
+        }
+    }
+
+    /// 单 provider 限额刷新（闹钟校准 / 到点后拉取走这里；复用 inFlight 单飞）。
+    private func refreshProvider(_ provider: TokenUsageProvider, force: Bool) {
+        guard let fetcher = fetchers[provider], !inFlight.contains(provider) else { return }
+        inFlight.insert(provider)
+        Task { [weak self] in
+            guard let self else { return }
+            let result = await self.fetchOne(provider: provider, fetcher: fetcher, force: force)
+            self.apply(result, provider: provider)
+            self.inFlight.remove(provider)
         }
     }
 
@@ -240,6 +267,8 @@ final class TokenUsageManager: ObservableObject {
         alerts?.evaluate(result)
         // 重置监控同频评估（内部按窗口 resetAt 前进 + 用量下降判定，快照防抖）。
         resetMonitor?.evaluate(limits: limits)
+        // 静默闹钟同步（漂移重设 / 新窗口布防 / 消失移除，持久化）。
+        resetAlarmScheduler?.sync(limits: limits)
         // 轮询/刷新完成即自愈凭证缓存（低频，覆盖外部改动凭证的场景）。
         refreshCredentialCache()
         // 仅当有实际数据（新鲜成功或 last-good 回退）时推进「更新时间」，且取两者较新者。

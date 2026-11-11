@@ -122,12 +122,17 @@ struct FeatureFactory {
                         showsConfetti: showsConfetti
                     )
                 }
+                // 重置静默闹钟：与 monitor 共用同一 L10n 实例（窗口 label 口径一致）。
+                let resetAlarmScheduler = TokenResetAlarmScheduler(
+                    stringsProvider: { l10n.s }
+                )
                 runtime.register(
                     .tokenUsage,
                     manager: Self.makeProductionTokenUsage(
                         preferences: preferences,
                         alerts: alerts,
-                        resetMonitor: resetMonitor
+                        resetMonitor: resetMonitor,
+                        resetAlarmScheduler: resetAlarmScheduler
                     )
                 )
             }
@@ -557,7 +562,8 @@ struct FeatureFactory {
     private static func makeProductionTokenUsage(
         preferences: TokenUsagePreferences,
         alerts: TokenUsageAlertManager? = nil,
-        resetMonitor: TokenLimitResetMonitor? = nil
+        resetMonitor: TokenLimitResetMonitor? = nil,
+        resetAlarmScheduler: TokenResetAlarmScheduler? = nil
     ) -> TokenUsageManager {
         // #03：限额取数外挂弹性缓存（内存 TTL + 磁盘 last-good + 429 冷却持久化）。
         let cache = TokenUsageLimitsCache()
@@ -648,6 +654,7 @@ struct FeatureFactory {
             ],
             alerts: alerts,
             resetMonitor: resetMonitor,
+            resetAlarmScheduler: resetAlarmScheduler,
             // 生产路径读真实 Keychain；测试构造 TokenUsageManager 时默认空集合，不触碰用户钥匙串。
             credentialStateReader: { TokenUsageCredentialStateReader.configuredProviders() }
         )

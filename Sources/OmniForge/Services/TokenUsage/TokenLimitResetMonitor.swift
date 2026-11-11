@@ -58,4 +58,39 @@ final class TokenLimitResetMonitor {
             observer(first, showsToast, showsConfetti)
         }
     }
+
+    /// 静默闹钟路径入口（TokenResetAlarmScheduler 到点直调）：不依赖新拉取读数，
+    /// 按已知窗口直接触发。与轮询路径共享 `lastEventAt` cooldown（1h）— 任一路径
+    /// 先报即压制另一路径；上一窗口用量低于 `minDrop`（没怎么用）不报。
+    /// 写入 lastEventAt 的时机与 evaluate 对齐（先记后按开关过滤）。
+    func fireAlarm(
+        provider: TokenUsageProvider,
+        windowKey: String,
+        windowLabel: String,
+        previousPercent: Double
+    ) {
+        guard previousPercent >= detector.minDrop else { return }
+        let timestamp = now().timeIntervalSince1970
+        var snapshot = LimitResetDetector.loadSnapshot(defaults)
+        if let last = snapshot.lastEventAt[windowKey], timestamp - last < detector.cooldown {
+            return
+        }
+        snapshot.lastEventAt[windowKey] = timestamp
+        LimitResetDetector.saveSnapshot(snapshot, defaults)
+
+        let configuration = configurationProvider()
+        let showsToast = configuration.resetToastEnabled
+        let showsConfetti = configuration.resetConfettiEnabled
+        guard showsToast || showsConfetti else { return }
+        let event = LimitResetEvent(
+            provider: provider,
+            windowKey: windowKey,
+            windowLabel: windowLabel,
+            previousPercent: previousPercent
+        )
+        onCelebrate?(event, showsToast, showsConfetti)
+        for observer in celebrateObservers {
+            observer(event, showsToast, showsConfetti)
+        }
+    }
 }
