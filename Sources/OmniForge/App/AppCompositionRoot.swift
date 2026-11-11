@@ -185,10 +185,6 @@ final class AppCompositionRoot {
     private static func makeFoundation(userDefaults: UserDefaults) -> FoundationParts {
         Defaults.register(in: userDefaults)
 
-        if userDefaults.bool(forKey: UserDefaultsKeys.hideDockIcon) {
-            NSApp?.setActivationPolicy(.accessory)
-        }
-
         let recoveryStore: ClamshellRecoveryStore
         if let store = try? ClamshellRecoveryStore.production() {
             recoveryStore = store

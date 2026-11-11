@@ -71,18 +71,6 @@ final class AppCompositionRootTests: XCTestCase {
         _ = root
     }
 
-    func test_compose_setsInitialDockPolicy_whenHideDockIcon() {
-        let suiteName = "AppCompositionRootTests_Dock"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defaults.removePersistentDomain(forName: suiteName)
-        defaults.set(true, forKey: UserDefaultsKeys.hideDockIcon)
-
-        let root = AppCompositionRoot.compose(userDefaults: defaults)
-
-        XCTAssertEqual(NSApp?.activationPolicy(), .accessory)
-        _ = root
-    }
-
     func test_compose_alwaysInstallsClamshellRecoveryCoordinator() {
         let root = AppCompositionRoot.compose()
         XCTAssertEqual(root.bootstrapPhase, .ready)

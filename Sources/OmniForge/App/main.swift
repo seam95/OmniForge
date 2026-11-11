@@ -11,6 +11,12 @@ do {
     case let .primary(lease):
         let delegate = MainActor.assumeIsolated { AppDelegate(instanceLease: lease) }
         let app = NSApplication.shared
+        // LSUIElement=true 使进程默认 accessory；仅当用户要求显示 Dock 图标时
+        // 在此最早时机切 regular，避免任何运行时 regular→accessory 回切（见
+        // AppState.applyLaunchDockPolicy 注释）。
+        MainActor.assumeIsolated {
+            AppState.applyLaunchDockPolicy(app: app, userDefaults: .standard)
+        }
         app.delegate = delegate
         app.run()
     case .secondary:

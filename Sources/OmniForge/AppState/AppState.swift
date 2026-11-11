@@ -310,6 +310,17 @@ final class AppState: ObservableObject {
         )
     }
 
+    /// 启动时的 Dock policy 应用点，由 main.swift 在 `NSApplication.shared` 创建后立即调用。
+    /// Info.plist 已声明 LSUIElement=true，进程默认 accessory（启动即无 Dock 图标），
+    /// 因此只有用户要求显示 Dock 图标时才切 regular（promotion 方向无已知静默失败问题）。
+    /// 注意：不要反向调用（启动后再设 accessory）——该 demotion 在部分 macOS 版本上
+    /// 静默失败且进程内 getter 仍报 accessory，Dock 图标会残留（steipete/CodexBar#4101）。
+    static func applyLaunchDockPolicy(app: NSApplication, userDefaults: UserDefaults) {
+        let shouldShowDockIcon = !userDefaults.bool(forKey: UserDefaultsKeys.hideDockIcon)
+        guard shouldShowDockIcon else { return }
+        _ = app.setActivationPolicy(.regular)
+    }
+
     private func updateDockIconVisibility() {
         guard !isRunningUnitTests else { return }
         guard let app = NSApp else { return }

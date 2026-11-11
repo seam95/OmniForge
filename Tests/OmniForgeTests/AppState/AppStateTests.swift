@@ -1,9 +1,46 @@
+import AppKit
 import Combine
 import XCTest
 @testable import OmniForge
 
 @MainActor
 final class AppStateTests: XCTestCase {
+    // MARK: - 启动 Dock policy
+
+    /// 回归（2026-11-11）：LSUIElement=true 后，启动只允许 promotion 方向切换。
+    /// 用户要求显示 Dock 图标时切 regular。
+    func test_applyLaunchDockPolicy_promotesToRegular_whenDockIconVisible() {
+        let suiteName = "AppStateTests_LaunchDock_Visible"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        defaults.set(false, forKey: UserDefaultsKeys.hideDockIcon)
+        let app = NSApplication.shared
+
+        AppState.applyLaunchDockPolicy(app: app, userDefaults: defaults)
+
+        XCTAssertEqual(app.activationPolicy(), .regular)
+    }
+
+    /// 回归（2026-11-11）：隐藏开关开启时不得执行任何运行时 demotion。
+    /// regular→accessory 在部分 macOS 版本静默失败且 getter 失真，图标会残留
+    /// （steipete/CodexBar#4101），因此隐藏完全依赖 Info.plist 的 LSUIElement。
+    func test_applyLaunchDockPolicy_keepsPolicy_whenHideDockIcon() {
+        let suiteName = "AppStateTests_LaunchDock_Hidden"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        defaults.set(true, forKey: UserDefaultsKeys.hideDockIcon)
+        let app = NSApplication.shared
+        // 前置强制 regular，才能检测实现是否错误地执行了 demotion。
+        app.setActivationPolicy(.regular)
+
+        AppState.applyLaunchDockPolicy(app: app, userDefaults: defaults)
+
+        XCTAssertEqual(
+            app.activationPolicy(), .regular,
+            "隐藏开关开启时启动不得调用 setActivationPolicy(.accessory)"
+        )
+    }
+
     func test_clipboardEntryChangeDoesNotForwardAppStateChange() {
         let state = makeStateForObservation()
         var changeCount = 0

@@ -35,6 +35,10 @@
 	<string>4.1.0</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
+	<!-- 默认无 Dock 图标（agent 应用）。需要显示时由 main.swift 启动早期切 regular；
+	     禁止"先 regular 再 accessory"的启动路径，该 demotion 在部分 macOS 版本静默失败。 -->
+	<key>LSUIElement</key>
+	<true/>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>SUFeedURL</key>
