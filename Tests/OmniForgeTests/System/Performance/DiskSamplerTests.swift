@@ -200,4 +200,92 @@ final class DiskSamplerTests: XCTestCase {
         XCTAssertEqual(capacity.free, 500)
         XCTAssertEqual(capacity.used, 1500)
     }
+
+    // MARK: - 元数据 stale-while-revalidate
+
+    func test_needsMetadataRefresh_rules() {
+        // 无缓存：恒需刷新
+        XCTAssertTrue(DiskSampler.needsMetadataRefresh(cachedAt: nil, isFull: true, now: 100, isForeground: true))
+        // 前台：30s 内不刷新，达到 30s 即刷新
+        XCTAssertFalse(DiskSampler.needsMetadataRefresh(cachedAt: 70, isFull: true, now: 99.9, isForeground: true))
+        XCTAssertTrue(DiskSampler.needsMetadataRefresh(cachedAt: 70, isFull: true, now: 100, isForeground: true))
+        // 后台 isFull 缓存：3600s 内可复用（3599 未过期，达到 3600 即刷新）
+        XCTAssertFalse(DiskSampler.needsMetadataRefresh(cachedAt: 100, isFull: true, now: 3699, isForeground: false))
+        XCTAssertTrue(DiskSampler.needsMetadataRefresh(cachedAt: 100, isFull: true, now: 3700, isForeground: false))
+        // 后台失败缓存（isFull=false）：不获长缓存，立即过期重试
+        XCTAssertTrue(DiskSampler.needsMetadataRefresh(cachedAt: 100, isFull: false, now: 101, isForeground: false))
+    }
+
+    /// 线程安全的 runner 调用记录：diskutil 在元数据队列被异步调用
+    private final class DiskutilCallCounter {
+        private let lock = NSLock()
+        private var calls: [[String]] = []
+        func record(_ arguments: [String]) {
+            lock.withLock { calls.append(arguments) }
+        }
+        var count: Int { lock.withLock { calls.count } }
+    }
+
+    private static let metadataPlistXML = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    <plist version="1.0">
+    <dict>
+        <key>DeviceIdentifier</key>
+        <string>disk3s5</string>
+        <key>Internal</key>
+        <true/>
+    </dict>
+    </plist>
+    """
+
+    func test_metadataFirstSampleDoesNotBlockAndCachesAsync() throws {
+        let counter = DiskutilCallCounter()
+        let sampler = DiskSampler(diskutilRunner: { _, _, _ in
+            counter.record(["info"])
+            return BoundedProcessOutput(exitCode: 0, stdout: Self.metadataPlistXML, stderr: "", truncated: false)
+        })
+        // 首次采样：无缓存，sample 立即返回回退元数据，diskutil 异步执行
+        let start = Date()
+        let reading = try sampler.sample(now: 10, refreshMetadata: true)
+        XCTAssertLessThan(Date().timeIntervalSince(start), 1.0, "sample 不得同步等待 diskutil")
+        XCTAssertFalse(reading.devices.isEmpty)
+
+        // 异步落缓存（isFull=true）
+        let cached = expectation(for: NSPredicate { _, _ in
+            sampler.hasCachedMetadata("/", isFull: true)
+        }, evaluatedWith: nil)
+        wait(for: [cached], timeout: 3)
+
+        // 30s 阈值内再次采样：不再发起新刷新
+        _ = try sampler.sample(now: 11, refreshMetadata: true)
+        XCTAssertEqual(counter.count, 1)
+
+        // 缓存过期后再次采样：重新发起刷新
+        _ = try sampler.sample(now: 51, refreshMetadata: true)
+        let refreshed = expectation(for: NSPredicate { _, _ in
+            counter.count >= 2
+        }, evaluatedWith: nil)
+        wait(for: [refreshed], timeout: 3)
+    }
+
+    func test_metadataRefreshDedupesInFlightRequests() throws {
+        let counter = DiskutilCallCounter()
+        let sampler = DiskSampler(diskutilRunner: { _, _, _ in
+            counter.record(["info"])
+            Thread.sleep(forTimeInterval: 0.3) // 拉长在途窗口
+            return BoundedProcessOutput(exitCode: 0, stdout: Self.metadataPlistXML, stderr: "", truncated: false)
+        })
+        // 第一次触发刷新（在途）；紧接着的过期采样必须被在途去重挡下
+        _ = try sampler.sample(now: 10, refreshMetadata: true)
+        _ = try sampler.sample(now: 100, refreshMetadata: true)
+
+        let done = expectation(for: NSPredicate { _, _ in
+            counter.count >= 1 && sampler.hasCachedMetadata("/", isFull: true)
+        }, evaluatedWith: nil)
+        wait(for: [done], timeout: 3)
+        // 在途期间的第二次采样不得重复发起（留出迟到调用观察窗）
+        Thread.sleep(forTimeInterval: 0.2)
+        XCTAssertEqual(counter.count, 1, "同一卷的 diskutil 在途期间不得重复发起")
+    }
 }

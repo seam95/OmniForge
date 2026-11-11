@@ -2,18 +2,35 @@ import Foundation
 import IOKit
 
 final class DiskSampler: DiskSampling {
+    /// diskutil 执行器签名（与 BoundedProcessRunner.runBlocking 一致），可注入供测试
+    typealias DiskutilRunner = (URL, [String], BoundedProcessRunner.Options) -> BoundedProcessOutput?
+
     private var previous: [String: (counters: DiskIOCounters, time: TimeInterval)] = [:]
     private var sessionTotals: [String: DiskIOCounters] = [:]
-    /// mountPath → diskutil 元数据缓存；isFull 表示已成功跑过完整 diskutil
+    /// mountPath → diskutil 元数据缓存；isFull 表示已成功跑过完整 diskutil。
+    /// stale-while-revalidate：命中即返回（无论新旧），过期/缺失仅异步刷新，
+    /// 下一轮采样生效——sample() 不在指标采样队列上同步跑 diskutil。
     private var metadataCache: [String: (metadata: DiskSupport.DiskutilMetadata, updatedAt: TimeInterval, isFull: Bool)] = [:]
+    /// 在途异步刷新去重：diskutil 未返回前同一卷不重复发起
+    private var inFlightMetadataRefreshes: Set<String> = []
+    /// 元数据缓存跨队列访问（采样队列读、元数据队列写），锁保护；
+    /// previous/sessionTotals/lastRates 仍只在采样队列串行访问，不入锁。
+    private let metadataLock = NSLock()
+    private let diskutilRunner: DiskutilRunner
     /// diskID → 上次有效速率：短间隔样本作废时沿用，避免面板速率闪空
     private var lastRates: [String: (read: Double?, write: Double?)] = [:]
     private static let maxGap: TimeInterval = 15
     private static let metadataRefreshInterval: TimeInterval = 30
     /// 后台可复用 full 缓存上限（对齐 vorssaint / SPEC）
     private static let backgroundMetadataRefreshInterval: TimeInterval = 3600
+    /// diskutil 元数据异步刷新队列：独立于共享指标采样队列，
+    /// 子进程挂起（超时 8s 上限由有界执行器 SIGKILL 兜底）时不再阻塞
+    /// 同轮 CPU/网络等指标的回写。
+    private static let metadataRefreshQueue = DispatchQueue(label: "app.omniforge.monitor.disk.metadata", qos: .utility)
 
-    init() {}
+    init(diskutilRunner: @escaping DiskutilRunner = BoundedProcessRunner.runBlocking) {
+        self.diskutilRunner = diskutilRunner
+    }
 
     /// Pure helper: compute rates and updated session totals for one disk.
     /// - Returns rates as nil when previous is missing, elapsed is invalid, gap exceeds maxGap,
@@ -181,42 +198,82 @@ final class DiskSampler: DiskSampling {
         )
     }
 
-    /// 元数据缓存：30s 内可复用；仅 isFull=true 的成功结果可在后台复用至 3600s。
-    /// isFull=false（diskutil 失败）不得当作 full，避免后台最长 3600s 跳过重试。
+    /// 是否需要发起元数据刷新（纯函数，供测试）：
+    /// - 前台：缓存超过 30s。
+    /// - 后台：仅 isFull 成功缓存可复用至 3600s；isFull=false（上次 diskutil 失败）
+    ///   不获后台长缓存。行为差异说明：旧实现前台对失败缓存每 tick 同步重试，
+    ///   现统一为 30s 异步重试，避免失败风暴。
+    static func needsMetadataRefresh(
+        cachedAt: TimeInterval?,
+        isFull: Bool,
+        now: TimeInterval,
+        isForeground: Bool
+    ) -> Bool {
+        guard let cachedAt else { return true }
+        let threshold = isForeground
+            ? metadataRefreshInterval
+            : (isFull ? backgroundMetadataRefreshInterval : 0)
+        return now - cachedAt >= threshold
+    }
+
+    /// 元数据读取：命中缓存立即返回；过期或缺失时仅异步刷新并返回现有值。
+    /// 首次见到该卷（无缓存）返回 bsd 回退的空 metadata——容量走 FileManager 卷值，
+    /// 介质名/SMART 由下一轮（刷新落缓存后）补齐。
     private func metadata(
         for volume: DiskSupport.MountedVolume,
         now: TimeInterval,
         refresh: Bool
     ) -> DiskSupport.DiskutilMetadata {
-        if let cached = metadataCache[volume.mountPath],
-           now - cached.updatedAt < Self.metadataRefreshInterval,
-           cached.isFull || !refresh {
+        let cached = metadataLock.withLock { metadataCache[volume.mountPath] }
+        if let cached,
+           !Self.needsMetadataRefresh(cachedAt: cached.updatedAt, isFull: cached.isFull, now: now, isForeground: refresh) {
             return cached.metadata
         }
-        // 后台：仅复用成功 full 缓存，避免关面板后狂跑 diskutil
-        if !refresh,
-           let cached = metadataCache[volume.mountPath],
-           cached.isFull,
-           now - cached.updatedAt < Self.backgroundMetadataRefreshInterval {
-            return cached.metadata
+        scheduleMetadataRefresh(for: volume, now: now)
+        return cached?.metadata ?? Self.fallbackMetadata(fallbackBSD: volume.bsdName)
+    }
+
+    /// 异步刷新元数据缓存（在途去重）：结果写回缓存，供下一轮 sample 使用。
+    private func scheduleMetadataRefresh(for volume: DiskSupport.MountedVolume, now: TimeInterval) {
+        let mountPath = volume.mountPath
+        let started = metadataLock.withLock {
+            guard !inFlightMetadataRefreshes.contains(mountPath) else { return false }
+            inFlightMetadataRefreshes.insert(mountPath)
+            return true
         }
-        let result = Self.diskutilMetadata(for: volume.mountPath, fallbackBSD: volume.bsdName)
-        // 仅成功完整解析才 isFull=true；失败写 isFull=false，允许后台重试
-        metadataCache[volume.mountPath] = (result.metadata, now, result.isFull)
-        return result.metadata
+        guard started else { return }
+        Self.metadataRefreshQueue.async { [weak self] in
+            guard let self else { return }
+            let result = Self.diskutilMetadata(
+                for: mountPath,
+                fallbackBSD: volume.bsdName,
+                runner: self.diskutilRunner
+            )
+            // 仅成功完整解析才 isFull=true；失败写 isFull=false，允许后续重试
+            self.metadataLock.withLock {
+                self.metadataCache[mountPath] = (result.metadata, now, result.isFull)
+                self.inFlightMetadataRefreshes.remove(mountPath)
+            }
+        }
+    }
+
+    /// 无 diskutil 结果时的回退元数据：bsd 链推导保证 IO 计数映射可用
+    static func fallbackMetadata(fallbackBSD: String?) -> DiskSupport.DiskutilMetadata {
+        var empty = DiskSupport.DiskutilMetadata()
+        empty.bsdName = fallbackBSD
+        empty.wholeDisk = DiskSupport.wholeDiskBSDName(from: fallbackBSD)
+        empty.ioCounterIDs = [empty.wholeDisk, fallbackBSD].compactMap { $0 }
+        return empty
     }
 
     /// 跑 diskutil；失败时返回带 bsd 回退的空 metadata（isFull=false），不中断采样
     private static func diskutilMetadata(
         for mountPath: String,
-        fallbackBSD: String?
+        fallbackBSD: String?,
+        runner: (URL, [String], BoundedProcessRunner.Options) -> BoundedProcessOutput? = BoundedProcessRunner.runBlocking
     ) -> (metadata: DiskSupport.DiskutilMetadata, isFull: Bool) {
-        guard let info = runDiskutilInfo(mountPath) else {
-            var empty = DiskSupport.DiskutilMetadata()
-            empty.bsdName = fallbackBSD
-            empty.wholeDisk = DiskSupport.wholeDiskBSDName(from: fallbackBSD)
-            empty.ioCounterIDs = [empty.wholeDisk, fallbackBSD].compactMap { $0 }
-            return (empty, false)
+        guard let info = runDiskutilInfo(mountPath, runner: runner) else {
+            return (fallbackMetadata(fallbackBSD: fallbackBSD), false)
         }
         var meta = DiskSupport.metadata(fromDiskutilInfo: info)
         if meta.bsdName == nil {
@@ -229,6 +286,14 @@ final class DiskSampler: DiskSampling {
             meta.ioCounterIDs = [meta.wholeDisk, meta.bsdName ?? fallbackBSD].compactMap { $0 }
         }
         return (meta, true)
+    }
+
+    /// 测试可观察：指定挂载点是否已有指定完整度的元数据缓存
+    func hasCachedMetadata(_ mountPath: String, isFull: Bool) -> Bool {
+        metadataLock.withLock {
+            guard let cached = metadataCache[mountPath] else { return false }
+            return cached.isFull == isFull
+        }
     }
 
     /// diskutil 经有界执行器（超时 8s）：并发排空两路管道防等待环死锁，
