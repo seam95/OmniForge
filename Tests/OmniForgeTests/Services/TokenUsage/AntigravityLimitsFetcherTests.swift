@@ -72,6 +72,16 @@ final class AntigravityLimitsFetcherTests: XCTestCase {
         XCTAssertEqual(labeled.first?.window.resetAt, Date(timeIntervalSince1970: 1_800_000_000))
     }
 
+    func test_quotaSummary_argonBucketMapsToSeparateWeeklyWindow() throws {
+        let labeled = try XCTUnwrap(AntigravityUsageDecoder.decodeQuotaSummary(summaryBody([
+            bucket("gemini-weekly", remaining: 0.9),
+            bucket("gemini-argon-wtu-weekly", remaining: 0.25),
+        ])))
+        XCTAssertEqual(labeled.map(\.label), ["Gm 7d", "Ar 7d"], "Argon 独立于 Gemini 主配额")
+        XCTAssertEqual(labeled.last?.window.usedPercent, 75, "Argon 25% remaining -> 75% used")
+        XCTAssertEqual(labeled.last?.window.resetAt, Date(timeIntervalSince1970: 1_800_000_000))
+    }
+
     func test_quotaSummary_noKnownBucketsReturnsNil() {
         XCTAssertNil(AntigravityUsageDecoder.decodeQuotaSummary(summaryBody([
             bucket("renamed-weekly", remaining: 0.5),
@@ -318,6 +328,27 @@ final class AntigravityLimitsFetcherTests: XCTestCase {
         XCTAssertTrue(client.probes.contains(where: { $0.scheme == "https" && $0.port == 9443 }))
     }
 
+    func test_fetchLimits_quotaSummaryArgonWindowStaysLabeled() async throws {
+        let shell = FakeShellRunner()
+        shell.psOutput = languageServerLine
+        shell.lsofOutput = "agy 50001 seam 12u IPv4 0x0 0t0 TCP *:9443 (LISTEN)"
+        let client = FakeLocalClient()
+        client.responses = [
+            ("RetrieveUserQuotaSummary", .success(summaryBody([
+                bucket("3p-weekly", remaining: 0.7),
+                bucket("3p-5h", remaining: 0.4),
+                bucket("gemini-weekly", remaining: 0.9),
+                bucket("gemini-argon-wtu-weekly", remaining: 0.25),
+            ]))),
+            ("GetUserStatus", .success(["userStatus": ["planStatus": ["planInfo": ["planName": "Pro"]]]])),
+        ]
+        let limits = try await makeFetcher(shell: shell, client: client).fetchLimits(force: false)
+
+        XCTAssertEqual(limits?.windows[.weekly]?.usedPercent, 30, "weekly 槽仍是 Claude 7d")
+        XCTAssertEqual(limits?.labeledWindows?.map(\.label), ["Gm 7d", "Ar 7d"])
+        XCTAssertEqual(limits?.labeledWindows?.last?.window.usedPercent, 75, "Argon 进 labeled 行")
+    }
+
     func test_fetchLimits_quotaSummarySucceedsButAccountLookupFails_degradesPlanToNil() async throws {
         let shell = FakeShellRunner()
         shell.psOutput = languageServerLine
@@ -470,6 +501,50 @@ final class AntigravityLimitsFetcherTests: XCTestCase {
         XCTAssertEqual(windows[2].window.usedPercent, 6, "Gm 7d 94% remaining -> 6% used")
         XCTAssertEqual(windows[3].window.usedPercent, 38, "Gm 5h 62% remaining -> 38% used")
         XCTAssertEqual(windows[0].window.resetAt, ISO8601DateFormatter().date(from: "2026-09-23T06:36:40Z"))
+    }
+
+    func test_decodeCliQuotaOutput_jsonArgonBucket() throws {
+        // agy /quota 真实结构：Argon 组只有 weekly 一个 bucket，字段为 id（非 bucketId）。
+        let json = """
+        {
+          "command": {
+            "data": {
+              "groups": [
+                {
+                  "name": "Gemini 4 Argon",
+                  "buckets": [
+                    {
+                      "id": "gemini-argon-wtu-weekly",
+                      "name": "Gemini 4 Argon Weekly Limit",
+                      "window": "weekly",
+                      "remaining_fraction": 0.75,
+                      "reset_time": "2026-11-18T06:41:08Z"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+        """
+        let windows = try XCTUnwrap(AntigravityUsageDecoder.decodeCliQuotaOutput(json))
+        XCTAssertEqual(windows.map(\.label), ["Ar 7d"])
+        XCTAssertEqual(windows.first?.window.usedPercent, 25)
+    }
+
+    func test_decodeCliQuotaOutput_tsvArgonGroupDoesNotOverwriteGeminiWeekly() throws {
+        // Argon 组名含 "Gemini"，若匹配顺序错误会覆盖 Gm 7d 的真实数值。
+        let tsv = """
+        Gemini Models\tWeekly Limit Remaining\t94%\t2026-09-23T05:55:03Z
+        Gemini Models\tFive Hour Limit Remaining\t62%\t2026-09-16T10:55:03Z
+        Claude and GPT models\tWeekly Limit Remaining\t100%\t2026-09-23T06:36:40Z
+        Claude and GPT models\tFive Hour Limit Remaining\t80%\t2026-09-16T11:36:40Z
+        Gemini 4 Argon\tGemini 4 Argon Weekly Limit\t40%\t2026-09-25T06:41:08Z
+        """
+        let windows = try XCTUnwrap(AntigravityUsageDecoder.decodeCliQuotaOutput(tsv))
+        XCTAssertEqual(windows.map(\.label), ["Cl 7d", "Cl 5h", "Gm 7d", "Gm 5h", "Ar 7d"])
+        XCTAssertEqual(windows[2].window.usedPercent, 6, "Gm 7d 仍来自 Gemini 组")
+        XCTAssertEqual(windows[4].window.usedPercent, 60, "Argon 40% remaining -> 60% used")
     }
 
     func test_decodeCliQuotaOutput_invalidOrEmpty_returnsNil() {

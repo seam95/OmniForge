@@ -5,18 +5,22 @@ import Foundation
 /// Antigravity 配额响应解码。
 ///
 /// 三级来源（对齐 B fetchAntigravityLimits）：
-/// ① `RetrieveUserQuotaSummary`：按 bucketId 映射四窗（3p-weekly→Cl 7d、3p-5h→Cl 5h、
-///    gemini-weekly→Gm 7d、gemini-5h→Gm 5h）；
+/// ① `RetrieveUserQuotaSummary`：按 bucketId 映射窗口（3p-weekly→Cl 7d、3p-5h→Cl 5h、
+///    gemini-weekly→Gm 7d、gemini-5h→Gm 5h、gemini-argon-wtu-weekly→Ar 7d）；
 /// ② `GetUserStatus`：cascadeModelConfigData.clientModelConfigs 按模型族分组，
 ///    claude 族最低/最高剩余 → Cl 7d/Cl 5h，gemini 族 → Gm 7d/Gm 5h；
 /// ③ `GetCommandModelConfigs`：同 ② 的形状（fallbackToConfigs）。
 enum AntigravityUsageDecoder {
-    /// bucketId → 窗口语义（对齐 B normalizeAntigravityQuotaSummary 的四窗顺序）。
+    /// bucketId → 窗口语义（顺序即卡片展示顺序）。
+    ///
+    /// `gemini-argon-wtu-weekly` 是 Gemini 4 Argon 的独立周配额
+    /// （付费 Pro 与 Gemini 主配额分开计算；Ultra 并入主配额后可能不出现）。
     static let bucketWindows: [(bucketId: String, label: String)] = [
         ("3p-weekly", "Cl 7d"),
         ("3p-5h", "Cl 5h"),
         ("gemini-weekly", "Gm 7d"),
         ("gemini-5h", "Gm 5h"),
+        ("gemini-argon-wtu-weekly", "Ar 7d"),
     ]
 
     // MARK: 来源① quota summary
@@ -189,7 +193,14 @@ enum AntigravityUsageDecoder {
             let dateStr = parts.count > 3 ? parts[3] : nil
 
             let label: String
-            if modelGroup.contains("claude") || modelGroup.contains("gpt") || modelGroup.contains("3p") {
+            // Argon 组名含 "Gemini"，必须先于 gemini 分支判断，避免误归为 Gm 窗口。
+            if modelGroup.contains("argon") {
+                if windowName.contains("week") || windowName.contains("7d") {
+                    label = "Ar 7d"
+                } else {
+                    continue
+                }
+            } else if modelGroup.contains("claude") || modelGroup.contains("gpt") || modelGroup.contains("3p") {
                 if windowName.contains("week") || windowName.contains("7d") {
                     label = "Cl 7d"
                 } else if windowName.contains("five") || windowName.contains("5h") || windowName.contains("5-hour") || windowName.contains("5 hour") {
