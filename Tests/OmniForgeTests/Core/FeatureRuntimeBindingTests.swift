@@ -100,7 +100,6 @@ final class FeatureRuntimeBindingTests: XCTestCase {
         let prefs = MonitorPreferences(userDefaults: .standard)
         prefs.update {
             $0.enabledMenuBarMetrics = [.cpu]
-            $0.alert.cpuEnabled = true
         }
         FeatureRuntime.shared.register(.systemMonitor, manager: manager)
         FeatureRuntime.shared.register(.systemMonitor, manager: prefs)
@@ -111,7 +110,6 @@ final class FeatureRuntimeBindingTests: XCTestCase {
         FeatureRuntime.shared.setAvailable(.systemMonitor, false)
         XCTAssertFalse(manager.isSampling)
         XCTAssertTrue(manager.activeMenuBarMetrics.isEmpty)
-        XCTAssertTrue(manager.activeAlertRequirements.isEmpty)
     }
 
     func test_systemMonitorBinding_restoresFromPreferencesWhenAvailable() {
@@ -121,7 +119,6 @@ final class FeatureRuntimeBindingTests: XCTestCase {
             $0.isEnabled = true
             $0.enabledMenuBarMetrics = [.memory]
             $0.refreshInterval = 5
-            $0.alert.memoryEnabled = true
         }
         FeatureRuntime.shared.register(.systemMonitor, manager: manager)
         FeatureRuntime.shared.register(.systemMonitor, manager: prefs)
@@ -129,15 +126,10 @@ final class FeatureRuntimeBindingTests: XCTestCase {
         FeatureRuntime.shared.setAvailable(.systemMonitor, false)
         XCTAssertFalse(manager.isSampling)
         XCTAssertTrue(manager.activeMenuBarMetrics.isEmpty)
-        XCTAssertTrue(manager.activeAlertRequirements.isEmpty)
 
         FeatureRuntime.shared.setAvailable(.systemMonitor, true)
         XCTAssertTrue(manager.isSampling)
         XCTAssertEqual(manager.activeMenuBarMetrics, [.memory])
-        XCTAssertEqual(
-            manager.activeAlertRequirements,
-            MonitorAlertManager.requiredMetrics(from: prefs.configuration.alert)
-        )
         XCTAssertEqual(manager.activeRefreshInterval, 5)
     }
 
@@ -147,7 +139,6 @@ final class FeatureRuntimeBindingTests: XCTestCase {
         prefs.update {
             $0.isEnabled = false
             $0.enabledMenuBarMetrics = [.cpu]
-            $0.alert.cpuEnabled = true
         }
         FeatureRuntime.shared.register(.systemMonitor, manager: manager)
         FeatureRuntime.shared.register(.systemMonitor, manager: prefs)
@@ -157,7 +148,6 @@ final class FeatureRuntimeBindingTests: XCTestCase {
 
         XCTAssertFalse(manager.isSampling)
         XCTAssertTrue(manager.activeMenuBarMetrics.isEmpty)
-        XCTAssertTrue(manager.activeAlertRequirements.isEmpty)
     }
 
     func test_systemMonitorBinding_noManager_doesNotCrash() {

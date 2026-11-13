@@ -24,11 +24,6 @@ final class TestRepeatingScheduler: RepeatingScheduling {
     func schedule(every interval: TimeInterval, _ action: @escaping () -> Void) -> AnyCancellable { AnyCancellable {} }
 }
 
-final class FakeAlertNotifier: MonitorNotificationClient {
-    func requestAuthorization(completion: @escaping (Result<Void, Error>) -> Void) { completion(.success(())) }
-    func post(title: String, body: String, completion: @escaping (Result<Void, Error>) -> Void) { completion(.success(())) }
-}
-
 final class TestCPUSampler: CPUUsageSampling {
     func sample() throws -> CPUUsageReading? { nil }
 }

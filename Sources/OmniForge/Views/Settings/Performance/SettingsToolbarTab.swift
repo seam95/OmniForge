@@ -177,11 +177,10 @@ enum TokenUsageSettingsSection: String, CaseIterable, Identifiable {
     }
 }
 
-/// 性能页内部分段（监控 / 菜单栏 / 告警）。
+/// 性能页内部分段（监控 / 菜单栏）。
 enum PerformanceSettingsSection: String, CaseIterable, Identifiable {
     case monitor
     case menuBar
-    case alerts
 
     var id: String { rawValue }
 
@@ -189,7 +188,6 @@ enum PerformanceSettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .monitor: return strings.settingsTabMonitor
         case .menuBar: return strings.settingsTabMenuBar
-        case .alerts: return strings.settingsTabAlerts
         }
     }
 }

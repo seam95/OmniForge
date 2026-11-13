@@ -196,7 +196,6 @@ private func makeStatusBarState() -> AppState {
 
             monitor: makeFakeMonitor(),
             monitorPreferences: MonitorPreferences(userDefaults: defaults),
-            monitorAlerts: MonitorAlertManager(notificationClient: FakeAlertNotifier(), configuration: .init()),
         userDefaults: defaults
     )
 }

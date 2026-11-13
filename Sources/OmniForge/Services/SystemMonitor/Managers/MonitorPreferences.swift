@@ -14,21 +14,6 @@ enum MonitorPreferenceError: Error, Equatable, LocalizedError {
     }
 }
 
-// MARK: - 告警配置
-
-struct MonitorAlertConfiguration: Equatable, Codable {
-    var cpuEnabled = false
-    var cpuThreshold = 90
-    var cpuTemperatureEnabled = false
-    var cpuTemperatureThreshold = 90
-    var memoryEnabled = false
-    var diskEnabled = false
-    var diskFreeThreshold = 10
-    var batteryEnabled = false
-    var batteryThreshold = 15
-    var cooldownMinutes = 15
-}
-
 // MARK: - 完整监控配置
 
 struct MonitorConfiguration: Equatable, Codable {
@@ -49,7 +34,6 @@ struct MonitorConfiguration: Equatable, Codable {
     var separateStatusItems = false
     var hideMainIconWithMetrics = false
     var networkUploadFirst = false
-    var alert = MonitorAlertConfiguration()
 
     init() {}
 
@@ -70,7 +54,6 @@ struct MonitorConfiguration: Equatable, Codable {
         case separateStatusItems
         case hideMainIconWithMetrics
         case networkUploadFirst
-        case alert
     }
 
     init(from decoder: Decoder) throws {
@@ -113,8 +96,6 @@ struct MonitorConfiguration: Equatable, Codable {
         separateStatusItems = try container.decodeIfPresent(Bool.self, forKey: .separateStatusItems) ?? false
         hideMainIconWithMetrics = try container.decodeIfPresent(Bool.self, forKey: .hideMainIconWithMetrics) ?? false
         networkUploadFirst = try container.decodeIfPresent(Bool.self, forKey: .networkUploadFirst) ?? false
-        alert = try container.decodeIfPresent(MonitorAlertConfiguration.self, forKey: .alert)
-            ?? MonitorAlertConfiguration()
     }
 
     func encode(to encoder: Encoder) throws {
@@ -134,7 +115,6 @@ struct MonitorConfiguration: Equatable, Codable {
         try container.encode(separateStatusItems, forKey: .separateStatusItems)
         try container.encode(hideMainIconWithMetrics, forKey: .hideMainIconWithMetrics)
         try container.encode(networkUploadFirst, forKey: .networkUploadFirst)
-        try container.encode(alert, forKey: .alert)
     }
 }
 

@@ -202,28 +202,6 @@ final class SystemMonitorManagerTests: XCTestCase {
         XCTAssertFalse(manager.isSampling)
     }
 
-    func test_alertRequirementsDriveSampling() {
-        let manager = makeManager()
-        XCTAssertFalse(manager.isSampling)
-        manager.setAlertRequirements([.cpu])
-        XCTAssertTrue(manager.isSampling)
-        manager.setAlertRequirements([])
-        XCTAssertFalse(manager.isSampling)
-    }
-
-    func test_setAlertRequirementsAloneStartsSampling() {
-        let scheduler = FakeRepeatingScheduler()
-        let manager = makeManager(scheduler: scheduler)
-        XCTAssertFalse(manager.isSampling)
-
-        manager.setAlertRequirements([.cpu])
-        XCTAssertTrue(manager.isSampling)
-        XCTAssertEqual(scheduler.activeScheduleCount, 1)
-
-        manager.setAlertRequirements([])
-        XCTAssertFalse(manager.isSampling)
-    }
-
     func test_gpuUsageIsStabilizedAcrossSamples() async throws {
         let gpu = ScriptedGPUSampler(values: [0.1, 0.9])
         let manager = SystemMonitorManager(
@@ -274,20 +252,6 @@ final class SystemMonitorManagerTests: XCTestCase {
         manager.setPanelDemand(.init(disk: true))
         try await waitForSnapshot(manager) { _ in disk.callCount >= 1 }
         XCTAssertEqual(disk.lastRefreshMetadata, true)
-
-        // 仅后台需求（无面板 demand，磁盘告警驱动）：disk 后台 stride=5，需推进 tick 才会采样
-        manager.setPanelDemand(.none)
-        disk.callCount = 0
-        disk.lastRefreshMetadata = nil
-        manager.setAlertRequirements([.disk])
-        // startSampling 的即时 sampleAll 在 tick=1 时通常不采样 disk；再 fire 到 stride 倍数
-        for _ in 0..<8 {
-            if disk.callCount >= 1 { break }
-            scheduler.fire()
-            try await Task.sleep(nanoseconds: 20_000_000)
-        }
-        try await waitForSnapshot(manager) { _ in disk.callCount >= 1 }
-        XCTAssertEqual(disk.lastRefreshMetadata, false)
     }
 
     func test_stopSamplingStopsActiveProcessSampler() {

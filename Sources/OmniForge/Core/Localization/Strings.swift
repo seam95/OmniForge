@@ -47,7 +47,6 @@ struct Strings: Equatable {
     let settingsTabClipboard: String
     let settingsTabMonitor: String
     let settingsTabMenuBar: String
-    let settingsTabAlerts: String
     let settingsTabPerformance: String
     let settingsTabShelf: String
     let settingsTabScreenshot: String
@@ -266,19 +265,6 @@ struct Strings: Equatable {
     let menubarMetricBatteryTemperature: String
     let menubarMetricPeripheralBattery: String
     let settingsInputMethodSection: String
-    // MARK: - Alerts
-    let alertsSettingsTitle: String
-    let alertsCpu: String
-    let alertsCpuTemperature: String
-    let alertsMemory: String
-    let alertsDisk: String
-    let alertsBattery: String
-    let alertsNotificationTitle: String
-    let alertsBodyCpu: String
-    let alertsBodyCpuTemperature: String
-    let alertsBodyMemory: String
-    let alertsBodyDisk: String
-    let alertsBodyBattery: String
     // MARK: - Quick Phrase
     let quickphraseSearchPlaceholder: String
     let quickphraseTabAll: String

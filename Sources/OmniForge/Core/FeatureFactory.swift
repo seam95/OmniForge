@@ -65,17 +65,6 @@ struct FeatureFactory {
                     manager: MonitorPreferences(userDefaults: userDefaults)
                 )
             }
-            if runtime.manager(for: .systemMonitor, as: MonitorAlertManager.self) == nil {
-                let l10n = L10n(userDefaults: userDefaults)
-                runtime.register(
-                    .systemMonitor,
-                    manager: MonitorAlertManager(
-                        notificationClient: UserNotificationMonitorClient(),
-                        configuration: .init(),
-                        stringsProvider: { l10n.s }
-                    )
-                )
-            }
         case .tokenUsage:
             // preferences 单源：注册点唯一，各 Manager 一律从 registry 取同一实例；
             // 此前的 `??` fallback 一旦触发会创建未注册的第二实例，配置静默分裂。
@@ -497,7 +486,6 @@ struct FeatureFactory {
             if let manager = runtime.manager(for: .systemMonitor, as: SystemMonitorManager.self) {
                 manager.setPanelDemand(.none)
                 manager.setMenuBarMetrics([])
-                manager.setAlertRequirements([])
             }
         case .tokenUsage:
             runtime.manager(for: .tokenUsage, as: TokenUsageManager.self)?.stop()

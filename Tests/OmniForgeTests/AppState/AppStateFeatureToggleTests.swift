@@ -129,7 +129,6 @@ private func makeState(
 
             monitor: makeFakeMonitor(),
             monitorPreferences: MonitorPreferences(userDefaults: defaults),
-            monitorAlerts: MonitorAlertManager(notificationClient: FakeAlertNotifier(), configuration: .init()),
         userDefaults: defaults,
         startClipboardMonitoring: startClipboardMonitoring,
         stopClipboardMonitoring: stopClipboardMonitoring

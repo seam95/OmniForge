@@ -125,10 +125,6 @@ final class ClipboardWindowControllerFrameTests: XCTestCase {
             quickPhrases: QuickPhraseManager(store: FrameTestQuickPhraseStore()),
             monitor: makeFakeMonitor(),
             monitorPreferences: MonitorPreferences(userDefaults: defaults),
-            monitorAlerts: MonitorAlertManager(
-                notificationClient: FakeAlertNotifier(),
-                configuration: .init()
-            ),
             userDefaults: defaults
         )
     }

@@ -159,7 +159,7 @@ extension AppFeature {
         case .inputLock: return [.accessibility]
         case .clipboardHistory: return []
         case .quickPhrase: return []
-        case .systemMonitor: return [.notifications]
+        case .systemMonitor: return []
         case .tokenUsage: return [.notifications]
         case .networkDiagnostics: return []
 
@@ -200,11 +200,11 @@ extension AppFeature {
             }
         case .inputLock, .mouse:
             return permission == .accessibility ? .required : nil
-        case .systemMonitor, .tokenUsage:
+        case .tokenUsage:
             return permission == .notifications ? .optional : nil
         case .cleaner, .uninstaller:
             return permission == .fullDiskAccess ? .required : nil
-        case .colorPicker, .networkDiagnostics:
+        case .systemMonitor, .colorPicker, .networkDiagnostics:
             return nil
         case .screenshot:
             return permission == .screenRecording ? .required : nil

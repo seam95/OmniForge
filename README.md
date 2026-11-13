@@ -33,8 +33,7 @@ OmniForge lives in the menu bar and grows with you: enable features individually
 ### 📊 System Monitor
 
 - **Monitor panel** — CPU, GPU, memory, temperature, network, disk, battery, and process rankings at a glance.
-- **Menu bar metrics** — Choose which metrics stay visible, with layout and alert options.
-- **Alerts** — Threshold notifications for CPU, temperature, memory, disk space, and battery.
+- **Menu bar metrics** — Choose which metrics stay visible, with layout and spacing options.
 
 ### 🤖 AI tooling
 
@@ -130,7 +129,7 @@ Permissions are requested **per feature**, not all at once:
 | Input Monitoring | Some input-related flows when enabled |
 | Screen Recording | Screenshot |
 | Full Disk Access | Cleaner, Uninstaller |
-| Notifications | System Monitor alerts, Keep Awake (optional) |
+| Notifications | Token usage reminders, sticky notes, Keep Awake (optional) |
 
 Clipboard history, Quick Phrase, Shelf, Color Picker, and Network Diagnostics need little or no special privacy access for basic use. Use **Settings → permissions / Feature Hub** inside the app for the live status of each feature.
 

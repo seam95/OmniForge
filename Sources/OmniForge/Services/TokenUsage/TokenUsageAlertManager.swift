@@ -1,7 +1,7 @@
 import Foundation
 
 /// Token 用量告警触发器 — 会话窗阈值（`TokenUsageConfiguration.sessionAlertThresholdPercent`，缺省 90）与步速超前（LimitPace.paceOver）。
-/// 随 `TokenUsageManager` 限额刷新同频调用 `evaluate`；未授权通知静默降级（失败不报错，对齐 MonitorAlertManager）。
+/// 随 `TokenUsageManager` 限额刷新同频调用 `evaluate`；未授权通知静默降级（失败不报错）。
 final class TokenUsageAlertManager {
     enum AlertKind: Hashable {
         /// 会话窗用量 ≥ 配置阈值（缺省 90%）。

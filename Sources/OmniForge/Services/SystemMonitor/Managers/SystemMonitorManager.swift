@@ -1,7 +1,7 @@
 import Foundation
 import Combine
 
-/// 系统监控运行时 — 按需驱动采样，面板关闭且无菜单栏/告警需求时零开销
+/// 系统监控运行时 — 按需驱动采样，面板关闭且无菜单栏需求时零开销
 @MainActor
 final class SystemMonitorManager: ObservableObject {
     @Published private(set) var snapshot = SystemSnapshot()
@@ -21,13 +21,10 @@ final class SystemMonitorManager: ObservableObject {
     /// 停止采样令牌：stopSampling 时自增，使在途采样的主线程回写失效。
     private var generation = 0
     private var menuBarMetrics = Set<MenuBarMetric>()
-    private var alertRequirements = Set<MonitorMetric>()
     private var refreshInterval: TimeInterval = 2.0
 
     /// 测试可观察：当前菜单栏采样需求
     var activeMenuBarMetrics: Set<MenuBarMetric> { menuBarMetrics }
-    /// 测试可观察：当前告警采样需求
-    var activeAlertRequirements: Set<MonitorMetric> { alertRequirements }
     /// 测试可观察：当前刷新间隔（秒）
     var activeRefreshInterval: TimeInterval { refreshInterval }
     private var policy = MonitorSamplingPolicy(baseTick: 2)
@@ -92,7 +89,7 @@ final class SystemMonitorManager: ObservableObject {
         let wasPanelOpen = self.demand != .none
         self.demand = demand
         let samplingStarted = updateSampling()
-        // 采样器可能因菜单栏/告警需求早已运行，此时 startSampling 的即时采样不会触发，
+        // 采样器可能因菜单栏需求早已运行，此时 startSampling 的即时采样不会触发，
         // 面板新需求的指标（GPU/磁盘/网络等）要干等下一个 refreshInterval tick——
         // 在面板打开边沿补一轮立即采样，让面板打开即出数。
         if !wasPanelOpen, demand != .none, !samplingStarted {
@@ -103,11 +100,6 @@ final class SystemMonitorManager: ObservableObject {
 
     func setMenuBarMetrics(_ metrics: Set<MenuBarMetric>) {
         menuBarMetrics = metrics
-        updateSampling()
-    }
-
-    func setAlertRequirements(_ requirements: Set<MonitorMetric>) {
-        alertRequirements = requirements
         updateSampling()
     }
 
@@ -165,7 +157,6 @@ final class SystemMonitorManager: ObservableObject {
     private func updateSampling() -> Bool {
         let shouldBeActive = demand != .none
             || !menuBarMetrics.isEmpty
-            || !alertRequirements.isEmpty
         if shouldBeActive && !isSampling {
             startSampling()
             return true
@@ -271,7 +262,6 @@ final class SystemMonitorManager: ObservableObject {
             }
         }
 
-        metrics.formUnion(alertRequirements)
         return metrics
     }
 

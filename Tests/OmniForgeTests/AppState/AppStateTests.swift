@@ -110,7 +110,6 @@ final class AppStateTests: XCTestCase {
         let prefs = MonitorPreferences(userDefaults: defaults)
         prefs.update {
             $0.enabledMenuBarMetrics = [.cpu]
-            $0.alert.cpuEnabled = true
         }
 
         let state = AppState(
@@ -128,14 +127,12 @@ final class AppStateTests: XCTestCase {
             quickPhrases: QuickPhraseManager(store: FakeQuickPhraseStore()),
             monitor: monitor,
             monitorPreferences: prefs,
-            monitorAlerts: MonitorAlertManager(notificationClient: FakeAlertNotifier(), configuration: .init()),
             userDefaults: defaults
         )
         withExtendedLifetime(state) {}
 
         XCTAssertFalse(monitor.isSampling)
         XCTAssertTrue(monitor.activeMenuBarMetrics.isEmpty)
-        XCTAssertTrue(monitor.activeAlertRequirements.isEmpty)
 
         // 面板需求若仍被外部写入，配置重应用也应清回 .none
         monitor.setPanelDemand(.init(system: true, cpu: true))
@@ -167,7 +164,6 @@ final class AppStateTests: XCTestCase {
         prefs.update {
             $0.isEnabled = true
             $0.enabledMenuBarMetrics = [.cpu]
-            $0.alert.cpuEnabled = true
         }
 
         let state = AppState(
@@ -185,7 +181,6 @@ final class AppStateTests: XCTestCase {
             quickPhrases: QuickPhraseManager(store: FakeQuickPhraseStore()),
             monitor: monitor,
             monitorPreferences: prefs,
-            monitorAlerts: MonitorAlertManager(notificationClient: FakeAlertNotifier(), configuration: .init()),
             userDefaults: defaults
         )
         withExtendedLifetime(state) {}
@@ -196,7 +191,6 @@ final class AppStateTests: XCTestCase {
         prefs.update { $0.isEnabled = false }
         XCTAssertFalse(monitor.isSampling)
         XCTAssertTrue(monitor.activeMenuBarMetrics.isEmpty)
-        XCTAssertTrue(monitor.activeAlertRequirements.isEmpty)
 
         // 禁用期间外部写入 panel demand 后，再改其他偏好仍应清回
         monitor.setPanelDemand(.init(system: true, cpu: true))
@@ -204,14 +198,10 @@ final class AppStateTests: XCTestCase {
         prefs.update { $0.refreshInterval = 5 }
         XCTAssertFalse(monitor.isSampling)
 
-        // 重新启用后从偏好恢复菜单栏/告警需求
+        // 重新启用后从偏好恢复菜单栏需求
         prefs.update { $0.isEnabled = true }
         XCTAssertTrue(monitor.isSampling)
         XCTAssertEqual(monitor.activeMenuBarMetrics, [.cpu])
-        XCTAssertEqual(
-            monitor.activeAlertRequirements,
-            MonitorAlertManager.requiredMetrics(from: prefs.configuration.alert)
-        )
     }
 
     func test_selectAndLock_thenChangeAndNotification_correctsBackToLockedInputSource() {
@@ -242,7 +232,6 @@ final class AppStateTests: XCTestCase {
 
             monitor: makeFakeMonitor(),
             monitorPreferences: MonitorPreferences(userDefaults: defaults),
-            monitorAlerts: MonitorAlertManager(notificationClient: FakeAlertNotifier(), configuration: .init()),
             userDefaults: defaults
         )
 
@@ -290,7 +279,6 @@ final class AppStateTests: XCTestCase {
 
             monitor: makeFakeMonitor(),
             monitorPreferences: MonitorPreferences(userDefaults: defaults),
-            monitorAlerts: MonitorAlertManager(notificationClient: FakeAlertNotifier(), configuration: .init()),
             userDefaults: defaults
         )
 
@@ -332,7 +320,6 @@ final class AppStateTests: XCTestCase {
 
             monitor: makeFakeMonitor(),
             monitorPreferences: MonitorPreferences(userDefaults: defaults),
-            monitorAlerts: MonitorAlertManager(notificationClient: FakeAlertNotifier(), configuration: .init()),
             userDefaults: defaults
         )
 
@@ -373,7 +360,6 @@ func makeStateForObservation() -> AppState {
 
             monitor: makeFakeMonitor(),
             monitorPreferences: MonitorPreferences(userDefaults: defaults),
-            monitorAlerts: MonitorAlertManager(notificationClient: FakeAlertNotifier(), configuration: .init()),
         userDefaults: defaults
     )
 }

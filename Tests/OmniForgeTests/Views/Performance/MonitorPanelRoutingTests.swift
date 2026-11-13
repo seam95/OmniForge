@@ -105,15 +105,6 @@ final class MonitorPanelRoutingTests: XCTestCase {
         XCTAssertFalse(monitor.isSampling)
     }
 
-    func test_alertRequirementsDriveSampling() {
-        let monitor = makeFakeMonitor()
-        XCTAssertFalse(monitor.isSampling)
-        monitor.setAlertRequirements([.cpu])
-        XCTAssertTrue(monitor.isSampling)
-        monitor.setAlertRequirements([])
-        XCTAssertFalse(monitor.isSampling)
-    }
-
     /// 路由层：面板切回时若仍停在排名页，需恢复对应进程采样（切走时 close 已停止）。
     func test_rankingRestoration_returnsKindOnlyForRankingRoute() {
         XCTAssertEqual(MonitorContainerView.rankingRestoration(for: .ranking(.cpu)), .cpu)

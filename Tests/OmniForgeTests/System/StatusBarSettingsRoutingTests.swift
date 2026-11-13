@@ -64,10 +64,6 @@ final class StatusBarSettingsRoutingTests: XCTestCase {
             quickPhrases: QuickPhraseManager(store: RoutingQuickPhraseStore()),
             monitor: makeFakeMonitor(),
             monitorPreferences: MonitorPreferences(userDefaults: defaults),
-            monitorAlerts: MonitorAlertManager(
-                notificationClient: FakeAlertNotifier(),
-                configuration: .init()
-            ),
             userDefaults: defaults
         )
     }

@@ -295,15 +295,11 @@ final class FeatureRuntime: ObservableObject {
             if shared.isAvailable(.systemMonitor), isEnabled {
                 if let prefs {
                     manager.setMenuBarMetrics(prefs.configuration.enabledMenuBarMetrics)
-                    manager.setAlertRequirements(
-                        MonitorAlertManager.requiredMetrics(from: prefs.configuration.alert)
-                    )
                     try? manager.setInterval(seconds: prefs.configuration.refreshInterval)
                 }
             } else {
                 manager.setPanelDemand(.none)
                 manager.setMenuBarMetrics([])
-                manager.setAlertRequirements([])
             }
         },
         .tokenUsage: {

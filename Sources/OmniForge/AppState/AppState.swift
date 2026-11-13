@@ -18,7 +18,6 @@ final class AppState: ObservableObject {
     private(set) var quickPhrases: QuickPhraseManager?
     private(set) var monitor: SystemMonitorManager?
     private(set) var monitorPreferences: MonitorPreferences?
-    private(set) var monitorAlerts: MonitorAlertManager?
     private(set) var tokenUsageManager: TokenUsageManager?
     private(set) var tokenUsagePreferences: TokenUsagePreferences?
     private(set) var deepSeekBalanceManager: DeepSeekBalanceManager?
@@ -40,7 +39,6 @@ final class AppState: ObservableObject {
     }
     private var cancellables = Set<AnyCancellable>()
     private var featureCancellables = Set<AnyCancellable>()
-    private var hadAlertsEnabled = false
     private let bindToRuntime: Bool
 
     /// 生产路径：从 FeatureRuntime 取 Manager，revision 变化时重绑。
@@ -61,7 +59,6 @@ final class AppState: ObservableObject {
             quickPhrases: nil,
             monitor: nil,
             monitorPreferences: nil,
-            monitorAlerts: nil,
             userDefaults: userDefaults,
             bindToRuntime: true
         )
@@ -80,7 +77,6 @@ final class AppState: ObservableObject {
         quickPhrases: QuickPhraseManager?,
         monitor: SystemMonitorManager?,
         monitorPreferences: MonitorPreferences?,
-        monitorAlerts: MonitorAlertManager?,
         userDefaults: UserDefaults = .standard,
         startClipboardMonitoring: (() -> Void)? = nil,
         stopClipboardMonitoring: (() -> Void)? = nil,
@@ -96,7 +92,6 @@ final class AppState: ObservableObject {
         self.quickPhrases = quickPhrases
         self.monitor = monitor
         self.monitorPreferences = monitorPreferences
-        self.monitorAlerts = monitorAlerts
         self.userDefaults = userDefaults
         self.bindToRuntime = bindToRuntime
         self.startClipboardMonitoring = startClipboardMonitoring
@@ -140,7 +135,6 @@ final class AppState: ObservableObject {
         quickPhrases: QuickPhraseManager,
         monitor: SystemMonitorManager,
         monitorPreferences: MonitorPreferences,
-        monitorAlerts: MonitorAlertManager,
         userDefaults: UserDefaults = .standard,
         startClipboardMonitoring: (() -> Void)? = nil,
         stopClipboardMonitoring: (() -> Void)? = nil
@@ -156,7 +150,6 @@ final class AppState: ObservableObject {
             quickPhrases: quickPhrases,
             monitor: monitor,
             monitorPreferences: monitorPreferences,
-            monitorAlerts: monitorAlerts,
             userDefaults: userDefaults,
             startClipboardMonitoring: startClipboardMonitoring,
             stopClipboardMonitoring: stopClipboardMonitoring,
@@ -179,7 +172,6 @@ final class AppState: ObservableObject {
         quickPhrases = runtime.manager(for: .quickPhrase, as: QuickPhraseManager.self)
         monitor = runtime.manager(for: .systemMonitor, as: SystemMonitorManager.self)
         monitorPreferences = runtime.manager(for: .systemMonitor, as: MonitorPreferences.self)
-        monitorAlerts = runtime.manager(for: .systemMonitor, as: MonitorAlertManager.self)
         tokenUsageManager = runtime.manager(for: .tokenUsage, as: TokenUsageManager.self)
         tokenUsagePreferences = runtime.manager(for: .tokenUsage, as: TokenUsagePreferences.self)
         deepSeekBalanceManager = runtime.manager(for: .tokenUsage, as: DeepSeekBalanceManager.self)
@@ -354,10 +346,7 @@ final class AppState: ObservableObject {
     }
 
     private func setupMonitorSubscriptions() {
-        guard let monitorPreferences, let monitor, let monitorAlerts else {
-            hadAlertsEnabled = false
-            return
-        }
+        guard let monitorPreferences, let monitor else { return }
 
         monitorPreferences.objectWillChange
             .sink { [weak self] _ in
@@ -367,33 +356,15 @@ final class AppState: ObservableObject {
 
         monitorPreferences.$configuration
             .removeDuplicates()
-            .sink { [weak self] config in
-                guard let self else { return }
+            .sink { [weak monitor] config in
+                guard let monitor else { return }
                 guard FeatureRuntime.shared.isAvailable(.systemMonitor), config.isEnabled else {
                     monitor.setPanelDemand(.none)
                     monitor.setMenuBarMetrics([])
-                    monitor.setAlertRequirements([])
-                    self.hadAlertsEnabled = false
                     return
                 }
                 try? monitor.setInterval(seconds: config.refreshInterval)
                 monitor.setMenuBarMetrics(config.enabledMenuBarMetrics)
-                monitorAlerts.updateConfiguration(config.alert)
-                monitor.setAlertRequirements(
-                    MonitorAlertManager.requiredMetrics(from: config.alert)
-                )
-                let hasAlerts = !MonitorAlertManager.requiredMetrics(from: config.alert).isEmpty
-                if hasAlerts && !self.hadAlertsEnabled {
-                    monitorAlerts.requestAuthorization()
-                }
-                self.hadAlertsEnabled = hasAlerts
-            }
-            .store(in: &featureCancellables)
-
-        monitor.$snapshot
-            .sink { [weak self] snapshot in
-                guard let self, let monitorAlerts = self.monitorAlerts else { return }
-                _ = monitorAlerts.evaluate(snapshot, at: Date())
             }
             .store(in: &featureCancellables)
     }

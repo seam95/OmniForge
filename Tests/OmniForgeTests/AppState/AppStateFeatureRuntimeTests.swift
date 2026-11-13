@@ -45,7 +45,6 @@ final class AppStateFeatureRuntimeTests: XCTestCase {
             quickPhrases: QuickPhraseManager(store: FRFakePhraseStore()),
             monitor: makeFakeMonitor(),
             monitorPreferences: MonitorPreferences(userDefaults: defaults),
-            monitorAlerts: MonitorAlertManager(notificationClient: FakeAlertNotifier(), configuration: .init()),
             userDefaults: defaults
         )
 
@@ -123,7 +122,6 @@ private func makeAppStateWithFeatureRuntime(
         quickPhrases: QuickPhraseManager(store: FRFakePhraseStore()),
         monitor: makeFakeMonitor(),
         monitorPreferences: MonitorPreferences(userDefaults: defaults),
-        monitorAlerts: MonitorAlertManager(notificationClient: FakeAlertNotifier(), configuration: .init()),
         userDefaults: defaults
     )
 }

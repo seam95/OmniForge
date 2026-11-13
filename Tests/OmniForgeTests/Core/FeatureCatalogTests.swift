@@ -49,8 +49,8 @@ final class FeatureCatalogTests: XCTestCase {
         XCTAssertEqual(AppFeature.clipboardHistory.permissions, [])
     }
 
-    func test_systemMonitorPermissions_notifications() {
-        XCTAssertEqual(AppFeature.systemMonitor.permissions, [.notifications])
+    func test_systemMonitorPermissions_empty() {
+        XCTAssertEqual(AppFeature.systemMonitor.permissions, [])
     }
 
     func test_tokenUsage_catalogContract() {

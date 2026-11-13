@@ -362,7 +362,7 @@ private enum TestNotificationError: Error {
 }
 
 final class FakeTokenUsageNotificationClient: UserNotificationPosting {
-    /// 记录每次投递（含失败尝试）；与 MonitorAlertManager 假客户端一致。
+    /// 记录每次投递（含失败尝试）。
     private(set) var posted: [(title: String, body: String)] = []
     /// 可编排的投递结果（未授权/失败降级）。
     var postResult: Result<Void, Error> = .success(())

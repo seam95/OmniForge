@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 性能设置聚合页：监控 / 菜单栏 / 告警 三段。
+/// 性能设置聚合页：监控 / 菜单栏 两段。
 struct PerformanceSettingsView: View {
     @ObservedObject var state: AppState
     @ObservedObject private var runtime = FeatureRuntime.shared
@@ -76,13 +76,6 @@ struct PerformanceSettingsView: View {
                         MenuBarMetricsSettingsView(
                             preferences: preferences,
                             monitor: monitor,
-                            strings: state.l10n.s,
-                            isMonitorEnabled: isMonitorEnabled
-                        )
-                    case .alerts:
-                        MonitorAlertsSettingsView(
-                            preferences: preferences,
-                            notificationError: state.monitorAlerts?.lastError,
                             strings: state.l10n.s,
                             isMonitorEnabled: isMonitorEnabled
                         )

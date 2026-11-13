@@ -29,21 +29,6 @@ final class MonitorPreferencesTests: XCTestCase {
         XCTAssertTrue(config.isEnabled)
     }
 
-    func test_monitorAlertConfigurationDefaults() {
-        let alert = MonitorAlertConfiguration()
-        XCTAssertEqual(alert.cpuThreshold, 90)
-        XCTAssertEqual(alert.cpuTemperatureThreshold, 90)
-        XCTAssertEqual(alert.diskFreeThreshold, 10)
-        XCTAssertEqual(alert.batteryThreshold, 15)
-        XCTAssertEqual(alert.cooldownMinutes, 15)
-        // 所有告警默认关闭
-        XCTAssertFalse(alert.cpuEnabled)
-        XCTAssertFalse(alert.cpuTemperatureEnabled)
-        XCTAssertFalse(alert.memoryEnabled)
-        XCTAssertFalse(alert.diskEnabled)
-        XCTAssertFalse(alert.batteryEnabled)
-    }
-
     func test_configurationPersistsAcrossInstances() {
         let suite = "MonitorPreferencesPersistence"
         let defaults = UserDefaults(suiteName: suite)!
@@ -53,13 +38,11 @@ final class MonitorPreferencesTests: XCTestCase {
         prefs1.update {
             $0.isEnabled = false
             $0.refreshInterval = 5
-            $0.alert.cpuEnabled = true
         }
 
         let prefs2 = MonitorPreferences(userDefaults: defaults)
         XCTAssertFalse(prefs2.configuration.isEnabled)
         XCTAssertEqual(prefs2.configuration.refreshInterval, 5)
-        XCTAssertTrue(prefs2.configuration.alert.cpuEnabled)
     }
 
     func test_setRefreshIntervalUpdatesConfiguration() throws {
@@ -182,8 +165,7 @@ final class MonitorPreferencesTests: XCTestCase {
         XCTAssertEqual(preferences.configuration.temperatureUnit, .fahrenheit)
         XCTAssertEqual(preferences.configuration.visibleSections, [.disk, .network])
         XCTAssertTrue(preferences.configuration.networkUploadFirst)
-        XCTAssertTrue(preferences.configuration.alert.cpuEnabled)
-        XCTAssertEqual(preferences.configuration.alert.cpuThreshold, 80)
+        // 存量 alert 键已随告警功能下线，解码时忽略且不影响其余偏好。
         XCTAssertEqual(preferences.configuration.panelSectionOrder, Array(MonitorSection.allCases))
         // 迁移：读取后应写入新 key、清除历史 key。
         XCTAssertNotNil(defaults.data(forKey: "OmniForge.monitorConfiguration"))
