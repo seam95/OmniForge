@@ -8,4 +8,15 @@ import Foundation
 struct UsageFileSignature: Equatable {
     var size: Int64
     var modifiedAt: Date
+
+    /// 指纹相等判定：修改时间按 1 毫秒容差比较。
+    ///
+    /// `Date` 在 `attributesOfItem[.modificationDate]` 与
+    /// `timeIntervalSince1970` 存储/读回之间往返存在亚微秒级浮点误差
+    /// （实测约 0.24µs）。严格相等会让持久化指纹永远不命中，每次冷启动
+    /// 仍全量重解析。1 毫秒容差远大于该误差，同时足以识别真实文件变化。
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.size == rhs.size
+            && abs(lhs.modifiedAt.timeIntervalSince1970 - rhs.modifiedAt.timeIntervalSince1970) < 0.001
+    }
 }
