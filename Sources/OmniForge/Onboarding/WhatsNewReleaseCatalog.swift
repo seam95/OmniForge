@@ -11,6 +11,20 @@ enum WhatsNewReleaseCatalog {
     /// 历次版本的更新内容，新版本在前
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            version: "4.2.0",
+            entries: [
+                WhatsNewEntry(type: .added, text: "Token 用量额度窗口重置支持静默提醒：面板关闭或应用在后台，也会在窗口重置时提醒"),
+                WhatsNewEntry(type: .added, text: "Antigravity 限额卡新增 Gemini 4 Argon 周配额，独立显示剩余比例与重置时间"),
+                WhatsNewEntry(type: .changed, text: "系统监控下线 CPU、温度、内存、磁盘与电池阈值告警，性能设置页仅保留「监控 / 菜单栏」"),
+                WhatsNewEntry(type: .changed, text: "磁盘元数据改为异步刷新，降低监控采样对界面的影响"),
+                WhatsNewEntry(type: .fixed, text: "修复 ZCode 3.18 升级后余额与套餐限额显示「未配置」"),
+                WhatsNewEntry(type: .fixed, text: "修复隐藏 Dock 图标偶发失效，启动后不再残留 Dock 图标"),
+                WhatsNewEntry(type: .fixed, text: "修复便签在调度中心选中后被其他窗口覆盖"),
+                WhatsNewEntry(type: .fixed, text: "修复应用图标视觉尺寸偏小，与其他应用对齐"),
+                WhatsNewEntry(type: .fixed, text: "修复关闭菜单栏指标的温度合并后，指标块宽度未恢复紧凑"),
+            ]
+        ),
+        WhatsNewRelease(
             version: "4.1.0",
             entries: [
                 WhatsNewEntry(type: .added, text: "截图框选时遮罩显示操作提示，确认、取消等快捷键一目了然，并自动避开刘海区域"),
