@@ -219,6 +219,33 @@ final class AntigravityUsageCollectorTests: XCTestCase {
         XCTAssertEqual(backfillStates, [true, false], "回填只标记首轮")
     }
 
+    /// 进程重启（新实例 + 同一存储）后，未变化库不再重解析。
+    func test_persistedSignatures_skipReparseAfterRestart() throws {
+        try writeDatabase(
+            named: "session-1",
+            generations: [(0, sampleGenerationData(responseID: sampleResponseID))],
+            steps: [(0, sampleStepData(seconds: 1_792_205_211, nanos: 441_479_000, responseID: sampleResponseID))]
+        )
+        scanOnce()
+        XCTAssertEqual(collector.parsedFileCount, 1)
+        XCTAssertEqual(
+            store.loadFileSignatures(provider: .antigravity).count, 1,
+            "首次扫描应把库文件指纹持久化到用量库"
+        )
+
+        let restarted = AntigravityUsageCollector(
+            store: store,
+            cliConversationsDirectory: cliDir,
+            ideConversationsDirectory: ideDir,
+            scheduler: FakeRepeatingScheduler()
+        )
+        restarted.start()
+        restarted.waitForIdle()
+        pumpUntil { restarted.scanCount >= 1 }
+
+        XCTAssertEqual(restarted.parsedFileCount, 0, "持久化指纹命中 → 不重解析")
+    }
+
     func test_changedDatabase_addsOnlyNewGenerations() throws {
         try writeDatabase(
             named: "session-1",

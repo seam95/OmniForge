@@ -92,6 +92,44 @@ final class DshUsageCollectorTests: XCTestCase {
         XCTAssertEqual(store.conversations(), 1)
     }
 
+    // MARK: - 持久化指纹
+
+    /// 进程重启（新实例 + 同一存储）后，未变化文件不再重解析。
+    func test_persistedSignatures_skipReparseAfterRestart() throws {
+        _ = try writeSessionLog(
+            project: "proj",
+            session: "session-a",
+            fileName: "session.jsonl",
+            content: [
+                sessionHeaderLine(sessionID: "session-a"),
+                assistantLine(id: "m-1", turn: 1, seq: 3, time: 1_792_205_215_000, input: 100, output: 20),
+            ].joined(separator: "\n")
+        )
+        collector.start()
+        collector.waitForIdle()
+        pumpUntil { self.collector.scanCount == 1 }
+
+        XCTAssertEqual(collector.parsedFileCount, 1)
+        XCTAssertEqual(
+            store.loadFileSignatures(provider: .dsh).count, 1,
+            "首次扫描应把文件指纹持久化到用量库"
+        )
+
+        // 模拟进程重启：新实例共享同一存储与目录。
+        let restarted = DshUsageCollector(
+            store: store,
+            sessionsDirectory: sessionsDir,
+            scheduler: FakeRepeatingScheduler(),
+            watcher: FakeDirectoryWatcher()
+        )
+        restarted.start()
+        restarted.waitForIdle()
+        pumpUntil { restarted.scanCount == 1 }
+
+        XCTAssertEqual(restarted.parsedFileCount, 0, "持久化指纹命中 → 不重解析")
+        XCTAssertEqual(store.totalTokens(), 120, "重启后不得重复计数")
+    }
+
     // MARK: - zstd 多帧与 torn tail
 
     func test_zstdMultiFrame_incrementalAndTornTail() throws {

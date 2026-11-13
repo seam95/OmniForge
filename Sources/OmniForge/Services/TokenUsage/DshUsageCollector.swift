@@ -35,14 +35,17 @@ final class DshUsageCollector: JSONLUsageCollectorBase {
     }
 
     /// 文件版本指纹：大小 + 修改时间；未变化则跳过解析。
-    struct FileSignature: Equatable {
-        var size: UInt64
-        var modificationDate: Date
-    }
+    /// 随 `commitScan` 持久化到用量库，进程重启后仍可跳过未变化文件。
+    typealias FileSignature = UsageFileSignature
 
     private let sessionsDirectory: URL
-    /// 文件 → 指纹（进程内缓存；首次启动全部解析即回填）。
+    /// 文件 → 指纹（持久化加载 + 本进程已提交结果）。
     private var fileSignatures: [String: FileSignature] = [:]
+    /// 本轮新解析成功、待随 commitScan 原子提交的指纹。
+    private var stagedSignatures: [String: FileSignature] = [:]
+    private var signaturesLoaded = false
+    /// 实际解析的文件数（被持久化指纹跳过的不计；测试断言）。
+    private(set) var parsedFileCount = 0
 
     init(
         store: UsageStoring,
@@ -84,10 +87,12 @@ final class DshUsageCollector: JSONLUsageCollectorBase {
         decoder: JSONDecoder,
         scan: ScanContext
     ) -> JSONLCursor? {
+        loadPersistedSignaturesIfNeeded()
         guard let signature = signature(of: file) else { return nil }
         if fileSignatures[file.path] == signature { return nil }
         guard let text = readText(from: file) else { return nil }
 
+        parsedFileCount += 1
         let lines = text.split(separator: "\n", omittingEmptySubsequences: true)
         var state = DshFileState()
         // 第一遍只定位 fork 继承边界：end-seed 可能出现在继承前缀的末尾，
@@ -97,13 +102,17 @@ final class DshUsageCollector: JSONLUsageCollectorBase {
         for line in lines {
             process(line: String(line), state: &state, scan: scan)
         }
-        fileSignatures[file.path] = signature
+        // 指纹只在 commitScan 成功后合并进内存与持久库（失败则下轮重解析，不漏计）。
+        stagedSignatures[file.path] = signature
         return nil
     }
 
     /// 预扫描：会话头（seedLength/isSeeded）与最后一个 inherited end-seed 的 seq。
     private func prescanForkBoundary(_ lines: [Substring], state: inout DshFileState) {
         for line in lines {
+            // 低成本预筛：只有会话头 / end-seed 行需要 JSON 解析。
+            // 正文恰好含该文本只会多解析一行，`type` 判断保证结果不变。
+            guard line.contains("\"session") else { continue }
             guard let event = DshUsageProcessing.parseEvent(String(line)) else { continue }
             if !state.hasHeader, let header = DshUsageProcessing.sessionHeader(event) {
                 state.hasHeader = true
@@ -119,11 +128,27 @@ final class DshUsageCollector: JSONLUsageCollectorBase {
 
     // MARK: - 读取
 
+    /// 首次访问时加载持久化指纹；此后只维护内存快照。
+    private func loadPersistedSignaturesIfNeeded() {
+        guard !signaturesLoaded else { return }
+        signaturesLoaded = true
+        fileSignatures.merge(store.loadFileSignatures(provider: provider)) { _, persisted in persisted }
+    }
+
+    override var pendingFileSignatureUpdates: [TokenUsageProvider: [String: UsageFileSignature]] {
+        stagedSignatures.isEmpty ? [:] : [provider: stagedSignatures]
+    }
+
+    override func didCommitFileSignatureUpdates() {
+        fileSignatures.merge(stagedSignatures) { _, latest in latest }
+        stagedSignatures.removeAll()
+    }
+
     private func signature(of file: URL) -> FileSignature? {
         guard let attributes = try? fileManager.attributesOfItem(atPath: file.path) else { return nil }
-        let size = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
+        let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
         let modified = (attributes[.modificationDate] as? Date) ?? .distantPast
-        return FileSignature(size: size, modificationDate: modified)
+        return FileSignature(size: size, modifiedAt: modified)
     }
 
     /// 读取为文本：压缩文件只解压完整帧（torn tail 留给下一轮），未压缩直接解码。

@@ -50,6 +50,13 @@ class JSONLUsageCollectorBase: UsageCollecting {
     /// 目录监听根；nil 表示不监听（仅定时兜底）。
     var primaryWatchDirectory: URL? { nil }
 
+    /// 本轮待随 `commitScan` 原子提交的文件版本指纹（非游标型采集器覆盖）。
+    /// 与桶/游标同事务落库：提交失败时不推进，下一轮重新解析，不会漏计。
+    var pendingFileSignatureUpdates: [TokenUsageProvider: [String: UsageFileSignature]] { [:] }
+
+    /// `commitScan` 成功后回调：子类据此把暂存指纹合并进内存快照。
+    func didCommitFileSignatureUpdates() {}
+
     /// 本次要扫描的文件 URL（目录发现规则）。
     func enumerateFiles() -> [URL] { [] }
 
@@ -247,9 +254,11 @@ class JSONLUsageCollectorBase: UsageCollecting {
         // （截断退化、LRU 语义失真；参考 #09 评审 H4）。
         commit.seenAt = Date()
         commit.messageStateUpdates = scan.drainMessageStateUpdates()
+        commit.fileSignatureUpdates = pendingFileSignatureUpdates
 
         do {
             try store.commitScan(commit)
+            didCommitFileSignatureUpdates()
         } catch {
             // 提交失败：内存进度随本轮丢弃（cursors 局部变量），下轮重扫重算。
             print("[UsageCollector] commitScan failed, will rescan from last committed cursors: \(error)")

@@ -63,6 +63,10 @@ protocol UsageStoring: AnyObject {
     func removeCursor(path: String)
     func clearCursors()
 
+    // 文件版本指纹（size + mtime）：非游标型采集器跳过未变化文件，跨进程重启保持。
+    func loadFileSignatures(provider: TokenUsageProvider) -> [String: UsageFileSignature]
+    func storeFileSignatures(_ signatures: [String: UsageFileSignature], provider: TokenUsageProvider)
+
     // 提供者消息级状态账本（SQLite 差分采集：lastTotals/指纹/会话归属等；按 provider 隔离）。
     func loadProviderMessageState(_ provider: TokenUsageProvider) -> [String: String]
     func storeProviderMessageState(_ provider: TokenUsageProvider, entries: [String: String])
@@ -84,6 +88,8 @@ struct ScanCommit {
     var seenAt: Date = Date()
     /// 消息级状态账本变更（provider → 变更条目；只含 dirty 条目）。
     var messageStateUpdates: [(provider: TokenUsageProvider, entries: [String: String])] = []
+    /// 本轮推进的文件版本指纹（provider → path → 签名）。
+    var fileSignatureUpdates: [TokenUsageProvider: [String: UsageFileSignature]] = [:]
 }
 
 extension UsageStoring {
@@ -100,6 +106,9 @@ extension UsageStoring {
         }
         for (provider, entries) in commit.messageStateUpdates {
             storeProviderMessageState(provider, entries: entries)
+        }
+        for (provider, signatures) in commit.fileSignatureUpdates {
+            storeFileSignatures(signatures, provider: provider)
         }
     }
 }

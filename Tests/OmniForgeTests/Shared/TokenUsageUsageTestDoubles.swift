@@ -11,6 +11,8 @@ class FakeUsageStore: UsageStoring {
     var bucketsByKey: [UsageBucketKey: UsageBucketState] = [:]
     var seenKeys: Set<String> = []
     var cursors: [String: JSONLCursor] = [:]
+    /// provider → path → 文件版本指纹（镜像 GRDB `file_signatures` 表）。
+    var fileSignatures: [TokenUsageProvider: [String: UsageFileSignature]] = [:]
     var maxSeenKeys = 100_000
     /// 非零时每次 upsert 挂起（并发/合并测试用）。
     var upsertDelay: TimeInterval = 0
@@ -132,6 +134,16 @@ class FakeUsageStore: UsageStoring {
         cursors.removeAll()
     }
 
+    func loadFileSignatures(provider: TokenUsageProvider) -> [String: UsageFileSignature] {
+        fileSignatures[provider] ?? [:]
+    }
+
+    func storeFileSignatures(_ signatures: [String: UsageFileSignature], provider: TokenUsageProvider) {
+        var merged = fileSignatures[provider] ?? [:]
+        merged.merge(signatures) { _, latest in latest }
+        fileSignatures[provider] = merged
+    }
+
     // MARK: - 提供者消息级状态（SQLite 差分采集镜像）
 
     var messageState: [TokenUsageProvider: [String: String]] = [:]
@@ -166,6 +178,9 @@ class FakeUsageStore: UsageStoring {
                 merged[key] = payload
             }
             messageState[provider] = merged
+        }
+        for (provider, signatures) in commit.fileSignatureUpdates {
+            storeFileSignatures(signatures, provider: provider)
         }
     }
 

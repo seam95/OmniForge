@@ -35,16 +35,14 @@ final class AntigravityUsageCollector: JSONLUsageCollectorBase {
 
     /// 实际打开解析的库文件数（指纹未变的库被跳过；测试断言）。
     private(set) var parsedFileCount = 0
-    /// 库文件 → (size, mtime) 指纹；未变化则跳过解析（首次全部解析）。
+    /// 库文件 → (size, mtime) 指纹；持久化后跨进程跳过未变化文件。
     private var fileSignatures: [String: FileSignature] = [:]
+    private var signaturesLoaded = false
     private let cliConversationsDirectory: URL
     private let ideConversationsDirectory: URL
 
-    /// 单个库文件的版本指纹。
-    struct FileSignature: Equatable {
-        var size: UInt64
-        var modificationDate: Date
-    }
+    /// 单个库文件的版本指纹（与用量库 `file_signatures` 表同构）。
+    typealias FileSignature = UsageFileSignature
 
     init(
         store: UsageStoring,
@@ -79,6 +77,7 @@ final class AntigravityUsageCollector: JSONLUsageCollectorBase {
     override func performScan() {
         let files = enumerateDatabaseFiles()
         guard !files.isEmpty else { return }
+        loadPersistedSignaturesIfNeeded()
 
         let scan = ScanContext(
             provider: provider,
@@ -113,16 +112,19 @@ final class AntigravityUsageCollector: JSONLUsageCollectorBase {
         }
 
         let buckets = scan.aggregator.drainTouched()
-        guard !buckets.isEmpty else {
-            // 解析成功但无新增（重复扫描/空库）：只推进文件指纹，不写事务。
-            fileSignatures.merge(pendingSignatures) { _, latest in latest }
-            return
+        let newSeenKeys = scan.drainNewSeen()
+        guard !buckets.isEmpty || !newSeenKeys.isEmpty || !pendingSignatures.isEmpty else {
+            return // 无任何变化：不写空事务，保持定时扫描轻量
         }
 
+        // 即使本轮无新增桶，也提交指纹：否则首次回填后重启仍会全量重解析。
         var commit = ScanCommit()
         commit.buckets = buckets
-        commit.newSeenKeys = scan.drainNewSeen()
+        commit.newSeenKeys = newSeenKeys
         commit.seenAt = Date()
+        if !pendingSignatures.isEmpty {
+            commit.fileSignatureUpdates = [provider: pendingSignatures]
+        }
         do {
             try store.commitScan(commit)
             fileSignatures.merge(pendingSignatures) { _, latest in latest }
@@ -130,6 +132,13 @@ final class AntigravityUsageCollector: JSONLUsageCollectorBase {
             // 提交失败：不推进指纹与去重进度，下一轮重扫重算（桶累计快照幂等）。
             print("[AntigravityUsageCollector] commitScan failed, will retry next scan: \(error)")
         }
+    }
+
+    /// 首次扫描前加载持久化指纹；此后只维护内存快照。
+    private func loadPersistedSignaturesIfNeeded() {
+        guard !signaturesLoaded else { return }
+        signaturesLoaded = true
+        fileSignatures.merge(store.loadFileSignatures(provider: provider)) { _, persisted in persisted }
     }
 
     // MARK: - 文件枚举
@@ -167,11 +176,11 @@ final class AntigravityUsageCollector: JSONLUsageCollectorBase {
     /// 读取 (size, mtime) 指纹；属性缺失 → nil（不参与跳过缓存，每轮都尝试解析）。
     private func fileSignature(for url: URL) -> FileSignature? {
         guard let attributes = try? fileManager.attributesOfItem(atPath: url.path),
-              let size = (attributes[.size] as? NSNumber)?.uint64Value,
+              let size = (attributes[.size] as? NSNumber)?.int64Value,
               let modificationDate = attributes[.modificationDate] as? Date else {
             return nil
         }
-        return FileSignature(size: size, modificationDate: modificationDate)
+        return FileSignature(size: size, modifiedAt: modificationDate)
     }
 
     // MARK: - 只读解析

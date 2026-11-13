@@ -296,6 +296,15 @@ final class CountingUsageStore: UsageStoring {
     func storeCursor(path: String, cursor: JSONLCursor) { base.storeCursor(path: path, cursor: cursor) }
     func removeCursor(path: String) { base.removeCursor(path: path) }
     func clearCursors() { base.clearCursors() }
+    func loadFileSignatures(provider: TokenUsageProvider) -> [String: UsageFileSignature] {
+        base.loadFileSignatures(provider: provider)
+    }
+
+    func storeFileSignatures(
+        _ signatures: [String: UsageFileSignature], provider: TokenUsageProvider
+    ) {
+        base.storeFileSignatures(signatures, provider: provider)
+    }
     func loadProviderMessageState(_ provider: TokenUsageProvider) -> [String: String] {
         base.loadProviderMessageState(provider)
     }

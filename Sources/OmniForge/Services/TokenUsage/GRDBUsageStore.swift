@@ -411,6 +411,63 @@ final class GRDBUsageStore: UsageStoring {
         }
     }
 
+    // MARK: - 文件版本指纹
+
+    func loadFileSignatures(provider: TokenUsageProvider) -> [String: UsageFileSignature] {
+        guard let databaseQueue else { return [:] }
+        do {
+            let rows = try databaseQueue.read { db in
+                try Row.fetchAll(
+                    db,
+                    sql: "SELECT path, size, modified_at FROM file_signatures WHERE provider = ?",
+                    arguments: [provider.rawValue]
+                )
+            }
+            var signatures: [String: UsageFileSignature] = [:]
+            for row in rows {
+                signatures[row["path"] as String] = UsageFileSignature(
+                    size: row["size"] as Int64,
+                    modifiedAt: Date(timeIntervalSince1970: row["modified_at"] as Double)
+                )
+            }
+            return signatures
+        } catch {
+            print("[GRDBUsageStore] loadFileSignatures failed: \(error)")
+            return [:]
+        }
+    }
+
+    func storeFileSignatures(_ signatures: [String: UsageFileSignature], provider: TokenUsageProvider) {
+        guard let databaseQueue else { return }
+        do {
+            try databaseQueue.write { db in
+                try Self.insertFileSignatures(signatures, provider: provider, in: db)
+            }
+        } catch {
+            print("[GRDBUsageStore] storeFileSignatures failed: \(error)")
+        }
+    }
+
+    /// 指纹 upsert（单事务内复用，也供 commitScan 调用）。
+    private static func insertFileSignatures(
+        _ signatures: [String: UsageFileSignature],
+        provider: TokenUsageProvider,
+        in db: Database
+    ) throws {
+        for (path, signature) in signatures {
+            try db.execute(
+                sql: """
+                INSERT OR REPLACE INTO file_signatures (provider, path, size, modified_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                arguments: [
+                    provider.rawValue, path, signature.size,
+                    signature.modifiedAt.timeIntervalSince1970,
+                ]
+            )
+        }
+    }
+
     // MARK: - 提供者消息级状态（SQLite 差分采集）
 
 
@@ -496,6 +553,9 @@ final class GRDBUsageStore: UsageStoring {
                         arguments: [provider.rawValue, key, payload, now]
                     )
                 }
+            }
+            for (provider, signatures) in commit.fileSignatureUpdates {
+                try Self.insertFileSignatures(signatures, provider: provider, in: db)
             }
         }
     }
@@ -615,6 +675,17 @@ final class GRDBUsageStore: UsageStoring {
                 SET total_tokens = input_tokens + output_tokens
                 WHERE provider = 'codex'
                 """)
+        }
+        // 文件版本指纹持久化：DSH / Antigravity 的文件指纹原先只在内存，
+        // 每次冷启动都会全量重解析历史会话，造成启动期内存峰值。
+        migrator.registerMigration("createFileSignatures") { db in
+            try db.create(table: "file_signatures") { t in
+                t.column("provider", .text).notNull()
+                t.column("path", .text).notNull()
+                t.column("size", .integer).notNull()
+                t.column("modified_at", .double).notNull()
+                t.primaryKey(["provider", "path"])
+            }
         }
         return migrator
     }

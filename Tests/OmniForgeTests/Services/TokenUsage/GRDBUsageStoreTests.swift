@@ -238,6 +238,34 @@ final class GRDBUsageStoreTests: XCTestCase {
         XCTAssertTrue(store.loadCursors().isEmpty)
     }
 
+    func test_fileSignatures_roundTripAndCommitScan() throws {
+        let signatures: [String: UsageFileSignature] = [
+            "/tmp/a.jsonl": UsageFileSignature(
+                size: 100, modifiedAt: Date(timeIntervalSince1970: 1_700_000_000)
+            ),
+            "/tmp/b.jsonl": UsageFileSignature(
+                size: 200, modifiedAt: Date(timeIntervalSince1970: 1_700_000_100)
+            ),
+        ]
+        store.storeFileSignatures(signatures, provider: provider)
+        XCTAssertEqual(store.loadFileSignatures(provider: provider), signatures)
+
+        let committed: [String: UsageFileSignature] = [
+            "/tmp/c.jsonl": UsageFileSignature(
+                size: 300, modifiedAt: Date(timeIntervalSince1970: 1_700_000_200)
+            ),
+        ]
+        var commit = ScanCommit()
+        commit.fileSignatureUpdates = [.codex: committed]
+        try store.commitScan(commit)
+
+        XCTAssertEqual(store.loadFileSignatures(provider: .codex), committed)
+        XCTAssertEqual(
+            store.loadFileSignatures(provider: provider), signatures,
+            "指纹按 provider 隔离"
+        )
+    }
+
     func test_filePermissions_0600() throws {
         // 隐私红线：落盘文件权限 0600。
         let attrs = try FileManager.default.attributesOfItem(atPath: databaseURL.path)
