@@ -11,6 +11,14 @@ enum WhatsNewReleaseCatalog {
     /// 历次版本的更新内容，新版本在前
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            version: "4.3.0",
+            entries: [
+                WhatsNewEntry(type: .added, text: "Token 用量接入第 21 家供应商 Ollama Cloud：在设置页配置 API Key 即可查看余额与配额窗口"),
+                WhatsNewEntry(type: .changed, text: "限额卡数值列统一按已用 / 剩余百分比显示，货币金额不再被截断"),
+                WhatsNewEntry(type: .fixed, text: "修复会话文件指纹持久化失效，启动不再全量重解析历史数据"),
+            ]
+        ),
+        WhatsNewRelease(
             version: "4.2.0",
             entries: [
                 WhatsNewEntry(type: .added, text: "Token 用量额度窗口重置支持静默提醒：面板关闭或应用在后台，也会在窗口重置时提醒"),
