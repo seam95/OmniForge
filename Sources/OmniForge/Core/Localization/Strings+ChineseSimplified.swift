@@ -1071,7 +1071,6 @@ extension Strings {
         tokenErrorNotRunningNamedFormat: "%@ 未运行 · 启动后自动更新",
         tokenErrorNotRunningCachedFormat: "%@ 未运行 · 显示为 %@ 缓存，启动后自动更新",
         tokenBackfilling: "正在统计历史用量…",
-        tokenCreditsRemainingFormat: "剩 %@",
         tokenResetInApproxFormat: "重置于 %@",
         tokenPaceOver: "按当前步速将提前用尽",
         tokenPaceProjectedFormat: "重置时预计用量 %d%%",

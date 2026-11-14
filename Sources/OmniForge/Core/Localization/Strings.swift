@@ -1152,7 +1152,6 @@ struct Strings: Equatable {
     /// 未运行 + 展示 last-good 缓存：点名 provider 并附缓存采集时间。
     let tokenErrorNotRunningCachedFormat: String
     let tokenBackfilling: String
-    let tokenCreditsRemainingFormat: String
     let tokenResetInApproxFormat: String
     let tokenPaceOver: String
     let tokenPaceProjectedFormat: String

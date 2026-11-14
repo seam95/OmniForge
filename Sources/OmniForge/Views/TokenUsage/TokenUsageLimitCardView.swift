@@ -121,7 +121,7 @@ struct TokenUsageLimitCardView: View {
 
     private func windowRow(_ kind: LimitWindowKind, window: UsageWindow) -> some View {
         let label = kind.shortTitle(for: limits.provider, strings: strings)
-        let valueText = TokenUsageFormat.limitValueText(kind: kind, window: window, displayMode: displayMode, strings: strings)
+        let valueText = TokenUsageFormat.limitValueText(window: window, displayMode: displayMode, strings: strings)
         let resetTime = TokenUsageFormat.windowResetTimeTiered(resetAt: window.resetAt, now: now)
         // 进度条宽度统一表达剩余百分比（100% 为满条）
         let progress = max(0, 100 - window.usedPercent) / 100

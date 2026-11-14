@@ -1071,7 +1071,6 @@ extension Strings {
         tokenErrorNotRunningNamedFormat: "%@ not running · relaunch to refresh",
         tokenErrorNotRunningCachedFormat: "%@ not running · showing cache from %@, relaunch to refresh",
         tokenBackfilling: "Calculating historical usage…",
-        tokenCreditsRemainingFormat: "%@ left",
         tokenResetInApproxFormat: "Resets at %@",
         tokenPaceOver: "Will run out at current pace",
         tokenPaceProjectedFormat: "Projected %d%% at reset",
