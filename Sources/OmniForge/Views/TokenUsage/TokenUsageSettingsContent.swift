@@ -102,6 +102,9 @@ enum TokenUsageProviderStatusBuilder {
         if provider == .stepfun {
             return strings.stepfunSettingsConfigureHint
         }
+        if provider == .ollamaCloud {
+            return strings.ollamaCloudSettingsApiKeyCaption
+        }
         if provider == .dsh {
             return strings.tokenSettingsConfigureHintDsh
         }
@@ -138,6 +141,7 @@ extension TokenUsageProvider {
         case .omp: return "omp"
         case .copilot: return "copilot"
         case .qoderCN: return "qoder"
+        case .ollamaCloud: return ""
         }
     }
 }

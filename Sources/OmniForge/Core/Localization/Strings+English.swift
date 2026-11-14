@@ -1157,6 +1157,8 @@ extension Strings {
         tokenSettingsTraeCnJwtPlaceholder: "Paste your Cloud-IDE-JWT…",
         opencodeSettingsApiKeyPlaceholder: "Paste your OpenCode Go API Key…",
         opencodeSettingsApiKeyCaption: "Stored only in your macOS Keychain, never on disk",
+        ollamaCloudSettingsApiKeyPlaceholder: "Paste your Ollama Cloud API Key…",
+        ollamaCloudSettingsApiKeyCaption: "Create one at ollama.com/settings/keys; stored only in your macOS Keychain, never on disk",
         arkSettingsAkPlaceholder: "Paste your AccessKey ID (AK)…",
         arkSettingsSkPlaceholder: "Paste your SecretAccessKey (SK)…",
         arkSettingsCaption: "Stored only in your macOS Keychain to query Coding Plan limits via OpenAPI (Coding Plan must be active in your Volcengine console), without arkcli",

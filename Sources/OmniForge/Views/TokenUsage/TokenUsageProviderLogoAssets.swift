@@ -133,6 +133,8 @@ extension TokenUsageProvider {
         case .omp: return nil
         case .copilot: return nil
         case .qoderCN: return ProviderLogoAssets.qoder
+        // 2026-11-14 Ollama Cloud 暂无矢量 logo：先以品牌色底板呈现。
+        case .ollamaCloud: return nil
         }
     }
 }

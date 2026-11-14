@@ -149,10 +149,12 @@ struct TokenUsageProvidersSettingsView: View {
     @State private var deepSeekHasKey = false
     /// trae-cn JWT 状态（无 limits fetcher，凭证存在性即配置态）。
     @State private var traeCnHasJWT = false
+    /// Ollama Cloud API Key 状态（钥匙串 / 环境变量任一存在即配置态）。
+    @State private var ollamaCloudHasKey = false
 
     /// 展开为凭证配置卡的提供商（其余展开仅显示「如何配置」提示文字）。
     private var credentialProviders: Set<TokenUsageProvider> {
-        [.deepSeek, .traeCN, .opencode, .arkCodingPlan, .stepfun]
+        [.deepSeek, .traeCN, .opencode, .arkCodingPlan, .stepfun, .ollamaCloud]
     }
 
     var body: some View {
@@ -177,6 +179,7 @@ struct TokenUsageProvidersSettingsView: View {
         arkHasCredentials = credentialProviders.contains(.arkCodingPlan)
         stepfunHasToken = credentialProviders.contains(.stepfun)
         traeCnHasJWT = TraeCnKeychainStore().hasJWT()
+        ollamaCloudHasKey = credentialProviders.contains(.ollamaCloud)
     }
 
     /// 行尾状态与是否可展开。凭证类提供商恒可展开（含已配置，便于修改/清除凭证）；
@@ -233,6 +236,17 @@ struct TokenUsageProvidersSettingsView: View {
                     provider: provider,
                     hasCredentials: traeCnHasJWT,
                     limits: nil,
+                    strings: strings
+                ),
+                true
+            )
+        } else if provider == .ollamaCloud {
+            let limits = manager.limits[provider]
+            return (
+                TokenUsageProviderStatusBuilder.credentialStatusText(
+                    provider: provider,
+                    hasCredentials: ollamaCloudHasKey,
+                    limits: limits,
                     strings: strings
                 ),
                 true
@@ -345,6 +359,12 @@ struct TokenUsageProvidersSettingsView: View {
         case .stepfun:
             StepfunSettingsCard(
                 preferences: preferences,
+                manager: manager,
+                onCredentialsChanged: reloadCredentialStates,
+                strings: strings
+            )
+        case .ollamaCloud:
+            OllamaCloudSettingsCard(
                 manager: manager,
                 onCredentialsChanged: reloadCredentialStates,
                 strings: strings
@@ -771,6 +791,69 @@ struct OpencodeSettingsCard: View {
             text: $apiKeyInput,
             hasStoredValue: hasStoredKey,
             caption: strings.opencodeSettingsApiKeyCaption,
+            canSave: !DeepSeekSettingsValidation.sanitizedAPIKey(apiKeyInput).isEmpty,
+            feedback: saveFailed ? .error(strings.tokenErrorTransient) : .none,
+            onSave: save,
+            onClear: clearKey,
+            strings: strings
+        )
+        .onChange(of: apiKeyInput) { _, _ in
+            saveFailed = false
+        }
+        .onAppear { reloadKeychainState() }
+    }
+
+    private func reloadKeychainState() {
+        let stored = (try? keychain.readAPIKey()) ?? ""
+        hasStoredKey = !stored.isEmpty
+    }
+
+    private func save() {
+        let cleaned = DeepSeekSettingsValidation.sanitizedAPIKey(apiKeyInput)
+        guard !cleaned.isEmpty else { return }
+        do {
+            try keychain.writeAPIKey(cleaned)
+            apiKeyInput = ""
+            saveFailed = false
+            hasStoredKey = true
+            manager?.refreshNow()
+            onCredentialsChanged()
+        } catch {
+            saveFailed = true
+        }
+    }
+
+    private func clearKey() {
+        try? keychain.deleteAPIKey()
+        apiKeyInput = ""
+        saveFailed = false
+        hasStoredKey = false
+        manager?.refreshNow()
+        onCredentialsChanged()
+    }
+}
+
+/// Ollama Cloud 配置卡（提供商行内展开）：API Key（钥匙串存储，ollama.com/settings/keys 创建）。
+struct OllamaCloudSettingsCard: View {
+    var manager: TokenUsageManager? = nil
+    /// 凭证变更（保存/清除）后通知父级刷新行状态缓存。
+    var onCredentialsChanged: () -> Void = {}
+    let strings: Strings
+
+    @State private var apiKeyInput = ""
+    @State private var saveFailed = false
+    /// 钥匙串凭证状态缓存（onAppear 与保存/清除后刷新，渲染期不直接读 keychain）。
+    @State private var hasStoredKey = false
+
+    private let keychain = OllamaCloudKeychainAPIKeyStore()
+
+    var body: some View {
+        TokenCredentialRow(
+            title: strings.tokenSettingsApiKeyTitle,
+            placeholder: strings.ollamaCloudSettingsApiKeyPlaceholder,
+            text: $apiKeyInput,
+            hasStoredValue: hasStoredKey,
+            caption: strings.ollamaCloudSettingsApiKeyCaption,
             canSave: !DeepSeekSettingsValidation.sanitizedAPIKey(apiKeyInput).isEmpty,
             feedback: saveFailed ? .error(strings.tokenErrorTransient) : .none,
             onSave: save,

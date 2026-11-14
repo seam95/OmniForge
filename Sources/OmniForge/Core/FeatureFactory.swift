@@ -604,6 +604,8 @@ struct FeatureFactory {
         let qoderLimits = LimitsCachingFetcher(inner: QoderLimitsFetcher(), cache: cache)
         // StepFun Step Plan：Oasis-Token 直连平台限额端点，双模套餐（滑动窗口 / Credit 池）自适应。
         let stepfunLimits = LimitsCachingFetcher(inner: StepfunLimitsFetcher(), cache: cache)
+        // Ollama Cloud：API Key 直连官方 balance 端点，双形态（美元总池 / 百分比配额）自适应。
+        let ollamaCloudLimits = LimitsCachingFetcher(inner: OllamaCloudLimitsFetcher(), cache: cache)
         return TokenUsageManager(
             preferences: preferences,
             fetchers: [
@@ -618,6 +620,7 @@ struct FeatureFactory {
                 .zcode: zcodeLimits,
                 .qoder: qoderLimits,
                 .stepfun: stepfunLimits,
+                .ollamaCloud: ollamaCloudLimits,
             ],
             scheduler: TimerRepeatingScheduler(),
             usageStore: usageStore,

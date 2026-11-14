@@ -25,6 +25,8 @@ enum TokenUsageProvider: String, Codable, CaseIterable, Identifiable {
     case omp
     case copilot
     case qoderCN = "qoder-cn"
+    // 2026-11-14：Ollama Cloud 余额（官方 balance API，API Key 认证）。
+    case ollamaCloud = "ollama-cloud"
 
     var id: String { rawValue }
 
@@ -51,6 +53,7 @@ enum TokenUsageProvider: String, Codable, CaseIterable, Identifiable {
         case .omp: return "Oh My Pi"
         case .copilot: return "GitHub Copilot"
         case .qoderCN: return "Qoder CN"
+        case .ollamaCloud: return "Ollama Cloud"
         }
     }
 }

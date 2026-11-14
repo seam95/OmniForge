@@ -1249,6 +1249,8 @@ struct Strings: Equatable {
     let tokenSettingsTraeCnJwtPlaceholder: String
     let opencodeSettingsApiKeyPlaceholder: String
     let opencodeSettingsApiKeyCaption: String
+    let ollamaCloudSettingsApiKeyPlaceholder: String
+    let ollamaCloudSettingsApiKeyCaption: String
     let arkSettingsAkPlaceholder: String
     let arkSettingsSkPlaceholder: String
     let arkSettingsCaption: String

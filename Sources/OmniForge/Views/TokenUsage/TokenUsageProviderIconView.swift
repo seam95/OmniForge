@@ -116,6 +116,7 @@ extension TokenUsageProvider {
         case .omp: return Color(red: 0xF5 / 255.0, green: 0x9E / 255.0, blue: 0x0B / 255.0)
         case .copilot: return Color(red: 0x24 / 255.0, green: 0x29 / 255.0, blue: 0x2F / 255.0)
         case .qoderCN: return Color(red: 0xCA / 255.0, green: 0x8A / 255.0, blue: 0x04 / 255.0)
+        case .ollamaCloud: return Color(red: 0x0D / 255.0, green: 0x0D / 255.0, blue: 0x0D / 255.0)
         }
     }
 }

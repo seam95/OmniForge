@@ -1157,6 +1157,8 @@ extension Strings {
         tokenSettingsTraeCnJwtPlaceholder: "粘贴你的 Cloud-IDE-JWT…",
         opencodeSettingsApiKeyPlaceholder: "粘贴你的 OpenCode Go API Key…",
         opencodeSettingsApiKeyCaption: "密钥仅保存在 macOS 钥匙串，不写入磁盘",
+        ollamaCloudSettingsApiKeyPlaceholder: "粘贴你的 Ollama Cloud API Key…",
+        ollamaCloudSettingsApiKeyCaption: "在 ollama.com/settings/keys 创建；密钥仅保存在 macOS 钥匙串，不写入磁盘",
         arkSettingsAkPlaceholder: "粘贴你的 AccessKey ID (AK)…",
         arkSettingsSkPlaceholder: "粘贴你的 SecretAccessKey (SK)…",
         arkSettingsCaption: "密钥仅保存在 macOS 钥匙串，用于直接请求火山方舟 OpenAPI 查询 Coding Plan 限额（需已在火山引擎开通 Coding Plan 套餐），无需安装 arkcli",

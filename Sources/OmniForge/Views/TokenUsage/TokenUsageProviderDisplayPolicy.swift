@@ -5,7 +5,7 @@ import Foundation
 /// 限额快照表示“已拿到可展示限额”；凭证状态表示“用户已配置但可能无有效套餐/配额”。
 /// 两者合并后再按用户排序和显隐偏好过滤，避免凭证类 provider 从 UI 中消失。
 enum TokenUsageProviderDisplayPolicy {
-    static let credentialDrivenProviders: Set<TokenUsageProvider> = [.opencode, .arkCodingPlan, .stepfun]
+    static let credentialDrivenProviders: Set<TokenUsageProvider> = [.opencode, .arkCodingPlan, .stepfun, .ollamaCloud]
 
     static func providers(
         providerOrder: [TokenUsageProvider],
@@ -46,6 +46,7 @@ enum TokenUsageCredentialStateReader {
         opencodeStore: OpencodeAPIKeyStoring? = OpencodeKeychainAPIKeyStore(),
         arkStore: ArkCredentialsStoring? = ArkKeychainStore(),
         stepfunStore: StepfunTokenStoring? = StepfunKeychainStore(),
+        ollamaCloudStore: OllamaCloudAPIKeyStoring? = OllamaCloudKeychainAPIKeyStore(),
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> Set<TokenUsageProvider> {
         var providers: Set<TokenUsageProvider> = []
@@ -70,6 +71,12 @@ enum TokenUsageCredentialStateReader {
 
         if stepfunStore?.hasToken() == true || stepfunStore?.hasCredentials() == true {
             providers.insert(.stepfun)
+        }
+
+        // Ollama Cloud：钥匙串 API Key 或 OLLAMA_API_KEY 环境变量任一存在即视为已配置。
+        let ollamaCloudEnvKey = environment["OLLAMA_API_KEY"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if ollamaCloudStore?.hasAPIKey() == true || ollamaCloudEnvKey?.isEmpty == false {
+            providers.insert(.ollamaCloud)
         }
 
         return providers
